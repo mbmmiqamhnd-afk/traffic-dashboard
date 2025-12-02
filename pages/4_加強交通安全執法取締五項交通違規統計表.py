@@ -13,7 +13,7 @@ st.title("🚦 加強交通安全執法取締統計表")
 st.markdown("""
 ### 📝 操作說明
 1. 請上傳 **6 個檔案** (本期/本年/去年 的「自選匯出」與「footman」)。
-2. 自動執行：排除警備隊、交通組更名、整合行人數據、計算比較值。
+2. **上傳後自動分析**。
 3. 支援一鍵寄信功能。
 """)
 
@@ -48,11 +48,13 @@ def send_email(recipient, subject, body, file_bytes, filename):
         st.error(f"❌ 寄信失敗: {e}")
         return False
 
-# --- 主程式 ---
+# --- 主程式 (自動分析版) ---
 uploaded_files = st.file_uploader("請將 6 個檔案拖曳至此", accept_multiple_files=True)
 
-if uploaded_files and st.button("🚀 開始分析", key="btn_five"):
-    with st.spinner('正在分析數據中...'):
+if uploaded_files:
+    if len(uploaded_files) < 6:
+        st.warning("⏳ 檔案不足 6 個，請繼續上傳...")
+    else:
         try:
             file_map = {}
             for f in uploaded_files:
