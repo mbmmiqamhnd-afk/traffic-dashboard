@@ -6,7 +6,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from email.header import Header # 關鍵修正
+from email.header import Header
 
 st.set_page_config(page_title="五項交通違規統計", layout="wide", page_icon="🚦")
 st.title("🚦 加強交通安全執法取締統計表")
@@ -14,11 +14,10 @@ st.title("🚦 加強交通安全執法取締統計表")
 st.markdown("""
 ### 📝 操作說明
 1. 請上傳 **6 個檔案** (本期/本年/去年 的「自選匯出」與「footman」)。
-2. **上傳後自動分析**。
-3. 支援一鍵寄信功能。
+2. **上傳後自動分析** 並 **自動寄出**。
 """)
 
-# --- 寄信函數 (終極修復版) ---
+# --- 寄信函數 ---
 def send_email(recipient, subject, body, file_bytes, filename):
     try:
         if "email" not in st.secrets:
@@ -33,7 +32,6 @@ def send_email(recipient, subject, body, file_bytes, filename):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
 
-        # 設定 Excel 格式
         part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         part.set_payload(file_bytes)
         encoders.encode_base64(part)
@@ -58,6 +56,7 @@ if uploaded_files:
         st.warning("⏳ 檔案不足 6 個，請繼續上傳...")
     else:
         try:
+            # --- 1. 資料解析區 ---
             file_map = {}
             for f in uploaded_files:
                 name = f.name
@@ -129,6 +128,7 @@ if uploaded_files:
 
             if final.empty: st.error("❌ 資料錯誤：找不到對應單位"); st.stop()
 
+            # --- 2. 統計運算區 ---
             cats = ['酒駕', '闖紅燈', '嚴重超速', '車不讓人', '行人違規']
             for c in cats: final[f'{c}_比較'] = final[f'{c}_本年'] - final[f'{c}_去年']
 
@@ -152,31 +152,30 @@ if uploaded_files:
             st.success("✅ 分析完成！")
             st.dataframe(final_table, use_container_width=True)
             
-            # 🔥 修改：轉為 Excel 檔案
+            # --- 3. 檔案產生與自動寄信區 ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 final_table.to_excel(writer, index=False, sheet_name='交通違規統計')
                 worksheet = writer.sheets['交通違規統計']
-                worksheet.set_column(0, len(final_table.columns)-1, 15) # 調整欄寬
+                worksheet.set_column(0, len(final_table.columns)-1, 15)
             
             excel_data = output.getvalue()
-            file_name_out = '交通違規統計表.xlsx' # 改為 xlsx
+            file_name_out = '交通違規統計表.xlsx'
 
-            # --- 寄信區塊 ---
-            st.markdown("---")
-            st.subheader("📧 發送結果")
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                default_mail = st.secrets["email"]["user"] if "email" in st.secrets else ""
-                email_receiver = st.text_input("收件信箱", value=default_mail)
-            with col2:
-                st.write(""); st.write("")
-                if st.button("📤 立即寄出", type="primary"):
-                    if not email_receiver: st.warning("請輸入信箱！")
-                    else:
-                        with st.spinner("寄送中..."):
-                            if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為交通違規統計報表。", excel_data, file_name_out):
-                                st.balloons(); st.success(f"已發送至 {email_receiver}")
+            # 自動寄信邏輯
+            if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
+            file_ids = ",".join(sorted([f.name for f in uploaded_files]))
+
+            email_receiver = st.secrets["email"]["user"]
+            
+            if file_ids not in st.session_state["sent_cache"]:
+                with st.spinner(f"正在自動寄送報表至 {email_receiver}..."):
+                    if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為交通違規統計報表(Excel)。", excel_data, file_name_out):
+                        st.balloons()
+                        st.success(f"✅ 郵件已發送至 {email_receiver}")
+                        st.session_state["sent_cache"].add(file_ids)
+            else:
+                st.info(f"✅ 報表已於剛才發送至 {email_receiver}")
 
             st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
