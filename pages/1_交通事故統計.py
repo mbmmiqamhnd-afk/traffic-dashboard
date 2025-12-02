@@ -7,6 +7,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
+from email.header import Header  # 關鍵修正
 
 st.set_page_config(page_title="交通事故統計", layout="wide", page_icon="🚑")
 st.title("🚑 交通事故統計 (A1/A2)")
@@ -18,15 +19,12 @@ st.markdown("""
 3. **上傳後自動分析**，完成後可寄信。
 """)
 
-# ==========================================
-# 1. 強化版寄信函數 (支援 Google 試算表預覽)
-# ==========================================
+# --- 寄信函數 (終極修復版) ---
 def send_email(recipient, subject, body, file_bytes, filename):
     try:
         if "email" not in st.secrets:
             st.error("❌ 未設定 Secrets！")
             return False
-        
         sender = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
 
@@ -36,27 +34,19 @@ def send_email(recipient, subject, body, file_bytes, filename):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
 
-        # --- 關鍵修改：依據檔名設定正確的 MIME Type ---
-        if filename.endswith('.xlsx'):
-            # 設定為 Excel 格式，Gmail 才會顯示綠色試算表按鈕
-            maintype = 'application'
-            subtype = 'vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        elif filename.endswith('.csv'):
-            # 設定為 CSV 格式
-            maintype = 'text'
-            subtype = 'csv'
-        else:
-            # 其他格式用通用設定
-            maintype = 'application'
-            subtype = 'octet-stream'
-
-        part = MIMEBase(maintype, subtype)
+        # 設定 Excel 格式
+        part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         part.set_payload(file_bytes)
         encoders.encode_base64(part)
-        part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+        
+        # 中文檔名編碼處理
+        part.add_header(
+            'Content-Disposition', 
+            'attachment', 
+            filename=Header(filename, 'utf-8').encode()
+        )
         msg.attach(part)
 
-        # 發送郵件
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(sender, password)
@@ -67,16 +57,13 @@ def send_email(recipient, subject, body, file_bytes, filename):
         st.error(f"❌ 寄信失敗: {e}")
         return False
 
-
-# --- 主程式 (自動分析版) ---
+# --- 主程式 ---
 uploaded_files = st.file_uploader("請上傳 3 個事故報表檔案", accept_multiple_files=True, key="acc_uploader")
 
 if uploaded_files:
-    # 檢查檔案數量
     if len(uploaded_files) < 3:
         st.warning("⏳ 請上傳滿 3 個檔案以開始計算...")
     else:
-        # 直接開始分析
         try:
             def parse_raw(file_obj):
                 try: return pd.read_csv(file_obj, header=None)
@@ -131,7 +118,6 @@ if uploaded_files:
             if df_wk is None or df_cur is None or df_lst is None:
                 st.error("❌ 無法識別完整的 3 份檔案，請檢查檔案內容日期。")
             else:
-                # A1
                 a1_wk = df_wk[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'wk'})
                 a1_cur = df_cur[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'cur'})
                 a1_lst = df_lst[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'last'})
@@ -139,7 +125,6 @@ if uploaded_files:
                 m_a1 = pd.merge(m_a1, a1_lst, on='Station_Short', how='outer').fillna(0)
                 m_a1['Diff'] = m_a1['cur'] - m_a1['last']
 
-                # A2
                 a2_wk = df_wk[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'wk'})
                 a2_cur = df_cur[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'cur'})
                 a2_lst = df_lst[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'last'})
@@ -164,7 +149,6 @@ if uploaded_files:
                 st.subheader("📊 A1 死亡人數統計"); st.dataframe(a1_final, use_container_width=True, hide_index=True)
                 st.subheader("📊 A2 受傷人數統計"); st.dataframe(a2_final, use_container_width=True, hide_index=True)
 
-                # 產生 Excel
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
@@ -173,7 +157,6 @@ if uploaded_files:
                 excel_data = output.getvalue()
                 file_name_out = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
 
-                # --- 寄信區塊 (獨立顯示) ---
                 st.markdown("---")
                 st.subheader("📧 發送結果")
                 col1, col2 = st.columns([3, 1])
