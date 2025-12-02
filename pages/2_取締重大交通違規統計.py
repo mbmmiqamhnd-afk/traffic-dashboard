@@ -8,7 +8,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from email.header import Header # 關鍵修正
+from email.header import Header
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
 st.title("🚔 取締重大交通違規統計 (含攔停/逕舉)")
@@ -16,11 +16,10 @@ st.title("🚔 取締重大交通違規統計 (含攔停/逕舉)")
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** 重點違規報表 (focus系列)。
-2. **上傳後自動分析** 8 大重點項目。
-3. 支援一鍵寄信功能。
+2. **自動分析** 並 **自動寄出**。
 """)
 
-# --- 寄信函數 (終極修復版) ---
+# --- 寄信函數 ---
 def send_email(recipient, subject, body, file_bytes, filename):
     try:
         if "email" not in st.secrets:
@@ -59,6 +58,7 @@ if uploaded_files:
         st.warning("⏳ 檔案不足 3 個，請繼續上傳...")
     else:
         try:
+            # --- 1. 資料解析區 ---
             def parse_file_content(uploaded_file):
                 content = uploaded_file.getvalue()
                 df = None; start_date = ""; header_idx = -1
@@ -127,6 +127,7 @@ if uploaded_files:
 
             st.success(f"✅ 檔案識別成功：本年({file_year['start']})、去年({file_last_year['start']})、本期({file_week['start']})")
 
+            # --- 2. 統計運算區 ---
             unit_mapping = {'交通組': '科技執法', '龍潭交通分隊': '交通分隊', '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊'}
             display_order = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
             targets = {'聖亭所': 1838, '龍潭所': 2451, '中興所': 1838, '石門所': 1488, '高平所': 1226, '三和所': 400, '交通分隊': 2576, '警備隊': 263, '科技執法': 0}
@@ -164,7 +165,7 @@ if uploaded_files:
 
             st.subheader("📊 統計結果"); st.dataframe(df_final, use_container_width=True)
 
-            # 產生 Excel (使用 xlsxwriter)
+            # --- 3. 檔案產生與自動寄信區 ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, sheet_name='Sheet1', startrow=3, index=False)
@@ -176,21 +177,20 @@ if uploaded_files:
             excel_data = output.getvalue()
             file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
 
-            # --- 寄信區塊 ---
-            st.markdown("---")
-            st.subheader("📧 發送結果")
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                default_mail = st.secrets["email"]["user"] if "email" in st.secrets else ""
-                email_receiver = st.text_input("收件信箱", value=default_mail)
-            with col2:
-                st.write(""); st.write("")
-                if st.button("📤 立即寄出", type="primary"):
-                    if not email_receiver: st.warning("請輸入信箱！")
-                    else:
-                        with st.spinner("寄送中..."):
-                            if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
-                                st.balloons(); st.success(f"已發送至 {email_receiver}")
+            # 自動寄信邏輯
+            if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
+            file_ids = ",".join(sorted([f.name for f in uploaded_files]))
+
+            email_receiver = st.secrets["email"]["user"]
+            
+            if file_ids not in st.session_state["sent_cache"]:
+                with st.spinner(f"正在自動寄送報表至 {email_receiver}..."):
+                    if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表(Excel)。", excel_data, file_name_out):
+                        st.balloons()
+                        st.success(f"✅ 郵件已發送至 {email_receiver}")
+                        st.session_state["sent_cache"].add(file_ids)
+            else:
+                st.info(f"✅ 報表已於剛才發送至 {email_receiver}")
 
             st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
