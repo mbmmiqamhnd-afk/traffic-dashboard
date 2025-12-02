@@ -2,11 +2,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import re
+import io
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
+from email.header import Header # 關鍵修正
 
 st.set_page_config(page_title="超載統計", layout="wide", page_icon="🚛")
 st.title("🚛 超載 (stoneCnt) 自動統計")
@@ -18,15 +20,12 @@ st.markdown("""
 3. 支援一鍵寄信。
 """)
 
-# ==========================================
-# 1. 強化版寄信函數 (支援 Google 試算表預覽)
-# ==========================================
+# --- 寄信函數 (終極修復版) ---
 def send_email(recipient, subject, body, file_bytes, filename):
     try:
         if "email" not in st.secrets:
             st.error("❌ 未設定 Secrets！")
             return False
-        
         sender = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
 
@@ -36,27 +35,12 @@ def send_email(recipient, subject, body, file_bytes, filename):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
 
-        # --- 關鍵修改：依據檔名設定正確的 MIME Type ---
-        if filename.endswith('.xlsx'):
-            # 設定為 Excel 格式，Gmail 才會顯示綠色試算表按鈕
-            maintype = 'application'
-            subtype = 'vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        elif filename.endswith('.csv'):
-            # 設定為 CSV 格式
-            maintype = 'text'
-            subtype = 'csv'
-        else:
-            # 其他格式用通用設定
-            maintype = 'application'
-            subtype = 'octet-stream'
-
-        part = MIMEBase(maintype, subtype)
+        part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         part.set_payload(file_bytes)
         encoders.encode_base64(part)
-        part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+        part.add_header('Content-Disposition', 'attachment', filename=Header(filename, 'utf-8').encode())
         msg.attach(part)
 
-        # 發送郵件
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(sender, password)
@@ -67,7 +51,7 @@ def send_email(recipient, subject, body, file_bytes, filename):
         st.error(f"❌ 寄信失敗: {e}")
         return False
 
-# --- 主程式 (自動分析版) ---
+# --- 主程式 ---
 uploaded_files = st.file_uploader("請拖曳 3 個 stoneCnt 檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'])
 
 if uploaded_files:
@@ -134,8 +118,13 @@ if uploaded_files:
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
             
-            csv_data = df_final.to_csv(index=False).encode('utf-8-sig')
-            file_name_out = '超載統計表.csv'
+            # 🔥 修改：轉為 Excel 檔案
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_final.to_excel(writer, index=False, sheet_name='超載統計')
+            
+            excel_data = output.getvalue()
+            file_name_out = '超載統計表.xlsx' # 改為 xlsx
 
             # --- 寄信區塊 ---
             st.markdown("---")
@@ -150,9 +139,9 @@ if uploaded_files:
                     if not email_receiver: st.warning("請輸入信箱！")
                     else:
                         with st.spinner("寄送中..."):
-                            if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為超載統計報表。", csv_data, file_name_out):
+                            if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為超載統計報表。", excel_data, file_name_out):
                                 st.balloons(); st.success(f"已發送至 {email_receiver}")
 
-            st.download_button(label="📥 下載 CSV", data=csv_data, file_name=file_name_out, mime='text/csv')
+            st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
         except Exception as e: st.error(f"錯誤：{e}")
