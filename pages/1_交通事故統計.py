@@ -7,19 +7,19 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from email.header import Header  # 關鍵修正
+from email.header import Header
 
 st.set_page_config(page_title="交通事故統計", layout="wide", page_icon="🚑")
 st.title("🚑 交通事故統計 (A1/A2)")
 
 st.markdown("""
 ### 📝 使用說明
-1. 請上傳 3 個原始報表檔案 (本週、今年累計、去年累計)。
-2. 系統會**讀取檔案內的日期**自動分辨是哪一份。
-3. **上傳後自動分析**，完成後可寄信。
+1. 請上傳 3 個原始報表檔案。
+2. 系統自動分辨日期並計算。
+3. **完成後自動寄送報表至您的信箱**。
 """)
 
-# --- 寄信函數 (終極修復版) ---
+# --- 寄信函數 ---
 def send_email(recipient, subject, body, file_bytes, filename):
     try:
         if "email" not in st.secrets:
@@ -34,17 +34,10 @@ def send_email(recipient, subject, body, file_bytes, filename):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
 
-        # 設定 Excel 格式
         part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         part.set_payload(file_bytes)
         encoders.encode_base64(part)
-        
-        # 中文檔名編碼處理
-        part.add_header(
-            'Content-Disposition', 
-            'attachment', 
-            filename=Header(filename, 'utf-8').encode()
-        )
+        part.add_header('Content-Disposition', 'attachment', filename=Header(filename, 'utf-8').encode())
         msg.attach(part)
 
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -65,6 +58,7 @@ if uploaded_files:
         st.warning("⏳ 請上傳滿 3 個檔案以開始計算...")
     else:
         try:
+            # --- 1. 資料處理區 ---
             def parse_raw(file_obj):
                 try: return pd.read_csv(file_obj, header=None)
                 except: file_obj.seek(0); return pd.read_excel(file_obj, header=None)
@@ -118,6 +112,7 @@ if uploaded_files:
             if df_wk is None or df_cur is None or df_lst is None:
                 st.error("❌ 無法識別完整的 3 份檔案，請檢查檔案內容日期。")
             else:
+                # --- 2. 統計運算區 ---
                 a1_wk = df_wk[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'wk'})
                 a1_cur = df_cur[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'cur'})
                 a1_lst = df_lst[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'last'})
@@ -149,6 +144,7 @@ if uploaded_files:
                 st.subheader("📊 A1 死亡人數統計"); st.dataframe(a1_final, use_container_width=True, hide_index=True)
                 st.subheader("📊 A2 受傷人數統計"); st.dataframe(a2_final, use_container_width=True, hide_index=True)
 
+                # --- 3. 檔案產生與自動寄信區 ---
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
@@ -157,20 +153,20 @@ if uploaded_files:
                 excel_data = output.getvalue()
                 file_name_out = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
 
-                st.markdown("---")
-                st.subheader("📧 發送結果")
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    default_mail = st.secrets["email"]["user"] if "email" in st.secrets else ""
-                    email_receiver = st.text_input("收件信箱", value=default_mail)
-                with col2:
-                    st.write(""); st.write("")
-                    if st.button("📤 立即寄出", type="primary"):
-                        if not email_receiver: st.warning("請輸入信箱！")
-                        else:
-                            with st.spinner("寄送中..."):
-                                if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為本期事故統計報表。", excel_data, file_name_out):
-                                    st.balloons(); st.success(f"已發送至 {email_receiver}")
+                # 自動寄信邏輯 (防重複發送)
+                if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
+                file_ids = ",".join(sorted([f.name for f in uploaded_files])) # 產生本次上傳的唯一碼
+
+                email_receiver = st.secrets["email"]["user"]
+                
+                if file_ids not in st.session_state["sent_cache"]:
+                    with st.spinner(f"正在自動寄送報表至 {email_receiver}..."):
+                        if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為本期事故統計報表(Excel)。", excel_data, file_name_out):
+                            st.balloons()
+                            st.success(f"✅ 郵件已發送至 {email_receiver}")
+                            st.session_state["sent_cache"].add(file_ids) # 標記為已發送
+                else:
+                    st.info(f"✅ 報表已於剛才發送至 {email_receiver} (若需重寄請重新整理頁面)")
 
                 st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
