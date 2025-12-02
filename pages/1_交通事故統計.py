@@ -15,7 +15,7 @@ st.markdown("""
 ### 📝 使用說明
 1. 請上傳 3 個原始報表檔案 (本週、今年累計、去年累計)。
 2. 系統會**讀取檔案內的日期**自動分辨是哪一份。
-3. 分析完成後，可下載 Excel 報表或直接寄至信箱。
+3. **上傳後自動分析**，完成後可寄信。
 """)
 
 # --- 寄信函數 ---
@@ -49,11 +49,15 @@ def send_email(recipient, subject, body, file_bytes, filename):
         st.error(f"❌ 寄信失敗: {e}")
         return False
 
-# --- 主程式 ---
+# --- 主程式 (自動分析版) ---
 uploaded_files = st.file_uploader("請上傳 3 個事故報表檔案", accept_multiple_files=True, key="acc_uploader")
 
-if uploaded_files and st.button("🚀 開始分析", key="btn_acc"):
-    with st.spinner("正在智慧辨識檔案與計算中..."):
+if uploaded_files:
+    # 檢查檔案數量
+    if len(uploaded_files) < 3:
+        st.warning("⏳ 請上傳滿 3 個檔案以開始計算...")
+    else:
+        # 直接開始分析
         try:
             def parse_raw(file_obj):
                 try: return pd.read_csv(file_obj, header=None)
@@ -107,65 +111,65 @@ if uploaded_files and st.button("🚀 開始分析", key="btn_acc"):
 
             if df_wk is None or df_cur is None or df_lst is None:
                 st.error("❌ 無法識別完整的 3 份檔案，請檢查檔案內容日期。")
-                st.stop()
+            else:
+                # A1
+                a1_wk = df_wk[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'wk'})
+                a1_cur = df_cur[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'cur'})
+                a1_lst = df_lst[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'last'})
+                m_a1 = pd.merge(a1_wk, a1_cur, on='Station_Short', how='outer')
+                m_a1 = pd.merge(m_a1, a1_lst, on='Station_Short', how='outer').fillna(0)
+                m_a1['Diff'] = m_a1['cur'] - m_a1['last']
 
-            # A1
-            a1_wk = df_wk[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'wk'})
-            a1_cur = df_cur[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'cur'})
-            a1_lst = df_lst[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'last'})
-            m_a1 = pd.merge(a1_wk, a1_cur, on='Station_Short', how='outer')
-            m_a1 = pd.merge(m_a1, a1_lst, on='Station_Short', how='outer').fillna(0)
-            m_a1['Diff'] = m_a1['cur'] - m_a1['last']
+                # A2
+                a2_wk = df_wk[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'wk'})
+                a2_cur = df_cur[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'cur'})
+                a2_lst = df_lst[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'last'})
+                m_a2 = pd.merge(a2_wk, a2_cur, on='Station_Short', how='outer')
+                m_a2 = pd.merge(m_a2, a2_lst, on='Station_Short', how='outer').fillna(0)
+                m_a2['Diff'] = m_a2['cur'] - m_a2['last']
+                m_a2['Pct_Str'] = m_a2.apply(lambda x: f"{(x['Diff']/x['last']):.2%}" if x['last']!=0 else "-", axis=1)
+                m_a2['Prev'] = "-"
 
-            # A2
-            a2_wk = df_wk[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'wk'})
-            a2_cur = df_cur[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'cur'})
-            a2_lst = df_lst[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'last'})
-            m_a2 = pd.merge(a2_wk, a2_cur, on='Station_Short', how='outer')
-            m_a2 = pd.merge(m_a2, a2_lst, on='Station_Short', how='outer').fillna(0)
-            m_a2['Diff'] = m_a2['cur'] - m_a2['last']
-            m_a2['Pct_Str'] = m_a2.apply(lambda x: f"{(x['Diff']/x['last']):.2%}" if x['last']!=0 else "-", axis=1)
-            m_a2['Prev'] = "-"
+                target_order = ['合計', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
+                for m in [m_a1, m_a2]:
+                    m['Station_Short'] = pd.Categorical(m['Station_Short'], categories=target_order, ordered=True)
+                    m.sort_values('Station_Short', inplace=True)
 
-            target_order = ['合計', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
-            for m in [m_a1, m_a2]:
-                m['Station_Short'] = pd.Categorical(m['Station_Short'], categories=target_order, ordered=True)
-                m.sort_values('Station_Short', inplace=True)
+                a1_final = m_a1[['Station_Short', 'wk', 'cur', 'last', 'Diff']].copy()
+                a1_final.columns = ['單位', f'本期({h_wk})', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較']
+                
+                a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
+                a2_final.columns = ['單位', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
 
-            a1_final = m_a1[['Station_Short', 'wk', 'cur', 'last', 'Diff']].copy()
-            a1_final.columns = ['單位', f'本期({h_wk})', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較']
-            
-            a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
-            a2_final.columns = ['單位', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
+                st.success("✅ 分析完成！")
+                st.subheader("📊 A1 死亡人數統計"); st.dataframe(a1_final, use_container_width=True, hide_index=True)
+                st.subheader("📊 A2 受傷人數統計"); st.dataframe(a2_final, use_container_width=True, hide_index=True)
 
-            st.subheader("📊 A1 死亡人數統計"); st.dataframe(a1_final, use_container_width=True, hide_index=True)
-            st.subheader("📊 A2 受傷人數統計"); st.dataframe(a2_final, use_container_width=True, hide_index=True)
+                # 產生 Excel
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
+                    a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
+                
+                excel_data = output.getvalue()
+                file_name_out = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
 
-            # 產生 Excel
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
-                a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
-            
-            excel_data = output.getvalue()
-            file_name_out = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
+                # --- 寄信區塊 (獨立顯示) ---
+                st.markdown("---")
+                st.subheader("📧 發送結果")
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    default_mail = st.secrets["email"]["user"] if "email" in st.secrets else ""
+                    email_receiver = st.text_input("收件信箱", value=default_mail)
+                with col2:
+                    st.write(""); st.write("")
+                    if st.button("📤 立即寄出", type="primary"):
+                        if not email_receiver: st.warning("請輸入信箱！")
+                        else:
+                            with st.spinner("寄送中..."):
+                                if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為本期事故統計報表。", excel_data, file_name_out):
+                                    st.balloons(); st.success(f"已發送至 {email_receiver}")
 
-            # --- 寄信區塊 ---
-            st.markdown("---")
-            st.subheader("📧 發送結果")
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                default_mail = st.secrets["email"]["user"] if "email" in st.secrets else ""
-                email_receiver = st.text_input("收件信箱", value=default_mail)
-            with col2:
-                st.write(""); st.write("")
-                if st.button("📤 立即寄出", type="primary"):
-                    if not email_receiver: st.warning("請輸入信箱！")
-                    else:
-                        with st.spinner("寄送中..."):
-                            if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為本期事故統計報表。", excel_data, file_name_out):
-                                st.balloons(); st.success(f"已發送至 {email_receiver}")
-
-            st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
         except Exception as e: st.error(f"發生錯誤：{e}")
