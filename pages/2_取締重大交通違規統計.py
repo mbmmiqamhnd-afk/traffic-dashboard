@@ -3,20 +3,21 @@ import pandas as pd
 import io
 import re
 import smtplib
+from datetime import date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from email.header import Header  # 關鍵修正
+from email.header import Header # 關鍵修正
 
-st.set_page_config(page_title="交通事故統計", layout="wide", page_icon="🚑")
-st.title("🚑 交通事故統計 (A1/A2)")
+st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
+st.title("🚔 取締重大交通違規統計 (含攔停/逕舉)")
 
 st.markdown("""
 ### 📝 使用說明
-1. 請上傳 3 個原始報表檔案 (本週、今年累計、去年累計)。
-2. 系統會**讀取檔案內的日期**自動分辨是哪一份。
-3. **上傳後自動分析**，完成後可寄信。
+1. 請上傳 **3 個** 重點違規報表 (focus系列)。
+2. **上傳後自動分析** 8 大重點項目。
+3. 支援一鍵寄信功能。
 """)
 
 # --- 寄信函數 (終極修復版) ---
@@ -34,17 +35,10 @@ def send_email(recipient, subject, body, file_bytes, filename):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
 
-        # 設定 Excel 格式
         part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         part.set_payload(file_bytes)
         encoders.encode_base64(part)
-        
-        # 中文檔名編碼處理
-        part.add_header(
-            'Content-Disposition', 
-            'attachment', 
-            filename=Header(filename, 'utf-8').encode()
-        )
+        part.add_header('Content-Disposition', 'attachment', filename=Header(filename, 'utf-8').encode())
         msg.attach(part)
 
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -58,120 +52,146 @@ def send_email(recipient, subject, body, file_bytes, filename):
         return False
 
 # --- 主程式 ---
-uploaded_files = st.file_uploader("請上傳 3 個事故報表檔案", accept_multiple_files=True, key="acc_uploader")
+uploaded_files = st.file_uploader("請上傳 3 個檔案", accept_multiple_files=True, key="focus_uploader")
 
 if uploaded_files:
     if len(uploaded_files) < 3:
-        st.warning("⏳ 請上傳滿 3 個檔案以開始計算...")
+        st.warning("⏳ 檔案不足 3 個，請繼續上傳...")
     else:
         try:
-            def parse_raw(file_obj):
-                try: return pd.read_csv(file_obj, header=None)
-                except: file_obj.seek(0); return pd.read_excel(file_obj, header=None)
-
-            def clean_data(df_raw):
-                df_data = df_raw[df_raw[0].notna()].copy()
-                df_data = df_data[df_data[0].astype(str).str.contains("總計|派出所")].copy()
-                df_data = df_data.reset_index(drop=True)
-                columns_map = {
-                    0: "Station", 1: "Total_Cases", 2: "Total_Deaths", 3: "Total_Injuries",
-                    4: "A1_Cases", 5: "A1_Deaths", 6: "A1_Injuries",
-                    7: "A2_Cases", 8: "A2_Deaths", 9: "A2_Injuries", 10: "A3_Cases"
-                }
-                for i in range(11):
-                    if i not in df_data.columns: df_data[i] = 0
-                df_data = df_data.rename(columns=columns_map)
-                df_data = df_data[list(columns_map.values())]
-                for col in list(columns_map.values())[1:]:
-                    df_data[col] = pd.to_numeric(df_data[col].astype(str).str.replace(",", ""), errors='coerce').fillna(0)
-                df_data['Station_Short'] = df_data['Station'].astype(str).str.replace('派出所', '所').str.replace('總計', '合計')
-                return df_data
-
-            file_data_map = {}
-            for uploaded_file in uploaded_files:
-                df = parse_raw(uploaded_file)
+            def parse_file_content(uploaded_file):
+                content = uploaded_file.getvalue()
+                df = None; start_date = ""; header_idx = -1
+                is_excel = uploaded_file.name.endswith(('.xlsx', '.xls'))
                 try:
-                    raw_str = str(df.iloc[1, 0])
-                    date_str = raw_str.replace("統計日期：", "").strip()
-                    dates = re.findall(r'(\d{3})/(\d{2})/(\d{2})', date_str)
-                    if dates:
-                        start_y, start_m, start_d = map(int, dates[0])
-                        end_y, end_m, end_d = map(int, dates[1])
-                        month_diff = (end_y - start_y) * 12 + (end_m - start_m)
-                        category = 'weekly' if (month_diff == 0 and (end_d - start_d) < 20) else 'cumulative'
-                        file_data_map[uploaded_file.name] = {'df': df, 'category': category, 'year': start_y, 'raw_date': date_str}
-                except: pass
+                    if is_excel:
+                        df_raw = pd.read_excel(io.BytesIO(content), header=None, nrows=20)
+                        for i, row in df_raw.iterrows():
+                            row_str = " ".join([str(x) for x in row.values if pd.notna(x)])
+                            if not start_date:
+                                match = re.search(r'入案日期[：:]?\s*(\d{3,7})\s*至\s*(\d{3,7})', row_str)
+                                if match: start_date, end_date = match.group(1), match.group(2)
+                            if "單位" in row_str and "酒後" in row_str: header_idx = i
+                        if header_idx != -1: df = pd.read_excel(io.BytesIO(content), header=header_idx)
+                    else:
+                        try: text = content.decode('utf-8')
+                        except: text = content.decode('cp950', errors='ignore')
+                        lines = text.splitlines()
+                        for i, line in enumerate(lines):
+                            match = re.search(r'入案日期[：:]?\s*(\d{3,7})\s*至\s*(\d{3,7})', line)
+                            if match: start_date, end_date = match.group(1), match.group(2)
+                            if "單位" in line and "酒後" in line: header_idx = i
+                        if header_idx != -1: df = pd.read_csv(io.StringIO(text), header=header_idx)
+                except: return None
 
-            df_wk = None; df_cur = None; df_lst = None
-            h_wk = ""; h_cur = ""; h_lst = ""
+                if df is None: return None
+                keywords = ["酒後", "闖紅燈", "嚴重超速", "逆向", "轉彎", "蛇行", "不暫停讓行人", "機車"]
+                stop_cols = []; cit_cols = []
+                for i in range(len(df.columns)):
+                    col_str = str(df.columns[i])
+                    if any(k in col_str for k in keywords) and "路肩" not in col_str and "大型車" not in col_str:
+                        stop_cols.append(i); cit_cols.append(i+1)
+                
+                unit_data = {}
+                for _, row in df.iterrows():
+                    unit = str(row['單位']).strip()
+                    if unit == 'nan' or not unit: continue
+                    s, c = 0, 0
+                    for col in stop_cols:
+                        try: s += float(str(row.iloc[col]).replace(',', ''))
+                        except: pass
+                    for col in cit_cols:
+                        try: c += float(str(row.iloc[col]).replace(',', ''))
+                        except: pass
+                    unit_data[unit] = {'stop': s, 'cit': c}
+                
+                try:
+                    d1 = date(int(start_date[:3])+1911, int(start_date[3:5]), int(start_date[5:]))
+                    d2 = date(int(end_date[:3])+1911, int(end_date[3:5]), int(end_date[5:]))
+                    duration = (d2 - d1).days
+                except: duration = 0
+                return {'data': unit_data, 'start': start_date, 'end': end_date, 'duration': duration}
 
-            for fname, data in file_data_map.items():
-                if data['category'] == 'weekly':
-                    df_wk = clean_data(data['df']); h_wk = data['raw_date']; break
+            parsed_files = []
+            for f in uploaded_files:
+                res = parse_file_content(f)
+                if res: parsed_files.append(res)
             
-            cumu_files = [d for d in file_data_map.values() if d['category'] == 'cumulative']
-            if len(cumu_files) >= 2:
-                cumu_files.sort(key=lambda x: x['year'], reverse=True)
-                df_cur = clean_data(cumu_files[0]['df']); h_cur = cumu_files[0]['raw_date']
-                df_lst = clean_data(cumu_files[1]['df']); h_lst = cumu_files[1]['raw_date']
+            if len(parsed_files) < 3: st.error("有效檔案不足！"); st.stop()
 
-            if df_wk is None or df_cur is None or df_lst is None:
-                st.error("❌ 無法識別完整的 3 份檔案，請檢查檔案內容日期。")
-            else:
-                a1_wk = df_wk[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'wk'})
-                a1_cur = df_cur[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'cur'})
-                a1_lst = df_lst[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'last'})
-                m_a1 = pd.merge(a1_wk, a1_cur, on='Station_Short', how='outer')
-                m_a1 = pd.merge(m_a1, a1_lst, on='Station_Short', how='outer').fillna(0)
-                m_a1['Diff'] = m_a1['cur'] - m_a1['last']
+            parsed_files.sort(key=lambda x: int(x['start'].replace('/','').replace('.','')))
+            file_last_year = parsed_files[0]
+            others = parsed_files[1:]
+            others.sort(key=lambda x: x['duration'], reverse=True)
+            file_year = others[0]; file_week = others[1]
 
-                a2_wk = df_wk[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'wk'})
-                a2_cur = df_cur[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'cur'})
-                a2_lst = df_lst[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'last'})
-                m_a2 = pd.merge(a2_wk, a2_cur, on='Station_Short', how='outer')
-                m_a2 = pd.merge(m_a2, a2_lst, on='Station_Short', how='outer').fillna(0)
-                m_a2['Diff'] = m_a2['cur'] - m_a2['last']
-                m_a2['Pct_Str'] = m_a2.apply(lambda x: f"{(x['Diff']/x['last']):.2%}" if x['last']!=0 else "-", axis=1)
-                m_a2['Prev'] = "-"
+            st.success(f"✅ 檔案識別成功：本年({file_year['start']})、去年({file_last_year['start']})、本期({file_week['start']})")
 
-                target_order = ['合計', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
-                for m in [m_a1, m_a2]:
-                    m['Station_Short'] = pd.Categorical(m['Station_Short'], categories=target_order, ordered=True)
-                    m.sort_values('Station_Short', inplace=True)
+            unit_mapping = {'交通組': '科技執法', '龍潭交通分隊': '交通分隊', '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊'}
+            display_order = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
+            targets = {'聖亭所': 1838, '龍潭所': 2451, '中興所': 1838, '石門所': 1488, '高平所': 1226, '三和所': 400, '交通分隊': 2576, '警備隊': 263, '科技執法': 0}
 
-                a1_final = m_a1[['Station_Short', 'wk', 'cur', 'last', 'Diff']].copy()
-                a1_final.columns = ['單位', f'本期({h_wk})', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較']
+            rows = []
+            accum = {'ws':0, 'wc':0, 'ys':0, 'yc':0, 'ls':0, 'lc':0}
+            rev_map = {v: k for k, v in unit_mapping.items()}
+
+            for disp_name in display_order:
+                src_name = rev_map.get(disp_name, disp_name)
+                w = file_week['data'].get(src_name, {'stop':0, 'cit':0})
+                y = file_year['data'].get(src_name, {'stop':0, 'cit':0})
+                l = file_last_year['data'].get(src_name, {'stop':0, 'cit':0})
+                if disp_name == '科技執法': w['stop'], y['stop'], l['stop'] = 0, 0, 0
                 
-                a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
-                a2_final.columns = ['單位', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
-
-                st.success("✅ 分析完成！")
-                st.subheader("📊 A1 死亡人數統計"); st.dataframe(a1_final, use_container_width=True, hide_index=True)
-                st.subheader("📊 A2 受傷人數統計"); st.dataframe(a2_final, use_container_width=True, hide_index=True)
-
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
-                    a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
+                y_total = y['stop'] + y['cit']; l_total = l['stop'] + l['cit']
+                row_data = [disp_name, w['stop'], w['cit'], y['stop'], y['cit']]
+                if disp_name == '警備隊': row_data.extend(['—']*5)
+                else:
+                    diff = int(y_total - l_total); tgt = targets.get(disp_name, 0)
+                    row_data.extend([l['stop'], l['cit'], diff])
+                    if disp_name == '科技執法': row_data.extend(['—', '—'])
+                    else: row_data.extend([tgt, f"{y_total/tgt:.2%}" if tgt>0 else 0])
                 
-                excel_data = output.getvalue()
-                file_name_out = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
+                accum['ws']+=w['stop']; accum['wc']+=w['cit']; accum['ys']+=y['stop']; accum['yc']+=y['cit']; accum['ls']+=l['stop']; accum['lc']+=l['cit']
+                rows.append(row_data)
 
-                st.markdown("---")
-                st.subheader("📧 發送結果")
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    default_mail = st.secrets["email"]["user"] if "email" in st.secrets else ""
-                    email_receiver = st.text_input("收件信箱", value=default_mail)
-                with col2:
-                    st.write(""); st.write("")
-                    if st.button("📤 立即寄出", type="primary"):
-                        if not email_receiver: st.warning("請輸入信箱！")
-                        else:
-                            with st.spinner("寄送中..."):
-                                if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為本期事故統計報表。", excel_data, file_name_out):
-                                    st.balloons(); st.success(f"已發送至 {email_receiver}")
+            total_target = sum([v for k,v in targets.items() if k not in ['警備隊', '科技執法']])
+            t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
+            t_rate = (accum['ys']+accum['yc'])/total_target if total_target>0 else 0
+            total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, f"{t_rate:.2%}"]
 
-                st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            cols_header = ['單位', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
+            df_final = pd.DataFrame([total_row] + rows, columns=cols_header)
+
+            st.subheader("📊 統計結果"); st.dataframe(df_final, use_container_width=True)
+
+            # 產生 Excel (使用 xlsxwriter)
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_final.to_excel(writer, sheet_name='Sheet1', startrow=3, index=False)
+                ws = writer.sheets['Sheet1']
+                fmt = writer.book.add_format({'bold': True, 'font_size': 14, 'align': 'center'})
+                ws.merge_range('A1:J1', '取締重大交通違規件數統計表', fmt)
+                ws.write('A2', f"一、統計期間：{file_year['start']}~{file_year['end']}")
+            
+            excel_data = output.getvalue()
+            file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
+
+            # --- 寄信區塊 ---
+            st.markdown("---")
+            st.subheader("📧 發送結果")
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                default_mail = st.secrets["email"]["user"] if "email" in st.secrets else ""
+                email_receiver = st.text_input("收件信箱", value=default_mail)
+            with col2:
+                st.write(""); st.write("")
+                if st.button("📤 立即寄出", type="primary"):
+                    if not email_receiver: st.warning("請輸入信箱！")
+                    else:
+                        with st.spinner("寄送中..."):
+                            if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
+                                st.balloons(); st.success(f"已發送至 {email_receiver}")
+
+            st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
         except Exception as e: st.error(f"發生錯誤：{e}")
