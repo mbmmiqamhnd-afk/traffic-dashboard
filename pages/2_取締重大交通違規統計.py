@@ -2,7 +2,12 @@ import streamlit as st
 import pandas as pd
 import io
 import re
+import smtplib
 from datetime import date
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
 st.title("🚔 取締重大交通違規統計 (含攔停/逕舉)")
@@ -10,11 +15,42 @@ st.title("🚔 取締重大交通違規統計 (含攔停/逕舉)")
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** 重點違規報表 (focus系列)。
-2. 系統會讀取檔案內的 **「入案日期」** 自動分辨本週、本年、去年。
-3. 自動統計 8 大重點項目 (酒駕、闖紅燈、嚴重超速等)。
-4. 自動區分 **現場攔停** 與 **逕行舉發**。
+2. 自動統計 8 大重點項目，並區分 **現場攔停** 與 **逕行舉發**。
+3. 支援一鍵寄信功能。
 """)
 
+# --- 寄信函數 ---
+def send_email(recipient, subject, body, file_bytes, filename):
+    try:
+        if "email" not in st.secrets:
+            st.error("❌ 未設定 Secrets！")
+            return False
+        sender = st.secrets["email"]["user"]
+        password = st.secrets["email"]["password"]
+
+        msg = MIMEMultipart()
+        msg['From'] = sender
+        msg['To'] = recipient
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(file_bytes)
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+        msg.attach(part)
+
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender, password)
+        server.sendmail(sender, recipient, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"❌ 寄信失敗: {e}")
+        return False
+
+# --- 主程式 ---
 uploaded_files = st.file_uploader("請上傳 3 個檔案", accept_multiple_files=True, key="focus_uploader")
 
 if uploaded_files and st.button("🚀 開始分析", key="btn_focus"):
@@ -88,8 +124,6 @@ if uploaded_files and st.button("🚀 開始分析", key="btn_focus"):
                 others.sort(key=lambda x: x['duration'], reverse=True)
                 file_year = others[0]; file_week = others[1]
 
-                st.success(f"✅ 檔案識別成功：本年({file_year['start']})、去年({file_last_year['start']})、本期({file_week['start']})")
-
                 unit_mapping = {'交通組': '科技執法', '龍潭交通分隊': '交通分隊', '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊'}
                 display_order = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
                 targets = {'聖亭所': 1838, '龍潭所': 2451, '中興所': 1838, '石門所': 1488, '高平所': 1226, '三和所': 400, '交通分隊': 2576, '警備隊': 263, '科技執法': 0}
@@ -127,6 +161,7 @@ if uploaded_files and st.button("🚀 開始分析", key="btn_focus"):
 
                 st.subheader("📊 統計結果"); st.dataframe(df_final, use_container_width=True)
 
+                # 產生 Excel
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     df_final.to_excel(writer, sheet_name='Sheet1', startrow=3, index=False)
@@ -135,6 +170,25 @@ if uploaded_files and st.button("🚀 開始分析", key="btn_focus"):
                     ws.merge_range('A1:J1', '取締重大交通違規件數統計表', fmt)
                     ws.write('A2', f"一、統計期間：{file_year['start']}~{file_year['end']}")
                 
-                st.download_button(label="📥 下載 Excel 報表", data=output.getvalue(), file_name=f'重點違規統計_{file_year["end"]}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                excel_data = output.getvalue()
+                file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
+
+                # --- 寄信區塊 ---
+                st.markdown("---")
+                st.subheader("📧 發送結果")
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    default_mail = st.secrets["email"]["user"] if "email" in st.secrets else ""
+                    email_receiver = st.text_input("收件信箱", value=default_mail)
+                with col2:
+                    st.write(""); st.write("")
+                    if st.button("📤 立即寄出", type="primary"):
+                        if not email_receiver: st.warning("請輸入信箱！")
+                        else:
+                            with st.spinner("寄送中..."):
+                                if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
+                                    st.balloons(); st.success(f"已發送至 {email_receiver}")
+
+                st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
             except Exception as e: st.error(f"發生錯誤：{e}")
