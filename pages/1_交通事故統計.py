@@ -2,6 +2,11 @@ import streamlit as st
 import pandas as pd
 import io
 import re
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 st.set_page_config(page_title="交通事故統計", layout="wide", page_icon="🚑")
 st.title("🚑 交通事故統計 (A1/A2)")
@@ -10,10 +15,41 @@ st.markdown("""
 ### 📝 使用說明
 1. 請上傳 3 個原始報表檔案 (本週、今年累計、去年累計)。
 2. 系統會**讀取檔案內的日期**自動分辨是哪一份。
-3. 自動計算：A1 死亡人數、A2 受傷人數、與去年同期比較、增減率。
-4. 產出包含兩個分頁 (A1/A2) 的 Excel 報表。
+3. 分析完成後，可下載 Excel 報表或直接寄至信箱。
 """)
 
+# --- 寄信函數 ---
+def send_email(recipient, subject, body, file_bytes, filename):
+    try:
+        if "email" not in st.secrets:
+            st.error("❌ 未設定 Secrets！")
+            return False
+        sender = st.secrets["email"]["user"]
+        password = st.secrets["email"]["password"]
+
+        msg = MIMEMultipart()
+        msg['From'] = sender
+        msg['To'] = recipient
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(file_bytes)
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+        msg.attach(part)
+
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender, password)
+        server.sendmail(sender, recipient, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"❌ 寄信失敗: {e}")
+        return False
+
+# --- 主程式 ---
 uploaded_files = st.file_uploader("請上傳 3 個事故報表檔案", accept_multiple_files=True, key="acc_uploader")
 
 if uploaded_files and st.button("🚀 開始分析", key="btn_acc"):
@@ -70,7 +106,7 @@ if uploaded_files and st.button("🚀 開始分析", key="btn_acc"):
                 df_lst = clean_data(cumu_files[1]['df']); h_lst = cumu_files[1]['raw_date']
 
             if df_wk is None or df_cur is None or df_lst is None:
-                st.error("❌ 無法識別完整的 3 份檔案 (本期/今年/去年)，請檢查檔案內容日期。")
+                st.error("❌ 無法識別完整的 3 份檔案，請檢查檔案內容日期。")
                 st.stop()
 
             # A1
@@ -105,11 +141,31 @@ if uploaded_files and st.button("🚀 開始分析", key="btn_acc"):
             st.subheader("📊 A1 死亡人數統計"); st.dataframe(a1_final, use_container_width=True, hide_index=True)
             st.subheader("📊 A2 受傷人數統計"); st.dataframe(a2_final, use_container_width=True, hide_index=True)
 
+            # 產生 Excel
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
                 a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
             
-            st.download_button(label="📥 下載 Excel 報表", data=output.getvalue(), file_name=f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            excel_data = output.getvalue()
+            file_name_out = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
+
+            # --- 寄信區塊 ---
+            st.markdown("---")
+            st.subheader("📧 發送結果")
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                default_mail = st.secrets["email"]["user"] if "email" in st.secrets else ""
+                email_receiver = st.text_input("收件信箱", value=default_mail)
+            with col2:
+                st.write(""); st.write("")
+                if st.button("📤 立即寄出", type="primary"):
+                    if not email_receiver: st.warning("請輸入信箱！")
+                    else:
+                        with st.spinner("寄送中..."):
+                            if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為本期事故統計報表。", excel_data, file_name_out):
+                                st.balloons(); st.success(f"已發送至 {email_receiver}")
+
+            st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
         except Exception as e: st.error(f"發生錯誤：{e}")
