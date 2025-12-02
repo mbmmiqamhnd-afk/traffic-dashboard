@@ -1,6 +1,11 @@
 import streamlit as st
 import pandas as pd
 import io
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 st.set_page_config(page_title="五項交通違規統計", layout="wide", page_icon="🚦")
 st.title("🚦 加強交通安全執法取締統計表")
@@ -9,8 +14,49 @@ st.markdown("""
 ### 📝 操作說明
 1. 請上傳 **6 個檔案** (本期/本年/去年 的「自選匯出」與「footman」)。
 2. 自動執行：排除警備隊、交通組更名、整合行人數據、計算比較值。
+3. **新增功能**：可直接將結果寄至信箱。
 """)
 
+# ==========================================
+# 1. 寄信函數 (讀取 Secrets)
+# ==========================================
+def send_email(recipient, subject, body, file_bytes, filename):
+    try:
+        # 從 Secrets 讀取帳密
+        if "email" not in st.secrets:
+            st.error("❌ 未設定 Secrets！請檢查 Streamlit 設定。")
+            return False
+            
+        sender = st.secrets["email"]["user"]
+        password = st.secrets["email"]["password"]
+
+        msg = MIMEMultipart()
+        msg['From'] = sender
+        msg['To'] = recipient
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        # 附件處理
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(file_bytes)
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+        msg.attach(part)
+
+        # 連線 Gmail 伺服器
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender, password)
+        server.sendmail(sender, recipient, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"❌ 寄信失敗: {e}")
+        return False
+
+# ==========================================
+# 2. 資料處理邏輯
+# ==========================================
 uploaded_files = st.file_uploader("請將 6 個檔案拖曳至此", accept_multiple_files=True)
 
 if uploaded_files and st.button("🚀 開始分析", key="btn_five"):
@@ -109,7 +155,36 @@ if uploaded_files and st.button("🚀 開始分析", key="btn_five"):
 
             st.success("✅ 分析完成！")
             st.dataframe(final_table, use_container_width=True)
-            csv = final_table.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(label="📥 下載 CSV", data=csv, file_name='交通違規統計.csv', mime='text/csv')
+            
+            # 準備檔案
+            csv_data = final_table.to_csv(index=False).encode('utf-8-sig')
+            file_name = '交通違規統計表.csv'
+
+            # ==========================================
+            # 3. 寄信與下載區塊
+            # ==========================================
+            st.markdown("---")
+            st.subheader("📧 發送結果")
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                # 預設載入自己的信箱
+                default_mail = st.secrets["email"]["user"] if "email" in st.secrets else ""
+                email_receiver = st.text_input("收件信箱", value=default_mail)
+            
+            with col2:
+                st.write("")
+                st.write("")
+                if st.button("📤 立即寄出", type="primary"):
+                    if not email_receiver:
+                        st.warning("請輸入信箱！")
+                    else:
+                        with st.spinner("寄送中..."):
+                            if send_email(email_receiver, "📊 [自動通知] 交通違規統計表", "附件為本期報表，請查收。", csv_data, file_name):
+                                st.balloons()
+                                st.success(f"已發送至 {email_receiver}")
+
+            # 備用下載按鈕
+            st.download_button(label="📥 下載 CSV (備用)", data=csv_data, file_name=file_name, mime='text/csv')
 
         except Exception as e: st.error(f"發生錯誤：{e}")
