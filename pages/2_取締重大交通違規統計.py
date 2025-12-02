@@ -19,12 +19,15 @@ st.markdown("""
 3. 支援一鍵寄信功能。
 """)
 
-# --- 寄信函數 ---
+# ==========================================
+# 1. 強化版寄信函數 (支援 Google 試算表預覽)
+# ==========================================
 def send_email(recipient, subject, body, file_bytes, filename):
     try:
         if "email" not in st.secrets:
             st.error("❌ 未設定 Secrets！")
             return False
+        
         sender = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
 
@@ -34,12 +37,27 @@ def send_email(recipient, subject, body, file_bytes, filename):
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
 
-        part = MIMEBase('application', 'octet-stream')
+        # --- 關鍵修改：依據檔名設定正確的 MIME Type ---
+        if filename.endswith('.xlsx'):
+            # 設定為 Excel 格式，Gmail 才會顯示綠色試算表按鈕
+            maintype = 'application'
+            subtype = 'vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        elif filename.endswith('.csv'):
+            # 設定為 CSV 格式
+            maintype = 'text'
+            subtype = 'csv'
+        else:
+            # 其他格式用通用設定
+            maintype = 'application'
+            subtype = 'octet-stream'
+
+        part = MIMEBase(maintype, subtype)
         part.set_payload(file_bytes)
         encoders.encode_base64(part)
         part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
         msg.attach(part)
 
+        # 發送郵件
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(sender, password)
