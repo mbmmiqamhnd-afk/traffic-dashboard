@@ -16,7 +16,8 @@ st.title("🚔 取締重大交通違規統計 (含攔停/逕舉)")
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** 重點違規報表 (focus系列)。
-2. **自動分析** 並 **自動寄出**。
+2. **上傳後自動分析** 8 大重點項目。
+3. 自動計算 **年度時間進度** 供績效參考。
 """)
 
 # --- 寄信函數 ---
@@ -58,10 +59,9 @@ if uploaded_files:
         st.warning("⏳ 檔案不足 3 個，請繼續上傳...")
     else:
         try:
-            # --- 1. 資料解析區 ---
             def parse_file_content(uploaded_file):
                 content = uploaded_file.getvalue()
-                df = None; start_date = ""; header_idx = -1
+                df = None; start_date = ""; end_date = ""; header_idx = -1
                 is_excel = uploaded_file.name.endswith(('.xlsx', '.xls'))
                 try:
                     if is_excel:
@@ -69,8 +69,10 @@ if uploaded_files:
                         for i, row in df_raw.iterrows():
                             row_str = " ".join([str(x) for x in row.values if pd.notna(x)])
                             if not start_date:
-                                match = re.search(r'入案日期[：:]?\s*(\d{3,7})\s*至\s*(\d{3,7})', row_str)
-                                if match: start_date, end_date = match.group(1), match.group(2)
+                                # 抓取日期格式 1130101 或 113/01/01
+                                match = re.search(r'入案日期[：:]?\s*(\d{3,7}).*至\s*(\d{3,7})', row_str)
+                                if match: 
+                                    start_date, end_date = match.group(1), match.group(2)
                             if "單位" in row_str and "酒後" in row_str: header_idx = i
                         if header_idx != -1: df = pd.read_excel(io.BytesIO(content), header=header_idx)
                     else:
@@ -78,7 +80,7 @@ if uploaded_files:
                         except: text = content.decode('cp950', errors='ignore')
                         lines = text.splitlines()
                         for i, line in enumerate(lines):
-                            match = re.search(r'入案日期[：:]?\s*(\d{3,7})\s*至\s*(\d{3,7})', line)
+                            match = re.search(r'入案日期[：:]?\s*(\d{3,7}).*至\s*(\d{3,7})', line)
                             if match: start_date, end_date = match.group(1), match.group(2)
                             if "單位" in line and "酒後" in line: header_idx = i
                         if header_idx != -1: df = pd.read_csv(io.StringIO(text), header=header_idx)
@@ -105,11 +107,20 @@ if uploaded_files:
                         except: pass
                     unit_data[unit] = {'stop': s, 'cit': c}
                 
+                # 計算日期差距
+                duration = 0
                 try:
-                    d1 = date(int(start_date[:3])+1911, int(start_date[3:5]), int(start_date[5:]))
-                    d2 = date(int(end_date[:3])+1911, int(end_date[3:5]), int(end_date[5:]))
+                    # 清理日期字串 (移除 / . 等符號，統一變成 7 位數)
+                    s_d = re.sub(r'[^\d]', '', start_date)
+                    e_d = re.sub(r'[^\d]', '', end_date)
+                    if len(s_d) < 7: s_d = s_d.zfill(7) # 補0
+                    if len(e_d) < 7: e_d = e_d.zfill(7)
+
+                    d1 = date(int(s_d[:3])+1911, int(s_d[3:5]), int(s_d[5:]))
+                    d2 = date(int(e_d[:3])+1911, int(e_d[3:5]), int(e_d[5:]))
                     duration = (d2 - d1).days
                 except: duration = 0
+                
                 return {'data': unit_data, 'start': start_date, 'end': end_date, 'duration': duration}
 
             parsed_files = []
@@ -119,15 +130,42 @@ if uploaded_files:
             
             if len(parsed_files) < 3: st.error("有效檔案不足！"); st.stop()
 
-            parsed_files.sort(key=lambda x: int(x['start'].replace('/','').replace('.','')))
+            # 排序邏輯
+            # 1. 找開始日期最早的 -> 去年
+            # 2. 剩下兩個，天數長的 -> 本年累計
+            parsed_files.sort(key=lambda x: x['start']) 
             file_last_year = parsed_files[0]
+            
             others = parsed_files[1:]
             others.sort(key=lambda x: x['duration'], reverse=True)
-            file_year = others[0]; file_week = others[1]
+            file_year = others[0] # 本年累計
+            file_week = others[1] # 本期
 
-            st.success(f"✅ 檔案識別成功：本年({file_year['start']})、去年({file_last_year['start']})、本期({file_week['start']})")
+            # --- 計算年度達成率基準 ---
+            prog_text = ""
+            try:
+                # 解析本年累計的「結束日期」
+                end_str = re.sub(r'[^\d]', '', file_year['end'])
+                if len(end_str) < 7: end_str = end_str.zfill(7)
+                
+                curr_y = int(end_str[:3]) + 1911
+                curr_m = int(end_str[3:5])
+                curr_d = int(end_str[5:])
+                
+                target_date = date(curr_y, curr_m, curr_d)
+                start_of_year = date(curr_y, 1, 1)
+                
+                days_passed = (target_date - start_of_year).days + 1
+                total_days = 366 if (curr_y % 4 == 0 and curr_y % 100 != 0) or (curr_y % 400 == 0) else 365
+                progress_rate = days_passed / total_days
+                
+                prog_text = f"📅 統計截至 **{curr_y-1911}年{curr_m}月{curr_d}日**，年度時間進度為 **{progress_rate:.1%}**"
+                st.info(prog_text)
+            except:
+                pass # 日期解析失敗則不顯示
 
-            # --- 2. 統計運算區 ---
+            st.success(f"✅ 檔案識別成功：本年({file_year['start']}~{file_year['end']})")
+
             unit_mapping = {'交通組': '科技執法', '龍潭交通分隊': '交通分隊', '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊'}
             display_order = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
             targets = {'聖亭所': 1838, '龍潭所': 2451, '中興所': 1838, '石門所': 1488, '高平所': 1226, '三和所': 400, '交通分隊': 2576, '警備隊': 263, '科技執法': 0}
@@ -165,7 +203,7 @@ if uploaded_files:
 
             st.subheader("📊 統計結果"); st.dataframe(df_final, use_container_width=True)
 
-            # --- 3. 檔案產生與自動寄信區 ---
+            # 產生 Excel
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, sheet_name='Sheet1', startrow=3, index=False)
@@ -173,6 +211,10 @@ if uploaded_files:
                 fmt = writer.book.add_format({'bold': True, 'font_size': 14, 'align': 'center'})
                 ws.merge_range('A1:J1', '取締重大交通違規件數統計表', fmt)
                 ws.write('A2', f"一、統計期間：{file_year['start']}~{file_year['end']}")
+                if prog_text:
+                    # 去除 markdown 符號寫入 Excel
+                    clean_prog = prog_text.replace('*', '').replace('📅 ', '')
+                    ws.write('A3', f"二、{clean_prog}")
             
             excel_data = output.getvalue()
             file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
@@ -180,7 +222,6 @@ if uploaded_files:
             # 自動寄信邏輯
             if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
             file_ids = ",".join(sorted([f.name for f in uploaded_files]))
-
             email_receiver = st.secrets["email"]["user"]
             
             if file_ids not in st.session_state["sent_cache"]:
