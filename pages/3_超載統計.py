@@ -4,6 +4,7 @@ import numpy as np
 import re
 import io
 import smtplib
+from datetime import date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -16,7 +17,8 @@ st.title("🚛 超載 (stoneCnt) 自動統計")
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** `stoneCnt` 系列的 Excel 檔案。
-2. **上傳後自動分析** 並 **自動寄出**。
+2. **上傳後自動分析** 並計算 **年度時間進度**。
+3. 支援一鍵寄信。
 """)
 
 # ==========================================
@@ -60,12 +62,29 @@ def send_email(recipient, subject, body, file_bytes, filename):
         return False
 
 # ==========================================
-# 3. 資料解析函數
+# 3. 資料解析函數 (含日期抓取)
 # ==========================================
 def parse_stone(f):
-    if not f: return {}
+    if not f: return {}, None
     counts = {}
+    found_date = None
     try:
+        # 重置指標讀取日期
+        f.seek(0)
+        # 先嘗試讀取前幾行找日期
+        df_head = pd.read_excel(f, header=None, nrows=10)
+        for _, row in df_head.iterrows():
+            row_str = row.astype(str).str.cat(sep=' ')
+            # 抓取日期格式 113/01/01 或 113.01.01
+            # 假設有 "至 113/05/20" 這樣的格式
+            match = re.search(r'至\s*(\d{3})[./-](\d{1,2})[./-](\d{1,2})', row_str)
+            if match:
+                y, m, d = map(int, match.groups())
+                found_date = date(y + 1911, m, d)
+                break
+        
+        # 讀取數據
+        f.seek(0)
         xls = pd.ExcelFile(f)
         for sheet in xls.sheet_names:
             df = pd.read_excel(xls, sheet_name=sheet, header=None)
@@ -81,10 +100,10 @@ def parse_stone(f):
                         short = UNIT_MAP.get(curr, curr)
                         counts[short] = counts.get(short, 0) + int(nums[-1])
                         curr = None
-        return counts
+        return counts, found_date
     except Exception as e:
         st.error(f"解析檔案錯誤: {e}")
-        return {}
+        return {}, None
 
 # ==========================================
 # 4. 主程式執行
@@ -103,9 +122,19 @@ if uploaded_files:
                 else: files_config["Week"] = f
             
             # 開始解析
-            d_wk = parse_stone(files_config["Week"])
-            d_yt = parse_stone(files_config["YTD"])
-            d_ly = parse_stone(files_config["Last_YTD"])
+            d_wk, _ = parse_stone(files_config["Week"])
+            d_yt, end_date = parse_stone(files_config["YTD"]) # 從本年累計抓日期
+            d_ly, _ = parse_stone(files_config["Last_YTD"])
+
+            # 計算時間進度
+            if end_date:
+                start_of_year = date(end_date.year, 1, 1)
+                days_passed = (end_date - start_of_year).days + 1
+                total_days = 366 if (end_date.year % 4 == 0 and end_date.year % 100 != 0) or (end_date.year % 400 == 0) else 365
+                progress_rate = days_passed / total_days
+                st.info(f"📅 統計截至 **{end_date.year-1911}年{end_date.month}月{end_date.day}日**，年度時間進度為 **{progress_rate:.1%}**")
+            else:
+                st.warning("⚠️ 無法從「本年累計」檔案中讀取到日期，無法計算時間進度。")
 
             rows = []
             for u in UNIT_ORDER:
@@ -132,7 +161,6 @@ if uploaded_files:
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
             
-            # 檔案產生與自動寄信區
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False, sheet_name='超載統計')
@@ -143,7 +171,6 @@ if uploaded_files:
             # 自動寄信邏輯
             if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
             file_ids = ",".join(sorted([f.name for f in uploaded_files]))
-
             email_receiver = st.secrets["email"]["user"]
             
             if file_ids not in st.session_state["sent_cache"]:
