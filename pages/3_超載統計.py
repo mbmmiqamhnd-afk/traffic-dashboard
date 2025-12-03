@@ -17,8 +17,8 @@ st.title("🚛 超載 (stoneCnt) 自動統計")
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** `stoneCnt` 系列的 Excel 檔案。
-2. 系統將依據 **「入案日期/統計期間」** 的截止日計算年度進度。
-3. 年度時間達成率會直接顯示於 Excel 表頭。
+2. **上傳後自動分析** 並計算 **年度時間進度**。
+3. 支援一鍵寄信。
 """)
 
 # ==========================================
@@ -62,30 +62,43 @@ def send_email(recipient, subject, body, file_bytes, filename):
         return False
 
 # ==========================================
-# 3. 資料解析函數 (精準抓取入案/統計截止日期)
+# 3. 資料解析函數 (萬能日期抓取版)
 # ==========================================
 def parse_stone(f):
     if not f: return {}, None
     counts = {}
     found_date = None
     try:
-        # 1. 抓取日期：先讀前 20 行，搜尋「至」或「入案日期」
+        # --- 1. 抓取日期 (強化邏輯) ---
         f.seek(0)
         df_head = pd.read_excel(f, header=None, nrows=20)
-        
-        # 將內容轉字串
         text_content = df_head.to_string()
         
-        # 正則表達式：尋找 "至 113/05/20" 或 "至 113年05月20" 或 "入案日期...1130520"
-        # 優先級：通常 "至" 後面接的是結束日期
-        matches = re.findall(r'至\s*(\d{3})[./\-年](\d{1,2})[./\-月](\d{1,2})', text_content)
+        # 定義多種日期格式的正則表達式
+        # 格式 A: 113/05/20 或 113.05.20 或 113-05-20
+        patterns_A = re.findall(r'(\d{3})[./-](\d{1,2})[./-](\d{1,2})', text_content)
+        # 格式 B: 113年05月20日
+        patterns_B = re.findall(r'(\d{3})年(\d{1,2})月(\d{1,2})', text_content)
+        # 格式 C: 1130520 (連續數字，較嚴格，避免誤判電話)
+        patterns_C = re.findall(r'[^\d](\d{3})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[^\d]', text_content)
+
+        all_potential_dates = []
         
-        if matches:
-            # 如果找到，取最後一組（通常是結束日期）
-            y, m, d = map(int, matches[-1])
-            found_date = date(y + 1911, m, d)
+        # 整合所有找到的日期
+        for p in patterns_A + patterns_B + patterns_C:
+            try:
+                # patterns_C 會抓到 tuple，取前3個
+                y, m, d = map(int, p[:3])
+                # 簡單檢核日期合理性
+                if 100 <= y <= 200 and 1 <= m <= 12 and 1 <= d <= 31:
+                    all_potential_dates.append(date(y + 1911, m, d))
+            except: continue
         
-        # 2. 讀取數據
+        if all_potential_dates:
+            # 策略：取「最大」的日期，通常截止日或列印日都是最晚的，適合做進度計算
+            found_date = max(all_potential_dates)
+
+        # --- 2. 讀取數據 ---
         f.seek(0)
         xls = pd.ExcelFile(f)
         for sheet in xls.sheet_names:
@@ -136,11 +149,10 @@ if uploaded_files:
                 total_days = 366 if (end_date.year % 4 == 0 and end_date.year % 100 != 0) or (end_date.year % 400 == 0) else 365
                 progress_rate = days_passed / total_days
                 
-                # 這裡產生要在 Excel 顯示的文字
-                prog_text = f"統計截至 {end_date.year-1911}年{end_date.month}月{end_date.day}日 (入案日期)，年度時間進度為 {progress_rate:.1%}"
+                prog_text = f"統計截至 {end_date.year-1911}年{end_date.month}月{end_date.day}日，年度時間進度為 {progress_rate:.1%}"
                 st.info(f"📅 {prog_text}")
             else:
-                st.warning("⚠️ 無法讀取有效日期，請確認檔案標題是否包含「至 11x/xx/xx」格式。")
+                st.warning("⚠️ 警告：在檔案中找不到任何有效日期 (如 113/05/20)，無法計算年度進度。")
 
             rows = []
             for u in UNIT_ORDER:
