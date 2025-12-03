@@ -17,8 +17,8 @@ st.title("🚛 超載 (stoneCnt) 自動統計")
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** `stoneCnt` 系列的 Excel 檔案。
-2. **上傳後自動分析** 並計算 **年度時間進度**。
-3. 支援一鍵寄信。
+2. 系統將依據 **「入案日期/統計期間」** 的截止日計算年度進度。
+3. 年度時間達成率會直接顯示於 Excel 表頭。
 """)
 
 # ==========================================
@@ -62,33 +62,30 @@ def send_email(recipient, subject, body, file_bytes, filename):
         return False
 
 # ==========================================
-# 3. 資料解析函數 (強化日期抓取)
+# 3. 資料解析函數 (精準抓取入案/統計截止日期)
 # ==========================================
 def parse_stone(f):
     if not f: return {}, None
     counts = {}
     found_date = None
     try:
-        # 重置指標
+        # 1. 抓取日期：先讀前 20 行，搜尋「至」或「入案日期」
         f.seek(0)
-        
-        # 1. 先讀前 20 行找日期
-        # stoneCnt 通常在標題列會有日期，例如 "統計期間：113年01月01日 至 113年05月20日"
         df_head = pd.read_excel(f, header=None, nrows=20)
         
-        # 將 DataFrame 轉為字串進行正則搜尋
+        # 將內容轉字串
         text_content = df_head.to_string()
         
-        # 搜尋 "至 113/05/20" 或 "至 113年05月20日" 的格式
-        # 支援 . / - 年月日 等分隔符
-        dates = re.findall(r'(\d{3})[\.\/\-年](\d{1,2})[\.\/\-月](\d{1,2})', text_content)
+        # 正則表達式：尋找 "至 113/05/20" 或 "至 113年05月20" 或 "入案日期...1130520"
+        # 優先級：通常 "至" 後面接的是結束日期
+        matches = re.findall(r'至\s*(\d{3})[./\-年](\d{1,2})[./\-月](\d{1,2})', text_content)
         
-        if dates:
-            # 通常最後一個日期是「結束日期」
-            y, m, d = map(int, dates[-1])
+        if matches:
+            # 如果找到，取最後一組（通常是結束日期）
+            y, m, d = map(int, matches[-1])
             found_date = date(y + 1911, m, d)
-
-        # 2. 讀取數據 (讀取所有 Sheet)
+        
+        # 2. 讀取數據
         f.seek(0)
         xls = pd.ExcelFile(f)
         for sheet in xls.sheet_names:
@@ -131,17 +128,19 @@ if uploaded_files:
             d_yt, end_date = parse_stone(files_config["YTD"]) # 關鍵：從本年累計抓日期
             d_ly, _ = parse_stone(files_config["Last_YTD"])
 
-            # 顯示年度時間進度
+            # 計算年度時間進度
             prog_text = ""
             if end_date:
                 start_of_year = date(end_date.year, 1, 1)
                 days_passed = (end_date - start_of_year).days + 1
                 total_days = 366 if (end_date.year % 4 == 0 and end_date.year % 100 != 0) or (end_date.year % 400 == 0) else 365
                 progress_rate = days_passed / total_days
-                prog_text = f"📅 統計截至 **{end_date.year-1911}年{end_date.month}月{end_date.day}日**，年度時間進度為 **{progress_rate:.1%}**"
-                st.info(prog_text)
+                
+                # 這裡產生要在 Excel 顯示的文字
+                prog_text = f"統計截至 {end_date.year-1911}年{end_date.month}月{end_date.day}日 (入案日期)，年度時間進度為 {progress_rate:.1%}"
+                st.info(f"📅 {prog_text}")
             else:
-                st.warning("⚠️ 無法從「本年累計」檔案中讀取到有效日期，無法計算時間進度。")
+                st.warning("⚠️ 無法讀取有效日期，請確認檔案標題是否包含「至 11x/xx/xx」格式。")
 
             rows = []
             for u in UNIT_ORDER:
@@ -172,15 +171,29 @@ if uploaded_files:
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
             
-            # 檔案產生與自動寄信
+            # --- 產生 Excel (包含標題與時間進度) ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_final.to_excel(writer, index=False, sheet_name='超載統計')
-                ws = writer.sheets['超載統計']
-                # 寫入時間進度說明
+                # 從第 4 列開始寫入表格 (保留上方給標題)
+                df_final.to_excel(writer, index=False, sheet_name='超載統計', startrow=3)
+                
+                workbook = writer.book
+                worksheet = writer.sheets['超載統計']
+                
+                # 設定格式
+                fmt_title = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center'})
+                fmt_subtitle = workbook.add_format({'bold': True, 'font_size': 12, 'font_color': 'blue', 'align': 'left'})
+                
+                # 寫入標題 (合併儲存格)
+                worksheet.merge_range('A1:G1', '超載取締統計表', fmt_title)
+                
+                # 寫入時間進度 (在第 2 列)
                 if prog_text:
-                    clean_prog = prog_text.replace('*', '').replace('📅 ', '')
-                    ws.write('A10', f"說明：{clean_prog}") # 寫在表格下方
+                    worksheet.merge_range('A2:G2', f"說明：{prog_text}", fmt_subtitle)
+                
+                # 自動調整欄寬
+                worksheet.set_column(0, 0, 15) # 單位欄寬一點
+                worksheet.set_column(1, 6, 12) # 數據欄
 
             excel_data = output.getvalue()
             file_name_out = '超載統計表.xlsx'
@@ -192,7 +205,10 @@ if uploaded_files:
             
             if file_ids not in st.session_state["sent_cache"]:
                 with st.spinner(f"正在自動寄送報表至 {email_receiver}..."):
-                    if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", f"附件為超載統計報表。\n{prog_text}", excel_data, file_name_out):
+                    mail_body = "附件為超載統計報表。"
+                    if prog_text: mail_body += f"\n\n{prog_text}"
+                    
+                    if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", mail_body, excel_data, file_name_out):
                         st.balloons()
                         st.success(f"✅ 郵件已發送至 {email_receiver}")
                         st.session_state["sent_cache"].add(file_ids)
