@@ -19,11 +19,12 @@ st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** `stoneCnt` 系列的 Excel 檔案。
 2. 系統將自動計算數據與年度時間進度。
-3. 自動寄信並將結果寫入 Google 試算表 **(寫入第 2 個分頁，從 A3 開始)**。
+3. 自動寄信並將結果寫入 Google 試算表 **(第 2 個分頁，從 A3 開始)**。
+4. **若沒反應，請點擊下方的「強制手動執行」按鈕。**
 """)
 
 # ==========================================
-# 0. 設定區 (請務必修改這裡的網址)
+# 0. 設定區
 # ==========================================
 # 請將您的 Google 試算表網址貼在這裡
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
@@ -33,7 +34,7 @@ UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中
 UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 # ==========================================
-# 1. Google Sheets 寫入函數 (鎖定第 2 個分頁)
+# 1. Google Sheets 寫入函數
 # ==========================================
 def update_google_sheet(df, sheet_url, start_cell='A3'):
     try:
@@ -46,22 +47,19 @@ def update_google_sheet(df, sheet_url, start_cell='A3'):
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
         
-        # ★★★ 關鍵修改：直接抓取第 2 個工作表 (索引為 1) ★★★
+        # 抓取第 2 個工作表 (索引為 1)
         try:
-            ws = sh.get_worksheet(1) # Index 0 是第1個, Index 1 是第2個
+            ws = sh.get_worksheet(1) 
         except Exception as e:
             st.error(f"❌ 無法取得第 2 個工作表，請確認試算表是否有至少 2 個分頁。錯誤: {e}")
             return False
         
         # 準備寫入資料
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
-        
-        # 將 DataFrame 轉為二維列表 (包含標題列)
         data = [df_clean.columns.values.tolist()] + df_clean.values.tolist()
         
-        # 使用 update 方法並指定 range_name (從 A3 開始)
+        # 寫入
         ws.update(range_name=start_cell, values=data)
-        
         return True
         
     except Exception as e:
@@ -102,7 +100,7 @@ def send_email(recipient, subject, body, file_bytes, filename):
         return False
 
 # ==========================================
-# 3. 資料解析函數 (萬能日期抓取)
+# 3. 資料解析函數
 # ==========================================
 def parse_stone(f):
     if not f: return {}, None
@@ -113,7 +111,6 @@ def parse_stone(f):
         df_head = pd.read_excel(f, header=None, nrows=20)
         text_content = df_head.to_string()
         
-        # 抓取日期邏輯
         match = re.search(r'(?:至|~|迄)\s*(\d{3})(\d{2})(\d{2})', text_content)
         if not match:
             match = re.search(r'(?:至|~|迄)\s*(\d{3})[./\-年](\d{1,2})[./\-月](\d{1,2})', text_content)
@@ -123,7 +120,6 @@ def parse_stone(f):
             if 100 <= y <= 200 and 1 <= m <= 12 and 1 <= d <= 31:
                 found_date = date(y + 1911, m, d)
         
-        # 讀取數據
         f.seek(0)
         xls = pd.ExcelFile(f)
         for sheet in xls.sheet_names:
@@ -205,7 +201,7 @@ if uploaded_files:
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
             
-            # --- 產生下載用 Excel ---
+            # --- 產生 Excel ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False, sheet_name='超載統計', startrow=3)
@@ -218,38 +214,52 @@ if uploaded_files:
                     worksheet.merge_range('A2:G2', f"說明：{prog_text}", fmt_subtitle)
                 worksheet.set_column(0, 0, 15)
                 worksheet.set_column(1, 6, 12)
-
             excel_data = output.getvalue()
             file_name_out = '超載統計表.xlsx'
 
-            # --- 自動化流程 (寄信 + 寫入試算表) ---
+            # --- 自動化與手動執行區塊 ---
+            st.markdown("---")
+            st.subheader("🚀 執行動作")
+            
             if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
             file_ids = ",".join(sorted([f.name for f in uploaded_files]))
-            email_receiver = st.secrets["email"]["user"]
             
-            if file_ids not in st.session_state["sent_cache"]:
-                with st.spinner("正在執行自動化作業 (寄信 + 寫入試算表)..."):
-                    
-                    # 1. 寄信
+            # 準備執行函數
+            def run_automation():
+                with st.status("正在處理中...", expanded=True) as status:
+                    st.write("📧 準備寄送 Email...")
                     mail_body = "附件為超載統計報表。"
                     if prog_text: mail_body += f"\n\n{prog_text}"
-                    email_success = send_email(email_receiver, f"📊 [自動通知] {file_name_out}", mail_body, excel_data, file_name_out)
+                    email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else None
                     
-                    # 2. 寫入 Google Sheet (鎖定第 2 個分頁, start_cell='A3')
-                    sheet_success = update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A3')
+                    if email_receiver:
+                        if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", mail_body, excel_data, file_name_out):
+                            st.write(f"✅ Email 已發送至 {email_receiver}")
+                        else:
+                            st.write("❌ Email 發送失敗")
+                    else:
+                        st.write("⚠️ 未設定 Email，跳過寄信")
+
+                    st.write("📊 正在寫入 Google 試算表...")
+                    if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A3'):
+                        st.write("✅ Google 試算表已更新 (第 2 分頁, A3)")
+                    else:
+                        st.write("❌ Google 試算表更新失敗")
                     
-                    if email_success:
-                        st.success(f"✅ 郵件已發送至 {email_receiver}")
-                    
-                    if sheet_success:
-                        st.success(f"✅ Google 試算表 (第 2 個分頁) 已從 A3 更新")
-                    
-                    if email_success or sheet_success:
-                        st.balloons()
-                        st.session_state["sent_cache"].add(file_ids)
+                    status.update(label="執行完畢", state="complete", expanded=False)
+                    st.balloons()
+            
+            # 自動執行邏輯
+            if file_ids not in st.session_state["sent_cache"]:
+                run_automation()
+                st.session_state["sent_cache"].add(file_ids)
             else:
-                st.info(f"✅ 作業已完成 (郵件已寄、試算表已更新)")
+                st.info("✅ 此組檔案已執行過自動化作業。")
+
+            # 手動執行按鈕 (給使用者補救用)
+            if st.button("🔄 強制重新執行 (寫入 + 寄信)", type="primary"):
+                run_automation()
 
             st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
-        except Exception as e: st.error(f"錯誤：{e}")
+        except Exception as e: st.error(f"發生錯誤：{e}")
