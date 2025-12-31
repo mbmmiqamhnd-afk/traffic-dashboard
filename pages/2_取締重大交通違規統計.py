@@ -13,73 +13,77 @@ from email import encoders
 from email.header import Header
 
 st.set_page_config(page_title="重大交通違規統計", layout="wide", page_icon="🚨")
-st.title("🚨 重大交通違規自動統計")
+st.title("🚨 重大交通違規自動統計 (Focus 專用版)")
 
 st.markdown("""
 ### 📝 使用說明
-1. 請上傳 **3 個** 相關統計 Excel 檔案。
-2. 系統將自動計算數據與年度時間進度。
-3. 自動寄信並寫入 Google 試算表 **(寫入同一個檔案的第 1 個分頁，從 A4 開始)**。
-4. **若沒反應，請點擊下方的「🔄 強制手動執行」按鈕。**
+1. 請上傳 **3 個** `Focus` 系列 Excel 檔案。
+2. 系統會自動搜尋含有 **單位名稱** (如：聖亭、龍潭...) 的列並加總數據。
+3. 自動寄信並寫入 Google 試算表 **(第 1 個分頁，從 A4 開始)**。
+4. **數值若有誤，請展開下方的「🕵️‍♀️ 詳細抓取過程」檢查。**
 """)
 
 # ==========================================
 # 0. 設定區
 # ==========================================
-# ★★★ 重要：請確認這裡填入的是與「超載統計」完全一樣的 Google 試算表網址 ★★★
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 
-TARGETS = {'聖亭所': 24, '龍潭所': 32, '中興所': 24, '石門所': 19, '高平所': 16, '三和所': 9, '警備隊': 0, '交通分隊': 30}
-UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'}
+# 這裡設定要搜尋的單位關鍵字 (左邊是報表上可能出現的字，右邊是統一名稱)
+# 程式會掃描 Excel 裡是否包含左邊的字眼
+UNIT_MAP = {
+    '聖亭': '聖亭所', 
+    '龍潭': '龍潭所', 
+    '中興': '中興所', 
+    '石門': '石門所', 
+    '高平': '高平所', 
+    '三和': '三和所', 
+    '警備': '警備隊', 
+    '交通分隊': '交通分隊'
+}
+
+# 這是最後要顯示的順序
 UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
+# 目標值 (請確認 Focus 的目標值是否正確)
+TARGETS = {'聖亭所': 24, '龍潭所': 32, '中興所': 24, '石門所': 19, '高平所': 16, '三和所': 9, '警備隊': 0, '交通分隊': 30}
+
 # ==========================================
-# 1. Google Sheets 寫入函數 (強力相容版)
+# 1. Google Sheets 寫入函數
 # ==========================================
 def update_google_sheet(df, sheet_url, start_cell='A4'):
     try:
-        # 1. 檢查 Secrets
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 錯誤：未設定 Secrets！")
             return False
 
-        # 2. 連線測試
         try:
             gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
             sh = gc.open_by_url(sheet_url)
         except Exception as e:
-            st.error(f"❌ 連線失敗 (請檢查網址或機器人權限): {e}")
+            st.error(f"❌ 連線失敗: {e}")
             return False
         
-        # 3. 抓取工作表 (鎖定第 1 個，索引為 0)
         try:
-            ws = sh.get_worksheet(0) # <--- 0 代表第 1 個分頁
+            # 鎖定第 1 個分頁 (Index 0)
+            ws = sh.get_worksheet(0) 
             if ws is None: raise Exception("找不到 Index 0 的工作表")
         except Exception as e:
             st.error(f"❌ 找不到第 1 個工作表: {e}")
             return False
         
-        # 4. 準備資料
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
         data = [df_clean.columns.values.tolist()] + df_clean.values.tolist()
         
-        # 5. 執行寫入 (雙重寫法相容)
         try:
-            # 新版 gspread (v6.0+)
+            # 嘗試寫入 (A4)
             ws.update(range_name=start_cell, values=data)
         except TypeError:
-            try:
-                # 舊版 gspread
-                ws.update(start_cell, data)
-            except Exception as e_inner:
-                st.error(f"❌ 寫入數據失敗 (舊版寫法): {e_inner}")
-                return False
+            ws.update(start_cell, data)
         except Exception as e:
             st.error(f"❌ 寫入數據失敗: {e}")
             return False
 
         return True
-        
     except Exception as e:
         st.error(f"❌ 未知錯誤: {e}")
         return False
@@ -118,18 +122,24 @@ def send_email(recipient, subject, body, file_bytes, filename):
         return False
 
 # ==========================================
-# 3. 資料解析函數
+# 3. 資料解析函數 (Focus 專用邏輯)
 # ==========================================
-def parse_report(f):
-    if not f: return {}, None
+def parse_report(f, file_label=""):
+    if not f: return {}, None, []
     counts = {}
     found_date = None
+    debug_logs = []
+    
     try:
+        debug_logs.append(f"🔵 開始解析: {file_label}")
         f.seek(0)
+        
+        # --- 1. 抓取日期 ---
+        # 讀取前 20 行找日期
         df_head = pd.read_excel(f, header=None, nrows=20)
         text_content = df_head.to_string()
         
-        # 日期抓取 (支援分隔符號與連續數字)
+        # 搜尋類似 113/05/20 或 1130520 的日期
         match = re.search(r'(?:至|~|迄)\s*(\d{3})(\d{2})(\d{2})', text_content)
         if not match:
             match = re.search(r'(?:至|~|迄)\s*(\d{3})[./\-年](\d{1,2})[./\-月](\d{1,2})', text_content)
@@ -138,32 +148,68 @@ def parse_report(f):
             y, m, d = map(int, match.groups())
             if 100 <= y <= 200 and 1 <= m <= 12 and 1 <= d <= 31:
                 found_date = date(y + 1911, m, d)
+                debug_logs.append(f"📅 抓到日期: {found_date}")
+        else:
+            debug_logs.append("⚠️ 未抓到日期 (可能影響進度計算)")
         
+        # --- 2. 抓取數據 (核心修改) ---
         f.seek(0)
         xls = pd.ExcelFile(f)
         for sheet in xls.sheet_names:
+            debug_logs.append(f"📄 掃描工作表: {sheet}")
             df = pd.read_excel(xls, sheet_name=sheet, header=None)
-            curr = None
-            for _, row in df.iterrows():
-                s = row.astype(str).str.cat(sep=' ')
-                if "舉發單位：" in s:
-                    m = re.search(r"舉發單位：(\S+)", s)
-                    if m: curr = m.group(1).strip()
-                if "總計" in s and curr:
-                    nums = [float(x) for x in row if str(x).replace('.','',1).isdigit()]
+            
+            for idx, row in df.iterrows():
+                # 將整列轉為字串方便搜尋
+                row_str = row.astype(str).str.cat(sep=' ')
+                
+                # 掃描是否包含我們定義的單位名稱 (如 '聖亭', '龍潭')
+                matched_unit = None
+                for keyword, official_name in UNIT_MAP.items():
+                    # 這裡排除掉 "龍潭交通分隊" 裡的 "龍潭" 被誤判為 "龍潭所" 的情況
+                    # 邏輯：如果找到關鍵字，且沒有被更長的關鍵字涵蓋 (簡單版暫不處理複雜邏輯，通常 Focus 表格分隊與派出所是分開的)
+                    if keyword in row_str:
+                        # 特殊處理：避免「龍潭分局」被當作「龍潭所」
+                        if keyword == '龍潭' and '分隊' in row_str: continue 
+                        
+                        matched_unit = official_name
+                        break # 找到一個就停，避免重複匹配
+                
+                if matched_unit:
+                    # 找到單位了，現在找這行裡面的數字
+                    # 排除掉小數點、文字，只抓純數字
+                    nums = []
+                    for x in row:
+                        try:
+                            # 嘗試轉為浮點數
+                            val = float(str(x).replace(',', '')) # 去除千分位逗號
+                            # 排除 NaN 和無限大
+                            if not pd.isna(val) and val != float('inf'):
+                                nums.append(val)
+                        except:
+                            continue
+                    
                     if nums:
-                        short = UNIT_MAP.get(curr, curr)
-                        counts[short] = counts.get(short, 0) + int(nums[-1])
-                        curr = None
-        return counts, found_date
+                        # 策略：Focus 報表通常最後一欄是合計，或者是數值最大的是合計
+                        # 這裡我們取「最後一個數字」作為該單位的統計值 (通常是總計)
+                        # 如果您的報表總計在第一欄，請告訴我，我再改
+                        val = int(nums[-1])
+                        
+                        # 累加 (防止同一個單位出現在多行)
+                        counts[matched_unit] = counts.get(matched_unit, 0) + val
+                        debug_logs.append(f"   ✅ Row {idx}: 發現 [{matched_unit}] -> 抓到數字序列 {nums} -> 取用: {val}")
+                    else:
+                        debug_logs.append(f"   ⚠️ Row {idx}: 發現 [{matched_unit}] 但該行沒有數字")
+
+        return counts, found_date, debug_logs
     except Exception as e:
         st.error(f"解析檔案 {f.name} 錯誤: {e}")
-        return {}, None
+        return {}, None, [f"❌ 發生錯誤: {e}"]
 
 # ==========================================
 # 4. 主程式執行
 # ==========================================
-uploaded_files = st.file_uploader("請拖曳 3 個統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'])
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'])
 
 if uploaded_files:
     if len(uploaded_files) < 3:
@@ -176,10 +222,25 @@ if uploaded_files:
                 elif "(2)" in f.name: files_config["Last_YTD"] = f
                 else: files_config["Week"] = f
             
-            d_wk, _ = parse_report(files_config["Week"])
-            d_yt, end_date = parse_report(files_config["YTD"])
-            d_ly, _ = parse_report(files_config["Last_YTD"])
+            # 解析
+            d_wk, _, logs_wk = parse_report(files_config["Week"], "本期")
+            d_yt, end_date, logs_yt = parse_report(files_config["YTD"], "本年累計")
+            d_ly, _, logs_ly = parse_report(files_config["Last_YTD"], "去年累計")
 
+            # --- 除錯區 (預設收合) ---
+            with st.expander("🕵️‍♀️ 查看詳細抓取過程 (若數值有誤請點此檢查)", expanded=False):
+                c1, c2, c3 = st.columns(3)
+                with c1: 
+                    st.caption("本期日誌")
+                    for l in logs_wk: st.text(l)
+                with c2: 
+                    st.caption("本年累計日誌")
+                    for l in logs_yt: st.text(l)
+                with c3: 
+                    st.caption("去年累計日誌")
+                    for l in logs_ly: st.text(l)
+
+            # 計算進度
             prog_text = ""
             if end_date:
                 start_of_year = date(end_date.year, 1, 1)
@@ -189,8 +250,9 @@ if uploaded_files:
                 prog_text = f"統計截至 {end_date.year-1911}年{end_date.month}月{end_date.day}日 (入案日期)，年度時間進度為 {progress_rate:.1%}"
                 st.info(f"📅 {prog_text}")
             else:
-                st.warning("⚠️ 無法從「本年累計」檔案中找到截止日期。")
+                st.warning("⚠️ 無法找到日期，將不顯示年度進度。")
 
+            # 建立表格
             rows = []
             for u in UNIT_ORDER:
                 rows.append({
@@ -203,6 +265,7 @@ if uploaded_files:
             
             df = pd.DataFrame(rows)
             df_calc = df.copy()
+            # 警備隊數值歸零 (依需求)
             mask_guard = df_calc['單位'] == '警備隊'
             df_calc.loc[mask_guard, ['本期', '本年累計', '去年累計', '目標值']] = 0
             
@@ -212,6 +275,7 @@ if uploaded_files:
             df_final = pd.concat([pd.DataFrame([total]), df], ignore_index=True)
             df_final['本年與去年同期比較'] = df_final['本年累計'] - df_final['去年累計']
             df_final['達成率'] = df_final.apply(lambda x: f"{x['本年累計']/x['目標值']:.2%}" if x['目標值']>0 else "—", axis=1)
+            # 警備隊顯示 —
             df_final.loc[df_final['單位']=='警備隊', ['本年與去年同期比較', '目標值', '達成率']] = "—"
             
             cols = ['單位', '本期', '本年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
@@ -220,7 +284,7 @@ if uploaded_files:
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
             
-            # --- Excel 下載用 ---
+            # --- Excel ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False, sheet_name='交通違規統計', startrow=3)
@@ -236,7 +300,7 @@ if uploaded_files:
             excel_data = output.getvalue()
             file_name_out = '交通違規統計表.xlsx'
 
-            # --- 自動化/手動執行區 ---
+            # --- 自動執行區 ---
             st.markdown("---")
             st.subheader("🚀 執行動作")
             
@@ -245,7 +309,6 @@ if uploaded_files:
             
             def run_automation():
                 with st.status("正在執行...", expanded=True) as status:
-                    # 1. 寄信
                     st.write("📧 正在寄信...")
                     mail_body = "附件為重大交通違規統計報表。"
                     if prog_text: mail_body += f"\n\n{prog_text}"
@@ -258,9 +321,7 @@ if uploaded_files:
                     else:
                         st.write("⚠️ 未設定 Email")
 
-                    # 2. 寫入
-                    st.write("📊 正在寫入 Google 試算表 (第 1 分頁，從 A4 開始)...")
-                    # ★★★ 關鍵：這裡已改為 A4 ★★★
+                    st.write("📊 正在寫入 Google 試算表 (第 1 分頁, A4)...")
                     if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A4'):
                         st.write("✅ Google 試算表寫入成功！")
                     else:
@@ -269,14 +330,12 @@ if uploaded_files:
                     status.update(label="執行結束", state="complete", expanded=False)
                     st.balloons()
             
-            # 自動執行
             if file_ids not in st.session_state["sent_cache"]:
                 run_automation()
                 st.session_state["sent_cache"].add(file_ids)
             else:
                 st.info("✅ 已自動執行過。")
 
-            # 手動按鈕
             if st.button("🔄 強制重新執行 (寫入 + 寄信)", type="primary"):
                 run_automation()
 
