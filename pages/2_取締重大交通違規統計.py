@@ -55,7 +55,7 @@ TARGETS = {
 # ==========================================
 # 1. Google Sheets 寫入函數
 # ==========================================
-def update_google_sheet(df, sheet_url, start_cell='A3'): # <--- 預設改為 A3
+def update_google_sheet(df, sheet_url, start_cell='A3'): # <--- 確認預設為 A3
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 錯誤：未設定 Secrets！")
@@ -81,6 +81,7 @@ def update_google_sheet(df, sheet_url, start_cell='A3'): # <--- 預設改為 A3
         data = [df_clean.columns.values.tolist()] + df_clean.values.tolist()
         
         try:
+            # 寫入資料
             ws.update(range_name=start_cell, values=data)
         except TypeError:
             ws.update(start_cell, data)
@@ -212,8 +213,8 @@ def parse_focus_report(uploaded_file):
 # ==========================================
 # 4. 主程式執行
 # ==========================================
-# 使用新 key 避免快取衝突
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_final_v3")
+# ★★★ 使用新 key 強制重置上傳狀態 ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_A3_fix")
 
 if uploaded_files:
     if len(uploaded_files) < 3:
@@ -304,7 +305,7 @@ if uploaded_files:
             cols = ['單位', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame([total_row] + rows, columns=cols)
 
-            st.success("✅ 分析完成！(已確認分離攔停/逕舉數據)")
+            st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
             # --- 產生 Excel ---
@@ -344,8 +345,9 @@ if uploaded_files:
                         st.write("⚠️ 未設定 Email")
 
                     # 2. 寫入 Google Sheet
+                    # ★★★ 再次確認位置為 A3 ★★★
                     st.write("📊 正在寫入 Google 試算表 (第 1 分頁, A3)...")
-                    if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A3'): # <--- 這裡改為 A3
+                    if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A3'): 
                         st.write("✅ Google 試算表寫入成功！")
                     else:
                         st.write("❌ Google 試算表寫入失敗")
@@ -353,12 +355,14 @@ if uploaded_files:
                     status.update(label="執行完畢", state="complete", expanded=False)
                     st.balloons()
             
+            # 因為更換了上傳 key，這裡通常會被視為新檔案，自動觸發
             if file_ids not in st.session_state["sent_cache"]:
                 run_automation()
                 st.session_state["sent_cache"].add(file_ids)
             else:
                 st.info("✅ 此組檔案已自動執行過。")
 
+            # 手動按鈕
             if st.button("🔄 強制重新執行 (寫入 + 寄信)", type="primary"):
                 run_automation()
 
