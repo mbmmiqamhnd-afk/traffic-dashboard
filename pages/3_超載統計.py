@@ -19,25 +19,23 @@ st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** `stoneCnt` 系列的 Excel 檔案。
 2. 系統將自動計算數據與年度時間進度。
-3. 自動寄信並將結果寫入 Google 試算表 **(從 A3 儲存格開始)**。
+3. 自動寄信並將結果寫入 Google 試算表 **(寫入第 2 個分頁，從 A3 開始)**。
 """)
 
 # ==========================================
 # 0. 設定區 (請務必修改這裡的網址)
 # ==========================================
 # 請將您的 Google 試算表網址貼在這裡
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/您的試算表ID/edit" 
-# 想要寫入的工作表名稱
-TARGET_WORKSHEET = "超載統計" 
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 
 TARGETS = {'聖亭所': 24, '龍潭所': 32, '中興所': 24, '石門所': 19, '高平所': 16, '三和所': 9, '警備隊': 0, '交通分隊': 30}
 UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'}
 UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 # ==========================================
-# 1. Google Sheets 寫入函數 (支援指定範圍)
+# 1. Google Sheets 寫入函數 (鎖定第 2 個分頁)
 # ==========================================
-def update_google_sheet(df, sheet_url, worksheet_name, start_cell='A1'):
+def update_google_sheet(df, sheet_url, start_cell='A3'):
     try:
         # 檢查 Secrets
         if "gcp_service_account" not in st.secrets:
@@ -48,20 +46,20 @@ def update_google_sheet(df, sheet_url, worksheet_name, start_cell='A1'):
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
         
+        # ★★★ 關鍵修改：直接抓取第 2 個工作表 (索引為 1) ★★★
         try:
-            ws = sh.worksheet(worksheet_name)
-        except:
-            ws = sh.sheet1 
+            ws = sh.get_worksheet(1) # Index 0 是第1個, Index 1 是第2個
+        except Exception as e:
+            st.error(f"❌ 無法取得第 2 個工作表，請確認試算表是否有至少 2 個分頁。錯誤: {e}")
+            return False
         
         # 準備寫入資料
-        # fillna("") 把空值變空白字串，避免 API 報錯
-        # replace([np.inf, -np.inf], 0) 處理無限大數值
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
         
         # 將 DataFrame 轉為二維列表 (包含標題列)
         data = [df_clean.columns.values.tolist()] + df_clean.values.tolist()
         
-        # 使用 update 方法並指定 range_name (起始儲存格)
+        # 使用 update 方法並指定 range_name (從 A3 開始)
         ws.update(range_name=start_cell, values=data)
         
         return True
@@ -237,15 +235,14 @@ if uploaded_files:
                     if prog_text: mail_body += f"\n\n{prog_text}"
                     email_success = send_email(email_receiver, f"📊 [自動通知] {file_name_out}", mail_body, excel_data, file_name_out)
                     
-                    # 2. 寫入 Google Sheet (從 A3 開始寫入)
-                    # ★★★ 關鍵修改在這裡：指定 start_cell='A3' ★★★
-                    sheet_success = update_google_sheet(df_final, GOOGLE_SHEET_URL, TARGET_WORKSHEET, start_cell='A3')
+                    # 2. 寫入 Google Sheet (鎖定第 2 個分頁, start_cell='A3')
+                    sheet_success = update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A3')
                     
                     if email_success:
                         st.success(f"✅ 郵件已發送至 {email_receiver}")
                     
                     if sheet_success:
-                        st.success(f"✅ Google 試算表 ({TARGET_WORKSHEET}) 已從 A3 更新")
+                        st.success(f"✅ Google 試算表 (第 2 個分頁) 已從 A3 更新")
                     
                     if email_success or sheet_success:
                         st.balloons()
