@@ -53,7 +53,7 @@ TARGETS = {
 }
 
 # ==========================================
-# 1. Google Sheets 寫入函數 (與超載統計同步)
+# 1. Google Sheets 寫入函數
 # ==========================================
 def update_google_sheet(df, sheet_url, start_cell='A4'):
     try:
@@ -123,7 +123,7 @@ def send_email(recipient, subject, body, file_bytes, filename):
         return False
 
 # ==========================================
-# 3. Focus 專用解析函數 (攔停/逕舉分離)
+# 3. Focus 專用解析函數 (攔停/逕舉精準分離)
 # ==========================================
 def parse_focus_report(uploaded_file):
     if not uploaded_file: return None
@@ -135,29 +135,28 @@ def parse_focus_report(uploaded_file):
     
     try:
         # 1. 嘗試讀取前20行找日期與標題列
-        if uploaded_file.name.endswith(('.xlsx', '.xls')):
-            df_raw = pd.read_excel(io.BytesIO(content), header=None, nrows=20)
-            for i, row in df_raw.iterrows():
-                row_str = " ".join([str(x) for x in row.values if pd.notna(x)])
+        df_raw = pd.read_excel(io.BytesIO(content), header=None, nrows=20)
+        for i, row in df_raw.iterrows():
+            row_str = " ".join([str(x) for x in row.values if pd.notna(x)])
+            
+            # 抓取日期
+            if not start_date:
+                match = re.search(r'入案日期[：:]?\s*(\d{3,7}).*至\s*(\d{3,7})', row_str)
+                if match: start_date, end_date = match.group(1), match.group(2)
+            
+            # 抓取標題列 (特徵: 有"單位"且有"酒後")
+            if "單位" in row_str and "酒後" in row_str: 
+                header_idx = i
                 
-                # 抓取日期
-                if not start_date:
-                    match = re.search(r'入案日期[：:]?\s*(\d{3,7}).*至\s*(\d{3,7})', row_str)
-                    if match: start_date, end_date = match.group(1), match.group(2)
-                
-                # 抓取標題列 (特徵: 有"單位"且有"酒後")
-                if "單位" in row_str and "酒後" in row_str: 
-                    header_idx = i
-                    
-            if header_idx != -1: 
-                df = pd.read_excel(io.BytesIO(content), header=header_idx)
+        if header_idx != -1: 
+            df = pd.read_excel(io.BytesIO(content), header=header_idx)
         else:
-            return None # 只支援 Excel
+            return None 
 
         if df is None: return None
 
-        # 2. 定義要統計的欄位 (攔停/逕舉)
-        # 排除 "路肩" 與 "大型車" (依照原本邏輯)
+        # 2. 定義 8 大重點欄位
+        # 排除 "路肩" 與 "大型車"
         keywords = ["酒後", "闖紅燈", "嚴重超速", "逆向", "轉彎", "蛇行", "不暫停讓行人", "機車"]
         stop_cols = [] # 攔停欄位索引
         cit_cols = []  # 逕舉欄位索引
@@ -166,9 +165,9 @@ def parse_focus_report(uploaded_file):
             col_str = str(df.columns[i])
             # 判斷是否為重點項目
             if any(k in col_str for k in keywords) and "路肩" not in col_str and "大型車" not in col_str:
-                # 假設 Excel 格式: 項目名稱(merged) -> 下一行: 現場攔停 | 逕行舉發
-                # 但因為我們讀取 header=header_idx，通常 Pandas 會把第二層 header 搞亂
-                # 這裡假設攔停在 i, 逕舉在 i+1 (這是 Focus 報表的慣例)
+                # 假設 Excel 格式: 項目名稱(在 i) -> 
+                # 下一行(資料行)對應的應該是: i (攔停), i+1 (逕舉)
+                # 因為合併儲存格通常佔用 2 格，Header 在左邊
                 stop_cols.append(i)
                 cit_cols.append(i+1)
         
@@ -215,7 +214,7 @@ def parse_focus_report(uploaded_file):
 # 4. 主程式執行
 # ==========================================
 # 使用新 key 避免快取衝突
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_final")
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_final_v2")
 
 if uploaded_files:
     if len(uploaded_files) < 3:
@@ -233,7 +232,6 @@ if uploaded_files:
                 st.stop()
 
             # 2. 自動判斷哪個是本期、本年、去年
-            # 邏輯: 去年(開始日期最早) -> 本年(剩下中天數最長) -> 本期(剩下那個)
             parsed_files.sort(key=lambda x: x['start']) 
             file_last_year = parsed_files[0] # 最早的是去年
             
@@ -268,7 +266,7 @@ if uploaded_files:
                 y = file_year['data'].get(u, {'stop':0, 'cit':0})
                 l = file_last_year['data'].get(u, {'stop':0, 'cit':0})
                 
-                # 科技執法強制歸零 (如果需要)
+                # 科技執法強制歸零 (攔停欄位)
                 if u == '科技執法': w['stop'], y['stop'], l['stop'] = 0, 0, 0
 
                 y_total = y['stop'] + y['cit']
@@ -289,7 +287,7 @@ if uploaded_files:
                         rate_str = f"{y_total/tgt:.2%}" if tgt > 0 else "0.00%"
                         row_data.extend([tgt, rate_str])
                 
-                # 累加合計 (不含不計入的單位? 這邊先全加)
+                # 累加合計
                 accum['ws']+=w['stop']; accum['wc']+=w['cit']
                 accum['ys']+=y['stop']; accum['yc']+=y['cit']
                 accum['ls']+=l['stop']; accum['lc']+=l['cit']
@@ -307,7 +305,7 @@ if uploaded_files:
             cols = ['單位', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame([total_row] + rows, columns=cols)
 
-            st.success("✅ 分析完成！")
+            st.success("✅ 分析完成！(已確認分離攔停/逕舉數據)")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
             # --- 產生 Excel ---
@@ -321,12 +319,12 @@ if uploaded_files:
                 ws.write('A2', f"一、統計期間：{file_year['start']}~{file_year['end']}")
                 if prog_text:
                     ws.write('A3', f"二、{prog_text}")
-                ws.set_column(0, 0, 15) # 單位欄寬
+                ws.set_column(0, 0, 15) 
             
             excel_data = output.getvalue()
             file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
 
-            # --- 自動化流程 (寄信 + 寫入) ---
+            # --- 自動化流程 ---
             st.markdown("---")
             st.subheader("🚀 執行動作")
             
@@ -344,7 +342,7 @@ if uploaded_files:
                         else:
                             st.write("❌ Email 發送失敗")
                     else:
-                        st.write("⚠️ 未設定 Email，跳過寄信")
+                        st.write("⚠️ 未設定 Email")
 
                     # 2. 寫入 Google Sheet
                     st.write("📊 正在寫入 Google 試算表 (第 1 分頁, A4)...")
@@ -356,14 +354,12 @@ if uploaded_files:
                     status.update(label="執行完畢", state="complete", expanded=False)
                     st.balloons()
             
-            # 自動執行
             if file_ids not in st.session_state["sent_cache"]:
                 run_automation()
                 st.session_state["sent_cache"].add(file_ids)
             else:
-                st.info("✅ 此組檔案已自動執行過 (郵件已寄、試算表已更新)。")
+                st.info("✅ 此組檔案已自動執行過。")
 
-            # 手動執行按鈕
             if st.button("🔄 強制重新執行 (寫入 + 寄信)", type="primary"):
                 run_automation()
 
