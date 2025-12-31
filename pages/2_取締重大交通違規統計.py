@@ -13,38 +13,25 @@ from email import encoders
 from email.header import Header
 
 st.set_page_config(page_title="重大交通違規統計", layout="wide", page_icon="🚨")
-st.title("🚨 重大交通違規自動統計 (Focus 專用版)")
+st.title("🚨 重大交通違規自動統計 (超級通用版)")
 
 st.markdown("""
 ### 📝 使用說明
-1. 請上傳 **3 個** `Focus` 系列 Excel 檔案。
-2. 系統會自動搜尋含有 **單位名稱** (如：聖亭、龍潭...) 的列並加總數據。
-3. 自動寄信並寫入 Google 試算表 **(第 1 個分頁，從 A4 開始)**。
-4. **數值若有誤，請展開下方的「🕵️‍♀️ 詳細抓取過程」檢查。**
+1. 上傳檔案後，系統會嘗試 **多種策略** 抓取數據。
+2. **請觀察下方的「📄 檔案內容預覽」**，確認程式讀到的內容是否正確。
+3. 自動寫入 Google 試算表 **(第 1 個分頁，從 A4 開始)**。
 """)
 
 # ==========================================
 # 0. 設定區
 # ==========================================
-# ★★★ 請確認這裡填入的是正確的 Google 試算表網址 ★★★
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 
-# 這是 Focus 報表上會出現的關鍵字 (左邊) 對應到 統一名稱 (右邊)
 UNIT_MAP = {
-    '聖亭': '聖亭所', 
-    '龍潭': '龍潭所', 
-    '中興': '中興所', 
-    '石門': '石門所', 
-    '高平': '高平所', 
-    '三和': '三和所', 
-    '警備': '警備隊', 
-    '交通分隊': '交通分隊'
+    '聖亭': '聖亭所', '龍潭': '龍潭所', '中興': '中興所', '石門': '石門所', 
+    '高平': '高平所', '三和': '三和所', '警備': '警備隊', '交通分隊': '交通分隊'
 }
-
-# 報表顯示順序
 UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
-
-# 目標值
 TARGETS = {'聖亭所': 24, '龍潭所': 32, '中興所': 24, '石門所': 19, '高平所': 16, '三和所': 9, '警備隊': 0, '交通分隊': 30}
 
 # ==========================================
@@ -55,7 +42,6 @@ def update_google_sheet(df, sheet_url, start_cell='A4'):
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 錯誤：未設定 Secrets！")
             return False
-
         try:
             gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
             sh = gc.open_by_url(sheet_url)
@@ -64,8 +50,7 @@ def update_google_sheet(df, sheet_url, start_cell='A4'):
             return False
         
         try:
-            # 鎖定第 1 個分頁 (Index 0)
-            ws = sh.get_worksheet(0) 
+            ws = sh.get_worksheet(0) # Index 0 = 第1個分頁
             if ws is None: raise Exception("找不到 Index 0 的工作表")
         except Exception as e:
             st.error(f"❌ 找不到第 1 個工作表: {e}")
@@ -75,14 +60,12 @@ def update_google_sheet(df, sheet_url, start_cell='A4'):
         data = [df_clean.columns.values.tolist()] + df_clean.values.tolist()
         
         try:
-            # 嘗試寫入 (A4)
             ws.update(range_name=start_cell, values=data)
         except TypeError:
             ws.update(start_cell, data)
         except Exception as e:
             st.error(f"❌ 寫入數據失敗: {e}")
             return False
-
         return True
     except Exception as e:
         st.error(f"❌ 未知錯誤: {e}")
@@ -98,19 +81,16 @@ def send_email(recipient, subject, body, file_bytes, filename):
             return False
         sender = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
-
         msg = MIMEMultipart()
         msg['From'] = sender
         msg['To'] = recipient
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
-
         part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         part.set_payload(file_bytes)
         encoders.encode_base64(part)
         part.add_header('Content-Disposition', 'attachment', filename=Header(filename, 'utf-8').encode())
         msg.attach(part)
-
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(sender, password)
@@ -122,92 +102,94 @@ def send_email(recipient, subject, body, file_bytes, filename):
         return False
 
 # ==========================================
-# 3. 資料解析函數 (Focus 專用邏輯)
+# 3. 超級通用解析函數
 # ==========================================
 def parse_report(f, file_label=""):
-    if not f: return {}, None, []
+    if not f: return {}, None
     counts = {}
     found_date = None
-    debug_logs = []
     
+    # 顯示檔案預覽 (讓使用者知道程式看到了什麼)
+    st.markdown(f"#### 📄 正在分析：{file_label}")
     try:
-        debug_logs.append(f"🔵 開始解析: {file_label}")
         f.seek(0)
         
-        # --- 1. 抓取日期 ---
-        # 讀取前 20 行找日期
+        # 1. 抓日期
         df_head = pd.read_excel(f, header=None, nrows=20)
         text_content = df_head.to_string()
-        
-        # 搜尋類似 113/05/20 或 1130520 的日期
         match = re.search(r'(?:至|~|迄)\s*(\d{3})(\d{2})(\d{2})', text_content)
         if not match:
             match = re.search(r'(?:至|~|迄)\s*(\d{3})[./\-年](\d{1,2})[./\-月](\d{1,2})', text_content)
-        
         if match:
             y, m, d = map(int, match.groups())
             if 100 <= y <= 200 and 1 <= m <= 12 and 1 <= d <= 31:
                 found_date = date(y + 1911, m, d)
-                debug_logs.append(f"📅 抓到日期: {found_date}")
-        else:
-            debug_logs.append("⚠️ 未抓到日期 (可能影響進度計算)")
         
-        # --- 2. 抓取數據 (核心修改：掃描每一行找關鍵字) ---
+        # 2. 讀取所有內容並顯示給使用者看
         f.seek(0)
         xls = pd.ExcelFile(f)
+        
         for sheet in xls.sheet_names:
-            debug_logs.append(f"📄 掃描工作表: {sheet}")
             df = pd.read_excel(xls, sheet_name=sheet, header=None)
             
+            # --- 在網頁上顯示前 5 行，方便除錯 ---
+            with st.expander(f"預覽工作表內容: {sheet} (點擊展開)", expanded=False):
+                st.dataframe(df.head(10)) 
+            # -----------------------------------
+
+            # 開始掃描每一行
             for idx, row in df.iterrows():
-                # 將整列轉為字串方便搜尋
                 row_str = row.astype(str).str.cat(sep=' ')
                 
-                # 掃描是否包含我們定義的單位名稱 (如 '聖亭', '龍潭')
+                # 策略 A: 找 "舉發單位：" (StoneCnt 格式)
+                stone_match = re.search(r"舉發單位：(\S+)", row_str)
+                if stone_match:
+                    raw_unit = stone_match.group(1).strip()
+                    # 映射標準名稱
+                    final_unit = UNIT_MAP.get(raw_unit[:2], raw_unit) # 嘗試只取前兩個字對應
+                    # 找同一行的數字
+                    nums = [float(x) for x in row if str(x).replace('.','',1).isdigit()]
+                    if nums:
+                        counts[final_unit] = counts.get(final_unit, 0) + int(nums[-1])
+                    continue # 這一行處理完了，換下一行
+
+                # 策略 B: 直接掃描單位名稱 (Focus 格式)
                 matched_unit = None
                 for keyword, official_name in UNIT_MAP.items():
-                    # 邏輯：檢查關鍵字是否存在
                     if keyword in row_str:
-                        # 特殊處理：避免「龍潭分局」被當作「龍潭所」
-                        if keyword == '龍潭' and '分隊' in row_str: continue 
-                        
+                        # 避免 "龍潭分局" 被誤判為 "龍潭所"
+                        if keyword == '龍潭' and '分隊' in row_str: continue
                         matched_unit = official_name
-                        break # 找到一個就停，避免重複匹配
+                        break
                 
                 if matched_unit:
-                    # 找到單位了，現在找這行裡面的數字
-                    # 排除掉小數點、文字，只抓純數字
+                    # 找到單位，找這行最後一個「合理的」數字
                     nums = []
                     for x in row:
                         try:
-                            # 嘗試轉為浮點數，去除逗號
-                            val = float(str(x).replace(',', '')) 
-                            # 排除 NaN 和無限大
+                            val = float(str(x).replace(',', ''))
+                            # 排除 NaN, Inf, 還有可能是年份的數字 (例如 113)
+                            # 這裡做一個假設：統計數字通常不會剛好是 113 (除非剛好)
+                            # 但為了保險，我們只排除 NaN/Inf
                             if not pd.isna(val) and val != float('inf'):
                                 nums.append(val)
-                        except:
-                            continue
+                        except: pass
                     
                     if nums:
-                        # 策略：Focus 報表通常最後一欄是合計
-                        # 我們取「最後一個數字」作為該單位的統計值
-                        val = int(nums[-1])
-                        
-                        # 累加 (防止同一個單位出現在多行)
+                        val = int(nums[-1]) # 取最後一個
+                        # 簡單防呆：如果最後一個數字是年份 (如 113)，且倒數第二個才是數據？
+                        # Focus 報表通常最後一欄是合計，所以取 -1 應該是對的
                         counts[matched_unit] = counts.get(matched_unit, 0) + val
-                        debug_logs.append(f"   ✅ Row {idx}: 發現 [{matched_unit}] -> 抓到數字序列 {nums} -> 取用最後一個: {val}")
-                    else:
-                        debug_logs.append(f"   ⚠️ Row {idx}: 發現 [{matched_unit}] 但該行沒有數字")
 
-        return counts, found_date, debug_logs
+        return counts, found_date
     except Exception as e:
-        st.error(f"解析檔案 {f.name} 錯誤: {e}")
-        return {}, None, [f"❌ 發生錯誤: {e}"]
+        st.error(f"解析錯誤 {file_label}: {e}")
+        return {}, None
 
 # ==========================================
 # 4. 主程式執行
 # ==========================================
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'])
+uploaded_files = st.file_uploader("請拖曳 3 個統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'])
 
 if uploaded_files:
     if len(uploaded_files) < 3:
@@ -221,22 +203,9 @@ if uploaded_files:
                 else: files_config["Week"] = f
             
             # 解析
-            d_wk, _, logs_wk = parse_report(files_config["Week"], "本期")
-            d_yt, end_date, logs_yt = parse_report(files_config["YTD"], "本年累計")
-            d_ly, _, logs_ly = parse_report(files_config["Last_YTD"], "去年累計")
-
-            # --- 除錯區 ---
-            with st.expander("🕵️‍♀️ 查看詳細抓取過程 (若數值有誤請點此檢查)", expanded=False):
-                c1, c2, c3 = st.columns(3)
-                with c1: 
-                    st.caption("本期日誌")
-                    for l in logs_wk: st.text(l)
-                with c2: 
-                    st.caption("本年累計日誌")
-                    for l in logs_yt: st.text(l)
-                with c3: 
-                    st.caption("去年累計日誌")
-                    for l in logs_ly: st.text(l)
+            d_wk, _ = parse_report(files_config["Week"], "本期")
+            d_yt, end_date = parse_report(files_config["YTD"], "本年累計")
+            d_ly, _ = parse_report(files_config["Last_YTD"], "去年累計")
 
             # 計算進度
             prog_text = ""
@@ -250,7 +219,6 @@ if uploaded_files:
             else:
                 st.warning("⚠️ 無法找到日期，將不顯示年度進度。")
 
-            # 建立表格
             rows = []
             for u in UNIT_ORDER:
                 rows.append({
@@ -263,7 +231,6 @@ if uploaded_files:
             
             df = pd.DataFrame(rows)
             df_calc = df.copy()
-            # 警備隊數值歸零 (依需求)
             mask_guard = df_calc['單位'] == '警備隊'
             df_calc.loc[mask_guard, ['本期', '本年累計', '去年累計', '目標值']] = 0
             
@@ -273,7 +240,6 @@ if uploaded_files:
             df_final = pd.concat([pd.DataFrame([total]), df], ignore_index=True)
             df_final['本年與去年同期比較'] = df_final['本年累計'] - df_final['去年累計']
             df_final['達成率'] = df_final.apply(lambda x: f"{x['本年累計']/x['目標值']:.2%}" if x['目標值']>0 else "—", axis=1)
-            # 警備隊顯示 —
             df_final.loc[df_final['單位']=='警備隊', ['本年與去年同期比較', '目標值', '達成率']] = "—"
             
             cols = ['單位', '本期', '本年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
