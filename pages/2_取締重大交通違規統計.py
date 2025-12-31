@@ -19,52 +19,69 @@ st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** 相關統計 Excel 檔案。
 2. 系統將自動計算數據與年度時間進度。
-3. 自動寄信並將結果寫入 Google 試算表 **(第 1 個分頁，從 A3 開始)**。
+3. 自動寄信並寫入 Google 試算表 **(寫入同一個檔案的第 1 個分頁)**。
 4. **若沒反應，請點擊下方的「強制手動執行」按鈕。**
 """)
 
 # ==========================================
 # 0. 設定區
 # ==========================================
-# 請將您的 Google 試算表網址貼在這裡
+# ★★★ 重要：請填入與「超載統計」完全一樣的 Google 試算表網址 ★★★
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 
-# ★★★ 注意：請確認這裡的目標值是否需要針對「交通違規」進行調整 ★★★
 TARGETS = {'聖亭所': 24, '龍潭所': 32, '中興所': 24, '石門所': 19, '高平所': 16, '三和所': 9, '警備隊': 0, '交通分隊': 30}
 UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'}
 UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 # ==========================================
-# 1. Google Sheets 寫入函數
+# 1. Google Sheets 寫入函數 (強力相容版)
 # ==========================================
 def update_google_sheet(df, sheet_url, start_cell='A3'):
     try:
-        # 檢查 Secrets
+        # 1. 檢查 Secrets
         if "gcp_service_account" not in st.secrets:
-            st.error("❌ 未設定 GCP Service Account Secrets！無法寫入試算表。")
+            st.error("❌ 錯誤：未設定 Secrets！")
             return False
 
-        # 連線
-        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-        sh = gc.open_by_url(sheet_url)
-        
-        # ★★★ 關鍵修改：抓取第 1 個工作表 (索引為 0) ★★★
+        # 2. 連線測試
         try:
-            ws = sh.get_worksheet(0) # Index 0 是第1個工作表
+            gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+            sh = gc.open_by_url(sheet_url)
         except Exception as e:
-            st.error(f"❌ 無法取得第 1 個工作表，請確認試算表是否存在。錯誤: {e}")
+            st.error(f"❌ 連線失敗 (請檢查網址或機器人權限): {e}")
             return False
         
-        # 準備寫入資料
+        # 3. 抓取工作表 (鎖定第 1 個，索引為 0)
+        try:
+            ws = sh.get_worksheet(0) # <--- 這裡是關鍵：0 代表第 1 個分頁
+            if ws is None: raise Exception("找不到 Index 0 的工作表")
+        except Exception as e:
+            st.error(f"❌ 找不到第 1 個工作表: {e}")
+            return False
+        
+        # 4. 準備資料
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
         data = [df_clean.columns.values.tolist()] + df_clean.values.tolist()
         
-        # 寫入
-        ws.update(range_name=start_cell, values=data)
+        # 5. 執行寫入 (雙重寫法相容)
+        try:
+            # 新版 gspread (v6.0+)
+            ws.update(range_name=start_cell, values=data)
+        except TypeError:
+            try:
+                # 舊版 gspread
+                ws.update(start_cell, data)
+            except Exception as e_inner:
+                st.error(f"❌ 寫入數據失敗 (舊版寫法): {e_inner}")
+                return False
+        except Exception as e:
+            st.error(f"❌ 寫入數據失敗: {e}")
+            return False
+
         return True
         
     except Exception as e:
-        st.error(f"❌ Google 試算表寫入失敗: {e}")
+        st.error(f"❌ 未知錯誤: {e}")
         return False
 
 # ==========================================
@@ -101,7 +118,7 @@ def send_email(recipient, subject, body, file_bytes, filename):
         return False
 
 # ==========================================
-# 3. 資料解析函數 (通用型)
+# 3. 資料解析函數
 # ==========================================
 def parse_report(f):
     if not f: return {}, None
@@ -112,7 +129,7 @@ def parse_report(f):
         df_head = pd.read_excel(f, header=None, nrows=20)
         text_content = df_head.to_string()
         
-        # 抓取日期邏輯 (支援分隔符號與連續數字)
+        # 日期抓取 (支援分隔符號與連續數字)
         match = re.search(r'(?:至|~|迄)\s*(\d{3})(\d{2})(\d{2})', text_content)
         if not match:
             match = re.search(r'(?:至|~|迄)\s*(\d{3})[./\-年](\d{1,2})[./\-月](\d{1,2})', text_content)
@@ -122,7 +139,6 @@ def parse_report(f):
             if 100 <= y <= 200 and 1 <= m <= 12 and 1 <= d <= 31:
                 found_date = date(y + 1911, m, d)
         
-        # 讀取數據
         f.seek(0)
         xls = pd.ExcelFile(f)
         for sheet in xls.sheet_names:
@@ -204,7 +220,7 @@ if uploaded_files:
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
             
-            # --- 產生 Excel ---
+            # --- Excel 下載用 ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False, sheet_name='交通違規統計', startrow=3)
@@ -220,47 +236,46 @@ if uploaded_files:
             excel_data = output.getvalue()
             file_name_out = '交通違規統計表.xlsx'
 
-            # --- 自動化與手動執行區塊 ---
+            # --- 自動化/手動執行區 ---
             st.markdown("---")
             st.subheader("🚀 執行動作")
             
             if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
             file_ids = ",".join(sorted([f.name for f in uploaded_files]))
             
-            # 準備執行函數
             def run_automation():
-                with st.status("正在處理中...", expanded=True) as status:
-                    st.write("📧 準備寄送 Email...")
+                with st.status("正在執行...", expanded=True) as status:
+                    # 1. 寄信
+                    st.write("📧 正在寄信...")
                     mail_body = "附件為重大交通違規統計報表。"
                     if prog_text: mail_body += f"\n\n{prog_text}"
                     email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else None
-                    
                     if email_receiver:
                         if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", mail_body, excel_data, file_name_out):
-                            st.write(f"✅ Email 已發送至 {email_receiver}")
+                            st.write(f"✅ Email 已發送")
                         else:
                             st.write("❌ Email 發送失敗")
                     else:
-                        st.write("⚠️ 未設定 Email，跳過寄信")
+                        st.write("⚠️ 未設定 Email")
 
-                    st.write("📊 正在寫入 Google 試算表...")
-                    # 呼叫寫入函數 (A3)
+                    # 2. 寫入
+                    st.write("📊 正在寫入 Google 試算表 (第 1 分頁)...")
                     if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A3'):
-                        st.write("✅ Google 試算表已更新 (第 1 分頁, A3)")
+                        st.write("✅ Google 試算表寫入成功！")
                     else:
-                        st.write("❌ Google 試算表更新失敗")
+                        st.write("❌ Google 試算表寫入失敗 (請看上方紅色錯誤訊息)")
                     
-                    status.update(label="執行完畢", state="complete", expanded=False)
+                    status.update(label="執行結束", state="complete", expanded=False)
                     st.balloons()
             
-            # 自動執行邏輯
+            # 自動執行
             if file_ids not in st.session_state["sent_cache"]:
                 run_automation()
                 st.session_state["sent_cache"].add(file_ids)
             else:
-                st.info("✅ 此組檔案已執行過自動化作業。")
+                st.info("✅ 已自動執行過。")
 
-            # 手動執行按鈕
+            # 手動按鈕
             if st.button("🔄 強制重新執行 (寫入 + 寄信)", type="primary"):
                 run_automation()
 
