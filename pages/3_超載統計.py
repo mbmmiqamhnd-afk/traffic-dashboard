@@ -4,7 +4,7 @@ import numpy as np
 import re
 import io
 import smtplib
-import gspread # 新增這個套件
+import gspread
 from datetime import date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -18,16 +18,16 @@ st.title("🚛 超載 (stoneCnt) 自動統計")
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** `stoneCnt` 系列的 Excel 檔案。
-2. **上傳後自動分析**，計算年度時間進度。
-3. 自動發送 Email 並 **同步更新至 Google 試算表**。
+2. 系統將自動計算數據與年度時間進度。
+3. 自動寄信並將結果寫入 Google 試算表 **(從 B3 儲存格開始)**。
 """)
 
 # ==========================================
-# 0. 設定區 (請修改這裡)
+# 0. 設定區 (請務必修改這裡的網址)
 # ==========================================
 # 請將您的 Google 試算表網址貼在這裡
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
-# 想要寫入的工作表名稱 (例如 "工作表1" 或 "Sheet1")
+# 想要寫入的工作表名稱
 TARGET_WORKSHEET = "超載統計" 
 
 TARGETS = {'聖亭所': 24, '龍潭所': 32, '中興所': 24, '石門所': 19, '高平所': 16, '三和所': 9, '警備隊': 0, '交通分隊': 30}
@@ -35,9 +35,9 @@ UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中
 UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 # ==========================================
-# 1. Google Sheets 寫入函數
+# 1. Google Sheets 寫入函數 (支援指定範圍)
 # ==========================================
-def update_google_sheet(df, sheet_url, worksheet_name):
+def update_google_sheet(df, sheet_url, worksheet_name, start_cell='A1'):
     try:
         # 檢查 Secrets
         if "gcp_service_account" not in st.secrets:
@@ -48,24 +48,22 @@ def update_google_sheet(df, sheet_url, worksheet_name):
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
         
-        # 嘗試取得工作表，若不存在則建立，或者直接使用第一個
         try:
             ws = sh.worksheet(worksheet_name)
         except:
-            # 如果找不到指定名稱的工作表，就建立一個新的，或使用第一個
-            # ws = sh.add_worksheet(title=worksheet_name, rows="100", cols="20")
-            ws = sh.sheet1 # 簡單起見，直接寫入第一個分頁
+            ws = sh.sheet1 
         
-        # 清空舊資料
-        ws.clear()
-        
-        # 準備寫入資料 (將 DataFrame 轉為 List)
-        # 處理 NaN 和 Inf，轉為空字串或 0，避免 API 報錯
+        # 準備寫入資料
+        # fillna("") 把空值變空白字串，避免 API 報錯
+        # replace([np.inf, -np.inf], 0) 處理無限大數值
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
+        
+        # 將 DataFrame 轉為二維列表 (包含標題列)
         data = [df_clean.columns.values.tolist()] + df_clean.values.tolist()
         
-        # 寫入
-        ws.update(data)
+        # 使用 update 方法並指定 range_name (起始儲存格)
+        ws.update(range_name=start_cell, values=data)
+        
         return True
         
     except Exception as e:
@@ -106,7 +104,7 @@ def send_email(recipient, subject, body, file_bytes, filename):
         return False
 
 # ==========================================
-# 3. 資料解析函數
+# 3. 資料解析函數 (萬能日期抓取)
 # ==========================================
 def parse_stone(f):
     if not f: return {}, None
@@ -117,6 +115,7 @@ def parse_stone(f):
         df_head = pd.read_excel(f, header=None, nrows=20)
         text_content = df_head.to_string()
         
+        # 抓取日期邏輯
         match = re.search(r'(?:至|~|迄)\s*(\d{3})(\d{2})(\d{2})', text_content)
         if not match:
             match = re.search(r'(?:至|~|迄)\s*(\d{3})[./\-年](\d{1,2})[./\-月](\d{1,2})', text_content)
@@ -126,6 +125,7 @@ def parse_stone(f):
             if 100 <= y <= 200 and 1 <= m <= 12 and 1 <= d <= 31:
                 found_date = date(y + 1911, m, d)
         
+        # 讀取數據
         f.seek(0)
         xls = pd.ExcelFile(f)
         for sheet in xls.sheet_names:
@@ -207,6 +207,7 @@ if uploaded_files:
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
             
+            # --- 產生下載用 Excel ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False, sheet_name='超載統計', startrow=3)
@@ -223,7 +224,7 @@ if uploaded_files:
             excel_data = output.getvalue()
             file_name_out = '超載統計表.xlsx'
 
-            # --- 自動化流程 ---
+            # --- 自動化流程 (寄信 + 寫入試算表) ---
             if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
             file_ids = ",".join(sorted([f.name for f in uploaded_files]))
             email_receiver = st.secrets["email"]["user"]
@@ -236,16 +237,15 @@ if uploaded_files:
                     if prog_text: mail_body += f"\n\n{prog_text}"
                     email_success = send_email(email_receiver, f"📊 [自動通知] {file_name_out}", mail_body, excel_data, file_name_out)
                     
-                    # 2. 寫入 Google Sheet
-                    # 為了方便閱讀，我們可以把標題和說明也加進去 DataFrame，或者只更新數據
-                    # 這裡示範「只更新數據表」，因為 Sheet 通常不需要那些大標題
-                    sheet_success = update_google_sheet(df_final, GOOGLE_SHEET_URL, TARGET_WORKSHEET)
+                    # 2. 寫入 Google Sheet (從 B3 開始寫入)
+                    # ★★★ 關鍵修改在這裡：指定 start_cell='B3' ★★★
+                    sheet_success = update_google_sheet(df_final, GOOGLE_SHEET_URL, TARGET_WORKSHEET, start_cell='B3')
                     
                     if email_success:
                         st.success(f"✅ 郵件已發送至 {email_receiver}")
                     
                     if sheet_success:
-                        st.success(f"✅ Google 試算表 ({TARGET_WORKSHEET}) 已更新")
+                        st.success(f"✅ Google 試算表 ({TARGET_WORKSHEET}) 已從 B3 更新")
                     
                     if email_success or sheet_success:
                         st.balloons()
