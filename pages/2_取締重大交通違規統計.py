@@ -42,7 +42,7 @@ UNIT_MAP = {
     '交通組': '科技執法' 
 }
 
-# 顯示順序
+# 顯示順序 (寫入時會依照此順序填入 B4, B5, B6...)
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 # 目標值
@@ -54,7 +54,7 @@ TARGETS = {
 # ==========================================
 # 1. Google Sheets 寫入函數
 # ==========================================
-def update_google_sheet(df, sheet_url, start_cell='B4'): # <--- 預設改為 B4 (數據區)
+def update_google_sheet(df, sheet_url, start_cell='B4'): # <--- 預設 B4
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 錯誤：未設定 Secrets！")
@@ -67,18 +67,16 @@ def update_google_sheet(df, sheet_url, start_cell='B4'): # <--- 預設改為 B4 
             return False
         
         try:
-            # 鎖定第 1 個分頁 (Index 0)
             ws = sh.get_worksheet(0) 
             if ws is None: raise Exception("找不到 Index 0 的工作表")
         except Exception as e:
             st.error(f"❌ 找不到第 1 個工作表: {e}")
             return False
         
-        # 處理資料格式
+        # 處理資料
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
         
-        # ★★★ 關鍵修改：不含標題列 ★★★
-        # 只取 values，不取 columns
+        # ★★★ 只取數據 (values)，不包含 columns (標題) ★★★
         data = df_clean.values.tolist()
         
         try:
@@ -135,17 +133,14 @@ def parse_focus_report(uploaded_file):
     header_idx = -1
     
     try:
-        # 1. 嘗試讀取前20行找日期與標題列
         df_raw = pd.read_excel(io.BytesIO(content), header=None, nrows=20)
         for i, row in df_raw.iterrows():
             row_str = " ".join([str(x) for x in row.values if pd.notna(x)])
             
-            # 抓取日期
             if not start_date:
                 match = re.search(r'入案日期[：:]?\s*(\d{3,7}).*至\s*(\d{3,7})', row_str)
                 if match: start_date, end_date = match.group(1), match.group(2)
             
-            # 抓取標題列
             if "單位" in row_str and "酒後" in row_str: 
                 header_idx = i
                 
@@ -156,7 +151,6 @@ def parse_focus_report(uploaded_file):
 
         if df is None: return None
 
-        # 2. 定義重點欄位
         keywords = ["酒後", "闖紅燈", "嚴重超速", "逆向", "轉彎", "蛇行", "不暫停讓行人", "機車"]
         stop_cols = [] 
         cit_cols = []  
@@ -167,7 +161,6 @@ def parse_focus_report(uploaded_file):
                 stop_cols.append(i)
                 cit_cols.append(i+1)
         
-        # 3. 統計數據
         unit_data = {}
         for _, row in df.iterrows():
             raw_unit = str(row['單位']).strip()
@@ -185,7 +178,6 @@ def parse_focus_report(uploaded_file):
             
             unit_data[unit_name] = {'stop': s, 'cit': c}
 
-        # 4. 計算天數
         duration = 0
         try:
             s_d = re.sub(r'[^\d]', '', start_date)
@@ -206,25 +198,25 @@ def parse_focus_report(uploaded_file):
 # ==========================================
 # 4. 主程式執行
 # ==========================================
-# 使用新 key 強制重置上傳狀態
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_B4_no_header")
+# ★★★ 使用新 key 強制重置上傳狀態 ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v5_final")
 
 if uploaded_files:
     if len(uploaded_files) < 3:
         st.warning("⏳ 檔案不足 3 個，請繼續上傳...")
     else:
         try:
-            # 1. 解析所有檔案
+            # 1. 解析
             parsed_files = []
             for f in uploaded_files:
                 res = parse_focus_report(f)
                 if res: parsed_files.append(res)
             
             if len(parsed_files) < 3:
-                st.error("❌ 有檔案解析失敗，請確認檔案格式")
+                st.error("❌ 有檔案解析失敗")
                 st.stop()
 
-            # 2. 自動判斷
+            # 2. 判斷
             parsed_files.sort(key=lambda x: x['start']) 
             file_last_year = parsed_files[0] 
             
@@ -250,10 +242,11 @@ if uploaded_files:
                 st.info(f"📅 {prog_text}")
             except: pass
 
-            # 4. 組合最終表格
+            # 4. 組合表格
             rows = []
             accum = {'ws':0, 'wc':0, 'ys':0, 'yc':0, 'ls':0, 'lc':0}
             
+            # 依序加入單位數據 (B4: 科技執法, B5: 聖亭所...)
             for u in UNIT_ORDER:
                 w = file_week['data'].get(u, {'stop':0, 'cit':0})
                 y = file_year['data'].get(u, {'stop':0, 'cit':0})
@@ -285,20 +278,24 @@ if uploaded_files:
                 
                 rows.append(row_data)
 
-            # 合計列
+            # 合計列 (準備放在最後)
             total_target = sum([v for k,v in TARGETS.items() if k not in ['警備隊', '科技執法']])
             t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
             t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
             
             total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, f"{t_rate:.2%}"]
             
+            # ★★★ 關鍵修改：將合計列加到 rows 的「最後面」 ★★★
+            rows.append(total_row)
+
+            # 建立 DataFrame
             cols = ['單位', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
-            df_final = pd.DataFrame([total_row] + rows, columns=cols)
+            df_final = pd.DataFrame(rows, columns=cols)
 
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            # --- 產生 Excel ---
+            # --- Excel (Excel 還是需要完整表格) ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False, sheet_name='Sheet1', startrow=3)
