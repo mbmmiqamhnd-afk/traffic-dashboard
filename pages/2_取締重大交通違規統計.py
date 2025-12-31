@@ -20,13 +20,13 @@ st.markdown("""
 1. 請上傳 **3 個** 相關統計 Excel 檔案。
 2. 系統將自動計算數據與年度時間進度。
 3. 自動寄信並寫入 Google 試算表 **(寫入同一個檔案的第 1 個分頁)**。
-4. **若沒反應，請點擊下方的「強制手動執行」按鈕。**
+4. **若沒反應，請點擊下方的「🔄 強制手動執行」按鈕。**
 """)
 
 # ==========================================
 # 0. 設定區
 # ==========================================
-# ★★★ 重要：請填入與「超載統計」完全一樣的 Google 試算表網址 ★★★
+# ★★★ 重要：請確認這裡填入的是與「超載統計」完全一樣的 Google 試算表網址 ★★★
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 
 TARGETS = {'聖亭所': 24, '龍潭所': 32, '中興所': 24, '石門所': 19, '高平所': 16, '三和所': 9, '警備隊': 0, '交通分隊': 30}
@@ -53,7 +53,7 @@ def update_google_sheet(df, sheet_url, start_cell='A3'):
         
         # 3. 抓取工作表 (鎖定第 1 個，索引為 0)
         try:
-            ws = sh.get_worksheet(0) # <--- 這裡是關鍵：0 代表第 1 個分頁
+            ws = sh.get_worksheet(0) # <--- 0 代表第 1 個分頁
             if ws is None: raise Exception("找不到 Index 0 的工作表")
         except Exception as e:
             st.error(f"❌ 找不到第 1 個工作表: {e}")
@@ -263,7 +263,7 @@ if uploaded_files:
                     if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A3'):
                         st.write("✅ Google 試算表寫入成功！")
                     else:
-                        st.write("❌ Google 試算表寫入失敗 (請看上方紅色錯誤訊息)")
+                        st.write("❌ Google 試算表寫入失敗")
                     
                     status.update(label="執行結束", state="complete", expanded=False)
                     st.balloons()
@@ -275,7 +275,7 @@ if uploaded_files:
             else:
                 st.info("✅ 已自動執行過。")
 
-            # 手動按鈕
+            # ★★★ 手動按鈕在這裡 ★★★
             if st.button("🔄 強制重新執行 (寫入 + 寄信)", type="primary"):
                 run_automation()
 
