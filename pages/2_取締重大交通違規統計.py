@@ -12,15 +12,16 @@ from email.mime.base import MIMEBase
 from email import encoders
 from email.header import Header
 
+# v7 修正版
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.title("🚔 取締重大交通違規統計 (含攔停/逕舉)")
+st.title("🚔 取締重大交通違規統計 (v7 修正版)")
 
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** 重點違規報表 (focus系列)。
 2. 系統會自動區分 **攔停** 與 **逕舉** 件數。
 3. 自動寄信並寫入 Google 試算表 **(只寫入數據，從 B4 開始)**。
-4. **若沒反應，請點擊下方的「🔄 強制手動執行」按鈕。**
+4. **表格第一欄名稱已改為「取締方式」。**
 """)
 
 # ==========================================
@@ -54,7 +55,7 @@ TARGETS = {
 # ==========================================
 # 1. Google Sheets 寫入函數
 # ==========================================
-def update_google_sheet(df, sheet_url, start_cell='B4'): # <--- 預設 B4
+def update_google_sheet(df, sheet_url, start_cell='B4'): # <--- 鎖定 B4
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 錯誤：未設定 Secrets！")
@@ -76,7 +77,7 @@ def update_google_sheet(df, sheet_url, start_cell='B4'): # <--- 預設 B4
         # 處理資料
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
         
-        # 只取數據 (values)，不包含 columns (標題)
+        # ★★★ 關鍵：只取數據 (Values)，不寫入 Header ★★★
         data = df_clean.values.tolist()
         
         try:
@@ -141,7 +142,6 @@ def parse_focus_report(uploaded_file):
                 match = re.search(r'入案日期[：:]?\s*(\d{3,7}).*至\s*(\d{3,7})', row_str)
                 if match: start_date, end_date = match.group(1), match.group(2)
             
-            # 原始檔案裡面還是叫 "單位"，所以這裡不改
             if "單位" in row_str and "酒後" in row_str: 
                 header_idx = i
                 
@@ -199,8 +199,8 @@ def parse_focus_report(uploaded_file):
 # ==========================================
 # 4. 主程式執行
 # ==========================================
-# 使用新 key 強制重置
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v6_rename")
+# ★★★ 使用新 key (v7) 強制重置 ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v7_fixed")
 
 if uploaded_files:
     if len(uploaded_files) < 3:
@@ -284,17 +284,16 @@ if uploaded_files:
             t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
             
             total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, f"{t_rate:.2%}"]
-            
             rows.append(total_row)
 
-            # ★★★ 欄位名稱修改：單位 -> 取締方式 ★★★
+            # ★★★ 欄位標題：取締方式 ★★★
             cols = ['取締方式', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(rows, columns=cols)
 
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            # --- Excel (下載時會看到「取締方式」) ---
+            # --- Excel (標題會是「取締方式」) ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False, sheet_name='Sheet1', startrow=3)
