@@ -19,7 +19,7 @@ st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** 重點違規報表 (focus系列)。
 2. 系統會自動區分 **攔停** 與 **逕舉** 件數。
-3. 自動寄信並寫入 Google 試算表 **(第 1 個分頁，從 A4 開始)**。
+3. 自動寄信並寫入 Google 試算表 **(第 1 個分頁，從 A3 開始)**。
 4. **若沒反應，請點擊下方的「🔄 強制手動執行」按鈕。**
 """)
 
@@ -55,7 +55,7 @@ TARGETS = {
 # ==========================================
 # 1. Google Sheets 寫入函數
 # ==========================================
-def update_google_sheet(df, sheet_url, start_cell='A4'):
+def update_google_sheet(df, sheet_url, start_cell='A3'): # <--- 預設改為 A3
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 錯誤：未設定 Secrets！")
@@ -167,7 +167,6 @@ def parse_focus_report(uploaded_file):
             if any(k in col_str for k in keywords) and "路肩" not in col_str and "大型車" not in col_str:
                 # 假設 Excel 格式: 項目名稱(在 i) -> 
                 # 下一行(資料行)對應的應該是: i (攔停), i+1 (逕舉)
-                # 因為合併儲存格通常佔用 2 格，Header 在左邊
                 stop_cols.append(i)
                 cit_cols.append(i+1)
         
@@ -214,7 +213,7 @@ def parse_focus_report(uploaded_file):
 # 4. 主程式執行
 # ==========================================
 # 使用新 key 避免快取衝突
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_final_v2")
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_final_v3")
 
 if uploaded_files:
     if len(uploaded_files) < 3:
@@ -345,8 +344,8 @@ if uploaded_files:
                         st.write("⚠️ 未設定 Email")
 
                     # 2. 寫入 Google Sheet
-                    st.write("📊 正在寫入 Google 試算表 (第 1 分頁, A4)...")
-                    if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A4'):
+                    st.write("📊 正在寫入 Google 試算表 (第 1 分頁, A3)...")
+                    if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A3'): # <--- 這裡改為 A3
                         st.write("✅ Google 試算表寫入成功！")
                     else:
                         st.write("❌ Google 試算表寫入失敗")
