@@ -42,7 +42,7 @@ UNIT_MAP = {
     '交通組': '科技執法' 
 }
 
-# 顯示順序 (寫入時會依照此順序填入 B4, B5, B6...)
+# 顯示順序
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 # 目標值
@@ -76,7 +76,7 @@ def update_google_sheet(df, sheet_url, start_cell='B4'): # <--- 預設 B4
         # 處理資料
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
         
-        # ★★★ 只取數據 (values)，不包含 columns (標題) ★★★
+        # 只取數據 (values)，不包含 columns (標題)
         data = df_clean.values.tolist()
         
         try:
@@ -141,6 +141,7 @@ def parse_focus_report(uploaded_file):
                 match = re.search(r'入案日期[：:]?\s*(\d{3,7}).*至\s*(\d{3,7})', row_str)
                 if match: start_date, end_date = match.group(1), match.group(2)
             
+            # 原始檔案裡面還是叫 "單位"，所以這裡不改
             if "單位" in row_str and "酒後" in row_str: 
                 header_idx = i
                 
@@ -198,8 +199,8 @@ def parse_focus_report(uploaded_file):
 # ==========================================
 # 4. 主程式執行
 # ==========================================
-# ★★★ 使用新 key 強制重置上傳狀態 ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v5_final")
+# 使用新 key 強制重置
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v6_rename")
 
 if uploaded_files:
     if len(uploaded_files) < 3:
@@ -246,7 +247,6 @@ if uploaded_files:
             rows = []
             accum = {'ws':0, 'wc':0, 'ys':0, 'yc':0, 'ls':0, 'lc':0}
             
-            # 依序加入單位數據 (B4: 科技執法, B5: 聖亭所...)
             for u in UNIT_ORDER:
                 w = file_week['data'].get(u, {'stop':0, 'cit':0})
                 y = file_year['data'].get(u, {'stop':0, 'cit':0})
@@ -278,24 +278,23 @@ if uploaded_files:
                 
                 rows.append(row_data)
 
-            # 合計列 (準備放在最後)
+            # 合計列
             total_target = sum([v for k,v in TARGETS.items() if k not in ['警備隊', '科技執法']])
             t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
             t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
             
             total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, f"{t_rate:.2%}"]
             
-            # ★★★ 關鍵修改：將合計列加到 rows 的「最後面」 ★★★
             rows.append(total_row)
 
-            # 建立 DataFrame
-            cols = ['單位', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
+            # ★★★ 欄位名稱修改：單位 -> 取締方式 ★★★
+            cols = ['取締方式', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(rows, columns=cols)
 
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            # --- Excel (Excel 還是需要完整表格) ---
+            # --- Excel (下載時會看到「取締方式」) ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False, sheet_name='Sheet1', startrow=3)
@@ -331,11 +330,11 @@ if uploaded_files:
                     else:
                         st.write("⚠️ 未設定 Email")
 
-                    # 2. 寫入 Google Sheet (移除單位欄，寫入 B4)
-                    st.write("📊 正在寫入 Google 試算表 (第 1 分頁, B4, 不含標題/單位)...")
+                    # 2. 寫入 Google Sheet (移除「取締方式」欄，寫入 B4)
+                    st.write("📊 正在寫入 Google 試算表 (第 1 分頁, B4, 不含標題/第一欄)...")
                     
-                    # 建立不含「單位」欄的 DataFrame
-                    df_write = df_final.drop(columns=['單位'])
+                    # 建立不含第一欄 (取締方式) 的 DataFrame
+                    df_write = df_final.drop(columns=['取締方式'])
                     
                     if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'): 
                         st.write("✅ Google 試算表寫入成功！")
