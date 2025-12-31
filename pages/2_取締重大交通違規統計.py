@@ -19,7 +19,7 @@ st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** 重點違規報表 (focus系列)。
 2. 系統會自動區分 **攔停** 與 **逕舉** 件數。
-3. 自動寄信並寫入 Google 試算表 **(第 1 個分頁，從 A3 開始)**。
+3. 自動寄信並寫入 Google 試算表 **(只寫入數據，從 B4 開始)**。
 4. **若沒反應，請點擊下方的「🔄 強制手動執行」按鈕。**
 """)
 
@@ -29,8 +29,7 @@ st.markdown("""
 # ★★★ 請確認這裡填入的是正確的 Google 試算表網址 ★★★
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 
-# 單位名稱對應 (Excel 裡的名稱 -> 顯示名稱)
-# "交通組" 在報表中代表 "科技執法"
+# 單位名稱對應
 UNIT_MAP = {
     '聖亭派出所': '聖亭所', 
     '龍潭派出所': '龍潭所', 
@@ -55,7 +54,7 @@ TARGETS = {
 # ==========================================
 # 1. Google Sheets 寫入函數
 # ==========================================
-def update_google_sheet(df, sheet_url, start_cell='A3'): # <--- 確認預設為 A3
+def update_google_sheet(df, sheet_url, start_cell='B4'): # <--- 預設改為 B4 (數據區)
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 錯誤：未設定 Secrets！")
@@ -77,11 +76,12 @@ def update_google_sheet(df, sheet_url, start_cell='A3'): # <--- 確認預設為 
         
         # 處理資料格式
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
-        # 轉換為二維列表 (含標題)
-        data = [df_clean.columns.values.tolist()] + df_clean.values.tolist()
+        
+        # ★★★ 關鍵修改：不含標題列 ★★★
+        # 只取 values，不取 columns
+        data = df_clean.values.tolist()
         
         try:
-            # 寫入資料
             ws.update(range_name=start_cell, values=data)
         except TypeError:
             ws.update(start_cell, data)
@@ -124,7 +124,7 @@ def send_email(recipient, subject, body, file_bytes, filename):
         return False
 
 # ==========================================
-# 3. Focus 專用解析函數 (攔停/逕舉精準分離)
+# 3. Focus 專用解析函數
 # ==========================================
 def parse_focus_report(uploaded_file):
     if not uploaded_file: return None
@@ -145,7 +145,7 @@ def parse_focus_report(uploaded_file):
                 match = re.search(r'入案日期[：:]?\s*(\d{3,7}).*至\s*(\d{3,7})', row_str)
                 if match: start_date, end_date = match.group(1), match.group(2)
             
-            # 抓取標題列 (特徵: 有"單位"且有"酒後")
+            # 抓取標題列
             if "單位" in row_str and "酒後" in row_str: 
                 header_idx = i
                 
@@ -156,18 +156,14 @@ def parse_focus_report(uploaded_file):
 
         if df is None: return None
 
-        # 2. 定義 8 大重點欄位
-        # 排除 "路肩" 與 "大型車"
+        # 2. 定義重點欄位
         keywords = ["酒後", "闖紅燈", "嚴重超速", "逆向", "轉彎", "蛇行", "不暫停讓行人", "機車"]
-        stop_cols = [] # 攔停欄位索引
-        cit_cols = []  # 逕舉欄位索引
+        stop_cols = [] 
+        cit_cols = []  
         
         for i in range(len(df.columns)):
             col_str = str(df.columns[i])
-            # 判斷是否為重點項目
             if any(k in col_str for k in keywords) and "路肩" not in col_str and "大型車" not in col_str:
-                # 假設 Excel 格式: 項目名稱(在 i) -> 
-                # 下一行(資料行)對應的應該是: i (攔停), i+1 (逕舉)
                 stop_cols.append(i)
                 cit_cols.append(i+1)
         
@@ -177,22 +173,19 @@ def parse_focus_report(uploaded_file):
             raw_unit = str(row['單位']).strip()
             if raw_unit == 'nan' or not raw_unit: continue
             
-            # 對應到標準名稱
             unit_name = UNIT_MAP.get(raw_unit, raw_unit)
             
             s, c = 0, 0
-            # 加總攔停
             for col in stop_cols:
                 try: s += float(str(row.iloc[col]).replace(',', ''))
                 except: pass
-            # 加總逕舉
             for col in cit_cols:
                 try: c += float(str(row.iloc[col]).replace(',', ''))
                 except: pass
             
             unit_data[unit_name] = {'stop': s, 'cit': c}
 
-        # 4. 計算天數 (用於排序)
+        # 4. 計算天數
         duration = 0
         try:
             s_d = re.sub(r'[^\d]', '', start_date)
@@ -213,8 +206,8 @@ def parse_focus_report(uploaded_file):
 # ==========================================
 # 4. 主程式執行
 # ==========================================
-# ★★★ 使用新 key 強制重置上傳狀態 ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_A3_fix")
+# 使用新 key 強制重置上傳狀態
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_B4_no_header")
 
 if uploaded_files:
     if len(uploaded_files) < 3:
@@ -228,19 +221,19 @@ if uploaded_files:
                 if res: parsed_files.append(res)
             
             if len(parsed_files) < 3:
-                st.error("❌ 有檔案解析失敗，請確認檔案格式是否正確 (Focus 報表)")
+                st.error("❌ 有檔案解析失敗，請確認檔案格式")
                 st.stop()
 
-            # 2. 自動判斷哪個是本期、本年、去年
+            # 2. 自動判斷
             parsed_files.sort(key=lambda x: x['start']) 
-            file_last_year = parsed_files[0] # 最早的是去年
+            file_last_year = parsed_files[0] 
             
             others = parsed_files[1:]
             others.sort(key=lambda x: x['duration'], reverse=True)
-            file_year = others[0] # 剩下比較長的是本年累計
-            file_week = others[1] # 比較短的是本期
+            file_year = others[0] 
+            file_week = others[1] 
 
-            # 3. 計算進度文字
+            # 3. 進度
             prog_text = ""
             try:
                 end_str = re.sub(r'[^\d]', '', file_year['end'])
@@ -266,13 +259,12 @@ if uploaded_files:
                 y = file_year['data'].get(u, {'stop':0, 'cit':0})
                 l = file_last_year['data'].get(u, {'stop':0, 'cit':0})
                 
-                # 科技執法強制歸零 (攔停欄位)
+                # 科技執法歸零
                 if u == '科技執法': w['stop'], y['stop'], l['stop'] = 0, 0, 0
 
                 y_total = y['stop'] + y['cit']
                 l_total = l['stop'] + l['cit']
                 
-                # 欄位順序: 單位, 本期攔停, 本期逕舉, 本年攔停, 本年逕舉, 去年攔停, 去年逕舉, 比較, 目標, 達成率
                 row_data = [u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit']]
                 
                 if u == '警備隊': 
@@ -287,7 +279,6 @@ if uploaded_files:
                         rate_str = f"{y_total/tgt:.2%}" if tgt > 0 else "0.00%"
                         row_data.extend([tgt, rate_str])
                 
-                # 累加合計
                 accum['ws']+=w['stop']; accum['wc']+=w['cit']
                 accum['ys']+=y['stop']; accum['yc']+=y['cit']
                 accum['ls']+=l['stop']; accum['lc']+=l['cit']
@@ -301,7 +292,6 @@ if uploaded_files:
             
             total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, f"{t_rate:.2%}"]
             
-            # 建立 DataFrame
             cols = ['單位', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame([total_row] + rows, columns=cols)
 
@@ -344,10 +334,13 @@ if uploaded_files:
                     else:
                         st.write("⚠️ 未設定 Email")
 
-                    # 2. 寫入 Google Sheet
-                    # ★★★ 再次確認位置為 A3 ★★★
-                    st.write("📊 正在寫入 Google 試算表 (第 1 分頁, A3)...")
-                    if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A3'): 
+                    # 2. 寫入 Google Sheet (移除單位欄，寫入 B4)
+                    st.write("📊 正在寫入 Google 試算表 (第 1 分頁, B4, 不含標題/單位)...")
+                    
+                    # 建立不含「單位」欄的 DataFrame
+                    df_write = df_final.drop(columns=['單位'])
+                    
+                    if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'): 
                         st.write("✅ Google 試算表寫入成功！")
                     else:
                         st.write("❌ Google 試算表寫入失敗")
@@ -355,14 +348,12 @@ if uploaded_files:
                     status.update(label="執行完畢", state="complete", expanded=False)
                     st.balloons()
             
-            # 因為更換了上傳 key，這裡通常會被視為新檔案，自動觸發
             if file_ids not in st.session_state["sent_cache"]:
                 run_automation()
                 st.session_state["sent_cache"].add(file_ids)
             else:
                 st.info("✅ 此組檔案已自動執行過。")
 
-            # 手動按鈕
             if st.button("🔄 強制重新執行 (寫入 + 寄信)", type="primary"):
                 run_automation()
 
