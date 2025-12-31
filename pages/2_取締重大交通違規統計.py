@@ -12,16 +12,21 @@ from email.mime.base import MIMEBase
 from email import encoders
 from email.header import Header
 
-# v8 終極預覽版
+# 強制清除快取 (若支援)
+try:
+    st.cache_data.clear()
+    st.cache_resource.clear()
+except: pass
+
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.title("🚔 取締重大交通違規統計 (v8 終極版)")
+st.title("🚔 取締重大交通違規統計 (v9 純數據版)")
 
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** 重點違規報表 (focus系列)。
-2. 系統自動分析並區分 **攔停/逕舉**。
-3. **請查看下方的「寫入預覽」表格**，確認那正是您要填入 Google 試算表的資料。
-4. 確認無誤後，系統會自動寫入 **(從 B4 開始，不含標題/單位)**。
+2. 系統會自動區分 **攔停** 與 **逕舉**。
+3. **請觀察下方的「寫入內容檢查」**，確保第一行是 **數字** 而不是中文標題。
+4. 寫入位置：**B4** (跳過 A 欄單位，跳過第 1~3 列標題)。
 """)
 
 # ==========================================
@@ -35,7 +40,6 @@ UNIT_MAP = {
     '警備隊': '警備隊', '龍潭交通分隊': '交通分隊', '交通組': '科技執法' 
 }
 
-# 最終寫入的順序
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 TARGETS = {
@@ -44,7 +48,7 @@ TARGETS = {
 }
 
 # ==========================================
-# 1. Google Sheets 寫入函數
+# 1. Google Sheets 寫入函數 (絕對不含標題)
 # ==========================================
 def update_google_sheet(df, sheet_url, start_cell='B4'):
     try:
@@ -65,11 +69,17 @@ def update_google_sheet(df, sheet_url, start_cell='B4'):
             st.error(f"❌ 找不到第 1 個工作表: {e}")
             return False
         
+        # 轉為純數據 (不含 Columns)
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
-        
-        # ★★★ 強制轉為純數據 (List of Lists)，不含 Header ★★★
         data = df_clean.values.tolist()
         
+        # ★★★ 檢查點：列印出第一行數據供 debug ★★★
+        st.write(f"🔍 寫入檢查：第一筆資料 (寫入至 {start_cell}) 為：")
+        st.code(str(data[0])) # 應該顯示 [0, 0, 10, 5...] 這樣的數字列表
+        
+        if any(isinstance(x, str) and not x.isdigit() and x not in ['—', ''] for x in data[0]):
+             st.warning("⚠️ 警告：第一行資料看起來包含文字，請確認是否誤入了標題！")
+
         try:
             ws.update(range_name=start_cell, values=data)
         except TypeError:
@@ -109,14 +119,13 @@ def send_email(recipient, subject, body, file_bytes, filename):
     except: return False
 
 # ==========================================
-# 3. Focus 解析函數
+# 3. 解析函數
 # ==========================================
 def parse_focus_report(uploaded_file):
     if not uploaded_file: return None
     content = uploaded_file.getvalue()
     start_date, end_date = "", ""
-    df = None
-    header_idx = -1
+    df = None; header_idx = -1
     
     try:
         df_raw = pd.read_excel(io.BytesIO(content), header=None, nrows=20)
@@ -167,14 +176,13 @@ def parse_focus_report(uploaded_file):
 # ==========================================
 # 4. 主程式
 # ==========================================
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v8_preview")
+# ★★★ v9 key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v9_pure_data")
 
 if uploaded_files:
-    if len(uploaded_files) < 3:
-        st.warning("⏳ 檔案不足 3 個...")
+    if len(uploaded_files) < 3: st.warning("⏳ 檔案不足...")
     else:
         try:
-            # 解析與排序
             parsed_files = []
             for f in uploaded_files:
                 res = parse_focus_report(f)
@@ -218,6 +226,7 @@ if uploaded_files:
                 if u == '科技執法': w['stop'], y['stop'], l['stop'] = 0, 0, 0
                 y_total = y['stop'] + y['cit']; l_total = l['stop'] + l['cit']
                 
+                # 純數據行
                 row_data = [u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit']]
                 
                 if u == '警備隊': row_data.extend(['—', '—', '—'])
@@ -233,23 +242,22 @@ if uploaded_files:
                 accum['ls']+=l['stop']; accum['lc']+=l['cit']
                 rows.append(row_data)
 
+            # 合計列
             total_target = sum([v for k,v in TARGETS.items() if k not in ['警備隊', '科技執法']])
             t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
             t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
             total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, f"{t_rate:.2%}"]
             rows.append(total_row)
 
-            # 完整表格 (含單位)
+            # 建立完整 DataFrame (含單位，用於顯示與Excel)
             cols = ['取締方式', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(rows, columns=cols)
             
-            # 純數據表格 (準備寫入用，移除第一欄)
+            # ★★★ 準備寫入的純數據 DataFrame (移除第一欄) ★★★
             df_write = df_final.drop(columns=['取締方式'])
 
-            # 顯示預覽
-            st.markdown("### 👁️ 即將寫入 Google 試算表 (B4) 的內容預覽")
-            st.caption("程式將只寫入以下純數字，不含標題，不含第一欄單位名稱：")
-            st.dataframe(df_write, use_container_width=True)
+            st.success("✅ 分析完成！")
+            st.dataframe(df_final, use_container_width=True, hide_index=True)
 
             # Excel 下載
             output = io.BytesIO()
@@ -272,19 +280,18 @@ if uploaded_files:
             
             def run_automation():
                 with st.status("🚀 執行中...", expanded=True) as status:
-                    # 寄信
                     st.write("📧 正在寄送 Email...")
                     email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else None
                     if email_receiver:
                         if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
                             st.write(f"✅ Email 已發送")
                     
-                    # 寫入 (B4, 純數據)
                     st.write("📊 正在寫入 Google 試算表 (B4, 無標題)...")
+                    # 傳入純數據 df_write
                     if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'): 
                         st.write("✅ 試算表寫入成功！")
                     else:
-                        st.write("❌ 寫入失敗，請檢查錯誤訊息")
+                        st.write("❌ 寫入失敗")
                     
                     status.update(label="執行完畢", state="complete", expanded=False)
                     st.balloons()
