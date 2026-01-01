@@ -18,7 +18,7 @@ from email.header import Header
 
 # --- 初始化配置 ---
 st.set_page_config(page_title="重大交通違規統計", layout="wide", page_icon="🚦")
-st.title("🚦 重大交通違規統計 (v72 重點違規專用版)")
+st.title("🚦 重大交通違規統計 (v73 座標鎖定版)")
 
 # ==========================================
 # 0. 設定區
@@ -26,7 +26,7 @@ st.title("🚦 重大交通違規統計 (v72 重點違規專用版)")
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 VIOLATION_TARGETS = {'合計': 11817, '科技執法': 0, '聖亭所': 1200, '龍潭所': 1500, '中興所': 1200, '石門所': 1000, '高平所': 800, '三和所': 500, '警備隊': 0, '交通分隊': 1000}
 
-# 單位對照表 (Key: 報表顯示名稱, Value: 檔案內可能的名稱)
+# 單位對照表
 UNIT_MAP = {
     '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', 
     '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', 
@@ -69,87 +69,79 @@ def get_footer_percent_red_req(ws_id, row_idx, col_idx, text):
     return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": text_str}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
 
 # ==========================================
-# 2. 核心解析引擎 (重點違規統計表專用)
+# 2. 核心解析引擎 (Focus CSV 專用)
 # ==========================================
 def clean_int(val):
     try:
-        if pd.isna(val) or str(val).strip() in ['—', '', '-', 'nan']: return 0
+        if pd.isna(val) or str(val).strip() in ['—', '', '-', 'nan', 'NaN']: return 0
         s = str(val).replace(',', '').strip()
         return int(float(s))
     except: return 0
 
-def extract_focus_report_data(file_obj):
+def extract_focus_csv_data(file_obj):
     counts = {}
     date_str = "0000~0000"
     
     try:
-        # 1. 讀取 CSV (嘗試多種編碼)
-        df = None
         file_obj.seek(0)
-        encodings = ['utf-8', 'big5', 'cp950']
-        for enc in encodings:
-            try:
-                file_obj.seek(0)
-                # 重點違規表通常有 header，但因為上方有標題，我們用 header=None 再自己找
-                df = pd.read_csv(file_obj, header=None, encoding=enc, on_bad_lines='skip')
-                if df.shape[1] > 1: break # 成功讀取
-            except: continue
+        # 嘗試讀取 CSV
+        try: df = pd.read_csv(file_obj, header=None, encoding='utf-8', on_bad_lines='skip')
+        except: 
+            file_obj.seek(0)
+            df = pd.read_csv(file_obj, header=None, encoding='big5', on_bad_lines='skip')
         
-        if df is None: return {}, date_str
-
-        # 2. 抓取日期 (從 "入案日期：1141223 至 1141229")
+        # 1. 抓取日期 (從 Row 4: "入案日期：1141223 至 1141229")
+        # 掃描前 10 行尋找日期
         top_txt = df.iloc[:10].astype(str).to_string()
         m = re.search(r'入案日期：(\d+)\s*至\s*(\d+)', top_txt)
         if m: 
             s_d, e_d = m.group(1), m.group(2)
-            # 轉換為 MMDD 格式 (假設是民國年 1141223 -> 1223)
-            date_str = f"{s_d[-4:]}~{e_d[-4:]}"
+            date_str = f"{s_d[-4:]}~{e_d[-4:]}" # 取後4碼 MMDD
 
-        # 3. 定位「合計」欄位
-        # 邏輯：找到包含「單位」與「合計」的標題列
-        header_row_idx = -1
-        total_col_idx = -1
-        
-        for r_idx, row in df.iterrows():
-            row_str = "".join(row.astype(str).tolist())
-            if "單位" in row_str and "合計" in row_str:
-                header_row_idx = r_idx
-                # 找到「合計」在哪一欄
-                for c_idx, val in enumerate(row):
-                    if "合計" in str(val):
-                        total_col_idx = c_idx
-                        break
+        # 2. 定位「合計」欄位
+        # 根據分析，Row 5 (index 5) 包含 "合計"
+        # 我們搜尋包含 "單位" 的那一行作為 Header Row
+        header_idx = -1
+        for idx, row in df.iterrows():
+            if "單位" in str(row.values) and "合計" in str(row.values):
+                header_idx = idx
                 break
         
-        if header_row_idx != -1 and total_col_idx != -1:
-            # 欄位通常是：合計(攔停), 合計(逕行)
-            # 因為 CSV 中合併儲存格通常只會在第一個格子有值，第二個格子可能是 NaN 或空
-            # 我們假設 total_col_idx 是攔停，total_col_idx + 1 是逕行
-            idx_int = total_col_idx
-            idx_rem = total_col_idx + 1
-            
-            # 4. 抓取數據 (從標題列下方開始)
-            # 注意：標題列下方通常還有一列「現場攔停, 逕行舉發...」，所以要再往下
-            data_start_idx = header_row_idx + 2 
-            
-            for r_idx in range(data_start_idx, len(df)):
-                row = df.iloc[r_idx]
-                unit_name = str(row[0]).strip() # 假設單位在第 0 欄
-                
-                # 辨識單位
-                target_unit = None
-                if "合計" in unit_name or "總計" in unit_name: target_unit = "合計"
-                elif "科技執法" in unit_name: target_unit = "科技執法"
-                else:
+        if header_idx != -1:
+            # 在 Header Row 尋找 "合計" 的索引
+            row_vals = df.iloc[header_idx].tolist()
+            # 找最後一個 "合計" (通常在最右邊)
+            total_indices = [i for i, x in enumerate(row_vals) if "合計" in str(x)]
+            if total_indices:
+                col_total_int = total_indices[-1] # 合計欄位 (對應下一列的 "現場攔停")
+                col_total_rem = col_total_int + 1 # 合計欄位 (對應下一列的 "逕行舉發")
+
+                # 3. 抓取數據 (從 Header Row + 2 開始)
+                for r_idx in range(header_idx + 2, len(df)):
+                    row = df.iloc[r_idx]
+                    raw_unit = str(row[2]).strip() # 單位通常在第 2 欄 (index 2), 視 CSV 而定
+                    # 根據 Snippet: 單位在 col 2 (index 2)
+                    
+                    # 防呆: 如果 col 2 不是單位，嘗試 col 0, 1
+                    target_unit = None
+                    # 檢查 raw_unit 是否在 map 中
                     for full, short in UNIT_MAP.items():
-                        if short in unit_name:
+                        if short in raw_unit: 
                             target_unit = short
                             break
-                
-                if target_unit:
-                    v_int = clean_int(row[idx_int])
-                    v_rem = clean_int(row[idx_rem])
-                    counts[target_unit] = [v_int, v_rem]
+                    if not target_unit:
+                         # 嘗試 col 0, 1, 3
+                         for c in [0, 1, 3]:
+                             if c < len(row):
+                                 val = str(row[c]).strip()
+                                 for full, short in UNIT_MAP.items():
+                                     if short in val: target_unit = short; break
+                                 if target_unit: break
+                    
+                    if target_unit:
+                        v_int = clean_int(row[col_total_int])
+                        v_rem = clean_int(row[col_total_rem])
+                        counts[target_unit] = [v_int, v_rem]
 
     except Exception as e:
         print(f"解析錯誤 {file_obj.name}: {e}")
@@ -159,29 +151,25 @@ def extract_focus_report_data(file_obj):
 # ==========================================
 # 3. 畫面顯示與自動化
 # ==========================================
-files = st.file_uploader("請上傳 3 個重點違規統計表 (focus114.csv)", accept_multiple_files=True)
+files = st.file_uploader("請上傳 3 個 Focus 報表 (focus114.csv)", accept_multiple_files=True)
 
 if files and len(files) >= 3:
     try:
-        # 1. 解析所有檔案
+        # 1. 解析
         parsed_results = []
         for f in files:
-            d, date_rng = extract_focus_report_data(f)
+            d, date_rng = extract_focus_csv_data(f)
             parsed_results.append({"file": f, "data": d, "date": date_rng})
         
-        # 2. 自動排序 (本期, 本年, 去年)
-        # 依據檔名特徵: focus114.xlsx(本期), focus114 (1).xlsx(本年), focus114 (2).xlsx(去年)
+        # 2. 排序 (依檔名)
         f_wk, f_yt, f_ly = None, None, None
-        
-        # 備用排序：依據解析出的日期長度或數值大小 (本年區間通常比本期大)
-        # 但這裡先用檔名邏輯，因為最準
         for item in parsed_results:
             nm = item['file'].name
-            if "(2)" in nm: f_ly = item
-            elif "(1)" in nm: f_yt = item
-            else: f_wk = item # 沒括號的通常是本期
+            if "(2)" in nm: f_ly = item     # (2) 通常是去年
+            elif "(1)" in nm: f_yt = item   # (1) 通常是本年
+            else: f_wk = item               # 無括號是本期
         
-        # 若檔名不如預期，則依上傳順序
+        # 防呆排序
         if not f_yt: f_yt = parsed_results[1]
         if not f_ly: f_ly = parsed_results[2]
         if not f_wk: f_wk = parsed_results[0]
@@ -225,16 +213,15 @@ if files and len(files) >= 3:
         method_row = ["取締方式", "現場攔停", "逕行舉發", "現場攔停", "逕行舉發", "現場攔停", "逕行舉發", "", "", ""]
         all_rows = [method_row, total_row] + rows
         
-        st.success("✅ 重點違規報表解析成功！")
+        st.success("✅ Focus 報表解析完成！")
         
-        # 渲染
+        # 顯示
         table_body = "".join([f"<tr>{''.join([f'<td>{x}</td>' for x in r])}</tr>" for r in all_rows])
         st.write(f"<table style='text-align:center; width:100%; border-collapse:collapse;' border='1'>{html_header}<tbody>{table_body}</tbody></table>", unsafe_allow_html=True)
 
         # 說明
         try:
             curr_year = date.today().year
-            # 解析日期字串 (MMDD)
             d_str = f_yt['date'].split('~')[1]
             mon = int(d_str[:2]); day = int(d_str[2:])
             prog = f"{((date(curr_year, mon, day) - date(curr_year, 1, 1)).days + 1) / (366 if calendar.isleap(curr_year) else 365):.1%}"
@@ -245,14 +232,15 @@ if files and len(files) >= 3:
         f2 = "二、重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
         st.markdown(f"<br>#### {f1.replace(prog, f':red[{prog}]')}\n#### {f2}", unsafe_allow_html=True)
 
-        # 寫入與寄信
+        # 寫入 & 寄信
         file_hash = "".join([f.name + str(f.size) for f in files])
-        if st.session_state.get("v72_done") != file_hash:
-            with st.status("🚀 執行寫入與寄信...") as s:
+        if st.session_state.get("v73_done") != file_hash:
+            with st.status("🚀 寫入 Google Sheets...") as s:
                 gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                 sh = gc.open_by_url(GOOGLE_SHEET_URL); ws = sh.get_worksheet(0)
                 
                 h1_raw = ["統計期間", title_wk, "", title_yt, "", title_ly, "", "同期比較", "目標值", "達成率"]
+                # 強制清洗
                 clean_payload = [h1_raw]
                 for r in all_rows:
                     clean_row = []
@@ -287,8 +275,9 @@ if files and len(files) >= 3:
                     encoders.encode_base64(part); part.add_header("Content-Disposition", 'attachment; filename="Report.xlsx"')
                     msg.attach(part); server.send_message(msg); server.quit()
                 
-                st.session_state["v72_done"] = file_hash
+                st.session_state["v73_done"] = file_hash
                 st.balloons(); s.update(label="完成", state="complete")
+
     except Exception as e:
         st.error(f"錯誤: {e}")
         st.code(traceback.format_exc())
