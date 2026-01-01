@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="超載統計", layout="wide", page_icon="🚛")
-st.title("🚛 超載 (stoneCnt) 自動統計 (v18 統計期間版)")
+st.title("🚛 超載 (stoneCnt) 自動統計 (v19 B3寫入版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -32,8 +32,8 @@ st.markdown("""
 1. 請上傳 **3 個** `stoneCnt` 系列的 Excel 檔案。
 2. 系統自動計算數據與年度時間進度。
 3. **表格第一欄名稱已改為「統計期間」**。
-4. **「合計」列排在第一位**，達成率為整數。
-5. 寫入位置：**第 2 個分頁 (Index 1) 的 B4** (純數據)。
+4. **「合計」列排在第一位**。
+5. 寫入位置：**第 2 個分頁 (Index 1) 的 B3** (純數據)。
 """)
 
 # ==========================================
@@ -49,7 +49,7 @@ UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '
 # ==========================================
 # 1. Google Sheets 寫入函數
 # ==========================================
-def update_google_sheet(df, sheet_url, start_cell='B4'):
+def update_google_sheet(df, sheet_url, start_cell='B3'): # <--- 改為 B3
     try:
         # 檢查 Secrets
         if "gcp_service_account" not in st.secrets:
@@ -167,7 +167,7 @@ def parse_stone(f):
 # 4. 主程式執行
 # ==========================================
 # 更新 Key 以重置上傳器
-uploaded_files = st.file_uploader("請拖曳 3 個 stoneCnt 檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="stone_uploader_v18_colname")
+uploaded_files = st.file_uploader("請拖曳 3 個 stoneCnt 檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="stone_uploader_v19_B3")
 
 if uploaded_files:
     if len(uploaded_files) < 3:
@@ -211,9 +211,8 @@ if uploaded_files:
                 rate_str = f"{y/tgt:.0%}" if tgt > 0 else "0%"
                 if u == '警備隊': rate_str = "—"
 
-                # 注意：這裡的 key 改為 '統計期間'
                 unit_rows.append({
-                    '統計期間': u,  
+                    '統計期間': u,  # 欄位名稱確認為「統計期間」
                     '本期': w, 
                     '本年累計': y, 
                     '去年累計': l, 
@@ -225,10 +224,8 @@ if uploaded_files:
             # 建立單位 DataFrame
             df_units = pd.DataFrame(unit_rows)
             
-            # 計算合計 (排除目標值為 0 或 特殊單位，這裡全算除了警備隊)
-            # 因為上面已經把警備隊數值歸零，所以直接 sum 即可
+            # 計算合計
             total_s = df_units[['本期', '本年累計', '去年累計', '目標值']].sum()
-            
             total_diff = total_s['本年累計'] - total_s['去年累計']
             total_rate_str = f"{total_s['本年累計']/total_s['目標值']:.0%}" if total_s['目標值']>0 else "0%"
             
@@ -243,20 +240,19 @@ if uploaded_files:
             }
             
             # 合計置頂
-            df_final = pd.concat([pd.DataFrame([total_row]), df_units], ignore_index=True)
-            
-            # 欄位順序確認
+            final_rows = [total_row] + unit_rows
+
             cols = ['統計期間', '本期', '本年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
-            df_final = df_final[cols]
+            df_final = pd.DataFrame(final_rows, columns=cols)
             
-            # 準備寫入的 DataFrame (移除第一欄 '統計期間')
+            # 準備寫入的 DataFrame (移除第一欄)
             df_write = df_final.drop(columns=['統計期間'])
             
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
             
             # 預覽寫入內容
-            st.caption("▼ 即將寫入分頁2 (B4) 的數據預覽 (無標題)：")
+            st.caption("▼ 即將寫入分頁2 (B3) 的數據預覽 (無標題)：")
             st.dataframe(df_write, use_container_width=True)
 
             # --- 產生 Excel ---
@@ -297,8 +293,8 @@ if uploaded_files:
                     else:
                         st.write("⚠️ 未設定 Email，跳過寄信")
 
-                    st.write("📊 正在寫入 Google 試算表 (第 2 分頁, B4, 純數據)...")
-                    if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'):
+                    st.write("📊 正在寫入 Google 試算表 (第 2 分頁, B3, 純數據)...")
+                    if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B3'):
                         st.write("✅ Google 試算表已更新！")
                     else:
                         st.write("❌ Google 試算表更新失敗")
