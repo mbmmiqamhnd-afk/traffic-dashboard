@@ -19,10 +19,10 @@ try:
 except: pass
 
 st.set_page_config(page_title="超載統計", layout="wide", page_icon="🚛")
-st.title("🚛 超載 (stoneCnt) 自動統計 (v22 根源修正版)")
+st.title("🚛 超載自動統計 (v23 統計期間版)")
 
 # --- 強制清除快取按鈕 ---
-if st.button("🧹 清除快取 (若欄位名稱未變請按此)", type="primary"):
+if st.button("🧹 清除快取 (若更新後欄位沒變請按我)", type="primary"):
     st.cache_data.clear()
     st.cache_resource.clear()
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
@@ -30,10 +30,10 @@ if st.button("🧹 清除快取 (若欄位名稱未變請按此)", type="primary
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** `stoneCnt` 系列的 Excel 檔案。
-2. 系統自動計算數據與年度時間進度。
-3. **第一欄名稱已在資料源頭鎖定為「統計期間」**。
-4. **「合計」列排在第一位**。
-5. 寫入位置：**第 2 個分頁 (Index 1) 的 B3** (純數據)。
+2. **第一欄標題已改為「統計期間」**。
+3. **「合計」列置頂 (B4)，標題在 B3**。
+4. 達成率已改為 **四捨五入整數**。
+5. 寫入位置：**第 2 個分頁 (Index 1) 的 B3 開始 (含標題)**。
 """)
 
 # ==========================================
@@ -42,47 +42,50 @@ st.markdown("""
 # 請將您的 Google 試算表網址貼在這裡
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 
-TARGETS = {'聖亭所': 24, '龍潭所': 32, '中興所': 24, '石門所': 19, '高平所': 16, '三和所': 9, '警備隊': 0, '交通分隊': 30}
-UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'}
-UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
+TARGETS = {
+    '科技執法': 0, '聖亭所': 24, '龍潭所': 32, '中興所': 24, 
+    '石門所': 19, '高平所': 16, '三和所': 9, '警備隊': 0, '交通分隊': 30
+}
+
+UNIT_MAP = {
+    '交通組': '科技執法', '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', 
+    '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', 
+    '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'
+}
+
+# 排序：科技執法排在第一個
+UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 # ==========================================
-# 1. Google Sheets 寫入函數
+# 1. Google Sheets 寫入函數 (含標題寫入)
 # ==========================================
 def update_google_sheet(df, sheet_url, start_cell='B3'):
     try:
         if "gcp_service_account" not in st.secrets:
-            st.error("❌ 未設定 GCP Service Account Secrets！")
+            st.error("❌ 未設定 Secrets！")
             return False
 
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
         
-        # ★★★ 關鍵：抓取第 2 個工作表 (Index 1) ★★★
-        try:
-            ws = sh.get_worksheet(1) 
-            if ws is None: raise Exception("找不到 Index 1 的工作表")
-        except Exception as e:
-            st.error(f"❌ 無法取得第 2 個工作表 (Index 1)，請確認試算表是否有至少 2 個分頁。錯誤: {e}")
-            return False
+        # 抓取第 2 個工作表 (Index 1)
+        ws = sh.get_worksheet(1) 
+        if ws is None: raise Exception("找不到第 2 個分頁")
         
-        st.info(f"📂 寫入目標工作表：**「{ws.title}」**")
-        
-        # 準備寫入資料 (純數據，無標題)
+        # 準備資料：包含標題列 (Columns) + 數據列 (Values)
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
-        data = df_clean.values.tolist()
+        
+        # ★★★ 關鍵：這裏包含標題列，所以 B3 會寫入「統計期間」 ★★★
+        data_to_write = [df_clean.columns.values.tolist()] + df_clean.values.tolist()
         
         try:
-            ws.update(range_name=start_cell, values=data)
+            ws.update(range_name=start_cell, values=data_to_write)
         except TypeError:
-            ws.update(start_cell, data)
-        except Exception as e:
-            st.error(f"❌ Google 試算表寫入失敗: {e}")
-            return False
+            ws.update(start_cell, data_to_write)
+            
         return True
-        
     except Exception as e:
-        st.error(f"❌ 未知錯誤: {e}")
+        st.error(f"❌ 寫入失敗: {e}")
         return False
 
 # ==========================================
@@ -112,7 +115,7 @@ def send_email(recipient, subject, body, file_bytes, filename):
     except: return False
 
 # ==========================================
-# 3. 資料解析函數
+# 3. 解析函數
 # ==========================================
 def parse_stone(f):
     if not f: return {}, None
@@ -123,164 +126,114 @@ def parse_stone(f):
         df_head = pd.read_excel(f, header=None, nrows=20)
         text_content = df_head.to_string()
         match = re.search(r'(?:至|~|迄)\s*(\d{3})(\d{2})(\d{2})', text_content)
-        if not match:
-            match = re.search(r'(?:至|~|迄)\s*(\d{3})[./\-年](\d{1,2})[./\-月](\d{1,2})', text_content)
         if match:
             y, m, d = map(int, match.groups())
-            if 100 <= y <= 200: found_date = date(y + 1911, m, d)
+            found_date = date(y + 1911, m, d)
         
         f.seek(0)
         xls = pd.ExcelFile(f)
         for sheet in xls.sheet_names:
             df = pd.read_excel(xls, sheet_name=sheet, header=None)
-            curr = None
+            curr_unit = None
             for _, row in df.iterrows():
-                s = row.astype(str).str.cat(sep=' ')
-                if "舉發單位：" in s:
-                    m = re.search(r"舉發單位：(\S+)", s)
-                    if m: curr = m.group(1).strip()
-                if "總計" in s and curr:
-                    nums = [float(x) for x in row if str(x).replace('.','',1).isdigit()]
+                row_str = row.astype(str).str.cat(sep=' ')
+                if "舉發單位：" in row_str:
+                    m = re.search(r"舉發單位：(\S+)", row_str)
+                    if m: curr_unit = m.group(1).strip()
+                if "總計" in row_str and curr_unit:
+                    nums = [float(str(x).replace(',','')) for x in row if str(x).replace('.','',1).isdigit()]
                     if nums:
-                        short = UNIT_MAP.get(curr, curr)
-                        counts[short] = counts.get(short, 0) + int(nums[-1])
-                        curr = None
+                        short_name = UNIT_MAP.get(curr_unit, curr_unit)
+                        counts[short_name] = counts.get(short_name, 0) + int(nums[-1])
+                        curr_unit = None
         return counts, found_date
     except: return {}, None
 
 # ==========================================
 # 4. 主程式執行
 # ==========================================
-# ★★★ v22 Key 強制重置 ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 stoneCnt 檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="stone_uploader_v22_direct_key")
+uploaded_files = st.file_uploader("請上傳 3 個 stoneCnt 報表", accept_multiple_files=True, type=['xlsx', 'xls'], key="stone_v23")
 
-if uploaded_files:
-    if len(uploaded_files) < 3: st.warning("⏳ 檔案不足...")
-    else:
-        try:
-            files_config = {"Week": None, "YTD": None, "Last_YTD": None}
-            for f in uploaded_files:
-                if "(1)" in f.name: files_config["YTD"] = f
-                elif "(2)" in f.name: files_config["Last_YTD"] = f
-                else: files_config["Week"] = f
+if uploaded_files and len(uploaded_files) >= 3:
+    try:
+        files_map = {"Week": None, "YTD": None, "Last_YTD": None}
+        for f in uploaded_files:
+            if "(1)" in f.name: files_map["YTD"] = f
+            elif "(2)" in f.name: files_map["Last_YTD"] = f
+            else: files_map["Week"] = f
+        
+        d_wk, _ = parse_stone(files_map["Week"])
+        d_yt, end_date = parse_stone(files_map["YTD"])
+        d_ly, _ = parse_stone(files_map["Last_YTD"])
+
+        prog_text = ""
+        if end_date:
+            days = (end_date - date(end_date.year, 1, 1)).days + 1
+            total = 366 if end_date.year % 4 == 0 else 365
+            prog_text = f"統計截至 {end_date.year-1911}年{end_date.month}月{end_date.day}日，年度進度 {days/total:.1%}"
+            st.info(f"📅 {prog_text}")
+
+        # 1. 建立各單位數據
+        unit_rows = []
+        for u in UNIT_ORDER:
+            w, y, l = d_wk.get(u,0), d_yt.get(u,0), d_ly.get(u,0)
+            tgt = TARGETS.get(u,0)
+            if u == '警備隊': w, y, l, tgt = 0, 0, 0, 0
             
-            d_wk, _ = parse_stone(files_config["Week"])
-            d_yt, end_date = parse_stone(files_config["YTD"])
-            d_ly, _ = parse_stone(files_config["Last_YTD"])
+            rate_str = f"{y/tgt:.0%}" if tgt > 0 else "—"
+            unit_rows.append({
+                '統計期間': u, '本期': w, '本年累計': y, '去年累計': l, 
+                '本年與去年同期比較': y - l, '目標值': tgt, '達成率': rate_str
+            })
+        
+        # 2. 計算合計
+        df_temp = pd.DataFrame(unit_rows)
+        s = df_temp[['本期', '本年累計', '去年累計', '目標值']].sum()
+        total_rate = f"{s['本年累計']/s['目標值']:.0%}" if s['目標值'] > 0 else "0%"
+        total_row = {
+            '統計期間': '合計', '本期': s['本期'], '本年累計': s['本年累計'], '去年累計': s['去年累計'], 
+            '本年與去年同期比較': s['本年累計'] - s['去年累計'], '目標值': s['目標值'], '達成率': total_rate
+        }
+        
+        # 3. 組合：合計置頂
+        df_final = pd.concat([pd.DataFrame([total_row]), df_temp], ignore_index=True)
+        
+        st.success("✅ 分析完成！")
+        st.subheader("📋 報表預覽 (B3 寫入「統計期間」，B4 寫入「合計」)")
+        st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-            prog_text = ""
-            if end_date:
-                start_of_year = date(end_date.year, 1, 1)
-                days_passed = (end_date - start_of_year).days + 1
-                total_days = 366 if (end_date.year % 4 == 0 and end_date.year % 100 != 0) or (end_date.year % 400 == 0) else 365
-                progress_rate = days_passed / total_days
-                prog_text = f"統計截至 {end_date.year-1911}年{end_date.month}月{end_date.day}日 (入案日期)，年度時間進度為 {progress_rate:.1%}"
-                st.info(f"📅 {prog_text}")
+        # Excel 產生
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df_final.to_excel(writer, index=False, sheet_name='Sheet1', startrow=3)
+            ws = writer.sheets['Sheet1']
+            ws.write('A1', '超載取締統計表')
+            ws.write('A2', prog_text)
+        excel_data = output.getvalue()
 
-            # 建立數據
-            unit_rows = []
-            for u in UNIT_ORDER:
-                w = d_wk.get(u,0)
-                y = d_yt.get(u,0)
-                l = d_ly.get(u,0)
-                tgt = TARGETS.get(u,0)
-                if u == '警備隊': w, y, l, tgt = 0, 0, 0, 0
+        st.markdown("---")
+        if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
+        f_ids = ",".join(sorted([f.name for f in uploaded_files]))
+        
+        def run_auto():
+            with st.status("🚀 自動化執行中...") as status:
+                st.write("📧 寄送 Email...")
+                email = st.secrets["email"]["user"] if "email" in st.secrets else None
+                if email: send_email(email, "📊 [自動通知] 超載統計報表", "附件為超載報表。", excel_data, "超載統計.xlsx")
                 
-                diff = y - l
-                rate_str = f"{y/tgt:.0%}" if tgt > 0 else "0%"
-                if u == '警備隊': rate_str = "—"
+                st.write("📊 寫入 Google 試算表 (B3, 含標題)...")
+                if update_google_sheet(df_final, GOOGLE_SHEET_URL, 'B3'):
+                    st.write("✅ 寫入成功！ B3=統計期間, B4=合計")
+                status.update(label="執行完畢", state="complete")
+                st.balloons()
+        
+        if f_ids not in st.session_state["sent_cache"]:
+            run_auto()
+            st.session_state["sent_cache"].add(f_ids)
+            
+        if st.button("🔄 強制重新執行"):
+            run_auto()
+            
+        st.download_button("📥 下載 Excel", excel_data, "超載統計.xlsx")
 
-                # ★★★ 根源修正：直接使用 '統計期間' 作為 Key，不使用 '單位' ★★★
-                unit_rows.append({
-                    '統計期間': u,  # <--- 這裡直接命名
-                    '本期': w, 
-                    '本年累計': y, 
-                    '去年累計': l, 
-                    '本年與去年同期比較': diff,
-                    '目標值': tgt,
-                    '達成率': rate_str
-                })
-            
-            df_units = pd.DataFrame(unit_rows)
-            
-            total_s = df_units[['本期', '本年累計', '去年累計', '目標值']].sum()
-            total_diff = total_s['本年累計'] - total_s['去年累計']
-            total_rate_str = f"{total_s['本年累計']/total_s['目標值']:.0%}" if total_s['目標值']>0 else "0%"
-            
-            # ★★★ 根源修正：合計列也直接使用 '統計期間' ★★★
-            total_row = {
-                '統計期間': '合計', # <--- 這裡直接命名
-                '本期': total_s['本期'],
-                '本年累計': total_s['本年累計'],
-                '去年累計': total_s['去年累計'],
-                '本年與去年同期比較': total_diff,
-                '目標值': total_s['目標值'],
-                '達成率': total_rate_str
-            }
-            
-            # 組合數據 (合計置頂)
-            final_rows = [total_row] + unit_rows
-            
-            # 建立 DataFrame (欄位順序)
-            cols = ['統計期間', '本期', '本年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
-            df_final = pd.DataFrame(final_rows, columns=cols)
-
-            # 準備寫入 (移除第一欄)
-            df_write = df_final.drop(columns=['統計期間'])
-            
-            st.success("✅ 分析完成！")
-            
-            # 顯示表格確認
-            st.subheader("📋 報表預覽 (請確認第一欄為「統計期間」)")
-            st.dataframe(df_final, use_container_width=True, hide_index=True)
-            
-            st.caption("▼ 即將寫入分頁2 (B3) 的數據 (無標題，第一列為合計)：")
-            st.dataframe(df_write, use_container_width=True)
-
-            # --- Excel ---
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_final.to_excel(writer, index=False, sheet_name='超載統計', startrow=3)
-                workbook = writer.book
-                worksheet = writer.sheets['超載統計']
-                fmt_title = workbook.add_format({'bold': True, 'font_size': 16, 'align': 'center'})
-                fmt_subtitle = workbook.add_format({'bold': True, 'font_size': 12, 'font_color': 'blue', 'align': 'left'})
-                worksheet.merge_range('A1:G1', '超載取締統計表', fmt_title)
-                if prog_text:
-                    worksheet.merge_range('A2:G2', f"說明：{prog_text}", fmt_subtitle)
-                worksheet.set_column(0, 0, 15)
-            excel_data = output.getvalue()
-            file_name_out = '超載統計表.xlsx'
-
-            st.markdown("---")
-            if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
-            file_ids = ",".join(sorted([f.name for f in uploaded_files]))
-            
-            def run_automation():
-                with st.status("正在處理中...", expanded=True) as status:
-                    st.write("📧 準備寄送 Email...")
-                    email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else None
-                    if email_receiver:
-                        if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為超載統計報表。", excel_data, file_name_out):
-                            st.write(f"✅ Email 已發送")
-                    
-                    st.write("📊 正在寫入 Google 試算表 (B3)...")
-                    if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B3'):
-                        st.write("✅ Google 試算表已更新！")
-                    else:
-                        st.write("❌ 更新失敗")
-                    status.update(label="執行完畢", state="complete", expanded=False)
-                    st.balloons()
-            
-            if file_ids not in st.session_state["sent_cache"]:
-                run_automation()
-                st.session_state["sent_cache"].add(file_ids)
-            else:
-                st.info("✅ 已自動執行過。")
-
-            if st.button("🔄 強制重新執行 (寫入 + 寄信)", type="primary"):
-                run_automation()
-
-            st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-
-        except Exception as e: st.error(f"發生錯誤：{e}")
+    except Exception as e: st.error(f"錯誤：{e}")
