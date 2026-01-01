@@ -40,7 +40,7 @@ st.markdown("""
 # 0. 設定區
 # ==========================================
 # 請將您的 Google 試算表網址貼在這裡
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_d2h1JvO-aO6p6u2uG4xXF_T5X-q6b5y/edit" 
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 
 TARGETS = {'聖亭所': 24, '龍潭所': 32, '中興所': 24, '石門所': 19, '高平所': 16, '三和所': 9, '警備隊': 0, '交通分隊': 30}
 UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'}
