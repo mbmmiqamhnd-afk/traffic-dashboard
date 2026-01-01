@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import re
 import io
 import smtplib
 import gspread
+import calendar
 from datetime import date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -12,292 +12,168 @@ from email.mime.base import MIMEBase
 from email import encoders
 from email.header import Header
 
-# 強制清除快取
-try:
-    st.cache_data.clear()
-    st.cache_resource.clear()
-except: pass
-
-st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.title("🚔 取締重大交通違規統計 (v16 達成率整數版)")
-
-# --- 強制清除快取按鈕 ---
-if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
-    st.cache_data.clear()
-    st.cache_resource.clear()
-    st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
-
-st.markdown("""
-### 📝 使用說明
-1. 請上傳 **3 個** 重點違規報表。
-2. 系統自動區分 **攔停** 與 **逕舉**。
-3. **達成率改為整數 (四捨五入)**。
-4. **「合計」列排在第一位**。
-5. 寫入位置：**B4** (純數據)。
-""")
+# --- 初始化配置 ---
+st.set_page_config(page_title="重大交通違規統計", layout="wide", page_icon="🚦")
+st.title("🚦 重大交通違規自動統計 (v48 完整定義版)")
 
 # ==========================================
 # 0. 設定區
 # ==========================================
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
-
-UNIT_MAP = {
-    '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', 
-    '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', 
-    '警備隊': '警備隊', '龍潭交通分隊': '交通分隊', '交通組': '科技執法' 
-}
-UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
-TARGETS = {
-    '聖亭所': 1838, '龍潭所': 2451, '中興所': 1838, '石門所': 1488, 
-    '高平所': 1226, '三和所': 400, '交通分隊': 2576, '警備隊': 263, '科技執法': 0
-}
+VIOLATION_TARGETS = {'聖亭所': 10, '龍潭所': 12, '中興所': 10, '石門所': 8, '高平所': 6, '三和所': 4, '警備隊': 0, '交通分隊': 15}
+UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'}
+UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 # ==========================================
-# 1. Google Sheets 寫入函數
+# 1. 核心格式指令 (Google Sheets API)
 # ==========================================
-def update_google_sheet(df, sheet_url, start_cell='B4'):
+def get_footer_precise_red_req(ws_id, row_idx, col_idx, text):
+    """針對說明列：僅將應達成率後的百分比標紅"""
+    runs = [{"startIndex": 0, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}}]
+    anchor = "應達成率為"
+    idx = text.find(anchor)
+    if idx != -1:
+        search_part = text[idx + len(anchor):]
+        match = re.search(r'(\d+\.?\d*%)', search_part)
+        if match:
+            start_pos = idx + len(anchor) + match.start()
+            end_pos = idx + len(anchor) + match.end()
+            runs.append({"startIndex": start_pos, "format": {"foregroundColor": {"red": 1.0, "green": 0, "blue": 0}, "bold": True}})
+            if end_pos < len(text):
+                runs.append({"startIndex": end_pos, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}})
+    return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
+
+def get_header_num_red_req(ws_id, row_idx, col_idx, text):
+    """標題列：數字與符號標紅"""
+    red_chars = set("0123456789~().%")
+    runs = []
+    last_is_red = None
+    for i, char in enumerate(text):
+        is_red = char in red_chars
+        if is_red != last_is_red:
+            color = {"red": 1.0, "green": 0, "blue": 0} if is_red else {"red": 0, "green": 0, "blue": 0}
+            runs.append({"startIndex": i, "format": {"foregroundColor": color, "bold": is_red}})
+            last_is_red = is_red
+    return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
+
+# ==========================================
+# 2. 解析邏輯
+# ==========================================
+def parse_report(f):
+    if not f: return {}, "0000000", "0000000"
+    counts, s, e = {}, "0000000", "0000000"
     try:
-        if "gcp_service_account" not in st.secrets:
-            st.error("❌ 錯誤：未設定 Secrets！")
-            return False
-        
-        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-        sh = gc.open_by_url(sheet_url)
-        ws = sh.get_worksheet(0) 
-        if ws is None: raise Exception("找不到 Index 0 的工作表")
-        
-        st.info(f"📂 寫入目標工作表：**「{ws.title}」**")
-
-        # 轉為純數據
-        df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
-        data = df_clean.values.tolist()
-        
-        try:
-            ws.update(range_name=start_cell, values=data)
-        except TypeError:
-            ws.update(start_cell, data)
-        except Exception as e:
-            st.error(f"❌ 寫入數據失敗: {e}")
-            return False
-        return True
-    except Exception as e:
-        st.error(f"❌ 未知錯誤: {e}")
-        return False
+        f.seek(0)
+        top_txt = pd.read_excel(f, header=None, nrows=15).to_string()
+        m = re.search(r'(\d{3,7}).*至\s*(\d{3,7})', top_txt)
+        if m: s, e = m.group(1), m.group(2)
+        f.seek(0)
+        xls = pd.ExcelFile(f)
+        for sn in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=sn, header=None)
+            u = None
+            for _, r in df.iterrows():
+                rs = " ".join(r.astype(str))
+                if "舉發單位：" in rs:
+                    m2 = re.search(r"舉發單位：(\S+)", rs)
+                    if m2: u = m2.group(1).strip()
+                if "總計" in rs and u:
+                    nums = [float(str(x).replace(',','')) for x in r if str(x).replace('.','',1).isdigit()]
+                    if nums:
+                        short = UNIT_MAP.get(u, u)
+                        if short in UNIT_ORDER: counts[short] = counts.get(short, 0) + int(nums[-1])
+                        u = None
+        return counts, s, e
+    except: return {}, "0000000", "0000000"
 
 # ==========================================
-# 2. 寄信函數
+# 3. 執行介面
 # ==========================================
-def send_email(recipient, subject, body, file_bytes, filename):
+files = st.file_uploader("請上傳重大違規 stoneCnt 報表", accept_multiple_files=True, type=['xlsx', 'xls'])
+
+if files and len(files) >= 3:
     try:
-        if "email" not in st.secrets: return False
-        sender = st.secrets["email"]["user"]
-        password = st.secrets["email"]["password"]
-        msg = MIMEMultipart()
-        msg['From'] = sender
-        msg['To'] = recipient
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
-        part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        part.set_payload(file_bytes)
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', 'attachment', filename=Header(filename, 'utf-8').encode())
-        msg.attach(part)
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(sender, password)
-        server.sendmail(sender, recipient, msg.as_string())
-        server.quit()
-        return True
-    except: return False
-
-# ==========================================
-# 3. 解析函數
-# ==========================================
-def parse_focus_report(uploaded_file):
-    if not uploaded_file: return None
-    content = uploaded_file.getvalue()
-    start_date, end_date = "", ""
-    df = None; header_idx = -1
-    
-    try:
-        df_raw = pd.read_excel(io.BytesIO(content), header=None, nrows=20)
-        for i, row in df_raw.iterrows():
-            row_str = " ".join([str(x) for x in row.values if pd.notna(x)])
-            if not start_date:
-                match = re.search(r'入案日期[：:]?\s*(\d{3,7}).*至\s*(\d{3,7})', row_str)
-                if match: start_date, end_date = match.group(1), match.group(2)
-            if "單位" in row_str and "酒後" in row_str: header_idx = i
-                
-        if header_idx != -1: df = pd.read_excel(io.BytesIO(content), header=header_idx)
-        else: return None 
-        if df is None: return None
-
-        keywords = ["酒後", "闖紅燈", "嚴重超速", "逆向", "轉彎", "蛇行", "不暫停讓行人", "機車"]
-        stop_cols = []; cit_cols = []
-        for i in range(len(df.columns)):
-            col_str = str(df.columns[i])
-            if any(k in col_str for k in keywords) and "路肩" not in col_str and "大型車" not in col_str:
-                stop_cols.append(i); cit_cols.append(i+1)
+        file_hash = "".join(sorted([f.name + str(f.size) for f in files]))
+        f_wk, f_yt, f_ly = None, None, None
+        for f in files:
+            if "(1)" in f.name: f_yt = f
+            elif "(2)" in f.name: f_ly = f
+            else: f_wk = f
         
-        unit_data = {}
-        for _, row in df.iterrows():
-            raw_unit = str(row['單位']).strip()
-            if raw_unit == 'nan' or not raw_unit: continue
-            unit_name = UNIT_MAP.get(raw_unit, raw_unit)
-            s, c = 0, 0
-            for col in stop_cols:
-                try: s += float(str(row.iloc[col]).replace(',', ''))
-                except: pass
-            for col in cit_cols:
-                try: c += float(str(row.iloc[col]).replace(',', ''))
-                except: pass
-            unit_data[unit_name] = {'stop': s, 'cit': c}
+        d_wk, s_wk, e_wk = parse_report(f_wk)
+        d_yt, s_yt, e_yt = parse_report(f_yt)
+        d_ly, s_ly, e_ly = parse_report(f_ly)
 
-        duration = 0
-        try:
-            s_d = re.sub(r'[^\d]', '', start_date); e_d = re.sub(r'[^\d]', '', end_date)
-            if len(s_d)<7: s_d=s_d.zfill(7)
-            if len(e_d)<7: e_d=e_d.zfill(7)
-            d1 = date(int(s_d[:3])+1911, int(s_d[3:5]), int(s_d[5:]))
-            d2 = date(int(e_d[:3])+1911, int(e_d[3:5]), int(e_d[5:]))
-            duration = (d2 - d1).days
-        except: duration = 0
-        return {'data': unit_data, 'start': start_date, 'end': end_date, 'duration': duration}
-    except: return None
+        # 欄位標題 (月日簡化版)
+        raw_wk = f"本期 ({s_wk[-4:]}~{e_wk[-4:]})"
+        raw_yt = f"本年累計 ({s_yt[-4:]}~{e_yt[-4:]})"
+        raw_ly = f"去年累計 ({s_ly[-4:]}~{e_ly[-4:]})"
 
-# ==========================================
-# 4. 主程式
-# ==========================================
-# ★★★ v16 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v16_round_int")
+        def h_html(t): return "".join([f"<span style='color:red; font-weight:bold;'>{c}</span>" if c in "0123456789~().%" else c for c in t])
+        h_wk, h_yt, h_ly = map(h_html, [raw_wk, raw_yt, raw_ly])
 
-if uploaded_files:
-    if len(uploaded_files) < 3: st.warning("⏳ 檔案不足...")
-    else:
-        try:
-            parsed_files = []
-            for f in uploaded_files:
-                res = parse_focus_report(f)
-                if res: parsed_files.append(res)
-            
-            if len(parsed_files) < 3: st.error("❌ 解析失敗"); st.stop()
+        # 組裝表格
+        body = []
+        for u in UNIT_ORDER:
+            yv, tv = d_yt.get(u, 0), VIOLATION_TARGETS.get(u, 0)
+            body.append({'統計期間': u, h_wk: d_wk.get(u, 0), h_yt: yv, h_ly: d_ly.get(u, 0), '同期比較': yv - d_ly.get(u, 0), '目標值': tv, '達成率': f"{yv/tv:.0%}" if tv > 0 else "—"})
+        
+        df_final = pd.DataFrame(body)
 
-            parsed_files.sort(key=lambda x: x['start']) 
-            file_last_year = parsed_files[0] 
-            others = parsed_files[1:]
-            others.sort(key=lambda x: x['duration'], reverse=True)
-            file_year = others[0] 
-            file_week = others[1] 
+        # 🚀 全新兩段式說明文字 (動態計算)
+        y, m, d = int(e_yt[:3])+1911, int(e_yt[3:5]), int(e_yt[5:])
+        prog_str = f"{((date(y, m, d) - date(y, 1, 1)).days + 1) / (366 if calendar.isleap(y) else 365):.1%}"
+        
+        footer_line1 = f"一、本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，至本({e_yt[:3]})年{int(e_yt[3:5])}月{int(e_yt[5:])}日應達成率為{prog_str}。"
+        footer_line2 = "二、重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項"
+        
+        # 網頁 HTML 標紅百分比
+        f_html1 = footer_line1.replace(prog_str, f"<span style='color:red; font-weight:bold;'>{prog_str}</span>")
 
-            prog_text = ""
-            try:
-                end_str = re.sub(r'[^\d]', '', file_year['end'])
-                if len(end_str) < 7: end_str = end_str.zfill(7)
-                curr_y = int(end_str[:3]) + 1911
-                curr_m = int(end_str[3:5])
-                curr_d = int(end_str[5:])
-                target_date = date(curr_y, curr_m, curr_d)
-                start_of_year = date(curr_y, 1, 1)
-                days_passed = (target_date - start_of_year).days + 1
-                total_days = 366 if (curr_y % 4 == 0 and curr_y % 100 != 0) or (curr_y % 400 == 0) else 365
-                progress_rate = days_passed / total_days
-                prog_text = f"統計截至 {curr_y-1911}年{curr_m}月{curr_d}日 (入案日期)，年度時間進度為 {progress_rate:.1%}"
-                st.info(f"📅 {prog_text}")
-            except: pass
+        st.success("✅ 報表解析成功！")
+        st.write(df_final.to_html(escape=False, index=False), unsafe_allow_html=True)
+        st.markdown(f"#### {f_html1}\n#### {footer_line2}", unsafe_allow_html=True)
 
-            unit_rows = []
-            accum = {'ws':0, 'wc':0, 'ys':0, 'yc':0, 'ls':0, 'lc':0}
-            
-            for u in UNIT_ORDER:
-                w = file_week['data'].get(u, {'stop':0, 'cit':0})
-                y = file_year['data'].get(u, {'stop':0, 'cit':0})
-                l = file_last_year['data'].get(u, {'stop':0, 'cit':0})
+        # --- 自動化流程 ---
+        if st.session_state.get("v48_processed") != file_hash:
+            with st.status("🚀 正在執行自動化同步...") as s:
+                gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+                sh = gc.open_by_url(GOOGLE_SHEET_URL)
+                ws = sh.get_worksheet(0) # 假設重大違規在分頁 1
                 
-                if u == '科技執法': w['stop'], y['stop'], l['stop'] = 0, 0, 0
-                y_total = y['stop'] + y['cit']; l_total = l['stop'] + l['cit']
+                clean_cols = ['統計期間', raw_wk, raw_yt, raw_ly, '同期比較', '目標值', '達成率']
+                ws.update(range_name='A2', values=[clean_cols] + df_final.values.tolist())
                 
-                row_data = [u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit']]
+                # 格式化標題 (B2:D2)
+                reqs = [get_header_num_red_req(ws.id, 2, i, t) for i, t in enumerate(clean_cols[1:4], 2)]
                 
-                if u == '警備隊': row_data.extend(['—', '—', '—'])
-                else:
-                    diff = int(y_total - l_total)
-                    tgt = TARGETS.get(u, 0)
-                    row_data.append(diff)
-                    if u == '科技執法': row_data.extend(['—', '—'])
-                    else: 
-                        # ★★★ 修改點：使用 :.0% 來四捨五入顯示整數百分比 ★★★
-                        rate_str = f"{y_total/tgt:.0%}" if tgt > 0 else "0%"
-                        row_data.extend([tgt, rate_str])
+                # 格式化末端說明 (兩列)
+                idx_f1 = 2 + len(df_final) + 1
+                idx_f2 = idx_f1 + 1
                 
-                accum['ws']+=w['stop']; accum['wc']+=w['cit']
-                accum['ys']+=y['stop']; accum['yc']+=y['cit']
-                accum['ls']+=l['stop']; accum['lc']+=l['cit']
-                unit_rows.append(row_data)
-
-            total_target = sum([v for k,v in TARGETS.items() if k not in ['警備隊', '科技執法']])
-            t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
-            t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
-            
-            # ★★★ 修改點：合計列也改成 :.0% ★★★
-            total_rate_str = f"{t_rate:.0%}"
-            total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, total_rate_str]
-            
-            # 組合：合計在前 + 單位在後
-            final_rows = [total_row] + unit_rows
-
-            cols = ['取締方式', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
-            df_final = pd.DataFrame(final_rows, columns=cols)
-            df_write = df_final.drop(columns=['取締方式'])
-
-            st.success("✅ 分析完成！(達成率已設為整數)")
-            
-            st.subheader("📋 寫入預覽")
-            st.caption("第一列為「合計」，第二列為「科技執法」，達成率為整數 %")
-            st.dataframe(df_final, use_container_width=True, hide_index=True)
-
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_final.to_excel(writer, index=False, sheet_name='Sheet1', startrow=3)
-                workbook = writer.book
-                ws = writer.sheets['Sheet1']
-                fmt_title = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center'})
-                ws.merge_range('A1:J1', '取締重大交通違規件數統計表', fmt_title)
-                ws.write('A2', f"一、統計期間：{file_year['start']}~{file_year['end']}")
-                if prog_text: ws.write('A3', f"二、{prog_text}")
-                ws.set_column(0, 0, 15) 
-            excel_data = output.getvalue()
-            file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
-
-            st.markdown("---")
-            if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
-            file_ids = ",".join(sorted([f.name for f in uploaded_files]))
-            
-            def run_automation():
-                with st.status("🚀 執行中...", expanded=True) as status:
-                    st.write("📧 正在寄送 Email...")
-                    email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else None
-                    if email_receiver:
-                        if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
-                            st.write(f"✅ Email 已發送")
-                    
-                    st.write("📊 正在寫入 Google 試算表 (B4)...")
-                    if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'): 
-                        st.write("✅ 寫入成功！ (合計=B4, 科技執法=B5)")
-                    else:
-                        st.write("❌ 寫入失敗")
-                    
-                    status.update(label="執行完畢", state="complete", expanded=False)
-                    st.balloons()
-            
-            if file_ids not in st.session_state["sent_cache"]:
-                run_automation()
-                st.session_state["sent_cache"].add(file_ids)
-            else:
-                st.info("✅ 已自動執行過。")
-
-            if st.button("🔄 強制重新執行 (寫入 + 寄信)", type="primary"):
-                run_automation()
-
-            st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-
-        except Exception as e: st.error(f"發生錯誤：{e}")
+                # 寫入文字並標紅百分比
+                ws.update_cell(idx_f1, 1, footer_line1)
+                ws.update_cell(idx_f2, 1, footer_line2)
+                reqs.append(get_footer_precise_red_req(ws.id, idx_f1, 1, footer_line1))
+                
+                sh.batch_update({"requests": reqs})
+                
+                # 自動寄信 (如有 Secrets)
+                if "email" in st.secrets:
+                    sender = st.secrets["email"]["user"]
+                    out = io.BytesIO()
+                    df_final.to_excel(out, index=False)
+                    with smtplib.SMTP('smtp.gmail.com', 587) as server:
+                        server.starttls()
+                        server.login(sender, st.secrets["email"]["password"])
+                        msg = MIMEMultipart()
+                        msg['Subject'] = Header(f"🚦 重大違規報表 - {e_yt}", 'utf-8').encode()
+                        msg.attach(MIMEText(f"{footer_line1}\n{footer_line2}", 'plain'))
+                        part = MIMEBase('application', 'octet-stream')
+                        part.set_payload(out.getvalue()); encoders.encode_base64(part)
+                        part.add_header('Content-Disposition', 'attachment; filename="Report.xlsx"'); msg.attach(part)
+                        server.send_message(msg)
+                
+                st.session_state["v48_processed"] = file_hash
+                st.balloons(); s.update(label="全部流程已完成", state="complete")
+    except Exception as e: st.error(f"錯誤: {e}")
