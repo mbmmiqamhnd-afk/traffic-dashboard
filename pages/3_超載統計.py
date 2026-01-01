@@ -13,7 +13,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="超載統計", layout="wide", page_icon="🚛")
-st.title("🚛 超載自動統計 (v40 終極精準標紅版)")
+st.title("🚛 超載自動統計 (v41 最終精準標紅版)")
 
 # ==========================================
 # 0. 設定區
@@ -24,27 +24,34 @@ UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中
 UNIT_DATA_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 # ==========================================
-# 1. 精準格式化函數
+# 1. Google 試算表精準格式指令
 # ==========================================
 
-def get_footer_format_request(ws_id, row_idx, col_idx, text):
+def get_footer_precise_red_request(ws_id, row_idx, col_idx, text):
     """
-    產生 Google Sheets API 請求：針對說明列，僅將百分比標紅
+    僅將字串中『應達成率為』之後的百分比標紅
     """
     runs = []
-    # 搜尋百分比位置 (例如 99.5% 或 100%)
-    match = re.search(r'(\d+\.?\d*%)', text)
-    
-    # 預設起始為黑色
+    # 預設整段為黑色
     runs.append({"startIndex": 0, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}})
     
-    if match:
-        start, end = match.start(), match.end()
-        # 標紅百分比部分
-        runs.append({"startIndex": start, "format": {"foregroundColor": {"red": 1.0, "green": 0, "blue": 0}, "bold": True}})
-        # 後續恢復黑色
-        if end < len(text):
-            runs.append({"startIndex": end, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}})
+    # 尋找「應達成率為」的位置
+    keyword = "應達成率為"
+    key_pos = text.find(keyword)
+    
+    if key_pos != -1:
+        # 在「應達成率為」之後尋找百分比數字
+        target_part = text[key_pos + len(keyword):]
+        match = re.search(r'(\d+\.?\d*%)', target_part)
+        if match:
+            start_in_full = key_pos + len(keyword) + match.start()
+            end_in_full = key_pos + len(keyword) + match.end()
+            
+            # 將該百分比標紅
+            runs.append({"startIndex": start_in_full, "format": {"foregroundColor": {"red": 1.0, "green": 0, "blue": 0}, "bold": True}})
+            # 之後恢復黑色
+            if end_in_full < len(text):
+                runs.append({"startIndex": end_in_full, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}})
     
     return {
         "updateCells": {
@@ -56,7 +63,7 @@ def get_footer_format_request(ws_id, row_idx, col_idx, text):
 
 def get_header_format_request(ws_id, row_idx, col_idx, text):
     """
-    產生 Google Sheets API 請求：針對標題列，數字與符號標紅
+    標題列：數字與符號標紅，中文字黑
     """
     red_chars = set("0123456789~().%")
     runs = []
@@ -69,7 +76,6 @@ def get_header_format_request(ws_id, row_idx, col_idx, text):
             format_run["format"] = {"foregroundColor": color, "bold": is_red}
             runs.append(format_run)
             last_is_red = is_red
-            
     return {
         "updateCells": {
             "rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}],
@@ -78,34 +84,8 @@ def get_header_format_request(ws_id, row_idx, col_idx, text):
         }
     }
 
-def sync_to_google_sheets_v40(df, footer_text):
-    try:
-        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-        sh = gc.open_by_url(GOOGLE_SHEET_URL)
-        ws = sh.get_worksheet(1)
-        
-        # 1. 寫入基本數據
-        clean_cols = [re.sub(r'<[^>]+>', '', c) for c in df.columns]
-        ws.update(range_name='A2', values=[clean_cols] + df.values.tolist())
-        
-        # 2. 構造批次格式請求 (一次性更新內容與格式)
-        requests = []
-        # 處理標題日期欄 B2, C2, D2
-        for i, col_txt in enumerate(clean_cols[1:4], start=2):
-            requests.append(get_header_format_request(ws.id, 2, i, col_txt))
-        
-        # 處理末端說明列 (自動定位)
-        footer_idx = 2 + len(df) + 1
-        requests.append(get_footer_format_request(ws.id, footer_idx, 1, footer_text))
-        
-        sh.batch_update({"requests": requests})
-        return True
-    except Exception as e:
-        st.error(f"❌ 同步失敗: {e}")
-        return False
-
 # ==========================================
-# 2. 顯示邏輯
+# 2. 解析與同步
 # ==========================================
 def parse_report(f):
     if not f: return {}, "0000000", "0000000"
@@ -134,26 +114,6 @@ def parse_report(f):
         return counts, s, e
     except: return {}, "0000000", "0000000"
 
-def get_html_header_rich(text):
-    red_chars = "0123456789~().%"
-    res = ""
-    for c in text:
-        res += f"<span style='color:red; font-weight:bold;'>{c}</span>" if c in red_chars else c
-    return res
-
-def get_html_footer_rich(text):
-    # 尋找百分比並包裹標籤
-    match = re.search(r'(\d+\.?\d*%)', text)
-    if match:
-        p = match.group(1)
-        parts = text.split(p)
-        # 確保只替換最後一個出現的百分比(通常在句尾)
-        return f"{parts[0]}<span style='color:red; font-weight:bold;'>{p}</span>{parts[1] if len(parts)>1 else ''}"
-    return text
-
-# ==========================================
-# 3. 介面執行
-# ==========================================
 files = st.file_uploader("上傳 3 個 stoneCnt 報表", accept_multiple_files=True, type=['xlsx', 'xls'])
 
 if files and len(files) >= 3:
@@ -168,38 +128,59 @@ if files and len(files) >= 3:
         d_yt, s_yt, e_yt = parse_report(f_yt)
         d_ly, s_ly, e_ly = parse_report(f_ly)
 
+        # 動態標題
         raw_wk = f"本期 ({s_wk[-4:]}~{e_wk[-4:]})"
         raw_yt = f"本年累計 ({s_yt}~{e_yt})"
-        raw_ly = f"去年累計 ({ly_s if 'ly_s' in locals() else s_ly}~{ly_e if 'ly_e' in locals() else e_ly})"
+        raw_ly = f"去年累計 ({s_ly}~{e_ly})"
 
-        h_wk, h_yt, h_ly = map(get_html_header_rich, [raw_wk, raw_yt, raw_ly])
+        # HTML 預覽用的標頭標紅
+        def header_html(text):
+            return "".join([f"<span style='color:red; font-weight:bold;'>{c}</span>" if c in "0123456789~().%" else c for c in text])
+        
+        h_wk, h_yt, h_ly = map(header_html, [raw_wk, raw_yt, raw_ly])
 
+        # 計算合計
         body = []
         for u in UNIT_DATA_ORDER:
             yv, tv = d_yt.get(u, 0), TARGETS.get(u, 0)
             body.append({'統計期間': u, h_wk: d_wk.get(u, 0), h_yt: yv, h_ly: d_ly.get(u, 0), '本年與去年同期比較': yv - d_ly.get(u, 0), '目標值': tv, '達成率': f"{yv/tv:.0%}" if tv > 0 else "—"})
         
         df_body = pd.DataFrame(body)
-        sum_cols = df_body[df_body['統計期間'] != '警備隊'][[h_wk, h_yt, h_ly, '目標值']].sum()
-        total_row = pd.DataFrame([{'統計期間': '合計', h_wk: sum_cols[h_wk], h_yt: sum_cols[h_yt], h_ly: sum_cols[h_ly], '本年與去年同期比較': sum_cols[h_yt] - sum_cols[h_ly], '目標值': sum_cols['目標值'], '達成率': f"{sum_cols[h_yt]/sum_cols['目標值']:.0%}" if sum_cols['目標值'] > 0 else "0%"}])
+        sum_v = df_body[df_body['統計期間'] != '警備隊'][[h_wk, h_yt, h_ly, '目標值']].sum()
+        total_row = pd.DataFrame([{'統計期間': '合計', h_wk: sum_v[h_wk], h_yt: sum_v[h_yt], h_ly: sum_v[h_ly], '本年與去年同期比較': sum_v[h_yt] - sum_v[h_ly], '目標值': sum_v['目標值'], '達成率': f"{sum_v[h_yt]/sum_v['目標值']:.0%}" if sum_v['目標值'] > 0 else "0%"}])
         df_final = pd.concat([total_row, df_body], ignore_index=True)
 
-        # 計算日期與應達成率
+        # 說明文字計算
         y, m, d = int(e_yt[:3])+1911, int(e_yt[3:5]), int(e_yt[5:])
-        prog = ((date(y, m, d) - date(y, 1, 1)).days + 1) / (366 if calendar.isleap(y) else 365)
-        f_plain = f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，統計截至 {e_yt[:3]}年{e_yt[3:5]}月{e_yt[5:]}日 (入案日期)應達成率為{prog:.1%}"
-        f_html = get_html_footer_rich(f_plain)
+        prog_val = f"{((date(y, m, d) - date(y, 1, 1)).days + 1) / (366 if calendar.isleap(y) else 365):.1%}"
+        footer_plain = f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，統計截至 {e_yt[:3]}年{e_yt[3:5]}月{e_yt[5:]}日 (入案日期)應達成率為{prog_val}"
+        
+        # 網頁端顯示：僅將最後的 prog_val 標紅
+        footer_html = footer_plain.replace(prog_val, f"<span style='color:red; font-weight:bold;'>{prog_val}</span>")
 
-        st.success("✅ 數據分析成功")
+        st.success("✅ 數據解析完成")
         st.write(df_final.to_html(escape=False, index=False), unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.write(f"#### {f_html}", unsafe_allow_html=True)
+        st.markdown(f"#### {footer_html}", unsafe_allow_html=True)
 
-        if st.button("🚀 同步雲端並標紅百分比", type="primary"):
-            with st.status("執行精準格式同步...") as s:
-                df_sync = df_final.copy()
-                df_sync.columns = ['統計期間', raw_wk, raw_yt, raw_ly, '本年與去年同期比較', '目標值', '達成率']
-                if sync_to_google_sheets_v40(df_sync, f_plain):
-                    st.write("✅ 同步完成！末列 99.5% 應已變紅。")
-                    st.balloons()
+        if st.button("🚀 同步至 Google 試算表", type="primary"):
+            with st.status("正在精密格式化雲端儲存格...") as s:
+                gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+                sh = gc.open_by_url(GOOGLE_SHEET_URL)
+                ws = sh.get_worksheet(1)
+                
+                # 1. 寫入數據
+                clean_cols = ['統計期間', raw_wk, raw_yt, raw_ly, '本年與去年同期比較', '目標值', '達成率']
+                ws.update(range_name='A2', values=[clean_cols] + df_final.values.tolist())
+                
+                # 2. 格式化請求
+                reqs = []
+                for i, col_txt in enumerate(clean_cols[1:4], start=2):
+                    reqs.append(get_header_format_request(ws.id, 2, i, col_txt))
+                
+                f_idx = 2 + len(df_final) + 1
+                reqs.append(get_footer_precise_red_request(ws.id, f_idx, 1, footer_plain))
+                
+                sh.batch_update({"requests": reqs})
+                st.write("✅ 同步成功！只有應達成率百分比為紅色。")
+                st.balloons()
     except Exception as e: st.error(f"錯誤：{e}")
