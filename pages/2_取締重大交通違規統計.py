@@ -19,10 +19,10 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.title("🚔 取締重大交通違規統計 (v15 最終確認版)")
+st.title("🚔 取締重大交通違規統計 (v16 達成率整數版)")
 
 # --- 強制清除快取按鈕 ---
-if st.button("🧹 若排序仍錯誤，請按此清除快取", type="primary"):
+if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.cache_data.clear()
     st.cache_resource.clear()
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
@@ -31,8 +31,9 @@ st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** 重點違規報表。
 2. 系統自動區分 **攔停** 與 **逕舉**。
-3. **「合計」列保證排在第一位 (B4)，「科技執法」在第二位 (B5)**。
-4. 寫入位置：**B4** (純數據，無標題)。
+3. **達成率改為整數 (四捨五入)**。
+4. **「合計」列排在第一位**。
+5. 寫入位置：**B4** (純數據)。
 """)
 
 # ==========================================
@@ -45,7 +46,6 @@ UNIT_MAP = {
     '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', 
     '警備隊': '警備隊', '龍潭交通分隊': '交通分隊', '交通組': '科技執法' 
 }
-# 注意：這裡不包含合計，合計會另外算
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 TARGETS = {
     '聖亭所': 1838, '龍潭所': 2451, '中興所': 1838, '石門所': 1488, 
@@ -168,8 +168,8 @@ def parse_focus_report(uploaded_file):
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v15 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v15_fixed")
+# ★★★ v16 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v16_round_int")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足...")
@@ -224,7 +224,10 @@ if uploaded_files:
                     tgt = TARGETS.get(u, 0)
                     row_data.append(diff)
                     if u == '科技執法': row_data.extend(['—', '—'])
-                    else: row_data.extend([tgt, f"{y_total/tgt:.2%}" if tgt > 0 else "0.00%"])
+                    else: 
+                        # ★★★ 修改點：使用 :.0% 來四捨五入顯示整數百分比 ★★★
+                        rate_str = f"{y_total/tgt:.0%}" if tgt > 0 else "0%"
+                        row_data.extend([tgt, rate_str])
                 
                 accum['ws']+=w['stop']; accum['wc']+=w['cit']
                 accum['ys']+=y['stop']; accum['yc']+=y['cit']
@@ -234,19 +237,22 @@ if uploaded_files:
             total_target = sum([v for k,v in TARGETS.items() if k not in ['警備隊', '科技執法']])
             t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
             t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
-            total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, f"{t_rate:.2%}"]
             
-            # ★★★ 最終組合：合計列 + 單位列 ★★★
+            # ★★★ 修改點：合計列也改成 :.0% ★★★
+            total_rate_str = f"{t_rate:.0%}"
+            total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, total_rate_str]
+            
+            # 組合：合計在前 + 單位在後
             final_rows = [total_row] + unit_rows
 
             cols = ['取締方式', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(final_rows, columns=cols)
             df_write = df_final.drop(columns=['取締方式'])
 
-            st.success("✅ 分析完成！(已確認合計在第一列)")
+            st.success("✅ 分析完成！(達成率已設為整數)")
             
-            # 顯示順序檢查
-            st.subheader("📋 寫入順序預覽 (B4=合計, B5=科技執法...)")
+            st.subheader("📋 寫入預覽")
+            st.caption("第一列為「合計」，第二列為「科技執法」，達成率為整數 %")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
             output = io.BytesIO()
@@ -274,9 +280,9 @@ if uploaded_files:
                         if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
                             st.write(f"✅ Email 已發送")
                     
-                    st.write("📊 正在寫入 Google 試算表 (B4, 純數據)...")
+                    st.write("📊 正在寫入 Google 試算表 (B4)...")
                     if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'): 
-                        st.write("✅ 寫入成功！ B4=合計, B5=科技執法")
+                        st.write("✅ 寫入成功！ (合計=B4, 科技執法=B5)")
                     else:
                         st.write("❌ 寫入失敗")
                     
