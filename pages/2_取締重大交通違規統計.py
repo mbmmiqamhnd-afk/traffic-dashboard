@@ -6,7 +6,7 @@ import smtplib
 import gspread
 import calendar
 import pypdf
-import numpy as np  # 新增 numpy 用於型別判斷
+import numpy as np
 from datetime import date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -16,7 +16,7 @@ from email.header import Header
 
 # --- 初始化配置 ---
 st.set_page_config(page_title="重大交通違規統計", layout="wide", page_icon="🚦")
-st.title("🚦 重大交通違規統計 (v65 強制轉型修復版)")
+st.title("🚦 重大交通違規統計 (v66 單層標頭版)")
 
 # ==========================================
 # 0. 設定區
@@ -57,38 +57,30 @@ def get_footer_percent_red_req(ws_id, row_idx, col_idx, text):
     return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
 
 # ==========================================
-# 2. 核心解析引擎 (強制轉型修復)
+# 2. 核心解析引擎 (PDF / Excel / CSV 支援)
 # ==========================================
 def to_int(val):
-    """安全轉換為 Python 標準 int"""
     try:
-        # 處理 Pandas/Numpy 的數值類型
-        if isinstance(val, (np.integer, np.int64, np.int32)):
+        if isinstance(val, (np.integer, np.int64, np.int32, np.floating, float)):
             return int(val)
-        if isinstance(val, (np.floating, float)):
-            return int(val)
-        # 處理字串
         s = str(val).replace(',', '').strip()
         if s == '' or s == '-' or s == 'nan': return 0
         return int(float(s))
-    except:
-        return 0
+    except: return 0
 
 def extract_single_report_data(file_obj):
-    counts = {} # {unit: [intercept, report]}
+    counts = {}
     date_str = "0000~0000"
     
-    # 判斷檔案類型
-    is_pdf = file_obj.name.lower().endswith('.pdf') or (file_obj.name.lower().endswith('.csv') and file_obj.size > 1000)
+    # 判斷是否為 PDF (依檔名或內容)
+    is_pdf = file_obj.name.lower().endswith('.pdf')
     
     try:
-        # --- A. 處理 PDF ---
+        # --- A. PDF 解析 ---
         if is_pdf:
             reader = pypdf.PdfReader(file_obj)
             text = ""
             for page in reader.pages: text += page.extract_text() + "\n"
-            
-            # 日期解析
             m = re.search(r'(\d{3,7}).*至\s*(\d{3,7})', text)
             if m: date_str = f"{m.group(1)}~{m.group(2)}"
             
@@ -99,32 +91,38 @@ def extract_single_report_data(file_obj):
                     if start != -1:
                         sub = clean_text[start+len(unit):start+150]
                         tokens = [t.replace(',','') for t in sub.split() if t.replace(',','').replace('-','',1).isdigit()]
-                        if len(tokens) >= 3:
-                            counts[unit] = [to_int(tokens[1]), to_int(tokens[2])]
-                        elif len(tokens) >= 2:
-                            counts[unit] = [to_int(tokens[0]), to_int(tokens[1])]
+                        if len(tokens) >= 3: counts[unit] = [to_int(tokens[1]), to_int(tokens[2])]
+                        elif len(tokens) >= 2: counts[unit] = [to_int(tokens[0]), to_int(tokens[1])]
                 except: continue
                 
-        # --- B. 處理 Excel ---
+        # --- B. Excel / CSV 解析 ---
         else:
-            df = pd.read_excel(file_obj, header=None)
-            
-            # 1. 日期解析
+            try:
+                # 優先嘗試 Excel
+                df = pd.read_excel(file_obj, header=None)
+            except:
+                # 失敗則嘗試 CSV
+                file_obj.seek(0)
+                try:
+                    df = pd.read_csv(file_obj, header=None, encoding='utf-8')
+                except:
+                    file_obj.seek(0)
+                    df = pd.read_csv(file_obj, header=None, encoding='big5') # 嘗試 Big5 編碼
+
+            # 1. 抓取日期
             top_txt = df.iloc[:10].astype(str).to_string()
             m = re.search(r'(\d{3,7}).*至\s*(\d{3,7})', top_txt)
             if m: date_str = f"{m.group(1)}~{m.group(2)}"
             
-            # 2. 座標偵測 (攔停/逕行)
+            # 2. 座標偵測
             idx_int, idx_rem = -1, -1
-            # 擴大搜尋範圍至前 30 行
             for r in range(min(30, len(df))):
                 row_vals = df.iloc[r].astype(str).tolist()
                 for c, val in enumerate(row_vals):
-                    v_clean = val.replace('\n', '').replace(' ', '')
-                    if "攔停" in v_clean: idx_int = c
-                    if "逕行" in v_clean: idx_rem = c
+                    v = val.replace('\n', '').replace(' ', '')
+                    if "攔停" in v: idx_int = c
+                    if "逕行" in v: idx_rem = c
             
-            # 預設值備案
             if idx_int == -1: idx_int = 1
             if idx_rem == -1: idx_rem = 2
             
@@ -132,8 +130,6 @@ def extract_single_report_data(file_obj):
             active_unit = None
             for _, row in df.iterrows():
                 row_s = " ".join(row.astype(str))
-                
-                # 單位識別
                 if "合計" in str(row[0]) or "總計" in str(row[0]): active_unit = "合計"
                 elif "科技執法" in str(row[0]): active_unit = "科技執法"
                 else:
@@ -141,38 +137,29 @@ def extract_single_report_data(file_obj):
                         if short in str(row[0]): active_unit = short; break
                 
                 if active_unit:
-                    v1 = row[idx_int]
-                    v2 = row[idx_rem]
-                    # 強制轉型
-                    n1 = to_int(v1)
-                    n2 = to_int(v2)
-                    counts[active_unit] = [n1, n2]
+                    try:
+                        counts[active_unit] = [to_int(row[idx_int]), to_int(row[idx_rem])]
+                    except: pass
                     active_unit = None
 
-    except Exception as e:
-        print(f"Error: {e}")
+    except Exception as e: print(f"解析錯誤 {file_obj.name}: {e}")
         
     return counts, date_str
 
 # ==========================================
 # 3. 畫面顯示與自動化
 # ==========================================
-files = st.file_uploader("請上傳 3 個 Focus 報表 (Excel/PDF)", accept_multiple_files=True)
+files = st.file_uploader("請上傳 3 個 Focus 報表 (Excel/CSV/PDF)", accept_multiple_files=True)
 
 if files and len(files) >= 3:
     try:
-        # 解析檔案
+        # 解析與分類 (wk, yt, ly)
         parsed_results = []
         for f in files:
             d, date_rng = extract_single_report_data(f)
             parsed_results.append({"file": f, "data": d, "date": date_rng})
         
-        # 排序檔案: 本期(wk), 本年(yt), 去年(ly)
         f_wk, f_yt, f_ly = None, None, None
-        
-        # 優先依檔名辨識 (1), (2)
-        # 若無標記，則依據日期字串長度或順序
-        # 這裡假設上傳順序或檔名包含線索
         for item in parsed_results:
             nm = item['file'].name
             if "(1)" in nm: f_yt = item
@@ -187,77 +174,46 @@ if files and len(files) >= 3:
         d_yt = f_yt['data']; title_yt = f"本年累計({f_yt['date']})"
         d_ly = f_ly['data']; title_ly = f"去年累計({f_ly['date']})"
         
-        # 構建 HTML 表頭
+        # 🚀 單層 HTML 表頭 (移除原本的第二列)
         def red_h(t): return "".join([f"<span style='color:red; font-weight:bold;'>{c}</span>" if c in "0123456789~().%" else c for c in t])
+        
         html_header = f"""
         <thead>
             <tr>
-                <th rowspan='2'>統計期間</th>
+                <th>統計期間</th>
                 <th colspan='2' style='text-align:center;'>{red_h(title_wk)}</th>
                 <th colspan='2' style='text-align:center;'>{red_h(title_yt)}</th>
                 <th colspan='2' style='text-align:center;'>{red_h(title_ly)}</th>
-                <th rowspan='2'>本年與去年同期比較</th>
-                <th rowspan='2'>目標值</th>
-                <th rowspan='2'>達成率</th>
-            </tr>
-            <tr>
-                <th>現場攔停</th><th>逕行舉發</th>
-                <th>現場攔停</th><th>逕行舉發</th>
-                <th>現場攔停</th><th>逕行舉發</th>
+                <th>同期比較</th>
+                <th>目標值</th>
+                <th>達成率</th>
             </tr>
         </thead>
         """
 
-        # 數據組裝 (確保所有數值皆為 Python int)
+        # 數據組裝
         rows = []
         for u in UNIT_ORDER:
-            wk = d_wk.get(u, [0, 0])
-            yt = d_yt.get(u, [0, 0])
-            ly = d_ly.get(u, [0, 0])
-            
-            # 強制轉換列表內的元素
-            wk = [to_int(x) for x in wk]
-            yt = [to_int(x) for x in yt]
-            ly = [to_int(x) for x in ly]
-            
-            yt_tot = sum(yt)
-            ly_tot = sum(ly)
-            target = VIOLATION_TARGETS.get(u, 0)
-            
+            wk = d_wk.get(u, [0, 0]); yt = d_yt.get(u, [0, 0]); ly = d_ly.get(u, [0, 0])
+            yt_tot = sum(yt); ly_tot = sum(ly); target = VIOLATION_TARGETS.get(u, 0)
             rows.append([u, wk[0], wk[1], yt[0], yt[1], ly[0], ly[1], yt_tot - ly_tot, target, f"{yt_tot/target:.0%}" if target > 0 else "—"])
         
         # 合計列計算
-        # 使用 numpy 來做向量加法，確保欄位對齊
-        # 但最後轉回 Python list 以防 JSON Error
         df_tmp = pd.DataFrame(rows)
-        # 轉換 df 的數據部分為 numeric
         sums = df_tmp.iloc[:, 1:9].apply(pd.to_numeric).sum().fillna(0).astype(int).tolist()
-        
         total_target = VIOLATION_TARGETS.get('合計', 11817)
-        s_yt_tot = sums[2] + sums[3] # 本年攔 + 本年逕 (索引偏移注意: 0=u, 1=wk0, 2=wk1...)
-        # 修正索引: rows 結構是 [unit, wk0, wk1, yt0, yt1, ly0, ly1, ...]
-        # DataFrame 欄位索引: 0=unit, 1=wk0, 2=wk1, 3=yt0, 4=yt1, 5=ly0, 6=ly1...
-        # sums 索引: 0對應df col 1 (wk0)...
+        s_yt_tot = sums[2] + sums[3]
+        total_row = ["合計", sums[1], sums[2], sums[3], sums[4], sums[5], sums[6], sums[7], total_target, f"{s_yt_tot/total_target:.0%}" if total_target > 0 else "0%"]
         
-        # 重新精算合計
-        t_wk0 = sum([r[1] for r in rows])
-        t_wk1 = sum([r[2] for r in rows])
-        t_yt0 = sum([r[3] for r in rows])
-        t_yt1 = sum([r[4] for r in rows])
-        t_ly0 = sum([r[5] for r in rows])
-        t_ly1 = sum([r[6] for r in rows])
-        t_diff = (t_yt0 + t_yt1) - (t_ly0 + t_ly1)
-        
-        total_row = ["合計", t_wk0, t_wk1, t_yt0, t_yt1, t_ly0, t_ly1, t_diff, total_target, f"{(t_yt0+t_yt1)/total_target:.0%}" if total_target > 0 else "0%"]
-        
+        # 取締方式列
         method_row = ["取締方式", "現場攔停", "逕行舉發", "現場攔停", "逕行舉發", "現場攔停", "逕行舉發", "", "", ""]
         all_rows = [method_row, total_row] + rows
         
-        st.success("✅ 數據解析成功 (格式已修復)")
+        st.success("✅ 解析成功！標頭已簡化。")
         
-        # 顯示
+        # 渲染
         table_body = "".join([f"<tr>{''.join([f'<td>{x}</td>' for x in r])}</tr>" for r in all_rows])
-        st.write(f"<table>{html_header}<tbody>{table_body}</tbody></table>", unsafe_allow_html=True)
+        st.write(f"<table style='text-align:center; width:100%;'>{html_header}<tbody>{table_body}</tbody></table>", unsafe_allow_html=True)
 
         # 說明
         try:
@@ -275,25 +231,20 @@ if files and len(files) >= 3:
 
         # 自動化同步
         file_hash = "".join([f.name + str(f.size) for f in files])
-        if st.session_state.get("v65_done") != file_hash:
+        if st.session_state.get("v66_done") != file_hash:
             with st.status("🚀 執行自動化同步...") as s:
                 gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                 sh = gc.open_by_url(GOOGLE_SHEET_URL); ws = sh.get_worksheet(0)
                 
-                # 準備 Payload (再次確保所有數值為 Native Python Types)
                 h1_raw = ["統計期間", title_wk, "", title_yt, "", title_ly, "", "同期比較", "目標值", "達成率"]
-                
-                # 轉換 all_rows 內的 numpy.int64 為 int
-                clean_rows = []
-                for row in all_rows:
-                    new_row = [to_int(x) if isinstance(x, (int, float, np.number)) else str(x) for x in row]
-                    clean_rows.append(new_row)
+                # 將所有數值轉為 int 以防 JSON Error
+                clean_rows = [[to_int(x) if isinstance(x, (int, float, np.number)) else str(x) for x in r] for r in all_rows]
                 
                 full_payload = [h1_raw] + clean_rows
-                
                 ws.update(range_name='A2', values=full_payload)
                 
                 reqs = []
+                # 合併標頭 B2:C2, D2:E2, F2:G2
                 for col_p in [(1,3), (3,5), (5,7)]:
                     reqs.append(get_merge_request(ws.id, col_p[0], col_p[1]))
                     reqs.append(get_center_align_request(ws.id, col_p[0], col_p[1]))
@@ -314,9 +265,9 @@ if files and len(files) >= 3:
                     msg = MIMEMultipart(); msg['Subject'] = Header(f"🚦 Focus 報表 - {e_yt_str}", "utf-8").encode()
                     msg.attach(MIMEText(f"{f1}\n{f2}", "plain"))
                     part = MIMEBase("application", "octet-stream"); part.set_payload(out.getvalue())
-                    encoders.encode_base64(part); part.add_header("Content-Disposition", 'attachment; filename="Report.xlsx"')
+                    encoders.encode_base64(part); part.add_header("Content-Disposition", 'attachment; filename="Violations.xlsx"')
                     msg.attach(part); server.send_message(msg); server.quit()
                 
-                st.session_state["v65_done"] = file_hash
+                st.session_state["v66_done"] = file_hash
                 st.balloons(); s.update(label="完成", state="complete")
     except Exception as e: st.error(f"錯誤: {e}")
