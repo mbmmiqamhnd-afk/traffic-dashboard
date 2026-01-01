@@ -33,7 +33,7 @@ st.markdown("""
 # ==========================================
 # 0. 設定區
 # ==========================================
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1_d2h1JvO-aO6p6u2uG4xXF_T5X-q6b5y/edit" 
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 
 UNIT_MAP = {
     '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', 
