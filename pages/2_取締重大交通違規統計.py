@@ -93,9 +93,10 @@ def parse_focus_file_dynamic(file_obj):
         
         # 1. 抓取日期
         top_txt = df.iloc[:10].astype(str).to_string()
-        m = re.search(r'入案日期：(\d+)\s*至\s*(\d+)', top_txt)
+        m = re.search(r'入案日期[：:]\s*(\d+)\s*至\s*(\d+)', top_txt)
         if m:
             s_d, e_d = m.group(1), m.group(2)
+            # 轉換為 MMDD 格式 (1141223 -> 1223)
             date_range_str = f"{s_d[-4:]}~{e_d[-4:]}"
             
             # 判斷是否為年累計
@@ -123,7 +124,8 @@ def parse_focus_file_dynamic(file_obj):
                 # 找到單位所在的欄位索引
                 for c, v in enumerate(row_vals):
                     if v == "單位": col_unit_idx = c
-                    if v == "合計": col_total_idx = c # 找該列最後一個合計
+                    # 找該列最後一個合計
+                    if v == "合計": col_total_idx = c
                 break
         
         if header_row_idx != -1 and col_unit_idx != -1 and col_total_idx != -1:
