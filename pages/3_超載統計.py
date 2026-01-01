@@ -12,15 +12,28 @@ from email.mime.base import MIMEBase
 from email import encoders
 from email.header import Header
 
+# 強制清除快取
+try:
+    st.cache_data.clear()
+    st.cache_resource.clear()
+except: pass
+
 st.set_page_config(page_title="超載統計", layout="wide", page_icon="🚛")
-st.title("🚛 超載 (stoneCnt) 自動統計")
+st.title("🚛 超載 (stoneCnt) 自動統計 (v17 標準版)")
+
+# --- 強制清除快取按鈕 ---
+if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** `stoneCnt` 系列的 Excel 檔案。
-2. 系統將自動計算數據與年度時間進度。
-3. 自動寄信並將結果寫入 Google 試算表 **(第 2 個分頁，從 A3 開始)**。
-4. **若沒反應，請點擊下方的「強制手動執行」按鈕。**
+2. 系統自動計算數據與年度時間進度。
+3. **表格第一欄名稱已改為「統計期間」**。
+4. **「合計」列排在第一位**，達成率為整數。
+5. 寫入位置：**第 2 個分頁 (Index 1) 的 B4** (純數據)。
 """)
 
 # ==========================================
@@ -36,7 +49,7 @@ UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '
 # ==========================================
 # 1. Google Sheets 寫入函數
 # ==========================================
-def update_google_sheet(df, sheet_url, start_cell='A3'):
+def update_google_sheet(df, sheet_url, start_cell='B4'):
     try:
         # 檢查 Secrets
         if "gcp_service_account" not in st.secrets:
@@ -47,23 +60,32 @@ def update_google_sheet(df, sheet_url, start_cell='A3'):
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
         
-        # 抓取第 2 個工作表 (索引為 1)
+        # ★★★ 關鍵：抓取第 2 個工作表 (Index 1) ★★★
         try:
             ws = sh.get_worksheet(1) 
+            if ws is None: raise Exception("找不到 Index 1 的工作表")
         except Exception as e:
-            st.error(f"❌ 無法取得第 2 個工作表，請確認試算表是否有至少 2 個分頁。錯誤: {e}")
+            st.error(f"❌ 無法取得第 2 個工作表 (Index 1)，請確認試算表是否有至少 2 個分頁。錯誤: {e}")
             return False
         
-        # 準備寫入資料
+        st.info(f"📂 寫入目標工作表：**「{ws.title}」**")
+        
+        # 準備寫入資料 (純數據，無標題)
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
-        data = [df_clean.columns.values.tolist()] + df_clean.values.tolist()
+        data = df_clean.values.tolist()
         
         # 寫入
-        ws.update(range_name=start_cell, values=data)
+        try:
+            ws.update(range_name=start_cell, values=data)
+        except TypeError:
+            ws.update(start_cell, data)
+        except Exception as e:
+            st.error(f"❌ Google 試算表寫入失敗: {e}")
+            return False
         return True
         
     except Exception as e:
-        st.error(f"❌ Google 試算表寫入失敗: {e}")
+        st.error(f"❌ 未知錯誤: {e}")
         return False
 
 # ==========================================
@@ -144,7 +166,8 @@ def parse_stone(f):
 # ==========================================
 # 4. 主程式執行
 # ==========================================
-uploaded_files = st.file_uploader("請拖曳 3 個 stoneCnt 檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'])
+# 更新 Key 以重置上傳器
+uploaded_files = st.file_uploader("請拖曳 3 個 stoneCnt 檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="stone_uploader_v17")
 
 if uploaded_files:
     if len(uploaded_files) < 3:
@@ -175,7 +198,7 @@ if uploaded_files:
             rows = []
             for u in UNIT_ORDER:
                 rows.append({
-                    '單位': u, 
+                    '統計期間': u,  # 這裡先存單位名，稍後會變更欄位
                     '本期': d_wk.get(u,0), 
                     '本年累計': d_yt.get(u,0), 
                     '去年累計': d_ly.get(u,0), 
@@ -184,23 +207,34 @@ if uploaded_files:
             
             df = pd.DataFrame(rows)
             df_calc = df.copy()
-            mask_guard = df_calc['單位'] == '警備隊'
+            mask_guard = df_calc['統計期間'] == '警備隊'
             df_calc.loc[mask_guard, ['本期', '本年累計', '去年累計', '目標值']] = 0
             
             total = df_calc[['本期', '本年累計', '去年累計', '目標值']].sum().to_dict()
-            total['單位'] = '合計'
+            total['統計期間'] = '合計'
             
+            # 合計置頂
             df_final = pd.concat([pd.DataFrame([total]), df], ignore_index=True)
             df_final['本年與去年同期比較'] = df_final['本年累計'] - df_final['去年累計']
-            df_final['達成率'] = df_final.apply(lambda x: f"{x['本年累計']/x['目標值']:.2%}" if x['目標值']>0 else "—", axis=1)
-            df_final.loc[df_final['單位']=='警備隊', ['本年與去年同期比較', '目標值', '達成率']] = "—"
             
-            cols = ['單位', '本期', '本年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
+            # 達成率改為整數百分比 (:.0%)
+            df_final['達成率'] = df_final.apply(lambda x: f"{x['本年累計']/x['目標值']:.0%}" if x['目標值']>0 else "—", axis=1)
+            df_final.loc[df_final['統計期間']=='警備隊', ['本年與去年同期比較', '目標值', '達成率']] = "—"
+            
+            # 欄位順序
+            cols = ['統計期間', '本期', '本年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
             df_final = df_final[cols]
+            
+            # 準備寫入的 DataFrame (移除第一欄)
+            df_write = df_final.drop(columns=['統計期間'])
             
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
             
+            # 預覽寫入內容
+            st.caption("▼ 即將寫入分頁2 (B4) 的數據預覽：")
+            st.dataframe(df_write, use_container_width=True)
+
             # --- 產生 Excel ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -224,7 +258,6 @@ if uploaded_files:
             if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
             file_ids = ",".join(sorted([f.name for f in uploaded_files]))
             
-            # 準備執行函數
             def run_automation():
                 with st.status("正在處理中...", expanded=True) as status:
                     st.write("📧 準備寄送 Email...")
@@ -240,23 +273,21 @@ if uploaded_files:
                     else:
                         st.write("⚠️ 未設定 Email，跳過寄信")
 
-                    st.write("📊 正在寫入 Google 試算表...")
-                    if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A3'):
-                        st.write("✅ Google 試算表已更新 (第 2 分頁, A3)")
+                    st.write("📊 正在寫入 Google 試算表 (第 2 分頁, B4, 純數據)...")
+                    if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'):
+                        st.write("✅ Google 試算表已更新！")
                     else:
                         st.write("❌ Google 試算表更新失敗")
                     
                     status.update(label="執行完畢", state="complete", expanded=False)
                     st.balloons()
             
-            # 自動執行邏輯
             if file_ids not in st.session_state["sent_cache"]:
                 run_automation()
                 st.session_state["sent_cache"].add(file_ids)
             else:
                 st.info("✅ 此組檔案已執行過自動化作業。")
 
-            # 手動執行按鈕 (給使用者補救用)
             if st.button("🔄 強制重新執行 (寫入 + 寄信)", type="primary"):
                 run_automation()
 
