@@ -19,13 +19,14 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.title("🚔 取締重大交通違規統計 (v12 分頁確認版)")
+st.title("🚔 取締重大交通違規統計 (v13 合計置頂版)")
 
 st.markdown("""
 ### 📝 使用說明
-1. 此程式與超載統計共用檔案，**請確認下方顯示的工作表名稱正確**。
-2. 系統自動區分 **攔停/逕舉**。
-3. 寫入位置：**B4** (跳過 A 欄單位，跳過標題列)。
+1. 請上傳 **3 個** 重點違規報表。
+2. 系統自動區分 **攔停** 與 **逕舉**。
+3. **「合計」列已移至最上方 (科技執法之上)。**
+4. 寫入位置：**B4** (純數據，無標題)。
 """)
 
 # ==========================================
@@ -45,7 +46,7 @@ TARGETS = {
 }
 
 # ==========================================
-# 1. Google Sheets 寫入函數 (含分頁名稱檢查)
+# 1. Google Sheets 寫入函數
 # ==========================================
 def update_google_sheet(df, sheet_url, start_cell='B4'):
     try:
@@ -56,19 +57,16 @@ def update_google_sheet(df, sheet_url, start_cell='B4'):
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
         
-        # ★★★ 關鍵檢查：抓取第 1 個分頁 (Index 0) ★★★
+        # 抓取第 1 個分頁
         ws = sh.get_worksheet(0) 
         if ws is None: raise Exception("找不到 Index 0 的工作表")
         
-        # 顯示給使用者看，確認沒抓錯
-        st.info(f"📂 系統目前鎖定的工作表名稱為：**「{ws.title}」**")
-        st.caption("若上述名稱顯示為「超載統計」或其他分頁，請至 Google 試算表將「取締重大違規」的分頁拉到最左邊(第1個)。")
+        st.info(f"📂 寫入目標工作表：**「{ws.title}」**")
 
         # 轉為純數據
         df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
         data = df_clean.values.tolist()
         
-        # 寫入
         try:
             ws.update(range_name=start_cell, values=data)
         except TypeError:
@@ -165,7 +163,7 @@ def parse_focus_report(uploaded_file):
 # ==========================================
 # 4. 主程式
 # ==========================================
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v12_sheetcheck")
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v13_total_top")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足...")
@@ -231,7 +229,9 @@ if uploaded_files:
             t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
             t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
             total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, f"{t_rate:.2%}"]
-            rows.append(total_row)
+            
+            # ★★★ 關鍵修改：將合計插入到最前面 (索引 0) ★★★
+            rows.insert(0, total_row)
 
             cols = ['取締方式', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(rows, columns=cols)
@@ -265,7 +265,7 @@ if uploaded_files:
                         if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
                             st.write(f"✅ Email 已發送")
                     
-                    st.write("📊 正在寫入 Google 試算表 (B4)...")
+                    st.write("📊 正在寫入 Google 試算表 (B4, 純數據)...")
                     if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'): 
                         st.write("✅ 試算表寫入成功！")
                     else:
