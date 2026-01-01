@@ -12,29 +12,26 @@ from email.mime.base import MIMEBase
 from email import encoders
 from email.header import Header
 
-# --- 1. 頂部核心重置區 (必須在最前面) ---
+# ==========================================
+# 🛑 核心偵測區：如果你沒看到這行字，代表檔案沒存成功
+# ==========================================
 st.set_page_config(page_title="超載統計", layout="wide", page_icon="🚛")
 
-# 強制清除快取的函數
-def clear_all_caches():
+st.markdown("# 🛑 這是 v27 強制偵測版")
+st.error("如果您看到這行紅字，代表程式碼已成功更新。")
+
+# --- 核心重置按鈕 ---
+if st.button("🧹 點我徹底重置環境 (解決標題與合計問題)", type="primary"):
     st.cache_data.clear()
     st.cache_resource.clear()
     for key in st.session_state.keys():
         del st.session_state[key]
-
-# 顯示紅色重置按鈕
-st.error("### 🛠️ 系統維護工具")
-if st.button("🧹 徹底重置程式環境 (若 A2 標題或合計順序不對請務必點我)", type="primary"):
-    clear_all_caches()
-    st.success("✅ 快取與記憶已清空！請現在重新整理頁面 (F5) 並重新上傳檔案。")
+    st.success("✅ 已清空快取！請現在重新整理頁面 (F5)。")
     st.stop()
 
-st.title("🚛 超載自動統計 (v26 標題 A2 起始版)")
-
 # ==========================================
-# 2. 設定與參數區
+# 0. 設定與參數區
 # ==========================================
-# 請確認您的 Google 試算表網址
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 
 TARGETS = {
@@ -43,16 +40,15 @@ TARGETS = {
 }
 
 UNIT_MAP = {
-    '交通組': '科技執法', '交通組(科技執法)': '科技執法', '聖亭派出所': '聖亭所', 
-    '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', 
-    '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'
+    '交通組': '科技執法', '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', 
+    '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', 
+    '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'
 }
 
-# 數據排序順序 (合計之後的順序)
 UNIT_DATA_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 # ==========================================
-# 3. 核心寫入函數 (A2 起始，含標題)
+# 1. 核心寫入函數 (A2 起始，含標題)
 # ==========================================
 def update_sheet_from_a2(df, sheet_url):
     try:
@@ -62,15 +58,14 @@ def update_sheet_from_a2(df, sheet_url):
 
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
-        # 鎖定第 2 個分頁 (Index 1)
-        ws = sh.get_worksheet(1) 
+        ws = sh.get_worksheet(1) # 分頁 2 (Index 1)
         
-        # 建立二維陣列：[標題列] + [數據列1] + [數據列2]...
+        # 標題列 + 數據列
         header = df.columns.tolist()
         values = df.values.tolist()
         payload = [header] + values
         
-        # 從 A2 開始寫入 (會覆蓋標題列)
+        # 從 A2 開始覆蓋寫入
         try:
             ws.update(range_name='A2', values=payload)
         except:
@@ -82,7 +77,7 @@ def update_sheet_from_a2(df, sheet_url):
         return False
 
 # ==========================================
-# 4. 解析與寄信函數
+# 2. 解析函數
 # ==========================================
 def parse_stone_report(f):
     if not f: return {}, None
@@ -116,37 +111,10 @@ def parse_stone_report(f):
         return unit_counts, report_date
     except: return {}, None
 
-def send_email_report(excel_bytes):
-    try:
-        if "email" not in st.secrets: return
-        sender = st.secrets["email"]["user"]
-        msg = MIMEMultipart()
-        msg['Subject'] = f"📊 超載統計報表 - {date.today()}"
-        msg['From'] = sender
-        msg['To'] = sender
-        msg.attach(MIMEText("自動報表發送。", 'plain'))
-        part = MIMEBase('application', 'octet-stream')
-        part.set_payload(excel_bytes)
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', 'attachment; filename=Report.xlsx')
-        msg.attach(part)
-        with smtplib.SMTP('smtp.gmail.com', 587) as server:
-            server.starttls()
-            server.login(sender, st.secrets["email"]["password"])
-            server.send_message(msg)
-    except: pass
-
 # ==========================================
-# 5. 主程式流程
+# 3. 主程式流程
 # ==========================================
-st.markdown("""
-### 📝 格式規則
-* **A2**: 寫入「統計期間」標題
-* **A3**: 寫入「合計」數據
-* **達成率**: 四捨五入至整數 (0%)
-""")
-
-files = st.file_uploader("請上傳 3 個 stoneCnt 檔案", accept_multiple_files=True, type=['xlsx', 'xls'], key="uploader_v26")
+files = st.file_uploader("上傳 3 個 stoneCnt 報表", accept_multiple_files=True, type=['xlsx', 'xls'], key="uploader_v27")
 
 if files and len(files) >= 3:
     try:
@@ -160,66 +128,39 @@ if files and len(files) >= 3:
         d_yt, end_dt = parse_stone_report(f_ytd)
         d_ly, _ = parse_stone_report(f_lytd)
 
-        # 1. 建立各單位數據 (第一欄固定命名為「統計期間」)
+        # 1. 各單位數據列
         body_rows = []
         for u in UNIT_DATA_ORDER:
             yt = d_yt.get(u, 0)
             target = TARGETS.get(u, 0)
             rate = f"{yt/target:.0%}" if target > 0 else "—"
-            
             body_rows.append({
                 '統計期間': u, '本期': d_wk.get(u, 0), '本年累計': yt, '去年累計': d_ly.get(u, 0),
                 '本年與去年同期比較': yt - d_ly.get(u, 0), '目標值': target, '達成率': rate
             })
         
-        # 2. 計算合計列 (置頂用)
+        # 2. 合計列
         df_temp = pd.DataFrame(body_rows)
-        # 排除目標為 0 的警備隊來算合計達成率
         sum_data = df_temp[df_temp['統計期間'] != '警備隊'][['本期', '本年累計', '去年累計', '目標值']].sum()
         total_rate = f"{sum_data['本年累計']/sum_data['目標值']:.0%}" if sum_data['目標值'] > 0 else "0%"
-        
         total_row = pd.DataFrame([{
-            '統計期間': '合計', 
-            '本期': sum_data['本期'], 
-            '本年累計': sum_data['本年累計'], 
-            '去年累計': sum_data['去年累計'],
-            '本年與去年同期比較': sum_data['本年累計'] - sum_data['去年累計'],
-            '目標值': sum_data['目標值'],
-            '達成率': total_rate
+            '統計期間': '合計', '本期': sum_data['本期'], '本年累計': sum_data['本年累計'], '去年累計': sum_data['去年累計'],
+            '本年與去年同期比較': sum_data['本年累計'] - sum_data['去年累計'], '目標值': sum_data['目標值'], '達成率': total_rate
         }])
 
-        # 3. 最終組合 (合計在標題之後的第一筆)
+        # 3. 最終組合 (合計置頂)
         df_final = pd.concat([total_row, df_temp], ignore_index=True)
 
         st.success("✅ 解析成功")
         st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-        # 執行動作
-        st.divider()
-        if "executed_files" not in st.session_state: st.session_state.executed_files = ""
-        current_hash = "".join(sorted([f.name for f in files]))
-
-        def do_all():
-            with st.status("🚀 執行自動化作業...") as s:
-                # 寫入 (從 A2 開始，包含標題)
+        # 自動化
+        if "v27_executed" not in st.session_state:
+            with st.status("🚀 執行寫入...") as s:
                 if update_sheet_from_a2(df_final, GOOGLE_SHEET_URL):
-                    st.write("✅ 試算表 A2 起始寫入成功 (含標題)")
-                
-                # 發信
-                out = io.BytesIO()
-                with pd.ExcelWriter(out, engine='xlsxwriter') as wr:
-                    df_final.to_excel(wr, index=False)
-                send_email_report(out.getvalue())
-                st.write("✅ 電子郵件已寄出")
-                s.update(label="全部完成！", state="complete")
-                st.balloons()
-
-        if st.session_state.executed_files != current_hash:
-            do_all()
-            st.session_state.executed_files = current_hash
-            
-        if st.button("🔄 強制重新執行"):
-            do_all()
+                    st.write("✅ A2 標題與 A3 合計寫入成功")
+                s.update(label="完成", state="complete")
+            st.session_state.v27_executed = True
 
     except Exception as e:
         st.error(f"錯誤：{e}")
