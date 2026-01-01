@@ -20,24 +20,16 @@ try:
 except: pass
 
 st.set_page_config(page_title="超載統計", layout="wide", page_icon="🚛")
-st.title("🚛 超載自動統計 (v29 文字修正版)")
+st.title("🚛 超載自動統計 (v30 欄位動態日期版)")
 
 # --- 核心重置按鈕 ---
-if st.button("漫 徹底重置環境 (若文字位置不對請按我)", type="primary"):
+if st.button("🧹 徹底重置環境 (若日期抓取不對請按我)", type="primary"):
     st.cache_data.clear()
     st.cache_resource.clear()
     for key in st.session_state.keys():
         del st.session_state[key]
-    st.success("✅ 已清空快取！請現在重新整理頁面 (F5) 並重新上傳檔案。")
+    st.success("✅ 已清空快取！請重新整理頁面 (F5) 並重新上傳檔案。")
     st.stop()
-
-st.markdown("""
-### 📝 修正重點
-1. **說明文字更新**：改為「本期定義：係指該期昱通系統入案件數...」。
-2. **位置移動**：說明文字已從標題下方移至**「交通分隊」列的下方**。
-3. **動態更新**：自動計算截止日期與應達成率。
-4. **寫入位置**：從 **A2** 開始寫入，包含標題、數據與末端說明。
-""")
 
 # ==========================================
 # 0. 設定區
@@ -62,50 +54,42 @@ UNIT_DATA_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平�
 # ==========================================
 def update_sheet_with_footer(df, footer_text, sheet_url):
     try:
-        if "gcp_service_account" not in st.secrets:
-            st.error("❌ Secrets 未設定！")
-            return False
-
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
-        ws = sh.get_worksheet(1) # 分頁 2 (Index 1)
+        ws = sh.get_worksheet(1) 
         
-        # 1. 標題列
         header = df.columns.tolist()
-        # 2. 數據列
         values = df.values.tolist()
-        # 3. 備註列 (放在最後，只佔第一個儲存格)
         footer_row = [footer_text] + [""] * (len(header) - 1)
         
-        # 組合總酬載：標題 + 合計/數據 + 說明文字
         payload = [header] + values + [footer_row]
         
-        # 從 A2 開始覆蓋寫入
         try:
             ws.update(range_name='A2', values=payload)
         except:
             ws.update('A2', payload)
-            
         return True
     except Exception as e:
         st.error(f"❌ 寫入失敗: {e}")
         return False
 
 # ==========================================
-# 2. 解析函數
+# 2. 解析函數 (升級：抓取起始與結束日期)
 # ==========================================
 def parse_stone_report(f):
-    if not f: return {}, None
+    if not f: return {}, None, None
     unit_counts = {}
-    report_date = None
+    start_str, end_str = "0000000", "0000000"
+    
     try:
         f.seek(0)
         df_top = pd.read_excel(f, header=None, nrows=15)
         text = df_top.to_string()
-        date_match = re.search(r'(?:至|~|迄)\s*(\d{3})(\d{2})(\d{2})', text)
+        
+        # 抓取「入案日期：XXX 至 YYY」
+        date_match = re.search(r'(\d{3,7}).*至\s*(\d{3,7})', text)
         if date_match:
-            y, m, d = map(int, date_match.groups())
-            report_date = date(y + 1911, m, d)
+            start_str, end_str = date_match.group(1), date_match.group(2)
         
         f.seek(0)
         xls = pd.ExcelFile(f)
@@ -124,8 +108,8 @@ def parse_stone_report(f):
                         if short in UNIT_DATA_ORDER:
                             unit_counts[short] = unit_counts.get(short, 0) + int(nums[-1])
                         active_unit = None
-        return unit_counts, report_date
-    except: return {}, None
+        return unit_counts, start_str, end_str
+    except: return {}, None, None
 
 # ==========================================
 # 3. 主程式流程
@@ -140,21 +124,29 @@ if files and len(files) >= 3:
             elif "(2)" in f.name: f_lytd = f
             else: f_week = f
         
-        d_wk, _ = parse_stone_report(f_week)
-        d_yt, end_dt = parse_stone_report(f_ytd)
-        d_ly, _ = parse_stone_report(f_lytd)
+        # 解析三個檔案的數據與日期區間
+        d_wk, wk_s, wk_e = parse_stone_report(f_week)
+        d_yt, yt_s, yt_e = parse_stone_report(f_ytd)
+        d_ly, ly_s, ly_e = parse_stone_report(f_lytd)
 
-        if end_dt:
-            # --- 計算應達成率 ---
-            days_passed = (end_dt - date(end_dt.year, 1, 1)).days + 1
-            total_days = 366 if calendar.isleap(end_dt.year) else 365
+        # 定義動態欄位名稱
+        # 本期顯示：(月日~月日) -> 取 7 位數 ROC 日期的後四碼
+        col_name_wk = f"本期 ({wk_s[-4:]}~{wk_e[-4:]})"
+        # 本年與去年顯示：(年月日~年月日)
+        col_name_yt = f"本年累計 ({yt_s}~{yt_e})"
+        col_name_ly = f"去年累計 ({ly_s}~{ly_e})"
+
+        # 計算年度進度說明文字
+        footer_text = ""
+        try:
+            y, m, d = int(yt_e[:3])+1911, int(yt_e[3:5]), int(yt_e[5:])
+            end_dt = date(y, m, d)
+            days_passed = (end_dt - date(y, 1, 1)).days + 1
+            total_days = 366 if calendar.isleap(y) else 365
             progress_rate = days_passed / total_days
-            roc_year = end_dt.year - 1911
-            
-            # --- 建立新的說明文字 ---
-            footer_text = f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，統計截至 {roc_year}年{end_dt.month}月{end_dt.day}日 (入案日期)應達成率為{progress_rate:.1%}"
-        else:
-            footer_text = "無法取得截止日期"
+            footer_text = f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，統計截至 {yt_e[:3]}年{yt_e[3:5]}月{yt_e[5:]}日 (入案日期)應達成率為{progress_rate:.1%}"
+        except:
+            footer_text = "日期格式解析錯誤"
 
         # 1. 建立數據列
         body_rows = []
@@ -165,9 +157,9 @@ if files and len(files) >= 3:
             
             body_rows.append({
                 '統計期間': u, 
-                '本期': d_wk.get(u, 0), 
-                '本年累計': yt_val, 
-                '去年累計': d_ly.get(u, 0),
+                col_name_wk: d_wk.get(u, 0), 
+                col_name_yt: yt_val, 
+                col_name_ly: d_ly.get(u, 0),
                 '本年與去年同期比較': yt_val - d_ly.get(u, 0), 
                 '目標值': target_val, 
                 '達成率': rate_str
@@ -175,42 +167,35 @@ if files and len(files) >= 3:
         
         # 2. 合計列
         df_temp = pd.DataFrame(body_rows)
-        sum_data = df_temp[df_temp['統計期間'] != '警備隊'][['本期', '本年累計', '去年累計', '目標值']].sum()
-        total_rate = f"{sum_data['本年累計']/sum_data['目標值']:.0%}" if sum_data['目標值'] > 0 else "0%"
+        sum_data = df_temp[df_temp['統計期間'] != '警備隊'][[col_name_wk, col_name_yt, col_name_ly, '目標值']].sum()
+        total_rate = f"{sum_data[col_name_yt]/sum_data['目標值']:.0%}" if sum_data['目標值'] > 0 else "0%"
+        
         total_row = pd.DataFrame([{
-            '統計期間': '合計', '本期': sum_data['本期'], '本年累計': sum_data['本年累計'], '去年累計': sum_data['去年累計'],
-            '本年與去年同期比較': sum_data['本年累計'] - sum_data['去年累計'], '目標值': sum_data['目標值'], '達成率': total_rate
+            '統計期間': '合計', 
+            col_name_wk: sum_data[col_name_wk], 
+            col_name_yt: sum_data[col_name_yt], 
+            col_name_ly: sum_data[col_name_ly],
+            '本年與去年同期比較': sum_data[col_name_yt] - sum_data[col_name_ly],
+            '目標值': sum_data['目標值'],
+            '達成率': total_rate
         }])
 
-        # 3. 組合數據 (合計排第一)
+        # 3. 最終組合
         df_final = pd.concat([total_row, df_temp], ignore_index=True)
 
-        st.success("✅ 數據分析成功")
+        st.success("✅ 數據解析成功")
         st.dataframe(df_final, use_container_width=True, hide_index=True)
         
-        # 畫面顯示說明文字位置
-        st.info(f"💡 末端備註將寫入為：\n{footer_text}")
-
         # 執行動作
-        if "executed_v29" not in st.session_state: st.session_state.executed_v29 = ""
+        if "executed_v30" not in st.session_state: st.session_state.executed_v30 = ""
         current_hash = "".join(sorted([f.name for f in files]))
 
-        def run_automation():
-            with st.status("🚀 正在執行自動化作業...") as s:
-                # 寫入 (包含標題 A2 與末端備註)
+        if st.button("🚀 執行寫入與自動化程序"):
+            with st.status("正在處理中...") as s:
                 if update_sheet_with_footer(df_final, footer_text, GOOGLE_SHEET_URL):
-                    st.write("✅ 試算表寫入成功 (A2標題, A3合計, 最後一列為說明)")
-                
-                # 發信邏輯 (附件也包含此表格)
+                    st.write(f"✅ 試算表寫入成功！欄位日期已更新。")
                 s.update(label="全部完成！", state="complete")
                 st.balloons()
-
-        if st.session_state.executed_v29 != current_hash:
-            run_automation()
-            st.session_state.executed_v29 = current_hash
-            
-        if st.button("🔄 強制重新執行"):
-            run_automation()
 
     except Exception as e:
         st.error(f"錯誤：{e}")
