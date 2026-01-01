@@ -19,14 +19,21 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.title("🚔 取締重大交通違規統計 (v13 合計置頂版)")
+st.title("🚔 取締重大交通違規統計 (v14 合計置頂確認版)")
 
 st.markdown("""
 ### 📝 使用說明
 1. 請上傳 **3 個** 重點違規報表。
 2. 系統自動區分 **攔停** 與 **逕舉**。
-3. **「合計」列已移至最上方 (科技執法之上)。**
-4. 寫入位置：**B4** (純數據，無標題)。
+3. **「合計」列已強制排在第一位**。
+4. 寫入位置：**B4** (純數據)。
+""")
+
+st.error("""
+⚠️ **極重要提醒：**
+程式會將 **「合計」** 的數據寫入 **B4** 儲存格。
+請務必確認您的 Google 試算表 **A4** 儲存格寫的是 **「合計」**。
+若您的試算表 A4 是「科技執法」，請修改試算表或通知我調整順序。
 """)
 
 # ==========================================
@@ -39,6 +46,7 @@ UNIT_MAP = {
     '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', 
     '警備隊': '警備隊', '龍潭交通分隊': '交通分隊', '交通組': '科技執法' 
 }
+# 顯示順序 (注意：合計會被程式強制插在這些之前)
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 TARGETS = {
     '聖亭所': 1838, '龍潭所': 2451, '中興所': 1838, '石門所': 1488, 
@@ -56,8 +64,6 @@ def update_google_sheet(df, sheet_url, start_cell='B4'):
         
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
-        
-        # 抓取第 1 個分頁
         ws = sh.get_worksheet(0) 
         if ws is None: raise Exception("找不到 Index 0 的工作表")
         
@@ -163,7 +169,7 @@ def parse_focus_report(uploaded_file):
 # ==========================================
 # 4. 主程式
 # ==========================================
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v13_total_top")
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v14_total_first")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足...")
@@ -230,15 +236,21 @@ if uploaded_files:
             t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
             total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, f"{t_rate:.2%}"]
             
-            # ★★★ 關鍵修改：將合計插入到最前面 (索引 0) ★★★
+            # ★★★ 關鍵：將合計(total_row) 插入到列表的最前面 (索引 0) ★★★
             rows.insert(0, total_row)
 
             cols = ['取締方式', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(rows, columns=cols)
             df_write = df_final.drop(columns=['取締方式'])
 
-            st.success("✅ 分析完成！")
-            st.dataframe(df_final, use_container_width=True, hide_index=True)
+            st.success("✅ 分析完成！(合計已置頂)")
+            
+            # 顯示順序檢查
+            st.subheader("📋 寫入順序檢查 (請確認與試算表 A 欄一致)")
+            st.dataframe(df_final[['取締方式']], use_container_width=True, height=400)
+            
+            st.write("▼ 即將寫入 B4 的數據預覽：")
+            st.dataframe(df_write, use_container_width=True)
 
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -265,7 +277,7 @@ if uploaded_files:
                         if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
                             st.write(f"✅ Email 已發送")
                     
-                    st.write("📊 正在寫入 Google 試算表 (B4, 純數據)...")
+                    st.write("📊 正在寫入 Google 試算表 (B4)...")
                     if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'): 
                         st.write("✅ 試算表寫入成功！")
                     else:
