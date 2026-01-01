@@ -8,6 +8,7 @@ import calendar
 import pypdf
 import numpy as np
 import traceback
+import csv
 from datetime import date, datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -17,7 +18,7 @@ from email.header import Header
 
 # --- 初始化配置 ---
 st.set_page_config(page_title="重大交通違規統計", layout="wide", page_icon="🚦")
-st.title("🚦 重大交通違規統計 (v74 Focus專用精準版)")
+st.title("🚦 重大交通違規統計 (v75 絕對座標鎖定版)")
 
 # ==========================================
 # 0. 設定區
@@ -25,11 +26,12 @@ st.title("🚦 重大交通違規統計 (v74 Focus專用精準版)")
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 VIOLATION_TARGETS = {'合計': 11817, '科技執法': 0, '聖亭所': 1200, '龍潭所': 1500, '中興所': 1200, '石門所': 1000, '高平所': 800, '三和所': 500, '警備隊': 0, '交通分隊': 1000}
 
+# 單位對照表 (檔案名稱 -> 報表名稱)
 UNIT_MAP = {
     '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', 
     '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', 
     '警備隊': '警備隊', '龍潭交通分隊': '交通分隊', '交通中隊': '交通分隊',
-    '科技執法': '科技執法', '交通組': '科技執法'
+    '科技執法': '科技執法', '交通組': '科技執法' # ★ 關鍵修正：交通組 -> 科技執法
 }
 
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
@@ -67,7 +69,7 @@ def get_footer_percent_red_req(ws_id, row_idx, col_idx, text):
     return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": text_str}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
 
 # ==========================================
-# 2. 核心解析引擎 (Focus 專用)
+# 2. 核心解析引擎 (絕對座標版)
 # ==========================================
 def clean_int(val):
     try:
@@ -76,86 +78,77 @@ def clean_int(val):
         return int(float(s))
     except: return 0
 
-def parse_focus_file(file_obj):
-    """解析單個 Focus 報表"""
+def parse_focus_file_hardcoded(file_obj):
     counts = {}
     date_range_str = "0000~0000"
-    is_year_total = False # 標記是否為年累計
+    is_year_total = False
     year_val = 0
     
     try:
         file_obj.seek(0)
-        try: df = pd.read_csv(file_obj, header=None, encoding='utf-8', on_bad_lines='skip')
-        except: 
-            file_obj.seek(0)
-            df = pd.read_csv(file_obj, header=None, encoding='big5', on_bad_lines='skip')
-        
-        # 1. 抓取日期
+        # 嘗試多種編碼讀取
+        encodings = ['utf-8', 'big5', 'cp950']
+        df = None
+        for enc in encodings:
+            try:
+                file_obj.seek(0)
+                df = pd.read_csv(file_obj, header=None, encoding=enc, on_bad_lines='skip')
+                if df.shape[1] > 5: break 
+            except: continue
+            
+        if df is None: return {}, date_range_str, False, 0
+
+        # 1. 抓取日期 (Row 5: 入案日期...)
         top_txt = df.iloc[:10].astype(str).to_string()
         m = re.search(r'入案日期：(\d+)\s*至\s*(\d+)', top_txt)
         if m:
             s_d, e_d = m.group(1), m.group(2)
             date_range_str = f"{s_d[-4:]}~{e_d[-4:]}"
             
-            # 判斷是否為年累計 (起訖日相差 > 30 天)
+            # 判斷是否為年累計
             try:
-                d1 = datetime.strptime(s_d, "%y%m%d") if len(s_d)==6 else datetime.strptime(s_d, "%Y%m%d") # 簡單處理
-                # 更嚴謹的民國年轉換
                 y1 = int(s_d[:-4]) + 1911; m1 = int(s_d[-4:-2]); dd1 = int(s_d[-2:])
                 y2 = int(e_d[:-4]) + 1911; m2 = int(e_d[-4:-2]); dd2 = int(e_d[-2:])
-                dt1 = date(y1, m1, dd1)
-                dt2 = date(y2, m2, dd2)
-                days_diff = (dt2 - dt1).days
-                if days_diff > 30: is_year_total = True
+                dt1 = date(y1, m1, dd1); dt2 = date(y2, m2, dd2)
+                if (dt2 - dt1).days > 30: is_year_total = True
                 year_val = y1
             except: pass
 
-        # 2. 定位 Header Row (包含 '單位' 和 '合計')
-        header_row_idx = -1
-        col_total_idx = -1
+        # 2. 絕對座標鎖定
+        # Header Row 通常在 Index 5 (第6列)
+        # 單位名稱在 Index 2 (第3欄)
+        # 現場攔停(合計)在 Index 25 (第26欄)
+        # 逕行舉發(合計)在 Index 26 (第27欄)
         
-        for idx, row in df.iterrows():
-            row_vals = [str(x).strip() for x in row.values]
-            if "單位" in row_vals and "合計" in row_vals:
-                header_row_idx = idx
-                # 找最後一個 "合計"
-                total_indices = [i for i, x in enumerate(row_vals) if x == "合計"]
-                if total_indices:
-                    col_total_idx = total_indices[-1]
-                break
+        idx_unit = 2
+        idx_int = 25
+        idx_rem = 26
         
-        if header_row_idx != -1 and col_total_idx != -1:
-            idx_int = col_total_idx     # 合計欄位 (對應下一行的現場攔停)
-            idx_rem = col_total_idx + 1 # 合計欄位右邊 (對應下一行的逕行舉發)
+        # 從第 8 列開始抓數據 (避開標題)
+        for r in range(7, len(df)):
+            row = df.iloc[r]
             
-            # 3. 抓取數據 (從 Header Row + 2 開始，避開第二層標題)
-            for r in range(header_row_idx + 2, len(df)):
-                row = df.iloc[r]
-                # 單位名稱通常在第 2 欄 (index 2) 或由 header 決定
-                # 這裡掃描整行找單位
-                target_unit = None
-                row_str = " ".join(row.astype(str))
-                
-                # 排除 "合計" 行以免重複 (最後會自己算)
-                if "總計" in row_str and "合計" not in counts: 
-                    # 有些報表最後一行是總計
-                    pass 
-
+            # 防呆：確保欄位足夠
+            if len(row) <= idx_rem: continue
+            
+            unit_name = str(row[idx_unit]).strip()
+            
+            # 對應單位
+            target_unit = None
+            if "合計" in unit_name or "總計" in unit_name: target_unit = "合計"
+            else:
                 for full, short in UNIT_MAP.items():
-                    if full in row_str or short in row_str:
-                        # 再次確認是否匹配 (避免 '龍潭所' 匹配到 '龍潭交通分隊')
-                        # 優先匹配長名稱
+                    if full in unit_name or short in unit_name:
                         target_unit = short
                         break
+            
+            if target_unit:
+                # 若重複抓取 (例如標題列)，跳過
+                if target_unit in counts: continue
                 
-                # 特殊處理：若找到單位，抓數值
-                if target_unit:
-                    # 避免重複抓取 (例如標題列也有單位字樣)
-                    if target_unit in counts: continue
-                    
-                    v_int = clean_int(row[idx_int])
-                    v_rem = clean_int(row[idx_rem])
-                    counts[target_unit] = [v_int, v_rem]
+                v_int = clean_int(row[idx_int])
+                v_rem = clean_int(row[idx_rem])
+                counts[target_unit] = [v_int, v_rem]
 
     except Exception as e:
         print(f"File Error: {e}")
@@ -165,39 +158,26 @@ def parse_focus_file(file_obj):
 # ==========================================
 # 3. 畫面顯示與自動化
 # ==========================================
-files = st.file_uploader("請上傳 3 個重點違規統計表 (focus114.csv/xlsx)", accept_multiple_files=True)
+files = st.file_uploader("請上傳 3 個重點違規統計表 (focus114.csv)", accept_multiple_files=True)
 
 if files and len(files) >= 3:
     try:
         # 1. 解析所有檔案
         parsed_data = []
         for f in files:
-            d, d_str, is_yt, yr = parse_focus_file(f)
+            d, d_str, is_yt, yr = parse_focus_file_hardcoded(f)
             parsed_data.append({"file": f, "data": d, "date": d_str, "is_yt": is_yt, "year": yr})
         
-        # 2. 智慧分類 (本期, 本年, 去年)
-        # 規則:
-        # 1. 時間跨度短 (<30天) -> 本期 (WK)
-        # 2. 時間跨度長 (>30天) 且 年份較大 -> 本年 (YT)
-        # 3. 時間跨度長 (>30天) 且 年份較小 -> 去年 (LY)
-        
-        # 先找出跨度短的
+        # 2. 智慧分類
         f_wk = next((x for x in parsed_data if not x["is_yt"]), None)
-        
-        # 找出跨度長的
         long_periods = [x for x in parsed_data if x["is_yt"]]
-        # 依年份排序
         long_periods.sort(key=lambda x: x["year"], reverse=True)
-        
         f_yt = long_periods[0] if len(long_periods) > 0 else None
         f_ly = long_periods[1] if len(long_periods) > 1 else None
         
-        # 如果分類失敗，回退到檔名/順序邏輯
         if not f_wk or not f_yt or not f_ly:
-             st.warning("⚠️ 無法自動依日期分類，改用檔案順序：1.本期 2.本年 3.去年")
-             f_wk = parsed_data[0]
-             f_yt = parsed_data[1]
-             f_ly = parsed_data[2]
+             st.warning("⚠️ 自動分類失敗，依順序排列：本期、本年、去年")
+             f_wk = parsed_data[0]; f_yt = parsed_data[1]; f_ly = parsed_data[2]
 
         d_wk, title_wk = f_wk['data'], f"本期({f_wk['date']})"
         d_yt, title_yt = f_yt['data'], f"本年累計({f_yt['date']})"
@@ -259,7 +239,7 @@ if files and len(files) >= 3:
 
         # 寫入 & 寄信
         file_hash = "".join([f.name + str(f.size) for f in files])
-        if st.session_state.get("v74_done") != file_hash:
+        if st.session_state.get("v75_done") != file_hash:
             with st.status("🚀 執行寫入與寄信...") as s:
                 gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                 sh = gc.open_by_url(GOOGLE_SHEET_URL); ws = sh.get_worksheet(0)
@@ -299,7 +279,7 @@ if files and len(files) >= 3:
                     encoders.encode_base64(part); part.add_header("Content-Disposition", 'attachment; filename="Report.xlsx"')
                     msg.attach(part); server.send_message(msg); server.quit()
                 
-                st.session_state["v74_done"] = file_hash
+                st.session_state["v75_done"] = file_hash
                 st.balloons(); s.update(label="完成", state="complete")
 
     except Exception as e:
