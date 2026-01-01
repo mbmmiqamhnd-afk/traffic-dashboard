@@ -7,6 +7,7 @@ import gspread
 import calendar
 import pypdf
 import numpy as np
+import traceback  # 新增：用於顯示詳細錯誤
 from datetime import date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -16,7 +17,7 @@ from email.header import Header
 
 # --- 初始化配置 ---
 st.set_page_config(page_title="重大交通違規統計", layout="wide", page_icon="🚦")
-st.title("🚦 重大交通違規統計 (v67 強制寫入版)")
+st.title("🚦 重大交通違規統計 (v68 深度除錯版)")
 
 # ==========================================
 # 0. 設定區
@@ -38,45 +39,51 @@ def get_center_align_request(ws_id, start_col, end_col):
 def get_header_red_req(ws_id, row_idx, col_idx, text):
     red_chars = set("0123456789~().%")
     runs = []
+    text_str = str(text) # 確保是字串
     last_is_red = None
-    for i, char in enumerate(text):
+    for i, char in enumerate(text_str):
         is_red = char in red_chars
         if is_red != last_is_red:
             color = {"red": 1.0, "green": 0, "blue": 0} if is_red else {"red": 0, "green": 0, "blue": 0}
             runs.append({"startIndex": i, "format": {"foregroundColor": color, "bold": is_red}})
             last_is_red = is_red
-    return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": str(text)}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
+    return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": text_str}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
 
 def get_footer_percent_red_req(ws_id, row_idx, col_idx, text):
     runs = [{"startIndex": 0, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}}]
-    match = re.search(r'(\d+\.?\d*%)', str(text))
+    text_str = str(text)
+    match = re.search(r'(\d+\.?\d*%)', text_str)
     if match:
         start, end = match.start(), match.end()
         runs.append({"startIndex": start, "format": {"foregroundColor": {"red": 1.0, "green": 0, "blue": 0}, "bold": True}})
-        if end < len(text): runs.append({"startIndex": end, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}})
-    return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": str(text)}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
+        if end < len(text_str): runs.append({"startIndex": end, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}})
+    return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": text_str}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
 
 # ==========================================
-# 2. 核心解析引擎 (強化數值清洗)
+# 2. 核心解析引擎 (安全清洗)
 # ==========================================
 def clean_int(val):
-    """強力清洗並轉為 int"""
+    """將任何輸入轉換為純 Python int，失敗回傳 0"""
     try:
-        if pd.isna(val) or val == '—' or val == '': return 0
+        if pd.isna(val) or str(val).strip() in ['—', '', '-', 'nan']: return 0
         s = str(val).replace(',', '').strip()
+        # 先轉 float 處理像 123.0 這種字串，再轉 int
         return int(float(s))
     except: return 0
 
 def extract_single_report_data(file_obj):
     counts = {}
     date_str = "0000~0000"
-    is_pdf = file_obj.name.lower().endswith('.pdf')
     
     try:
+        is_pdf = file_obj.name.lower().endswith('.pdf')
+        
+        # --- A. PDF 處理 ---
         if is_pdf:
             reader = pypdf.PdfReader(file_obj)
             text = ""
             for page in reader.pages: text += page.extract_text() + "\n"
+            
             m = re.search(r'(\d{3,7}).*至\s*(\d{3,7})', text)
             if m: date_str = f"{m.group(1)}~{m.group(2)}"
             
@@ -87,18 +94,27 @@ def extract_single_report_data(file_obj):
                     if start != -1:
                         sub = clean_text[start+len(unit):start+150]
                         tokens = [t.replace(',','') for t in sub.split() if t.replace(',','').replace('-','',1).isdigit()]
+                        # 啟發式邏輯
                         if len(tokens) >= 3: counts[unit] = [clean_int(tokens[1]), clean_int(tokens[2])]
                         elif len(tokens) >= 2: counts[unit] = [clean_int(tokens[0]), clean_int(tokens[1])]
                 except: continue
+        
+        # --- B. Excel / CSV 處理 ---
         else:
             try: df = pd.read_excel(file_obj, header=None)
             except: 
-                file_obj.seek(0); df = pd.read_csv(file_obj, header=None, encoding='utf-8', on_bad_lines='skip')
-            
-            top_txt = df.iloc[:10].astype(str).to_string()
+                file_obj.seek(0)
+                try: df = pd.read_csv(file_obj, header=None, encoding='utf-8', on_bad_lines='skip')
+                except: 
+                    file_obj.seek(0)
+                    df = pd.read_csv(file_obj, header=None, encoding='big5', on_bad_lines='skip')
+
+            # 1. 日期
+            top_txt = df.iloc[:15].astype(str).to_string()
             m = re.search(r'(\d{3,7}).*至\s*(\d{3,7})', top_txt)
             if m: date_str = f"{m.group(1)}~{m.group(2)}"
             
+            # 2. 欄位偵測
             idx_int, idx_rem = 1, 2
             for r in range(min(30, len(df))):
                 row_vals = df.iloc[r].astype(str).tolist()
@@ -107,20 +123,27 @@ def extract_single_report_data(file_obj):
                     if "攔停" in v: idx_int = c
                     if "逕行" in v: idx_rem = c
             
+            # 3. 數據提取
             active_unit = None
             for _, row in df.iterrows():
                 row_s = " ".join(row.astype(str))
-                if "合計" in str(row[0]): active_unit = "合計"
+                if "超載" in row_s: continue # 過濾掉超載報表
+                
+                if "合計" in str(row[0]) or "總計" in str(row[0]): active_unit = "合計"
                 elif "科技執法" in str(row[0]): active_unit = "科技執法"
                 else:
                     for full, short in UNIT_MAP.items():
                         if short in str(row[0]): active_unit = short; break
                 
                 if active_unit:
-                    counts[active_unit] = [clean_int(row[idx_int]), clean_int(row[idx_rem])]
+                    try:
+                        counts[active_unit] = [clean_int(row[idx_int]), clean_int(row[idx_rem])]
+                    except: pass
                     active_unit = None
 
-    except Exception as e: print(f"Error: {e}")
+    except Exception as e:
+        print(f"解析 {file_obj.name} 時出錯: {e}")
+        
     return counts, date_str
 
 # ==========================================
@@ -130,29 +153,31 @@ files = st.file_uploader("請上傳 3 個 Focus 報表 (Excel/CSV/PDF)", accept_
 
 if files and len(files) >= 3:
     try:
+        # 1. 檔案解析
         parsed_results = []
         for f in files:
             d, date_rng = extract_single_report_data(f)
             parsed_results.append({"file": f, "data": d, "date": date_rng})
         
+        # 2. 檔案分類
         f_wk, f_yt, f_ly = None, None, None
         for item in parsed_results:
             nm = item['file'].name
             if "(1)" in nm: f_yt = item
             elif "(2)" in nm: f_ly = item
             else: f_wk = item
-            
+        
         if not f_yt: f_yt = parsed_results[1]
         if not f_ly: f_ly = parsed_results[2]
         if not f_wk: f_wk = parsed_results[0]
 
-        d_wk = f_wk['data']; title_wk = f"本期({f_wk['date']})"
-        d_yt = f_yt['data']; title_yt = f"本年累計({f_yt['date']})"
-        d_ly = f_ly['data']; title_ly = f"去年累計({f_ly['date']})"
-        
+        # 3. 準備數據
+        d_wk, title_wk = f_wk['data'], f"本期({f_wk['date']})"
+        d_yt, title_yt = f_yt['data'], f"本年累計({f_yt['date']})"
+        d_ly, title_ly = f_ly['data'], f"去年累計({f_ly['date']})"
+
+        # HTML Header
         def red_h(t): return "".join([f"<span style='color:red; font-weight:bold;'>{c}</span>" if c in "0123456789~().%" else c for c in t])
-        
-        # HTML 表頭 (單層)
         html_header = f"""
         <thead>
             <tr>
@@ -167,35 +192,30 @@ if files and len(files) >= 3:
         </thead>
         """
 
+        # 4. 組裝資料列
         rows = []
         for u in UNIT_ORDER:
             wk = d_wk.get(u, [0, 0]); yt = d_yt.get(u, [0, 0]); ly = d_ly.get(u, [0, 0])
             yt_tot = sum(yt); ly_tot = sum(ly); target = VIOLATION_TARGETS.get(u, 0)
             rows.append([u, wk[0], wk[1], yt[0], yt[1], ly[0], ly[1], yt_tot - ly_tot, target, f"{yt_tot/target:.0%}" if target > 0 else "—"])
         
-        # 合計列 (強制純 Python int 計算)
-        # 用來寫入 Google Sheets 的數據必須是純 Python 類型
-        sum_wk_int = sum([r[1] for r in rows])
-        sum_wk_rem = sum([r[2] for r in rows])
-        sum_yt_int = sum([r[3] for r in rows])
-        sum_yt_rem = sum([r[4] for r in rows])
-        sum_ly_int = sum([r[5] for r in rows])
-        sum_ly_rem = sum([r[6] for r in rows])
-        sum_diff   = sum([r[7] for r in rows])
-        
+        # 合計計算
+        sum_wk0 = sum(r[1] for r in rows); sum_wk1 = sum(r[2] for r in rows)
+        sum_yt0 = sum(r[3] for r in rows); sum_yt1 = sum(r[4] for r in rows)
+        sum_ly0 = sum(r[5] for r in rows); sum_ly1 = sum(r[6] for r in rows)
+        sum_diff = (sum_yt0 + sum_yt1) - (sum_ly0 + sum_ly1)
         total_target = VIOLATION_TARGETS.get('合計', 11817)
-        total_acc = f"{(sum_yt_int+sum_yt_rem)/total_target:.0%}" if total_target > 0 else "0%"
+        total_acc = f"{(sum_yt0+sum_yt1)/total_target:.0%}" if total_target > 0 else "0%"
         
-        total_row = ["合計", sum_wk_int, sum_wk_rem, sum_yt_int, sum_yt_rem, sum_ly_int, sum_ly_rem, sum_diff, total_target, total_acc]
+        total_row = ["合計", sum_wk0, sum_wk1, sum_yt0, sum_yt1, sum_ly0, sum_ly1, sum_diff, total_target, total_acc]
         method_row = ["取締方式", "現場攔停", "逕行舉發", "現場攔停", "逕行舉發", "現場攔停", "逕行舉發", "", "", ""]
         
         all_rows = [method_row, total_row] + rows
         
-        st.success("✅ 解析成功！正在強制寫入資料...")
-        
-        # 渲染網頁
+        # 5. 渲染網頁 (這是確認數據正確的關鍵)
+        st.success("✅ 數據解析成功！")
         table_body = "".join([f"<tr>{''.join([f'<td>{x}</td>' for x in r])}</tr>" for r in all_rows])
-        st.write(f"<table style='text-align:center; width:100%;'>{html_header}<tbody>{table_body}</tbody></table>", unsafe_allow_html=True)
+        st.write(f"<table style='text-align:center; width:100%; border-collapse:collapse;' border='1'>{html_header}<tbody>{table_body}</tbody></table>", unsafe_allow_html=True)
 
         # 說明
         try:
@@ -210,37 +230,36 @@ if files and len(files) >= 3:
         f2 = "二、重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
         st.markdown(f"<br>#### {f1.replace(prog, f':red[{prog}]')}\n#### {f2}", unsafe_allow_html=True)
 
-        # 強制寫入流程
+        # 6. 強制型別清洗與寫入
         file_hash = "".join([f.name + str(f.size) for f in files])
-        if st.session_state.get("v67_done") != file_hash:
-            with st.status("🚀 執行強制寫入...") as s:
+        if st.session_state.get("v68_done") != file_hash:
+            with st.status("🚀 執行雲端寫入 (含型別清洗)...") as s:
                 gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                 sh = gc.open_by_url(GOOGLE_SHEET_URL); ws = sh.get_worksheet(0)
                 
-                # 1. 準備 Payload
                 h1_raw = ["統計期間", title_wk, "", title_yt, "", title_ly, "", "同期比較", "目標值", "達成率"]
                 
-                # 2. 強制型別清洗 (確保每個格子都是 str 或 int)
-                # Google Sheets API 很挑食，numpy.int64 會導致寫入失敗
+                # ★★★ 關鍵：暴力清洗所有數據 ★★★
                 clean_payload = [h1_raw]
                 for r in all_rows:
-                    clean_r = []
+                    clean_row = []
                     for cell in r:
-                        if isinstance(cell, (np.integer, np.int64)): clean_r.append(int(cell))
-                        elif isinstance(cell, (np.floating, float)): clean_r.append(int(cell))
-                        else: clean_r.append(str(cell))
-                    clean_payload.append(clean_r)
+                        # 如果是數字 (含 numpy 數字)，轉 int；否則轉 str
+                        if isinstance(cell, (int, float, np.integer, np.floating)):
+                            clean_row.append(int(cell))
+                        else:
+                            clean_row.append(str(cell))
+                    clean_payload.append(clean_row)
                 
-                # 3. 執行寫入
                 ws.update(range_name='A2', values=clean_payload)
                 
-                # 4. 格式化請求
+                # 格式化
                 reqs = []
-                for col_p in [(1,3), (3,5), (5,7)]: # 合併標題
+                for col_p in [(1,3), (3,5), (5,7)]:
                     reqs.append(get_merge_request(ws.id, col_p[0], col_p[1]))
                     reqs.append(get_center_align_request(ws.id, col_p[0], col_p[1]))
                 
-                for i, txt in [(2, title_wk), (4, title_yt), (6, title_ly)]: # 紅字日期
+                for i, txt in [(2, title_wk), (4, title_yt), (6, title_ly)]:
                     reqs.append(get_header_red_req(ws.id, 2, i, txt))
                 
                 idx_f = 2 + len(clean_payload) + 1
@@ -249,7 +268,6 @@ if files and len(files) >= 3:
                 
                 sh.batch_update({"requests": reqs})
                 
-                # 5. 寄信
                 if "email" in st.secrets:
                     out = io.BytesIO(); pd.DataFrame(clean_payload).to_excel(out, index=False)
                     server = smtplib.SMTP('smtp.gmail.com', 587); server.starttls()
@@ -260,6 +278,11 @@ if files and len(files) >= 3:
                     encoders.encode_base64(part); part.add_header("Content-Disposition", 'attachment; filename="Report.xlsx"')
                     msg.attach(part); server.send_message(msg); server.quit()
                 
-                st.session_state["v67_done"] = file_hash
-                st.balloons(); s.update(label="數據寫入完成", state="complete")
-    except Exception as e: st.error(f"嚴重錯誤: {e}")
+                st.session_state["v68_done"] = file_hash
+                st.balloons(); s.update(label="完成", state="complete")
+    
+    except Exception as e:
+        st.error(f"嚴重錯誤: {str(e)}")
+        # 顯示詳細錯誤追蹤，幫助您與我定位問題
+        with st.expander("查看詳細錯誤代碼 (Stack Trace)"):
+            st.code(traceback.format_exc())
