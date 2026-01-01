@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="超載統計", layout="wide", page_icon="🚛")
-st.title("🚛 超載 (stoneCnt) 自動統計 (v17 標準版)")
+st.title("🚛 超載 (stoneCnt) 自動統計 (v18 統計期間版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -167,7 +167,7 @@ def parse_stone(f):
 # 4. 主程式執行
 # ==========================================
 # 更新 Key 以重置上傳器
-uploaded_files = st.file_uploader("請拖曳 3 個 stoneCnt 檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="stone_uploader_v17")
+uploaded_files = st.file_uploader("請拖曳 3 個 stoneCnt 檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="stone_uploader_v18_colname")
 
 if uploaded_files:
     if len(uploaded_files) < 3:
@@ -195,44 +195,68 @@ if uploaded_files:
             else:
                 st.warning("⚠️ 無法從「本年累計」檔案中找到截止日期。")
 
-            rows = []
+            unit_rows = []
             for u in UNIT_ORDER:
-                rows.append({
-                    '統計期間': u,  # 這裡先存單位名，稍後會變更欄位
-                    '本期': d_wk.get(u,0), 
-                    '本年累計': d_yt.get(u,0), 
-                    '去年累計': d_ly.get(u,0), 
-                    '目標值': TARGETS.get(u,0)
+                w = d_wk.get(u,0)
+                y = d_yt.get(u,0)
+                l = d_ly.get(u,0)
+                tgt = TARGETS.get(u,0)
+                
+                # 警備隊數值歸零
+                if u == '警備隊':
+                    w, y, l, tgt = 0, 0, 0, 0
+                
+                # 計算數值
+                diff = y - l
+                rate_str = f"{y/tgt:.0%}" if tgt > 0 else "0%"
+                if u == '警備隊': rate_str = "—"
+
+                # 注意：這裡的 key 改為 '統計期間'
+                unit_rows.append({
+                    '統計期間': u,  
+                    '本期': w, 
+                    '本年累計': y, 
+                    '去年累計': l, 
+                    '本年與去年同期比較': diff,
+                    '目標值': tgt,
+                    '達成率': rate_str
                 })
             
-            df = pd.DataFrame(rows)
-            df_calc = df.copy()
-            mask_guard = df_calc['統計期間'] == '警備隊'
-            df_calc.loc[mask_guard, ['本期', '本年累計', '去年累計', '目標值']] = 0
+            # 建立單位 DataFrame
+            df_units = pd.DataFrame(unit_rows)
             
-            total = df_calc[['本期', '本年累計', '去年累計', '目標值']].sum().to_dict()
-            total['統計期間'] = '合計'
+            # 計算合計 (排除目標值為 0 或 特殊單位，這裡全算除了警備隊)
+            # 因為上面已經把警備隊數值歸零，所以直接 sum 即可
+            total_s = df_units[['本期', '本年累計', '去年累計', '目標值']].sum()
+            
+            total_diff = total_s['本年累計'] - total_s['去年累計']
+            total_rate_str = f"{total_s['本年累計']/total_s['目標值']:.0%}" if total_s['目標值']>0 else "0%"
+            
+            total_row = {
+                '統計期間': '合計',
+                '本期': total_s['本期'],
+                '本年累計': total_s['本年累計'],
+                '去年累計': total_s['去年累計'],
+                '本年與去年同期比較': total_diff,
+                '目標值': total_s['目標值'],
+                '達成率': total_rate_str
+            }
             
             # 合計置頂
-            df_final = pd.concat([pd.DataFrame([total]), df], ignore_index=True)
-            df_final['本年與去年同期比較'] = df_final['本年累計'] - df_final['去年累計']
+            df_final = pd.concat([pd.DataFrame([total_row]), df_units], ignore_index=True)
             
-            # 達成率改為整數百分比 (:.0%)
-            df_final['達成率'] = df_final.apply(lambda x: f"{x['本年累計']/x['目標值']:.0%}" if x['目標值']>0 else "—", axis=1)
-            df_final.loc[df_final['統計期間']=='警備隊', ['本年與去年同期比較', '目標值', '達成率']] = "—"
-            
-            # 欄位順序
+            # 欄位順序確認
             cols = ['統計期間', '本期', '本年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
             df_final = df_final[cols]
             
-            # 準備寫入的 DataFrame (移除第一欄)
+            # 準備寫入的 DataFrame (移除第一欄 '統計期間')
             df_write = df_final.drop(columns=['統計期間'])
             
             st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
             
             # 預覽寫入內容
-            st.caption("▼ 即將寫入分頁2 (B4) 的數據預覽：")
+            st.caption("▼ 即將寫入分頁2 (B4) 的數據預覽 (無標題)：")
             st.dataframe(df_write, use_container_width=True)
 
             # --- 產生 Excel ---
