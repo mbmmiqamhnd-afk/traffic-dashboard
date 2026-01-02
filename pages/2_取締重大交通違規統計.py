@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.title("🚔 取締重大交通違規統計 (v20 目標值留白版)")
+st.title("🚔 取締重大交通違規統計 (v21 修正進度版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,11 +28,11 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v20)
-1. **目標值與達成率已設定為空白** (因目標未定)。
-2. **比較增減 (本年-去年) 仍會計算**。
-3. Google Sheet 網址已更新。
-4. 功能保留：自動寄信、日期標紅。
+### 📝 使用說明 (v21)
+1. **移除「年度時間進度」計算** (避免日期誤判造成 100% 錯誤)。
+2. **目標值與達成率維持空白**。
+3. **統計期間日期標紅** (Excel A2)。
+4. Google Sheet 網址已更新。
 """)
 
 # ==========================================
@@ -46,12 +46,6 @@ UNIT_MAP = {
     '警備隊': '警備隊', '龍潭交通分隊': '交通分隊', '交通組': '科技執法'
 }
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
-
-# 雖然目標未定，但保留結構以免報錯，數值暫時無作用
-TARGETS = {
-    '聖亭所': 0, '龍潭所': 0, '中興所': 0, '石門所': 0,
-    '高平所': 0, '三和所': 0, '交通分隊': 0, '警備隊': 0, '科技執法': 0
-}
 
 # ==========================================
 # 1. Google Sheets 寫入函數
@@ -173,8 +167,6 @@ def parse_focus_report(uploaded_file):
         try:
             if start_date and end_date:
                 s_d = re.sub(r'[^\d]', '', start_date); e_d = re.sub(r'[^\d]', '', end_date)
-                if len(s_d)<7: s_d=s_d.zfill(7)
-                if len(e_d)<7: e_d=e_d.zfill(7)
                 d1 = date(int(s_d[:3])+1911, int(s_d[3:5]), int(s_d[5:]))
                 d2 = date(int(e_d[:3])+1911, int(e_d[3:5]), int(e_d[5:]))
                 duration = (d2 - d1).days
@@ -189,8 +181,8 @@ def parse_focus_report(uploaded_file):
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v20 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v20_blank_target")
+# ★★★ v21 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v21_no_progress")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -212,21 +204,7 @@ if uploaded_files:
             file_year = others[0]
             file_week = others[1]
 
-            prog_text = ""
-            try:
-                end_str = re.sub(r'[^\d]', '', file_year['end'])
-                if len(end_str) < 7: end_str = end_str.zfill(7)
-                curr_y = int(end_str[:3]) + 1911
-                curr_m = int(end_str[3:5])
-                curr_d = int(end_str[5:])
-                target_date = date(curr_y, curr_m, curr_d)
-                start_of_year = date(curr_y, 1, 1)
-                days_passed = (target_date - start_of_year).days + 1
-                total_days = 366 if (curr_y % 4 == 0 and curr_y % 100 != 0) or (curr_y % 400 == 0) else 365
-                progress_rate = days_passed / total_days
-                prog_text = f"統計截至 {curr_y-1911}年{curr_m}月{curr_d}日 (入案日期)，年度時間進度為 {progress_rate:.1%}"
-                st.info(f"📅 {prog_text}")
-            except: pass
+            # ★★★ 移除年度時間進度計算代碼 ★★★
 
             unit_rows = []
             accum = {'ws':0, 'wc':0, 'ys':0, 'yc':0, 'ls':0, 'lc':0}
@@ -246,7 +224,6 @@ if uploaded_files:
                 row_data = [u, w_s, w_c, y_s, y_c, l_s, l_c]
                 
                 if u == '警備隊': 
-                    # 比較, 目標, 達成率
                     row_data.extend(['—', '', '']) 
                 else:
                     diff = int(y_total - l_total)
@@ -254,7 +231,6 @@ if uploaded_files:
                     if u == '科技執法':
                         row_data.extend(['', ''])
                     else:
-                        # ★★★ 強制留白 ★★★
                         row_data.extend(['', '']) 
                 
                 accum['ws']+=w_s; accum['wc']+=w_c
@@ -263,10 +239,7 @@ if uploaded_files:
                 unit_rows.append(row_data)
 
             # 合計列
-            total_target = 0 # 暫定為0
             t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
-            
-            # ★★★ 合計列的目標與達成率也留白 ★★★
             total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, '', '']
             
             final_rows = [total_row] + unit_rows
@@ -275,7 +248,7 @@ if uploaded_files:
             df_final = pd.DataFrame(final_rows, columns=cols)
             df_write = df_final.drop(columns=['取締方式'])
 
-            st.success("✅ 分析完成！(目標值與達成率已留白)")
+            st.success("✅ 分析完成！(已移除時間進度計算)")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
             # Excel
@@ -290,9 +263,11 @@ if uploaded_files:
                 ws.merge_range('A1:J1', '取締重大交通違規件數統計表', fmt_title)
                 date_str = f"{file_year['start']}~{file_year['end']}"
                 if date_str == "~": date_str = "(日期不明)"
+                
+                # A2: 統計期間 (日期標紅)
                 ws.write_rich_string('A2', '一、統計期間：', fmt_red, date_str)
                 
-                if prog_text: ws.write('A3', f"二、{prog_text}")
+                # ★★★ A3: 原本是寫進度，現在因為進度已移除，可以留白或做其他用途，這裡保持空白以免 Excel 格式亂掉 ★★★
                 ws.set_column(0, 0, 15)
             
             excel_data = output.getvalue()
@@ -307,7 +282,7 @@ if uploaded_files:
                     st.write("📧 正在寄送 Email...")
                     email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else None
                     if email_receiver:
-                        if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表(目標值未定)。", excel_data, file_name_out):
+                        if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
                             st.write(f"✅ Email 已發送")
                     else: st.warning("⚠️ 未設定 Email Secrets")
                     
