@@ -19,8 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-# 隱藏原本的 Streamlit 大標題，改用表格內的第一列呈現
-st.markdown("## 🚔 取締重大交通違規統計 (v24 完美預覽版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v26 名稱更新版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -29,9 +28,11 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v24)
-1. **網頁預覽升級**：現在網頁上的預覽表格會**完全顯示**第一列標題與第二列的合併欄位 (與 Excel 一致)。
-2. **Excel 排版**：維持 v23 的垂直合併與對齊格式。
+### 📝 使用說明 (v26)
+1. **名稱更新**：
+   - 「攔停」改為 **「當場攔停」**。
+   - 「逕舉」改為 **「逕行舉發」**。
+2. **預覽與 Excel 同步**：網頁預覽與下載檔案皆已更新名稱。
 3. **功能保留**：自動寄信、寫入 Google Sheet。
 """)
 
@@ -184,8 +185,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v24 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v24_html_preview")
+# ★★★ v26 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v26_rename_cols")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -243,32 +244,31 @@ if uploaded_files:
             total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, '', '']
             final_rows = [total_row] + unit_rows
 
-            cols = ['取締方式', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
+            cols = ['取締方式', '本期_當場攔停', '本期_逕行舉發', '本年_當場攔停', '本年_逕行舉發', '去年_當場攔停', '去年_逕行舉發', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(final_rows, columns=cols)
             df_write = df_final.drop(columns=['取締方式'])
 
             # ==========================================
-            # ★★★ 網頁預覽區 (使用 HTML 模擬 Excel 格式) ★★★
+            # ★★★ 網頁預覽區 (名稱更新) ★★★
             # ==========================================
-            st.success("✅ 分析完成！下方為預覽畫面 (包含所有標題列)")
+            st.success("✅ 分析完成！下方為預覽畫面 (名稱已更新)")
 
             str_week = f"本期<br>({get_mmdd(file_week['start'])}~{get_mmdd(file_week['end'])})"
             str_year = f"本年累計<br>({get_mmdd(file_year['start'])}~{get_mmdd(file_year['end'])})"
             str_last = f"去年累計<br>({get_mmdd(file_last_year['start'])}~{get_mmdd(file_last_year['end'])})"
 
-            # 組合 HTML 字串
-            html = f"""
-            <style>
-                table {{ width: 100%; border-collapse: collapse; text-align: center; font-family: "Microsoft JhengHei", sans-serif; }}
-                th, td {{ border: 1px solid #ddd; padding: 8px; }}
-                .title {{ font-size: 20px; font-weight: bold; background-color: #f0f0f0; }}
-                .header-top {{ background-color: #FFEB9C; font-weight: bold; }}
-                .header-sub {{ background-color: #ffffff; font-weight: bold; }}
-                .unit-col {{ background-color: #fafafa; font-weight: bold; text-align: left; }}
-            </style>
-            <table>
+            html_parts = [
+                f"""
+                <style>
+                    table {{ width: 100%; border-collapse: collapse; text-align: center; font-family: "Microsoft JhengHei", sans-serif; color: #333; }}
+                    th, td {{ border: 1px solid #999; padding: 8px; font-size: 14px; }}
+                    .title {{ font-size: 20px; font-weight: bold; background-color: #f0f0f0; color: #000; }}
+                    .header-top {{ background-color: #FFEB9C; font-weight: bold; color: #000; }}
+                    .header-sub {{ background-color: #ffffff; font-weight: bold; color: #000; }}
+                    .unit-col {{ background-color: #fafafa; font-weight: bold; text-align: left; color: #000; }}
+                </style>
+                <table>
                 <tr><td colspan="10" class="title">取締重大交通違規件數統計表</td></tr>
-                
                 <tr>
                     <td class="header-top">統計期間</td>
                     <td colspan="2" class="header-top">{str_week}</td>
@@ -278,29 +278,29 @@ if uploaded_files:
                     <td rowspan="2" class="header-top" style="vertical-align: middle;">目標值</td>
                     <td rowspan="2" class="header-top" style="vertical-align: middle;">達成率</td>
                 </tr>
-                
                 <tr>
                     <td class="header-sub">取締方式</td>
-                    <td class="header-sub">攔停</td><td class="header-sub">逕舉</td>
-                    <td class="header-sub">攔停</td><td class="header-sub">逕舉</td>
-                    <td class="header-sub">攔停</td><td class="header-sub">逕舉</td>
+                    <td class="header-sub">當場攔停</td><td class="header-sub">逕行舉發</td>
+                    <td class="header-sub">當場攔停</td><td class="header-sub">逕行舉發</td>
+                    <td class="header-sub">當場攔停</td><td class="header-sub">逕行舉發</td>
                 </tr>
-            """
+                """
+            ]
             
-            # 插入數據列
             for row in final_rows:
-                html += "<tr>"
+                row_html = "<tr>"
                 for i, cell in enumerate(row):
-                    cls = 'class="unit-col"' if i == 0 else ''
-                    html += f"<td {cls}>{cell}</td>"
-                html += "</tr>"
+                    style = 'class="unit-col"' if i == 0 else 'style="background-color: #fff; color: #000;"'
+                    row_html += f"<td {style}>{cell}</td>"
+                row_html += "</tr>"
+                html_parts.append(row_html)
             
-            html += "</table>"
-            
-            st.markdown(html, unsafe_allow_html=True)
+            html_parts.append("</table>")
+            final_html = "".join([part.strip() for part in html_parts])
+            st.markdown(final_html, unsafe_allow_html=True)
 
             # ==========================================
-            # Excel 產生邏輯 (維持 v23 完美格式)
+            # Excel 產生邏輯 (名稱更新 + 欄寬微調)
             # ==========================================
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -322,23 +322,23 @@ if uploaded_files:
                 ws.write('A3', '取締方式', fmt_sub)
                 
                 ws.merge_range('B2:C2', excel_str_week, fmt_top)
-                ws.write('B3', '攔停', fmt_sub)
-                ws.write('C3', '逕舉', fmt_sub)
+                ws.write('B3', '當場攔停', fmt_sub)
+                ws.write('C3', '逕行舉發', fmt_sub)
                 
                 ws.merge_range('D2:E2', excel_str_year, fmt_top)
-                ws.write('D3', '攔停', fmt_sub)
-                ws.write('E3', '逕舉', fmt_sub)
+                ws.write('D3', '當場攔停', fmt_sub)
+                ws.write('E3', '逕行舉發', fmt_sub)
                 
                 ws.merge_range('F2:G2', excel_str_last, fmt_top)
-                ws.write('F3', '攔停', fmt_sub)
-                ws.write('G3', '逕舉', fmt_sub)
+                ws.write('F3', '當場攔停', fmt_sub)
+                ws.write('G3', '逕行舉發', fmt_sub)
                 
                 ws.merge_range('H2:H3', '本年與去年\n同期比較', fmt_top)
                 ws.merge_range('I2:I3', '目標值', fmt_top)
                 ws.merge_range('J2:J3', '達成率', fmt_top)
 
                 ws.set_column(0, 0, 15)
-                ws.set_column(1, 6, 9)
+                ws.set_column(1, 6, 11) # 微調欄寬以容納 "當場攔停"
                 ws.set_column(7, 7, 13)
                 ws.set_column(8, 9, 10)
             
