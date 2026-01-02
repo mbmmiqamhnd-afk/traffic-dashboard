@@ -1,31 +1,14 @@
-import streamlit as st
-import pandas as pd
-import io
-import re
-
-st.set_page_config(page_title="交通事故統計", layout="wide", page_icon="🚑")
-st.title("🚑 交通事故統計 (A1/A2)")
-
-st.markdown("""
-### 📝 使用說明
-1. 請上傳 3 個原始報表檔案 (本週、今年累計、去年累計)。
-2. 系統會**讀取檔案內的日期**自動分辨是哪一份。
-3. 自動計算：A1 死亡人數、A2 受傷人數、與去年同期比較、增減率。
-4. 產出包含兩個分頁 (A1/A2) 的 Excel 報表。
-""")
-
-uploaded_files = st.file_uploader("請上傳 3 個事故報表檔案", accept_multiple_files=True, key="acc_uploader")
-
-if uploaded_files and st.button("🚀 開始分析", key="btn_acc"):
-    with st.spinner("正在智慧辨識檔案與計算中..."):
-        try:
+try:
+            # --- 1. 定義讀取與清理函數 (保持不變) ---
             def parse_raw(file_obj):
                 try: return pd.read_csv(file_obj, header=None)
                 except: file_obj.seek(0); return pd.read_excel(file_obj, header=None)
 
             def clean_data(df_raw):
+                # 先把第一欄轉字串，避免讀成數字造成錯誤
+                df_raw[0] = df_raw[0].astype(str)
                 df_data = df_raw[df_raw[0].notna()].copy()
-                df_data = df_data[df_data[0].astype(str).str.contains("總計|派出所")].copy()
+                df_data = df_data[df_data[0].str.contains("總計|派出所|合計")].copy()
                 df_data = df_data.reset_index(drop=True)
                 columns_map = {
                     0: "Station", 1: "Total_Cases", 2: "Total_Deaths", 3: "Total_Injuries",
@@ -41,75 +24,78 @@ if uploaded_files and st.button("🚀 開始分析", key="btn_acc"):
                 df_data['Station_Short'] = df_data['Station'].astype(str).str.replace('派出所', '所').str.replace('總計', '合計')
                 return df_data
 
+            # --- 2. 智慧辨識檔案日期 (增強版) ---
             file_data_map = {}
-            for uploaded_file in uploaded_files:
-                df = parse_raw(uploaded_file)
-                try:
-                    raw_str = str(df.iloc[1, 0])
-                    date_str = raw_str.replace("統計日期：", "").strip()
-                    dates = re.findall(r'(\d{3})/(\d{2})/(\d{2})', date_str)
-                    if dates:
-                        start_y, start_m, start_d = map(int, dates[0])
-                        end_y, end_m, end_d = map(int, dates[1])
-                        month_diff = (end_y - start_y) * 12 + (end_m - start_m)
-                        category = 'weekly' if (month_diff == 0 and (end_d - start_d) < 20) else 'cumulative'
-                        file_data_map[uploaded_file.name] = {'df': df, 'category': category, 'year': start_y, 'raw_date': date_str}
-                except: pass
+            debug_info = []  # 儲存偵測資訊，若失敗時顯示給使用者看
 
+            for uploaded_file in uploaded_files:
+                uploaded_file.seek(0)
+                df = parse_raw(uploaded_file)
+                
+                found_dates = []
+                date_str_found = "未找到日期"
+                
+                # 策略：掃描前 5 列、前 3 欄，尋找日期格式
+                for r in range(min(5, len(df))):
+                    for c in range(min(3, len(df.columns))):
+                        val = str(df.iloc[r, c])
+                        # 尋找民國年格式 (e.g., 113/01/01 或 113.1.1)
+                        dates = re.findall(r'(\d{3})[./](\d{1,2})[./](\d{1,2})', val)
+                        if len(dates) >= 2: # 至少要找到 起、迄 兩個日期
+                            found_dates = dates
+                            date_str_found = val
+                            break
+                    if found_dates: break
+
+                if found_dates:
+                    start_y, start_m, start_d = map(int, found_dates[0])
+                    end_y, end_m, end_d = map(int, found_dates[1])
+                    
+                    # 判斷邏輯
+                    month_diff = (end_y - start_y) * 12 + (end_m - start_m)
+                    days_diff = end_d - start_d # 簡易判斷
+                    
+                    # 如果跨度小於 1 個月且天數少於 20 天 -> 視為本期週報
+                    if month_diff == 0 and days_diff < 20:
+                        category = 'weekly'
+                    else:
+                        category = 'cumulative'
+                        
+                    file_data_map[uploaded_file.name] = {
+                        'df': df, 
+                        'category': category, 
+                        'year': start_y, 
+                        'raw_date': f"{start_y}/{start_m:02d}/{start_d:02d}-{end_y}/{end_m:02d}/{end_d:02d}"
+                    }
+                    debug_info.append(f"✅ {uploaded_file.name}: 判斷為 [{category}], 日期: {found_dates[0]}~{found_dates[1]}")
+                else:
+                    debug_info.append(f"❌ {uploaded_file.name}: 無法識別日期 (程式看到的文字: {str(df.iloc[0:2, 0].values)})")
+
+            # --- 3. 分配 DataFrame ---
             df_wk = None; df_cur = None; df_lst = None
             h_wk = ""; h_cur = ""; h_lst = ""
 
             for fname, data in file_data_map.items():
                 if data['category'] == 'weekly':
-                    df_wk = clean_data(data['df']); h_wk = data['raw_date']; break
-            
+                    df_wk = clean_data(data['df']); h_wk = data['raw_date']
+
             cumu_files = [d for d in file_data_map.values() if d['category'] == 'cumulative']
             if len(cumu_files) >= 2:
-                cumu_files.sort(key=lambda x: x['year'], reverse=True)
+                cumu_files.sort(key=lambda x: x['year'], reverse=True) # 年份大的是今年
                 df_cur = clean_data(cumu_files[0]['df']); h_cur = cumu_files[0]['raw_date']
                 df_lst = clean_data(cumu_files[1]['df']); h_lst = cumu_files[1]['raw_date']
 
+            # --- 4. 錯誤檢核與顯示 ---
             if df_wk is None or df_cur is None or df_lst is None:
-                st.error("❌ 無法識別完整的 3 份檔案 (本期/今年/去年)，請檢查檔案內容日期。")
+                st.error("❌ 無法識別完整的 3 份檔案。")
+                with st.expander("🕵️‍♂️ 點擊查看偵測細節 (除錯用)"):
+                    for info in debug_info:
+                        st.write(info)
+                    st.write("---")
+                    st.write("請確認：")
+                    st.write("1. 報表內是否有類似 `113/01/01` 的日期格式？")
+                    st.write("2. 是否上傳了兩份年度累計(不同年) + 一份週報表？")
                 st.stop()
 
-            # A1
-            a1_wk = df_wk[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'wk'})
-            a1_cur = df_cur[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'cur'})
-            a1_lst = df_lst[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'last'})
-            m_a1 = pd.merge(a1_wk, a1_cur, on='Station_Short', how='outer')
-            m_a1 = pd.merge(m_a1, a1_lst, on='Station_Short', how='outer').fillna(0)
-            m_a1['Diff'] = m_a1['cur'] - m_a1['last']
-
-            # A2
-            a2_wk = df_wk[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'wk'})
-            a2_cur = df_cur[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'cur'})
-            a2_lst = df_lst[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'last'})
-            m_a2 = pd.merge(a2_wk, a2_cur, on='Station_Short', how='outer')
-            m_a2 = pd.merge(m_a2, a2_lst, on='Station_Short', how='outer').fillna(0)
-            m_a2['Diff'] = m_a2['cur'] - m_a2['last']
-            m_a2['Pct_Str'] = m_a2.apply(lambda x: f"{(x['Diff']/x['last']):.2%}" if x['last']!=0 else "-", axis=1)
-            m_a2['Prev'] = "-"
-
-            target_order = ['合計', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
-            for m in [m_a1, m_a2]:
-                m['Station_Short'] = pd.Categorical(m['Station_Short'], categories=target_order, ordered=True)
-                m.sort_values('Station_Short', inplace=True)
-
-            a1_final = m_a1[['Station_Short', 'wk', 'cur', 'last', 'Diff']].copy()
-            a1_final.columns = ['單位', f'本期({h_wk})', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較']
-            
-            a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
-            a2_final.columns = ['單位', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
-
-            st.subheader("📊 A1 死亡人數統計"); st.dataframe(a1_final, use_container_width=True, hide_index=True)
-            st.subheader("📊 A2 受傷人數統計"); st.dataframe(a2_final, use_container_width=True, hide_index=True)
-
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
-                a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
-            
-            st.download_button(label="📥 下載 Excel 報表", data=output.getvalue(), file_name=f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-
-        except Exception as e: st.error(f"發生錯誤：{e}")
+            # --- (以下接續原本的計算邏輯: A1, A2 合併計算...) ---
+            # ... 請將原本程式碼的 # A1 ... 開始的部分接在這邊 ...
