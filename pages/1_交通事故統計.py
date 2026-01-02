@@ -11,31 +11,23 @@ from email import encoders
 from openpyxl.styles import Font, Alignment, Border, Side
 
 # ==========================================
-# 👇👇👇 【使用者設定區】 已設定完成 👇👇👇
+# 👇👇👇 【使用者設定區】 👇👇👇
 # ==========================================
-
-# 1. 您的 Gmail (寄件者)
 MY_EMAIL = "mbmmiqamhnd@gmail.com" 
-
-# 2. 您的應用程式密碼
 MY_PASSWORD = "kvpw ymgn xawe qxnl" 
-
-# 3. 收件者 (寄給自己)
 TO_EMAIL = "mbmmiqamhnd@gmail.com"
-
-# 4. SMTP 伺服器 (Gmail 預設不用改)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 # ==========================================
 
+st.set_page_config(page_title="交通事故統計 (全自動版)", layout="wide", page_icon="🚑")
+st.title("🚑 交通事故統計 (上傳即寄出)")
+st.markdown("### 📝 狀態：請上傳 3 個檔案，系統偵測齊全後將自動執行。")
 
-st.set_page_config(page_title="交通事故統計 (自動寄信版)", layout="wide", page_icon="🚑")
-st.title("🚑 交通事故統計自動化系統")
-st.markdown("### 📝 說明：系統將自動計算並將報表寄送至您的信箱。")
+# 1. 檔案上傳區
+uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
 
-uploaded_files = st.file_uploader("請上傳 3 個事故報表檔案", accept_multiple_files=True, key="acc_uploader")
-
-# --- 寄信函數 ---
+# 2. 寄信函數 (優化 Google 試算表相容性)
 def send_email_auto(attachment_data, filename):
     try:
         msg = MIMEMultipart()
@@ -46,8 +38,8 @@ def send_email_auto(attachment_data, filename):
         body = "長官好，\n\n檢送本期交通事故統計報表如附件，請查照。\n\n(此郵件由系統自動發送)"
         msg.attach(MIMEText(body, 'plain'))
 
-        # 附件處理
-        part = MIMEBase('application', 'octet-stream')
+        # === 關鍵修改：設定為 Excel 專用格式，確保 Google 試算表能識別 ===
+        part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         part.set_payload(attachment_data.getvalue())
         encoders.encode_base64(part)
         part.add_header('Content-Disposition', f'attachment; filename={filename}')
@@ -59,14 +51,17 @@ def send_email_auto(attachment_data, filename):
             s.login(MY_EMAIL, MY_PASSWORD)
             s.send_message(msg)
         return True, f"✅ 報表已自動寄送至：{TO_EMAIL}"
-    except smtplib.SMTPAuthenticationError:
-        return False, "❌ 登入失敗：請確認應用程式密碼是否正確，或 Google 帳號設定有誤。"
     except Exception as e:
         return False, f"❌ 寄送失敗：{e}"
 
-# --- 主程式 ---
-if uploaded_files and st.button("🚀 開始分析並寄送", key="btn_acc"):
-    with st.spinner("正在處理資料、生成報表並寄送郵件中..."):
+# 3. 自動觸發邏輯：只要檔案滿 3 個，立即執行
+if uploaded_files:
+    if len(uploaded_files) != 3:
+        st.warning(f"⚠️ 目前已上傳 {len(uploaded_files)} 個檔案，請補齊至 3 個檔案以觸發自動分析。")
+        st.stop() # 停止執行，等待檔案齊全
+    
+    # 檔案齊全，自動開始 (不需按鈕)
+    with st.spinner("⚡ 檔案齊全！正在自動分析、生成報表並寄送中..."):
         try:
             # === (A) 資料讀取與清理 ===
             def parse_raw(file_obj):
@@ -91,7 +86,7 @@ if uploaded_files and st.button("🚀 開始分析並寄送", key="btn_acc"):
                 df_data['Station_Short'] = df_data['Station'].astype(str).str.replace('派出所', '所').str.replace('總計', '合計')
                 return df_data
 
-            # === (B) 智慧辨識 (跨年邏輯) ===
+            # === (B) 智慧辨識 ===
             files_meta = []
             for uploaded_file in uploaded_files:
                 uploaded_file.seek(0)
@@ -116,7 +111,7 @@ if uploaded_files and st.button("🚀 開始分析並寄送", key="btn_acc"):
                     files_meta.append({'file': uploaded_file, 'df': df, 'start_tuple': (start_y, start_m, start_d),
                                        'end_year': end_y, 'duration': duration_days, 'raw_date': raw_date_str})
                 else:
-                    files_meta.append({'file': uploaded_file, 'end_year': 0}) 
+                    files_meta.append({'file': uploaded_file, 'end_year': 0})
 
             # === (C) 檔案分配 ===
             files_meta.sort(key=lambda x: x.get('end_year', 0), reverse=True)
@@ -124,7 +119,6 @@ if uploaded_files and st.button("🚀 開始分析並寄送", key="btn_acc"):
             h_wk = ""; h_cur = ""; h_lst = ""
 
             valid_files = [f for f in files_meta if f.get('end_year', 0) > 0]
-            
             if len(valid_files) >= 3:
                 current_year_end = valid_files[0]['end_year']
                 current_files = [f for f in valid_files if f['end_year'] == current_year_end]
@@ -148,7 +142,7 @@ if uploaded_files and st.button("🚀 開始分析並寄送", key="btn_acc"):
                     if wk: df_wk = clean_data(wk['df']); h_wk = wk['raw_date']
 
             if df_wk is None or df_cur is None or df_lst is None:
-                st.error("❌ 檔案辨識失敗，請確認檔案內容包含：去年累計、今年累計、今年週報。"); st.stop()
+                st.error("❌ 檔案辨識失敗。"); st.stop()
 
             # === (D) 計算 ===
             # A1
@@ -178,7 +172,7 @@ if uploaded_files and st.button("🚀 開始分析並寄送", key="btn_acc"):
             a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
             a2_final.columns = ['單位', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
 
-            # === (E) 產生 Excel 與 自動寄信 ===
+            # === (E) 產生 Excel 與 寄信 ===
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
@@ -203,24 +197,20 @@ if uploaded_files and st.button("🚀 開始分析並寄送", key="btn_acc"):
                             cell.border = border_style
                             cell.font = font_normal
             
-            # --- 🚀 自動寄信觸發點 ---
+            # --- 🔥 自動執行寄信 🔥 ---
             filename_excel = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
-            
-            # 呼叫寄信
             success, msg = send_email_auto(output, filename_excel)
             
-            # 顯示結果
             if success:
+                st.balloons() # 成功特效
                 st.success(msg)
             else:
-                st.warning(msg)
+                st.error(msg)
 
-            # 顯示表格與下載按鈕
+            # 顯示表格
             col1, col2 = st.columns(2)
             with col1: st.subheader("📊 A1 死亡人數"); st.dataframe(a1_final, hide_index=True)
             with col2: st.subheader("📊 A2 受傷人數"); st.dataframe(a2_final, hide_index=True)
-
-            st.download_button(label="📥 下載 Excel 報表", data=output.getvalue(), file_name=filename_excel, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
         except Exception as e:
             st.error(f"系統錯誤：{e}")
