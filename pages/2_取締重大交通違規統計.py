@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.title("🚔 取締重大交通違規統計 (v16 達成率整數版)")
+st.title("🚔 取締重大交通違規統計 (v19 更新網址版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,27 +28,26 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明
-1. 請上傳 **3 個** 重點違規報表。
-2. 系統自動區分 **攔停** 與 **逕舉**。
-3. **達成率改為整數 (四捨五入)**。
-4. **「合計」列排在第一位**。
-5. 寫入位置：**B4** (純數據)。
+### 📝 使用說明 (v19)
+1. **已更新試算表網址**。
+2. **修正 0 值解析問題**：放寬標題搜尋條件，即使數值為 0 也能讀取。
+3. **錯誤提示**：若解析失敗，會顯示具體原因。
+4. **日期標紅**、**自動寄信**、**達成率整數** 功能皆保留。
 """)
 
 # ==========================================
-# 0. 設定區
+# 0. 設定區 (已更新您的網址)
 # ==========================================
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 
 UNIT_MAP = {
-    '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', 
-    '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', 
-    '警備隊': '警備隊', '龍潭交通分隊': '交通分隊', '交通組': '科技執法' 
+    '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所',
+    '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所',
+    '警備隊': '警備隊', '龍潭交通分隊': '交通分隊', '交通組': '科技執法'
 }
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 TARGETS = {
-    '聖亭所': 1838, '龍潭所': 2451, '中興所': 1838, '石門所': 1488, 
+    '聖亭所': 1838, '龍潭所': 2451, '中興所': 1838, '石門所': 1488,
     '高平所': 1226, '三和所': 400, '交通分隊': 2576, '警備隊': 263, '科技執法': 0
 }
 
@@ -63,7 +62,7 @@ def update_google_sheet(df, sheet_url, start_cell='B4'):
         
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
-        ws = sh.get_worksheet(0) 
+        ws = sh.get_worksheet(0)
         if ws is None: raise Exception("找不到 Index 0 的工作表")
         
         st.info(f"📂 寫入目標工作表：**「{ws.title}」**")
@@ -111,68 +110,105 @@ def send_email(recipient, subject, body, file_bytes, filename):
     except: return False
 
 # ==========================================
-# 3. 解析函數
+# 3. 解析函數 (v18 改良版 - 保留)
 # ==========================================
 def parse_focus_report(uploaded_file):
     if not uploaded_file: return None
-    content = uploaded_file.getvalue()
-    start_date, end_date = "", ""
-    df = None; header_idx = -1
-    
+    file_name = uploaded_file.name
     try:
-        df_raw = pd.read_excel(io.BytesIO(content), header=None, nrows=20)
+        content = uploaded_file.getvalue()
+        start_date, end_date = "", ""
+        df = None; header_idx = -1
+        
+        # 1. 先讀前25行找標題和日期
+        df_raw = pd.read_excel(io.BytesIO(content), header=None, nrows=25)
         for i, row in df_raw.iterrows():
             row_str = " ".join([str(x) for x in row.values if pd.notna(x)])
+            
+            # 抓日期
             if not start_date:
                 match = re.search(r'入案日期[：:]?\s*(\d{3,7}).*至\s*(\d{3,7})', row_str)
                 if match: start_date, end_date = match.group(1), match.group(2)
-            if "單位" in row_str and "酒後" in row_str: header_idx = i
-                
-        if header_idx != -1: df = pd.read_excel(io.BytesIO(content), header=header_idx)
-        else: return None 
-        if df is None: return None
+            
+            # 抓標題 (放寬條件：只要有 "單位" 就算找到)
+            if "單位" in row_str:
+                header_idx = i
+                # 如果已經找到日期和標題，就提早結束搜尋
+                if start_date: break
+        
+        if header_idx == -1:
+            st.warning(f"⚠️ 檔案 {file_name} 解析警告：找不到標題列 (需包含「單位」)。")
+            return None
 
+        # 2. 依照標題列讀取資料
+        df = pd.read_excel(io.BytesIO(content), header=header_idx)
+        
         keywords = ["酒後", "闖紅燈", "嚴重超速", "逆向", "轉彎", "蛇行", "不暫停讓行人", "機車"]
         stop_cols = []; cit_cols = []
+        
+        # 3. 欄位定位
         for i in range(len(df.columns)):
             col_str = str(df.columns[i])
+            # 排除不相關欄位
             if any(k in col_str for k in keywords) and "路肩" not in col_str and "大型車" not in col_str:
                 stop_cols.append(i); cit_cols.append(i+1)
         
+        # 4. 數據加總 (增加 NaN 防禦)
         unit_data = {}
         for _, row in df.iterrows():
             raw_unit = str(row['單位']).strip()
-            if raw_unit == 'nan' or not raw_unit: continue
+            if raw_unit == 'nan' or not raw_unit or "合計" in raw_unit: continue # 跳過合計行
+            
             unit_name = UNIT_MAP.get(raw_unit, raw_unit)
             s, c = 0, 0
+            
             for col in stop_cols:
-                try: s += float(str(row.iloc[col]).replace(',', ''))
-                except: pass
+                try:
+                    val = row.iloc[col]
+                    if pd.isna(val) or str(val).strip() == "": val = 0
+                    s += float(str(val).replace(',', ''))
+                except: pass # 如果轉換失敗，當作 0
+            
             for col in cit_cols:
-                try: c += float(str(row.iloc[col]).replace(',', ''))
+                try:
+                    val = row.iloc[col]
+                    if pd.isna(val) or str(val).strip() == "": val = 0
+                    c += float(str(val).replace(',', ''))
                 except: pass
+
             unit_data[unit_name] = {'stop': s, 'cit': c}
 
+        # 5. 計算天數
         duration = 0
         try:
-            s_d = re.sub(r'[^\d]', '', start_date); e_d = re.sub(r'[^\d]', '', end_date)
-            if len(s_d)<7: s_d=s_d.zfill(7)
-            if len(e_d)<7: e_d=e_d.zfill(7)
-            d1 = date(int(s_d[:3])+1911, int(s_d[3:5]), int(s_d[5:]))
-            d2 = date(int(e_d[:3])+1911, int(e_d[3:5]), int(e_d[5:]))
-            duration = (d2 - d1).days
-        except: duration = 0
-        return {'data': unit_data, 'start': start_date, 'end': end_date, 'duration': duration}
-    except: return None
+            if start_date and end_date:
+                s_d = re.sub(r'[^\d]', '', start_date); e_d = re.sub(r'[^\d]', '', end_date)
+                if len(s_d)<7: s_d=s_d.zfill(7)
+                if len(e_d)<7: e_d=e_d.zfill(7)
+                d1 = date(int(s_d[:3])+1911, int(s_d[3:5]), int(s_d[5:]))
+                d2 = date(int(e_d[:3])+1911, int(e_d[3:5]), int(e_d[5:]))
+                duration = (d2 - d1).days
+        except: 
+            duration = 0 # 日期解析失敗不影響主要數據，設為 0
+
+        # 如果日期沒抓到，給一個假日期方便排序 (防呆)
+        if not start_date: start_date = "0000000"
+        if not end_date: end_date = "0000000"
+
+        return {'data': unit_data, 'start': start_date, 'end': end_date, 'duration': duration, 'filename': file_name}
+    
+    except Exception as e:
+        st.warning(f"⚠️ 檔案 {file_name} 發生未預期錯誤: {e}")
+        return None
 
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v16 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v16_round_int")
+# ★★★ v19 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v19_final")
 
 if uploaded_files:
-    if len(uploaded_files) < 3: st.warning("⏳ 檔案不足...")
+    if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
     else:
         try:
             parsed_files = []
@@ -180,14 +216,17 @@ if uploaded_files:
                 res = parse_focus_report(f)
                 if res: parsed_files.append(res)
             
-            if len(parsed_files) < 3: st.error("❌ 解析失敗"); st.stop()
+            if len(parsed_files) < 3: 
+                st.error("❌ 解析失敗：部分檔案無法讀取，請檢查上方黃色警告訊息。")
+                st.stop()
 
-            parsed_files.sort(key=lambda x: x['start']) 
-            file_last_year = parsed_files[0] 
+            # 排序邏輯
+            parsed_files.sort(key=lambda x: x['start'])
+            file_last_year = parsed_files[0]
             others = parsed_files[1:]
             others.sort(key=lambda x: x['duration'], reverse=True)
-            file_year = others[0] 
-            file_week = others[1] 
+            file_year = others[0]
+            file_week = others[1]
 
             prog_text = ""
             try:
@@ -216,7 +255,12 @@ if uploaded_files:
                 if u == '科技執法': w['stop'], y['stop'], l['stop'] = 0, 0, 0
                 y_total = y['stop'] + y['cit']; l_total = l['stop'] + l['cit']
                 
-                row_data = [u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit']]
+                # 確保數值是 int (避免 NaN 導致報錯)
+                w_s, w_c = int(w['stop']), int(w['cit'])
+                y_s, y_c = int(y['stop']), int(y['cit'])
+                l_s, l_c = int(l['stop']), int(l['cit'])
+
+                row_data = [u, w_s, w_c, y_s, y_c, l_s, l_c]
                 
                 if u == '警備隊': row_data.extend(['—', '—', '—'])
                 else:
@@ -224,47 +268,49 @@ if uploaded_files:
                     tgt = TARGETS.get(u, 0)
                     row_data.append(diff)
                     if u == '科技執法': row_data.extend(['—', '—'])
-                    else: 
-                        # ★★★ 修改點：使用 :.0% 來四捨五入顯示整數百分比 ★★★
+                    else:
                         rate_str = f"{y_total/tgt:.0%}" if tgt > 0 else "0%"
                         row_data.extend([tgt, rate_str])
                 
-                accum['ws']+=w['stop']; accum['wc']+=w['cit']
-                accum['ys']+=y['stop']; accum['yc']+=y['cit']
-                accum['ls']+=l['stop']; accum['lc']+=l['cit']
+                accum['ws']+=w_s; accum['wc']+=w_c
+                accum['ys']+=y_s; accum['yc']+=y_c
+                accum['ls']+=l_s; accum['lc']+=l_c
                 unit_rows.append(row_data)
 
             total_target = sum([v for k,v in TARGETS.items() if k not in ['警備隊', '科技執法']])
             t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
             t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
             
-            # ★★★ 修改點：合計列也改成 :.0% ★★★
             total_rate_str = f"{t_rate:.0%}"
             total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, total_rate_str]
             
-            # 組合：合計在前 + 單位在後
             final_rows = [total_row] + unit_rows
 
             cols = ['取締方式', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(final_rows, columns=cols)
             df_write = df_final.drop(columns=['取締方式'])
 
-            st.success("✅ 分析完成！(達成率已設為整數)")
-            
-            st.subheader("📋 寫入預覽")
-            st.caption("第一列為「合計」，第二列為「科技執法」，達成率為整數 %")
+            st.success("✅ 分析完成！")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
+            # Excel 寫入 (含紅字)
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False, sheet_name='Sheet1', startrow=3)
                 workbook = writer.book
                 ws = writer.sheets['Sheet1']
                 fmt_title = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center'})
+                fmt_red = workbook.add_format({'font_color': 'red'})
+                
                 ws.merge_range('A1:J1', '取締重大交通違規件數統計表', fmt_title)
-                ws.write('A2', f"一、統計期間：{file_year['start']}~{file_year['end']}")
+                # 紅字日期
+                date_str = f"{file_year['start']}~{file_year['end']}"
+                if date_str == "~": date_str = "(日期不明)"
+                ws.write_rich_string('A2', '一、統計期間：', fmt_red, date_str)
+                
                 if prog_text: ws.write('A3', f"二、{prog_text}")
-                ws.set_column(0, 0, 15) 
+                ws.set_column(0, 0, 15)
+            
             excel_data = output.getvalue()
             file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
 
@@ -273,18 +319,18 @@ if uploaded_files:
             file_ids = ",".join(sorted([f.name for f in uploaded_files]))
             
             def run_automation():
-                with st.status("🚀 執行中...", expanded=True) as status:
-                    st.write("📧 正在寄送 Email...")
+                with st.status("🚀 執行自動化任務...", expanded=True) as status:
+                    st.write("📧 正在寄送 Email (含附件)...")
                     email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else None
                     if email_receiver:
                         if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
                             st.write(f"✅ Email 已發送")
+                    else: st.warning("⚠️ 未設定 Email Secrets")
                     
                     st.write("📊 正在寫入 Google 試算表 (B4)...")
-                    if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'): 
-                        st.write("✅ 寫入成功！ (合計=B4, 科技執法=B5)")
-                    else:
-                        st.write("❌ 寫入失敗")
+                    if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'):
+                        st.write("✅ 寫入成功！")
+                    else: st.write("❌ 寫入失敗")
                     
                     status.update(label="執行完畢", state="complete", expanded=False)
                     st.balloons()
@@ -292,12 +338,12 @@ if uploaded_files:
             if file_ids not in st.session_state["sent_cache"]:
                 run_automation()
                 st.session_state["sent_cache"].add(file_ids)
-            else:
-                st.info("✅ 已自動執行過。")
+            else: st.info("✅ 已自動執行過。")
 
-            if st.button("🔄 強制重新執行 (寫入 + 寄信)", type="primary"):
-                run_automation()
+            if st.button("🔄 強制執行", type="primary"): run_automation()
 
             st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
-        except Exception as e: st.error(f"發生錯誤：{e}")
+        except Exception as e: 
+            st.error(f"❌ 發生嚴重錯誤：{e}")
+            st.error("請截圖此錯誤訊息並告知開發者。")
