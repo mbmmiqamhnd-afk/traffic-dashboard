@@ -20,14 +20,14 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (全自動版)", layout="wide", page_icon="🚑")
+st.set_page_config(page_title="交通事故統計 (自動加總版)", layout="wide", page_icon="🚑")
 st.title("🚑 交通事故統計 (上傳即寄出)")
-st.markdown("### 📝 狀態：請上傳 3 個檔案，系統偵測齊全後將自動執行。")
+st.markdown("### 📝 狀態：系統將「自動加總」各所數據產生合計，並自動寄出。")
 
 # 1. 檔案上傳區
 uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
 
-# 2. 寄信函數 (優化 Google 試算表相容性)
+# 2. 寄信函數
 def send_email_auto(attachment_data, filename):
     try:
         msg = MIMEMultipart()
@@ -35,17 +35,15 @@ def send_email_auto(attachment_data, filename):
         msg['To'] = TO_EMAIL
         msg['Subject'] = f"交通事故統計報表 ({pd.Timestamp.now().strftime('%Y/%m/%d')})"
         
-        body = "長官好，\n\n檢送本期交通事故統計報表如附件，請查照。\n\n(此郵件由系統自動發送)"
+        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (系統已自動重新計算合計欄位)，請查照。\n\n(此郵件由系統自動發送)"
         msg.attach(MIMEText(body, 'plain'))
 
-        # === 關鍵修改：設定為 Excel 專用格式，確保 Google 試算表能識別 ===
         part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         part.set_payload(attachment_data.getvalue())
         encoders.encode_base64(part)
         part.add_header('Content-Disposition', f'attachment; filename={filename}')
         msg.attach(part)
 
-        # 發送
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as s:
             s.starttls()
             s.login(MY_EMAIL, MY_PASSWORD)
@@ -54,14 +52,13 @@ def send_email_auto(attachment_data, filename):
     except Exception as e:
         return False, f"❌ 寄送失敗：{e}"
 
-# 3. 自動觸發邏輯：只要檔案滿 3 個，立即執行
+# 3. 自動處理邏輯
 if uploaded_files:
     if len(uploaded_files) != 3:
-        st.warning(f"⚠️ 目前已上傳 {len(uploaded_files)} 個檔案，請補齊至 3 個檔案以觸發自動分析。")
-        st.stop() # 停止執行，等待檔案齊全
+        st.warning(f"⚠️ 目前已上傳 {len(uploaded_files)} 個檔案，請補齊至 3 個檔案。")
+        st.stop()
     
-    # 檔案齊全，自動開始 (不需按鈕)
-    with st.spinner("⚡ 檔案齊全！正在自動分析、生成報表並寄送中..."):
+    with st.spinner("⚡ 正在分析數據、自動計算合計並寄送中..."):
         try:
             # === (A) 資料讀取與清理 ===
             def parse_raw(file_obj):
@@ -70,7 +67,8 @@ if uploaded_files:
 
             def clean_data(df_raw):
                 df_raw[0] = df_raw[0].astype(str)
-                df_data = df_raw[df_raw[0].str.contains("總計|派出所|合計", na=False)].copy()
+                # 這裡改寬鬆一點，只要有派出所名稱就抓進來
+                df_data = df_raw[df_raw[0].str.contains("所|總計|合計", na=False)].copy()
                 df_data = df_data.reset_index(drop=True)
                 columns_map = {
                     0: "Station", 1: "Total_Cases", 2: "Total_Deaths", 3: "Total_Injuries",
@@ -144,31 +142,55 @@ if uploaded_files:
             if df_wk is None or df_cur is None or df_lst is None:
                 st.error("❌ 檔案辨識失敗。"); st.stop()
 
-            # === (D) 計算 ===
-            # A1
+            # === (D) 合併與計算 (🔥 新增：強制重算合計邏輯) ===
+            
+            # 定義我们要的派出所順序 (不包含合計，合計稍後算出)
+            target_stations = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
+
+            def process_and_sum(df_main, value_cols):
+                """過濾出指定派出所，算出合計，並合併回去"""
+                # 1. 只留目標派出所
+                df_sub = df_main[df_main['Station_Short'].isin(target_stations)].copy()
+                
+                # 2. 排序
+                df_sub['Station_Short'] = pd.Categorical(df_sub['Station_Short'], categories=target_stations, ordered=True)
+                df_sub.sort_values('Station_Short', inplace=True)
+                
+                # 3. 計算合計
+                sum_values = df_sub[value_cols].sum()
+                row_total = pd.DataFrame([{'Station_Short': '合計', **sum_values.to_dict()}])
+                
+                # 4. 合併 (合計放最上面)
+                return pd.concat([row_total, df_sub], ignore_index=True)
+
+            # A1 處理
             a1_wk = df_wk[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'wk'})
             a1_cur = df_cur[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'cur'})
             a1_lst = df_lst[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'last'})
             m_a1 = pd.merge(a1_wk, a1_cur, on='Station_Short', how='outer')
             m_a1 = pd.merge(m_a1, a1_lst, on='Station_Short', how='outer').fillna(0)
-            m_a1['Diff'] = m_a1['cur'] - m_a1['last']
-            # A2
+            
+            # 🔥 這裡呼叫加總函數
+            m_a1 = process_and_sum(m_a1, ['wk', 'cur', 'last'])
+            m_a1['Diff'] = m_a1['cur'] - m_a1['last'] # 重新計算差異
+
+            # A2 處理
             a2_wk = df_wk[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'wk'})
             a2_cur = df_cur[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'cur'})
             a2_lst = df_lst[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'last'})
             m_a2 = pd.merge(a2_wk, a2_cur, on='Station_Short', how='outer')
             m_a2 = pd.merge(m_a2, a2_lst, on='Station_Short', how='outer').fillna(0)
-            m_a2['Diff'] = m_a2['cur'] - m_a2['last']
+            
+            # 🔥 這裡呼叫加總函數
+            m_a2 = process_and_sum(m_a2, ['wk', 'cur', 'last'])
+            m_a2['Diff'] = m_a2['cur'] - m_a2['last'] # 重新計算差異
             m_a2['Pct_Str'] = m_a2.apply(lambda x: f"{(x['Diff']/x['last']):.2%}" if x['last']!=0 else "-", axis=1)
             m_a2['Prev'] = "-"
 
-            target_order = ['合計', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
-            for m in [m_a1, m_a2]:
-                m['Station_Short'] = pd.Categorical(m['Station_Short'], categories=target_order, ordered=True)
-                m.sort_values('Station_Short', inplace=True)
-
+            # 整理欄位
             a1_final = m_a1[['Station_Short', 'wk', 'cur', 'last', 'Diff']].copy()
             a1_final.columns = ['單位', f'本期({h_wk})', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較']
+            
             a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
             a2_final.columns = ['單位', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
 
@@ -177,12 +199,13 @@ if uploaded_files:
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
                 a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
-                # 樣式設定
+                
                 font_normal = Font(name='標楷體', size=12)
                 font_red_bold = Font(name='標楷體', size=12, bold=True, color="FF0000")
                 font_bold = Font(name='標楷體', size=12, bold=True)
                 align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
                 border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+                
                 for sheet_name in ['A1死亡人數', 'A2受傷人數']:
                     ws = writer.book[sheet_name]
                     for col in ws.columns: ws.column_dimensions[col[0].column_letter].width = 20
@@ -197,12 +220,12 @@ if uploaded_files:
                             cell.border = border_style
                             cell.font = font_normal
             
-            # --- 🔥 自動執行寄信 🔥 ---
+            # 🔥 自動寄信
             filename_excel = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
             success, msg = send_email_auto(output, filename_excel)
             
             if success:
-                st.balloons() # 成功特效
+                st.balloons()
                 st.success(msg)
             else:
                 st.error(msg)
