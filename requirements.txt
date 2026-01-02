@@ -4,3 +4,4 @@ openpyxl
 xlsxwriter
 gspread
 pypdf
+numpy
