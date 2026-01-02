@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v32 試算表整合版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v33 完整寫入版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,14 +28,15 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v32)
-1.  **試算表整合**：資料將寫入與「超載統計」相同的 Google 試算表檔案。
-2.  **寫入位置**：寫入該檔案的 **第 1 個工作表 (Index 0)**，儲存格 **B4** 開始。
-3.  **功能保留**：包含所有配色設定、定義說明列與自動寄信功能。
+### 📝 使用說明 (v33)
+1.  **寫入完整內容**：包含第一欄的「單位名稱/合計」，不再只寫數據。
+2.  **寫入位置 A4**：資料將從 **A4** 儲存格開始寫入 (覆蓋 A~J 欄)。
+3.  **試算表整合**：寫入與「超載統計」相同的檔案 (工作表 1)。
+4.  **功能保留**：Excel 下載格式、定義說明列、自動寄信。
 """)
 
 # ==========================================
-# 0. 設定區 (參照超載統計提供的網址)
+# 0. 設定區
 # ==========================================
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 
@@ -52,7 +53,7 @@ NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「�
 # ==========================================
 # 1. Google Sheets 寫入函數
 # ==========================================
-def update_google_sheet(df, sheet_url, start_cell='B4'):
+def update_google_sheet(df, sheet_url, start_cell='A4'):
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 錯誤：未設定 Secrets！")
@@ -60,8 +61,7 @@ def update_google_sheet(df, sheet_url, start_cell='B4'):
         
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
-        
-        # ★★★ 關鍵修改：指定第一個工作表 (Index 0) ★★★
+        # 指定第一個工作表 (Index 0)
         ws = sh.get_worksheet(0)
         
         if ws is None: raise Exception("找不到 Index 0 的工作表")
@@ -189,8 +189,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v32 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v32_integrated_sheet")
+# ★★★ v33 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v33_full_content")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -250,10 +250,11 @@ if uploaded_files:
 
             cols = ['取締方式', '本期_當場攔停', '本期_逕行舉發', '本年_當場攔停', '本年_逕行舉發', '去年_當場攔停', '去年_逕行舉發', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(final_rows, columns=cols)
-            df_write = df_final.drop(columns=['取締方式'])
-
+            # ★★★ 這裡不 Drop 欄位了，保留第一欄 ★★★
+            # df_write = df_final.drop(columns=['取締方式']) 
+            
             # ==========================================
-            # ★★★ 網頁預覽區 (保持 v31 格式) ★★★
+            # ★★★ 網頁預覽區 ★★★
             # ==========================================
             st.success("✅ 分析完成！下方為預覽畫面")
 
@@ -302,7 +303,7 @@ if uploaded_files:
             st.markdown(final_html, unsafe_allow_html=True)
 
             # ==========================================
-            # Excel 產生邏輯 (保持 v31 格式)
+            # Excel 產生邏輯
             # ==========================================
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -377,8 +378,9 @@ if uploaded_files:
                             st.write(f"✅ Email 已發送")
                     else: st.warning("⚠️ 未設定 Email Secrets")
                     
-                    st.write("📊 正在寫入 Google 試算表 (Index 0)...")
-                    if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'):
+                    st.write("📊 正在寫入 Google 試算表 (A4)...")
+                    # ★★★ 傳入完整 df_final，且寫入位置改為 A4 ★★★
+                    if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A4'):
                         st.write("✅ 寫入成功！")
                     else: st.write("❌ 寫入失敗")
                     
