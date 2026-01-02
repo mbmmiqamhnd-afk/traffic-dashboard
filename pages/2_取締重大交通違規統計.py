@@ -18,8 +18,8 @@ try:
     st.cache_resource.clear()
 except: pass
 
-st.set_page_config(page_title="超載統計", layout="wide", page_icon="⚖️")
-st.title("⚖️ 超載統計 (v17 統計期間版)")
+st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
+st.title("🚔 取締重大交通違規統計 (v16 達成率整數版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -29,9 +29,9 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
 
 st.markdown("""
 ### 📝 使用說明
-1. 請上傳 **3 個** 統計報表。
+1. 請上傳 **3 個** 重點違規報表。
 2. 系統自動區分 **攔停** 與 **逕舉**。
-3. **表格第一欄名稱已改為「統計期間」**。
+3. **達成率改為整數 (四捨五入)**。
 4. **「合計」列排在第一位**。
 5. 寫入位置：**B4** (純數據)。
 """)
@@ -168,8 +168,8 @@ def parse_focus_report(uploaded_file):
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v17 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v17_overload_title")
+# ★★★ v16 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v16_round_int")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足...")
@@ -225,6 +225,7 @@ if uploaded_files:
                     row_data.append(diff)
                     if u == '科技執法': row_data.extend(['—', '—'])
                     else: 
+                        # ★★★ 修改點：使用 :.0% 來四捨五入顯示整數百分比 ★★★
                         rate_str = f"{y_total/tgt:.0%}" if tgt > 0 else "0%"
                         row_data.extend([tgt, rate_str])
                 
@@ -237,22 +238,21 @@ if uploaded_files:
             t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
             t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
             
+            # ★★★ 修改點：合計列也改成 :.0% ★★★
             total_rate_str = f"{t_rate:.0%}"
             total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, total_rate_str]
             
+            # 組合：合計在前 + 單位在後
             final_rows = [total_row] + unit_rows
 
-            # ★★★ 修改點：欄位名稱改為「統計期間」 ★★★
-            cols = ['統計期間', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
+            cols = ['取締方式', '本期_攔停', '本期_逕舉', '本年_攔停', '本年_逕舉', '去年_攔停', '去年_逕舉', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(final_rows, columns=cols)
-            
-            # ★★★ 移除「統計期間」欄位再寫入 ★★★
-            df_write = df_final.drop(columns=['統計期間'])
+            df_write = df_final.drop(columns=['取締方式'])
 
-            st.success("✅ 分析完成！")
+            st.success("✅ 分析完成！(達成率已設為整數)")
             
             st.subheader("📋 寫入預覽")
-            st.caption("第一列為「合計」，達成率為整數")
+            st.caption("第一列為「合計」，第二列為「科技執法」，達成率為整數 %")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
             output = io.BytesIO()
@@ -266,7 +266,7 @@ if uploaded_files:
                 if prog_text: ws.write('A3', f"二、{prog_text}")
                 ws.set_column(0, 0, 15) 
             excel_data = output.getvalue()
-            file_name_out = f'超載統計_{file_year["end"]}.xlsx'
+            file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
 
             st.markdown("---")
             if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
@@ -277,12 +277,12 @@ if uploaded_files:
                     st.write("📧 正在寄送 Email...")
                     email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else None
                     if email_receiver:
-                        if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為超載統計報表。", excel_data, file_name_out):
+                        if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
                             st.write(f"✅ Email 已發送")
                     
                     st.write("📊 正在寫入 Google 試算表 (B4)...")
                     if update_google_sheet(df_write, GOOGLE_SHEET_URL, start_cell='B4'): 
-                        st.write("✅ 寫入成功！")
+                        st.write("✅ 寫入成功！ (合計=B4, 科技執法=B5)")
                     else:
                         st.write("❌ 寫入失敗")
                     
