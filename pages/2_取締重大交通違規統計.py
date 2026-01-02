@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v26 名稱更新版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v27 預覽終極修復版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,11 +28,9 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v26)
-1. **名稱更新**：
-   - 「攔停」改為 **「當場攔停」**。
-   - 「逕舉」改為 **「逕行舉發」**。
-2. **預覽與 Excel 同步**：網頁預覽與下載檔案皆已更新名稱。
+### 📝 使用說明 (v27)
+1. **預覽修復**：採用無縮排 HTML 寫法，解決程式碼外露問題，確保表格正確顯示。
+2. **名稱確認**：「當場攔停」、「逕行舉發」。
 3. **功能保留**：自動寄信、寫入 Google Sheet。
 """)
 
@@ -185,8 +183,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v26 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v26_rename_cols")
+# ★★★ v27 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v27_final_no_indent")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -249,58 +247,33 @@ if uploaded_files:
             df_write = df_final.drop(columns=['取締方式'])
 
             # ==========================================
-            # ★★★ 網頁預覽區 (名稱更新) ★★★
+            # ★★★ 網頁預覽區 (無縮排 HTML 字串) ★★★
             # ==========================================
-            st.success("✅ 分析完成！下方為預覽畫面 (名稱已更新)")
+            st.success("✅ 分析完成！下方為預覽畫面")
 
             str_week = f"本期<br>({get_mmdd(file_week['start'])}~{get_mmdd(file_week['end'])})"
             str_year = f"本年累計<br>({get_mmdd(file_year['start'])}~{get_mmdd(file_year['end'])})"
             str_last = f"去年累計<br>({get_mmdd(file_last_year['start'])}~{get_mmdd(file_last_year['end'])})"
 
-            html_parts = [
-                f"""
-                <style>
-                    table {{ width: 100%; border-collapse: collapse; text-align: center; font-family: "Microsoft JhengHei", sans-serif; color: #333; }}
-                    th, td {{ border: 1px solid #999; padding: 8px; font-size: 14px; }}
-                    .title {{ font-size: 20px; font-weight: bold; background-color: #f0f0f0; color: #000; }}
-                    .header-top {{ background-color: #FFEB9C; font-weight: bold; color: #000; }}
-                    .header-sub {{ background-color: #ffffff; font-weight: bold; color: #000; }}
-                    .unit-col {{ background-color: #fafafa; font-weight: bold; text-align: left; color: #000; }}
-                </style>
-                <table>
-                <tr><td colspan="10" class="title">取締重大交通違規件數統計表</td></tr>
-                <tr>
-                    <td class="header-top">統計期間</td>
-                    <td colspan="2" class="header-top">{str_week}</td>
-                    <td colspan="2" class="header-top">{str_year}</td>
-                    <td colspan="2" class="header-top">{str_last}</td>
-                    <td rowspan="2" class="header-top" style="vertical-align: middle;">本年與去年<br>同期比較</td>
-                    <td rowspan="2" class="header-top" style="vertical-align: middle;">目標值</td>
-                    <td rowspan="2" class="header-top" style="vertical-align: middle;">達成率</td>
-                </tr>
-                <tr>
-                    <td class="header-sub">取締方式</td>
-                    <td class="header-sub">當場攔停</td><td class="header-sub">逕行舉發</td>
-                    <td class="header-sub">當場攔停</td><td class="header-sub">逕行舉發</td>
-                    <td class="header-sub">當場攔停</td><td class="header-sub">逕行舉發</td>
-                </tr>
-                """
-            ]
+            # 建構單行 HTML 避免 Markdown 程式碼區塊誤判
+            style = "<style>table{width:100%;border-collapse:collapse;text-align:center;font-family:'Microsoft JhengHei',sans-serif;color:#333;}th,td{border:1px solid #999;padding:8px;font-size:14px;}.title{font-size:20px;font-weight:bold;background-color:#f0f0f0;color:#000;}.header-top{background-color:#FFEB9C;font-weight:bold;color:#000;}.header-sub{background-color:#ffffff;font-weight:bold;color:#000;}.unit-col{background-color:#fafafa;font-weight:bold;text-align:left;color:#000;}</style>"
             
+            table_start = f"<table><tr><td colspan='10' class='title'>取締重大交通違規件數統計表</td></tr><tr><td class='header-top'>統計期間</td><td colspan='2' class='header-top'>{str_week}</td><td colspan='2' class='header-top'>{str_year}</td><td colspan='2' class='header-top'>{str_last}</td><td rowspan='2' class='header-top' style='vertical-align:middle;'>本年與去年<br>同期比較</td><td rowspan='2' class='header-top' style='vertical-align:middle;'>目標值</td><td rowspan='2' class='header-top' style='vertical-align:middle;'>達成率</td></tr><tr><td class='header-sub'>取締方式</td><td class='header-sub'>當場攔停</td><td class='header-sub'>逕行舉發</td><td class='header-sub'>當場攔停</td><td class='header-sub'>逕行舉發</td><td class='header-sub'>當場攔停</td><td class='header-sub'>逕行舉發</td></tr>"
+            
+            rows_html = ""
             for row in final_rows:
-                row_html = "<tr>"
+                rows_html += "<tr>"
                 for i, cell in enumerate(row):
-                    style = 'class="unit-col"' if i == 0 else 'style="background-color: #fff; color: #000;"'
-                    row_html += f"<td {style}>{cell}</td>"
-                row_html += "</tr>"
-                html_parts.append(row_html)
+                    cell_style = "class='unit-col'" if i == 0 else "style='background-color:#fff;color:#000;'"
+                    rows_html += f"<td {cell_style}>{cell}</td>"
+                rows_html += "</tr>"
             
-            html_parts.append("</table>")
-            final_html = "".join([part.strip() for part in html_parts])
+            final_html = style + table_start + rows_html + "</table>"
+            
             st.markdown(final_html, unsafe_allow_html=True)
 
             # ==========================================
-            # Excel 產生邏輯 (名稱更新 + 欄寬微調)
+            # Excel 產生邏輯
             # ==========================================
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -338,7 +311,7 @@ if uploaded_files:
                 ws.merge_range('J2:J3', '達成率', fmt_top)
 
                 ws.set_column(0, 0, 15)
-                ws.set_column(1, 6, 11) # 微調欄寬以容納 "當場攔停"
+                ws.set_column(1, 6, 11) # 微調欄寬
                 ws.set_column(7, 7, 13)
                 ws.set_column(8, 9, 10)
             
