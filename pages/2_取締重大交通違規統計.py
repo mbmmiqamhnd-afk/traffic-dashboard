@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v27 預覽終極修復版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v29 配色調整版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,10 +28,11 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v27)
-1. **預覽修復**：採用無縮排 HTML 寫法，解決程式碼外露問題，確保表格正確顯示。
-2. **名稱確認**：「當場攔停」、「逕行舉發」。
-3. **功能保留**：自動寄信、寫入 Google Sheet。
+### 📝 使用說明 (v29)
+1.  **統計期間列**：文字變為 **紅色**，背景變為 **白色**。
+2.  **合計列**：背景填滿 **淺黃色**。
+3.  **負數標紅**：比較欄位若為負數，無論背景為何，文字皆顯示為紅色。
+4.  **功能保留**：自動寄信、寫入 Google Sheet。
 """)
 
 # ==========================================
@@ -183,8 +184,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v27 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v27_final_no_indent")
+# ★★★ v29 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v29_color_swap")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -247,7 +248,7 @@ if uploaded_files:
             df_write = df_final.drop(columns=['取締方式'])
 
             # ==========================================
-            # ★★★ 網頁預覽區 (無縮排 HTML 字串) ★★★
+            # ★★★ 網頁預覽區 (更新 CSS 樣式) ★★★
             # ==========================================
             st.success("✅ 分析完成！下方為預覽畫面")
 
@@ -255,25 +256,65 @@ if uploaded_files:
             str_year = f"本年累計<br>({get_mmdd(file_year['start'])}~{get_mmdd(file_year['end'])})"
             str_last = f"去年累計<br>({get_mmdd(file_last_year['start'])}~{get_mmdd(file_last_year['end'])})"
 
-            # 建構單行 HTML 避免 Markdown 程式碼區塊誤判
-            style = "<style>table{width:100%;border-collapse:collapse;text-align:center;font-family:'Microsoft JhengHei',sans-serif;color:#333;}th,td{border:1px solid #999;padding:8px;font-size:14px;}.title{font-size:20px;font-weight:bold;background-color:#f0f0f0;color:#000;}.header-top{background-color:#FFEB9C;font-weight:bold;color:#000;}.header-sub{background-color:#ffffff;font-weight:bold;color:#000;}.unit-col{background-color:#fafafa;font-weight:bold;text-align:left;color:#000;}</style>"
+            # CSS 定義:
+            # .header-top: 白色背景、紅色字
+            # .header-sub: 白色背景、黑色字
+            # .total-row: 黃色背景 (#FFEB9C)
+            style = """
+            <style>
+                table{width:100%;border-collapse:collapse;text-align:center;font-family:'Microsoft JhengHei',sans-serif;color:#333;}
+                th,td{border:1px solid #999;padding:8px;font-size:14px;}
+                .title{font-size:20px;font-weight:bold;background-color:#f0f0f0;color:#000;}
+                .header-top{background-color:#ffffff;color:red;font-weight:bold;} 
+                .header-sub{background-color:#ffffff;font-weight:bold;color:#000;}
+                .unit-col{background-color:#fafafa;font-weight:bold;text-align:left;color:#000;}
+            </style>
+            """
             
+            # 表頭 HTML
             table_start = f"<table><tr><td colspan='10' class='title'>取締重大交通違規件數統計表</td></tr><tr><td class='header-top'>統計期間</td><td colspan='2' class='header-top'>{str_week}</td><td colspan='2' class='header-top'>{str_year}</td><td colspan='2' class='header-top'>{str_last}</td><td rowspan='2' class='header-top' style='vertical-align:middle;'>本年與去年<br>同期比較</td><td rowspan='2' class='header-top' style='vertical-align:middle;'>目標值</td><td rowspan='2' class='header-top' style='vertical-align:middle;'>達成率</td></tr><tr><td class='header-sub'>取締方式</td><td class='header-sub'>當場攔停</td><td class='header-sub'>逕行舉發</td><td class='header-sub'>當場攔停</td><td class='header-sub'>逕行舉發</td><td class='header-sub'>當場攔停</td><td class='header-sub'>逕行舉發</td></tr>"
             
             rows_html = ""
             for row in final_rows:
                 rows_html += "<tr>"
+                is_total_row = (row[0] == '合計')
+                
                 for i, cell in enumerate(row):
-                    cell_style = "class='unit-col'" if i == 0 else "style='background-color:#fff;color:#000;'"
-                    rows_html += f"<td {cell_style}>{cell}</td>"
+                    # 樣式邏輯
+                    cell_style_list = []
+                    
+                    # 1. 判斷是否為合計列 (黃色背景)
+                    if is_total_row:
+                        cell_style_list.append("background-color:#FFEB9C;")
+                    else:
+                        cell_style_list.append("background-color:#fff;")
+
+                    # 2. 第一欄靠左
+                    if i == 0:
+                        cell_style_list.append("text-align:left;font-weight:bold;")
+
+                    # 3. 判斷負數 (第8欄, index 7)
+                    is_negative = False
+                    if i == 7:
+                        try:
+                            if int(cell) < 0: is_negative = True
+                        except: pass
+                    
+                    # 4. 判斷文字顏色
+                    if is_negative:
+                        cell_style_list.append("color:red;font-weight:bold;")
+                    else:
+                        cell_style_list.append("color:#000;")
+                    
+                    style_str = f"style='{''.join(cell_style_list)}'"
+                    rows_html += f"<td {style_str}>{cell}</td>"
                 rows_html += "</tr>"
             
             final_html = style + table_start + rows_html + "</table>"
-            
             st.markdown(final_html, unsafe_allow_html=True)
 
             # ==========================================
-            # Excel 產生邏輯
+            # Excel 產生邏輯 (對應 HTML 配色)
             # ==========================================
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -281,16 +322,38 @@ if uploaded_files:
                 workbook = writer.book
                 ws = writer.sheets['Sheet1']
                 
+                # 樣式定義
                 fmt_title = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter'})
-                fmt_top = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1, 'bg_color': '#FFEB9C', 'text_wrap': True})
-                fmt_sub = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1})
+                
+                # Header Row 2: 白底紅字
+                fmt_top = workbook.add_format({
+                    'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1, 
+                    'bg_color': '#ffffff', 'font_color': 'red', 'text_wrap': True
+                })
+                
+                # Header Row 3: 白底黑字
+                fmt_sub = workbook.add_format({
+                    'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1
+                })
+                
+                # Total Row: 黃底 (#FFEB9C) + 預設黑字
+                fmt_total = workbook.add_format({
+                    'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#FFEB9C'
+                })
+                
+                # Total Row + Negative: 黃底 + 紅字
+                fmt_total_neg = workbook.add_format({
+                    'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#FFEB9C', 'font_color': 'red'
+                })
 
+                # 寫入標題
                 ws.merge_range('A1:J1', '取締重大交通違規件數統計表', fmt_title)
 
                 excel_str_week = str_week.replace("<br>", "\n")
                 excel_str_year = str_year.replace("<br>", "\n")
                 excel_str_last = str_last.replace("<br>", "\n")
 
+                # 寫入表頭 (Row 2 & 3)
                 ws.write('A2', '統計期間', fmt_top)
                 ws.write('A3', '取締方式', fmt_sub)
                 
@@ -310,10 +373,38 @@ if uploaded_files:
                 ws.merge_range('I2:I3', '目標值', fmt_top)
                 ws.merge_range('J2:J3', '達成率', fmt_top)
 
+                # ★★★ 特別處理：覆蓋「合計」列的格式 ★★★
+                # 合計列是資料的第一列 (Row 4, index 3)
+                # 需逐格寫入以應用黃色底色，並檢查負數
+                row_idx = 3 # Excel 第 4 列
+                total_data = final_rows[0] # 合計數據
+                
+                for col_idx, val in enumerate(total_data):
+                    current_fmt = fmt_total # 預設黃底黑字
+                    
+                    # 檢查 H 欄 (Index 7) 是否為負數
+                    if col_idx == 7:
+                        try:
+                            if int(val) < 0: current_fmt = fmt_total_neg # 黃底紅字
+                        except: pass
+                    
+                    ws.write(row_idx, col_idx, val, current_fmt)
+
+                # 設定欄寬
                 ws.set_column(0, 0, 15)
-                ws.set_column(1, 6, 11) # 微調欄寬
+                ws.set_column(1, 6, 11)
                 ws.set_column(7, 7, 13)
                 ws.set_column(8, 9, 10)
+
+                # 其他列的條件格式 (負數紅字，針對非合計列)
+                fmt_red_num = workbook.add_format({'font_color': 'red', 'bold': True})
+                # 從第 5 列開始 (Row 5, index 4) 到最後
+                ws.conditional_format(4, 7, 3 + len(final_rows) - 1, 7, {
+                    'type': 'cell',
+                    'criteria': '<',
+                    'value': 0,
+                    'format': fmt_red_num
+                })
             
             excel_data = output.getvalue()
             file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
