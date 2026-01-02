@@ -19,7 +19,8 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.title("🚔 取締重大交通違規統計 (v23 標題合併版)")
+# 隱藏原本的 Streamlit 大標題，改用表格內的第一列呈現
+st.markdown("## 🚔 取締重大交通違規統計 (v24 完美預覽版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,12 +29,10 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v23)
-1. **Excel 排版優化**：
-   - 「本年與去年同期比較」、「目標值」、「達成率」已上移至第二列，並進行**跨列合併**。
-   - 標題結構更清晰：上層為期間/大項目，下層為細項 (攔停/逕舉)。
-2. **目標值與達成率維持空白**。
-3. **自動寄信** 與 **Google Sheet 寫入** 功能保留。
+### 📝 使用說明 (v24)
+1. **網頁預覽升級**：現在網頁上的預覽表格會**完全顯示**第一列標題與第二列的合併欄位 (與 Excel 一致)。
+2. **Excel 排版**：維持 v23 的垂直合併與對齊格式。
+3. **功能保留**：自動寄信、寫入 Google Sheet。
 """)
 
 # ==========================================
@@ -185,8 +184,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v23 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v23_vertical_merge")
+# ★★★ v24 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v24_html_preview")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -248,77 +247,100 @@ if uploaded_files:
             df_final = pd.DataFrame(final_rows, columns=cols)
             df_write = df_final.drop(columns=['取締方式'])
 
-            st.success("✅ 分析完成！Excel 排版已更新")
-            st.dataframe(df_final, use_container_width=True, hide_index=True)
+            # ==========================================
+            # ★★★ 網頁預覽區 (使用 HTML 模擬 Excel 格式) ★★★
+            # ==========================================
+            st.success("✅ 分析完成！下方為預覽畫面 (包含所有標題列)")
+
+            str_week = f"本期<br>({get_mmdd(file_week['start'])}~{get_mmdd(file_week['end'])})"
+            str_year = f"本年累計<br>({get_mmdd(file_year['start'])}~{get_mmdd(file_year['end'])})"
+            str_last = f"去年累計<br>({get_mmdd(file_last_year['start'])}~{get_mmdd(file_last_year['end'])})"
+
+            # 組合 HTML 字串
+            html = f"""
+            <style>
+                table {{ width: 100%; border-collapse: collapse; text-align: center; font-family: "Microsoft JhengHei", sans-serif; }}
+                th, td {{ border: 1px solid #ddd; padding: 8px; }}
+                .title {{ font-size: 20px; font-weight: bold; background-color: #f0f0f0; }}
+                .header-top {{ background-color: #FFEB9C; font-weight: bold; }}
+                .header-sub {{ background-color: #ffffff; font-weight: bold; }}
+                .unit-col {{ background-color: #fafafa; font-weight: bold; text-align: left; }}
+            </style>
+            <table>
+                <tr><td colspan="10" class="title">取締重大交通違規件數統計表</td></tr>
+                
+                <tr>
+                    <td class="header-top">統計期間</td>
+                    <td colspan="2" class="header-top">{str_week}</td>
+                    <td colspan="2" class="header-top">{str_year}</td>
+                    <td colspan="2" class="header-top">{str_last}</td>
+                    <td rowspan="2" class="header-top" style="vertical-align: middle;">本年與去年<br>同期比較</td>
+                    <td rowspan="2" class="header-top" style="vertical-align: middle;">目標值</td>
+                    <td rowspan="2" class="header-top" style="vertical-align: middle;">達成率</td>
+                </tr>
+                
+                <tr>
+                    <td class="header-sub">取締方式</td>
+                    <td class="header-sub">攔停</td><td class="header-sub">逕舉</td>
+                    <td class="header-sub">攔停</td><td class="header-sub">逕舉</td>
+                    <td class="header-sub">攔停</td><td class="header-sub">逕舉</td>
+                </tr>
+            """
+            
+            # 插入數據列
+            for row in final_rows:
+                html += "<tr>"
+                for i, cell in enumerate(row):
+                    cls = 'class="unit-col"' if i == 0 else ''
+                    html += f"<td {cls}>{cell}</td>"
+                html += "</tr>"
+            
+            html += "</table>"
+            
+            st.markdown(html, unsafe_allow_html=True)
 
             # ==========================================
-            # Excel 產生邏輯 (v23: 垂直合併版)
+            # Excel 產生邏輯 (維持 v23 完美格式)
             # ==========================================
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                # 數據從第 4 列 (Index 3) 開始，預留 3 列給標題
-                # header=False 因為我們要自己畫複雜表頭
                 df_final.to_excel(writer, index=False, header=False, sheet_name='Sheet1', startrow=3)
                 workbook = writer.book
                 ws = writer.sheets['Sheet1']
                 
-                # 樣式設定
                 fmt_title = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter'})
-                
-                # 上層標題 (黃底)
-                fmt_top = workbook.add_format({
-                    'bold': True, 'align': 'center', 'valign': 'vcenter', 
-                    'border': 1, 'bg_color': '#FFEB9C', 'text_wrap': True
-                })
-                
-                # 下層標題 (白底)
-                fmt_sub = workbook.add_format({
-                    'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1
-                })
+                fmt_top = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1, 'bg_color': '#FFEB9C', 'text_wrap': True})
+                fmt_sub = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1})
 
-                # 1. 大標題 (A1)
                 ws.merge_range('A1:J1', '取締重大交通違規件數統計表', fmt_title)
 
-                # 2. 準備日期字串
-                str_week = f"本期\n({get_mmdd(file_week['start'])}~{get_mmdd(file_week['end'])})"
-                str_year = f"本年累計\n({get_mmdd(file_year['start'])}~{get_mmdd(file_year['end'])})"
-                str_last = f"去年累計\n({get_mmdd(file_last_year['start'])}~{get_mmdd(file_last_year['end'])})"
+                excel_str_week = str_week.replace("<br>", "\n")
+                excel_str_year = str_year.replace("<br>", "\n")
+                excel_str_last = str_last.replace("<br>", "\n")
 
-                # 3. 繪製複雜表頭 (Row 2 & Row 3)
-                
-                # A欄: 統計期間 (Row 2) / 取締方式 (Row 3)
                 ws.write('A2', '統計期間', fmt_top)
                 ws.write('A3', '取締方式', fmt_sub)
                 
-                # B-C欄: 本期 (合併)
-                ws.merge_range('B2:C2', str_week, fmt_top)
+                ws.merge_range('B2:C2', excel_str_week, fmt_top)
                 ws.write('B3', '攔停', fmt_sub)
                 ws.write('C3', '逕舉', fmt_sub)
                 
-                # D-E欄: 本年 (合併)
-                ws.merge_range('D2:E2', str_year, fmt_top)
+                ws.merge_range('D2:E2', excel_str_year, fmt_top)
                 ws.write('D3', '攔停', fmt_sub)
                 ws.write('E3', '逕舉', fmt_sub)
                 
-                # F-G欄: 去年 (合併)
-                ws.merge_range('F2:G2', str_last, fmt_top)
+                ws.merge_range('F2:G2', excel_str_last, fmt_top)
                 ws.write('F3', '攔停', fmt_sub)
                 ws.write('G3', '逕舉', fmt_sub)
                 
-                # H欄: 比較 (跨列合併 Row 2-3)
                 ws.merge_range('H2:H3', '本年與去年\n同期比較', fmt_top)
-                
-                # I欄: 目標值 (跨列合併 Row 2-3)
                 ws.merge_range('I2:I3', '目標值', fmt_top)
-                
-                # J欄: 達成率 (跨列合併 Row 2-3)
                 ws.merge_range('J2:J3', '達成率', fmt_top)
 
-                # 4. 調整欄寬
-                ws.set_column(0, 0, 15) # 取締方式
-                ws.set_column(1, 6, 9)  # 數據欄
-                ws.set_column(7, 7, 13) # 比較欄
-                ws.set_column(8, 9, 10) # 目標/達成率
+                ws.set_column(0, 0, 15)
+                ws.set_column(1, 6, 9)
+                ws.set_column(7, 7, 13)
+                ws.set_column(8, 9, 10)
             
             excel_data = output.getvalue()
             file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
@@ -332,7 +354,7 @@ if uploaded_files:
                     st.write("📧 正在寄送 Email...")
                     email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else None
                     if email_receiver:
-                        if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表(格式優化版)。", excel_data, file_name_out):
+                        if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為重點違規統計報表。", excel_data, file_name_out):
                             st.write(f"✅ Email 已發送")
                     else: st.warning("⚠️ 未設定 Email Secrets")
                     
