@@ -1,298 +1,240 @@
-import streamlit as st
 import pandas as pd
-import re
 import io
-import smtplib
+import re
+from google.colab import files
+from google.colab import auth
 import gspread
-import calendar
-import numpy as np
-import traceback
-import csv
-from datetime import date, datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
-from email.header import Header
+from google.auth import default
+from datetime import datetime
 
-# --- 初始化配置 ---
-st.set_page_config(page_title="交通事故統計", layout="wide", page_icon="💥")
-st.title("💥 交通事故統計 (v86 縮排修正版)")
-
-# ==========================================
-# 0. 設定區
-# ==========================================
-GOOGLE_SHEET_URL = "[https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit](https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit)" 
-
-# 單位對照表
-UNIT_MAP = {
-    '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', 
-    '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', 
-    '警備隊': '警備隊', '龍潭交通分隊': '交通分隊', '交通中隊': '交通分隊',
-    '科技執法': '科技執法', '交通組': '交通組'
-}
-
-# 報表顯示順序
-UNIT_ORDER = ['交通組', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
-
-# ==========================================
-# 1. Google 試算表 API 輔助函式
-# ==========================================
-def get_merge_request(ws_id, start_col, end_col):
-    """產生合併儲存格的 API 請求"""
-    return {
-        "mergeCells": {
-            "range": {
-                "sheetId": ws_id, 
-                "startRowIndex": 1, "endRowIndex": 2, 
-                "startColumnIndex": start_col, "endColumnIndex": end_col
-            }, 
-            "mergeType": "MERGE_ALL"
-        }
-    }
-
-def get_center_align_request(ws_id, start_col, end_col):
-    """產生置中對齊的 API 請求"""
-    return {
-        "repeatCell": {
-            "range": {
-                "sheetId": ws_id, 
-                "startRowIndex": 1, "endRowIndex": 2, 
-                "startColumnIndex": start_col, "endColumnIndex": end_col
-            }, 
-            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}}, 
-            "fields": "userEnteredFormat.horizontalAlignment"
-        }
-    }
-
-def get_header_red_req(ws_id, row_idx, col_idx, text):
-    """產生紅字標題的 API 請求"""
-    red_chars = set("0123456789~().%")
-    runs = []
-    text_str = str(text)
-    last_is_red = None
-    for i, char in enumerate(text_str):
-        is_red = char in red_chars
-        if is_red != last_is_red:
-            color = {"red": 1.0, "green": 0, "blue": 0} if is_red else {"red": 0, "green": 0, "blue": 0}
-            runs.append({"startIndex": i, "format": {"foregroundColor": color, "bold": is_red}})
-            last_is_red = is_red
-    return {
-        "updateCells": {
-            "rows": [{"values": [{"userEnteredValue": {"stringValue": text_str}, "textFormatRuns": runs}]}], 
-            "fields": "userEnteredValue,textFormatRuns", 
-            "range": {
-                "sheetId": ws_id, 
-                "startRowIndex": row_idx-1, "endRowIndex": row_idx, 
-                "startColumnIndex": col_idx-1, "endColumnIndex": col_idx
-            }
-        }
-    }
-
-# ==========================================
-# 2. 核心解析引擎 (針對派出所 CSV 結構)
-# ==========================================
-def clean_int(val):
-    """將 CSV 中的空值、逗號轉為整數"""
-    try:
-        if pd.isna(val) or str(val).strip() in ['—', '', '-', 'nan', 'NaN']: return 0
-        s = str(val).replace(',', '').strip()
-        return int(float(s))
-    except: return 0
-
-def parse_police_station_csv_v86(file_obj):
-    counts = {} 
-    date_range_str = "0000~0000"
+def analyze_traffic_stats_gsheet_smart():
+    print("🚀 請上傳三個檔案（本週、今年累計、去年累計），順序與檔名不拘...")
+    uploaded = files.upload()
     
-    try:
-        file_obj.seek(0)
-        content_lines = []
+    if len(uploaded) < 3:
+        print("⚠️ 警告：檔案數量不足 3 個，可能會導致計算錯誤。")
+
+    # --- 1. 定義解析函式 (先讀取所有檔案) ---
+    def parse_police_stats_raw(file_obj):
         try:
-            content_str = file_obj.read().decode('utf-8')
-            content_lines = content_str.splitlines()
+            df_raw = pd.read_csv(file_obj, header=None)
         except:
             file_obj.seek(0)
-            content_str = file_obj.read().decode('big5', errors='ignore')
-            content_lines = content_str.splitlines()
+            df_raw = pd.read_excel(file_obj, header=None)
+        return df_raw
 
-        # 抓取統計日期
-        for line in content_lines[:8]:
-            m = re.search(r'統計日期[：:]\s*(\d+)/(\d+)/(\d+)\s*至\s*(\d+)/(\d+)/(\d+)', line)
-            if m:
-                s_m, s_d = m.group(2), m.group(3)
-                e_m, e_d = m.group(5), m.group(6)
-                date_range_str = f"{s_m}{s_d}~{e_m}{e_d}"
-                break
+    # --- 2. 智慧辨識檔案身分 ---
+    file_data_map = {} # 暫存解析後的資料
+    
+    print("🔍 正在分析檔案內容以自動分類...")
+    
+    for filename, content in uploaded.items():
+        file_obj = io.BytesIO(content)
+        df = parse_police_stats_raw(file_obj)
         
-        # 尋找標題列
-        header_row_idx = -1
-        for i, line in enumerate(content_lines):
-            if "A 1 類" in line and "A 2 類" in line:
-                header_row_idx = i
-                break
+        # 抓取日期字串，例如 "統計日期：114/11/21 至 114/11/27"
+        try:
+            date_str = df.iloc[1, 0].replace("統計日期：", "").strip()
+            # 簡單正則抓取年份與月份
+            dates = re.findall(r'(\d{3})/(\d{2})/(\d{2})', date_str)
+            # dates 結構: [('114', '11', '21'), ('114', '11', '27')]
+            
+            if not dates:
+                print(f"⚠️ 無法識別日期：{filename}")
+                continue
+                
+            start_y, start_m, start_d = map(int, dates[0])
+            end_y, end_m, end_d = map(int, dates[1])
+            
+            # 判斷邏輯
+            # 1. 期間很短 (小於 30 天) -> 本期 (Weekly)
+            # 2. 期間很長 + 年份較大 -> 今年累計 (Current)
+            # 3. 期間很長 + 年份較小 -> 去年累計 (Last)
+            
+            # 這裡用簡易判斷：若起始月是 1月 且 結束月大於 1月，通常是累計
+            is_cumulative = (start_m == 1 and end_m >= 1)
+            
+            # 或是計算天數差異 (略過複雜 datetime，直接看月份跨度)
+            month_diff = (end_y - start_y) * 12 + (end_m - start_m)
+            
+            if month_diff == 0 and (end_d - start_d) < 20:
+                category = 'weekly'
+            else:
+                # 累計檔，比較年份
+                # 這裡先存起來，等等比較哪一個年份大
+                category = f'cumulative_{start_y}'
+            
+            file_data_map[filename] = {
+                'df': df,
+                'date_str': date_str,
+                'category': category,
+                'year': start_y
+            }
+        except Exception as e:
+            print(f"⚠️ 檔案解析失敗 {filename}: {e}")
+
+    # 分配角色
+    df_wk = None
+    df_cur = None
+    df_lst = None
+    d_wk = ""
+    d_cur = ""
+    d_lst = ""
+
+    # 找出 Weekly
+    for fname, data in file_data_map.items():
+        if data['category'] == 'weekly':
+            df_wk = data['df']
+            d_wk = data['date_str']
+            break
+            
+    # 找出 Current 和 Last (比較年份)
+    cumulative_files = [d for d in file_data_map.values() if 'cumulative' in d['category']]
+    if len(cumulative_files) >= 2:
+        # 排序：年份大的在前
+        cumulative_files.sort(key=lambda x: x['year'], reverse=True)
         
-        if header_row_idx != -1:
-            try:
-                df = pd.read_csv(io.StringIO("\n".join(content_lines)), skiprows=header_row_idx, header=None)
-                
-                # 鎖定欄位座標
-                idx_unit = 0
-                idx_a1 = 4
-                idx_a2 = 7
-                idx_a3 = 10
-                
-                for r in range(2, len(df)):
-                    row = df.iloc[r]
-                    if len(row) <= 10: continue
-                    
-                    unit_raw = str(row[idx_unit]).strip()
-                    target_unit = None
-                    
-                    if "總計" in unit_raw or "合計" in unit_raw: 
-                        target_unit = "合計"
-                    else:
-                        for full, short in UNIT_MAP.items():
-                            if full in unit_raw or short in unit_raw:
-                                target_unit = short; break
-                    
-                    if target_unit:
-                        if target_unit in counts: continue
-                        v_a1 = clean_int(row[idx_a1])
-                        v_a2 = clean_int(row[idx_a2])
-                        v_a3 = clean_int(row[idx_a3])
-                        counts[target_unit] = [v_a1, v_a2, v_a3]
-            except Exception as e:
-                print(f"DataFrame error: {e}")
+        df_cur = cumulative_files[0]['df']
+        d_cur = cumulative_files[0]['date_str']
+        
+        df_lst = cumulative_files[1]['df']
+        d_lst = cumulative_files[1]['date_str']
+    
+    # 檢查是否都找到了
+    if df_wk is None or df_cur is None or df_lst is None:
+        print("❌ 自動辨識失敗，請檢查檔案內容日期是否正確。")
+        print(f"辨識結果: {[d['category'] for d in file_data_map.values()]}")
+        return
 
-    except Exception as e:
-        print(f"File error: {e}")
+    print(f"✅ 成功辨識：\n   本期: {d_wk}\n   今年: {d_cur}\n   去年: {d_lst}")
 
-    return counts, date_range_str
+    # --- 3. 資料清理與計算函式 ---
+    def process_data(df_raw):
+        # 抓取資料列
+        df_data = df_raw[df_raw[0].notna()].copy()
+        df_data = df_data[df_data[0].str.contains("總計|派出所")].copy()
+        df_data = df_data.reset_index(drop=True)
+        
+        columns_map = {
+            0: "Station",
+            1: "Total_Cases", 2: "Total_Deaths", 3: "Total_Injuries",
+            4: "A1_Cases", 5: "A1_Deaths", 6: "A1_Injuries",
+            7: "A2_Cases", 8: "A2_Deaths", 9: "A2_Injuries",
+            10: "A3_Cases"
+        }
+        df_data = df_data.rename(columns=columns_map)
+        
+        for c in list(columns_map.values()):
+            if c not in df_data.columns: df_data[c] = 0
+        df_data = df_data[list(columns_map.values())]
+        
+        for col in list(columns_map.values())[1:]:
+            df_data[col] = pd.to_numeric(df_data[col].astype(str).str.replace(",", ""), errors='coerce').fillna(0)
+            
+        df_data['Station_Short'] = df_data['Station'].str.replace('派出所', '所').str.replace('總計', '合計')
+        
+        # 重新計算合計 (確保資料正確)
+        df_stations = df_data[~df_data['Station_Short'].str.contains("合計")].copy()
+        numeric_cols = df_data.columns[1:-1]
+        total_row = df_stations[numeric_cols].sum()
+        total_row['Station_Short'] = '合計'
+        df_total = pd.DataFrame([total_row])
+        
+        return pd.concat([df_total, df_stations], ignore_index=True)
 
-# ==========================================
-# 3. 畫面顯示與自動化邏輯
-# ==========================================
-files = st.file_uploader("請上傳 3 個派出所所轄案件統計表 (CSV)", accept_multiple_files=True)
+    df_wk_clean = process_data(df_wk)
+    df_cur_clean = process_data(df_cur)
+    df_lst_clean = process_data(df_lst)
 
-if files and len(files) >= 3:
+    # 4. 準備標題日期
+    def format_date(s):
+        m = re.findall(r'/(\d{2})/(\d{2})', s)
+        return f"{m[0][0]}{m[0][1]}~{m[1][0]}{m[1][1]}" if len(m)>=2 else s
+
+    h_wk = format_date(d_wk)
+    h_cur = format_date(d_cur)
+    h_lst = format_date(d_lst)
+
+    # 5. 合併與計算 (強制正確對應)
+    
+    # --- A1 ---
+    # 確保欄位名稱唯一
+    a1_wk = df_wk_clean[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'wk'})
+    a1_cur = df_cur_clean[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'cur'})
+    a1_lst = df_lst_clean[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'last'})
+    
+    m_a1 = pd.merge(a1_wk, a1_cur, on='Station_Short', how='outer')
+    m_a1 = pd.merge(m_a1, a1_lst, on='Station_Short', how='outer').fillna(0)
+    
+    m_a1['Diff'] = m_a1['cur'] - m_a1['last'] # 今年 - 去年
+
+    # --- A2 ---
+    a2_wk = df_wk_clean[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'wk'})
+    a2_cur = df_cur_clean[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'cur'})
+    a2_lst = df_lst_clean[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'last'})
+    
+    m_a2 = pd.merge(a2_wk, a2_cur, on='Station_Short', how='outer')
+    m_a2 = pd.merge(m_a2, a2_lst, on='Station_Short', how='outer').fillna(0)
+    
+    m_a2['Diff'] = m_a2['cur'] - m_a2['last'] # 今年 - 去年
+    m_a2['Pct'] = m_a2.apply(lambda x: (x['Diff']/x['last']) if x['last']!=0 else 0, axis=1)
+    m_a2['Pct_Str'] = m_a2['Pct'].apply(lambda x: f"{x:.2%}") # 轉成 % 字串
+    m_a2['Prev'] = "-"
+
+    # 6. 排序
+    target_order = ['合計', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
+    order_map = {name: i for i, name in enumerate(target_order)}
+    
+    m_a1['order'] = m_a1['Station_Short'].map(order_map).fillna(99)
+    m_a1 = m_a1.sort_values('order').drop(columns=['order'])
+    
+    m_a2['order'] = m_a2['Station_Short'].map(order_map).fillna(99)
+    m_a2 = m_a2.sort_values('order').drop(columns=['order'])
+
+    # 7. 整理最終表格
+    a1_final = m_a1[['Station_Short', 'wk', 'cur', 'last', 'Diff']].copy()
+    a1_final.columns = ['單位', f'本期({h_wk})', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較']
+    
+    a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
+    a2_final.columns = ['單位', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
+
+    # --- GOOGLE SHEETS 串接 ---
+    print("🔐 正在驗證 Google 帳號權限 (請在跳出的視窗點選『允許』)...")
     try:
-        # 1. 解析檔案
-        parsed_data = []
-        for f in files:
-            d, d_str = parse_police_station_csv_v86(f)
-            parsed_data.append({"file": f, "data": d, "date": d_str, "name": f.name})
-        
-        # 2. 檔案分類
-        f_wk, f_yt, f_ly = None, None, None
-        
-        for item in parsed_data:
-            nm = item['name']
-            if "(2)" in nm: f_ly = item
-            elif "(1)" in nm: f_yt = item
-            else: f_wk = item
-            
-        if not f_wk or not f_yt or not f_ly:
-            st.warning("⚠️ 檔名無法識別，依序排列。")
-            f_wk = parsed_data[0]; f_yt = parsed_data[1]; f_ly = parsed_data[2]
-
-        d_wk, title_wk = f_wk['data'], f"本期({f_wk['date']})"
-        d_yt, title_yt = f_yt['data'], f"本年累計({f_yt['date']})"
-        d_ly, title_ly = f_ly['data'], f"去年累計({f_ly['date']})"
-
-        # HTML Header
-        def red_h(t): return "".join([f"<span style='color:red; font-weight:bold;'>{c}</span>" if c in "0123456789~().%" else c for c in t])
-        
-        html_header = f"""
-        <thead>
-            <tr>
-                <th>統計期間</th>
-                <th colspan='3' style='text-align:center;'>{red_h(title_wk)}</th>
-                <th colspan='3' style='text-align:center;'>{red_h(title_yt)}</th>
-                <th colspan='3' style='text-align:center;'>{red_h(title_ly)}</th>
-                <th>比較</th>
-            </tr>
-            <tr>
-                <th>單位</th>
-                <th>A1</th><th>A2</th><th>A3</th>
-                <th>A1</th><th>A2</th><th>A3</th>
-                <th>A1</th><th>A2</th><th>A3</th>
-                <th>增減</th>
-            </tr>
-        </thead>
-        """
-
-        # 3. 數據組裝
-        rows = []
-        for u in UNIT_ORDER:
-            wk = d_wk.get(u, [0, 0, 0])
-            yt = d_yt.get(u, [0, 0, 0])
-            ly = d_ly.get(u, [0, 0, 0])
-            diff = sum(yt) - sum(ly)
-            
-            rows.append([
-                u, 
-                wk[0], wk[1], wk[2], 
-                yt[0], yt[1], yt[2], 
-                ly[0], ly[1], ly[2], 
-                diff
-            ])
-            
-        # 合計列
-        total_row = ["合計"]
-        for i in range(1, 11):
-            col_sum = sum(r[i] for r in rows)
-            total_row.append(col_sum)
-            
-        all_rows = [total_row] + rows
-        
-        st.success(f"✅ 解析成功！本期檔名: {f_wk['name']}")
-        
-        table_body = "".join([f"<tr>{''.join([f'<td>{x}</td>' for x in r])}</tr>" for r in all_rows])
-        st.write(f"<table style='text-align:center; width:100%; border-collapse:collapse;' border='1'>{html_header}<tbody>{table_body}</tbody></table>", unsafe_allow_html=True)
-        
-        # 4. 自動寫入
-        file_hash = "".join([f.name + str(f.size) for f in files])
-        
-        if st.session_state.get("v86_done") != file_hash:
-            with st.status("🚀 正在自動寫入雲端...", expanded=True) as s:
-                try:
-                    gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-                    sh = gc.open_by_url(GOOGLE_SHEET_URL); ws = sh.get_worksheet(0)
-                    
-                    clean_payload = [
-                        ["統計期間", title_wk, "", "", title_yt, "", "", title_ly, "", "", "比較"],
-                        ["單位", "A1", "A2", "A3", "A1", "A2", "A3", "A1", "A2", "A3", "增減"]
-                    ]
-                    
-                    for r in all_rows:
-                        clean_row = []
-                        for cell in r:
-                            if isinstance(cell, (int, float, np.integer)): clean_row.append(int(cell))
-                            else: clean_row.append(str(cell))
-                        clean_payload.append(clean_row)
-                    
-                    ws.update(range_name='A2', values=clean_payload)
-                    
-                    reqs = []
-                    for s_col in [1, 4, 7]:
-                         reqs.append(get_merge_request(ws.id, s_col, s_col+3))
-                         reqs.append(get_center_align_request(ws.id, s_col, s_col+3))
-                    
-                    reqs.append(get_header_red_req(ws.id, 2, 2, title_wk))
-                    reqs.append(get_header_red_req(ws.id, 2, 5, title_yt))
-                    reqs.append(get_header_red_req(ws.id, 2, 8, title_ly))
-
-                    sh.batch_update({"requests": reqs})
-                    
-                    st.session_state["v86_done"] = file_hash
-                    s.update(label="✅ 數據已自動寫入 Google Sheets！", state="complete")
-                    st.balloons()
-
-                except Exception as e:
-                    s.update(label="❌ 寫入失敗", state="error")
-                    st.error(f"寫入錯誤詳情: {e}")
-                    st.code(traceback.format_exc())
-
+        auth.authenticate_user()
+        creds, _ = default()
+        gc = gspread.authorize(creds)
     except Exception as e:
-        st.error(f"全域錯誤: {e}")
-        st.code(traceback.format_exc())
+        print(f"❌ 驗證失敗：{e}")
+        return
+
+    # 建立新試算表
+    sheet_name = f'交通事故統計表_整理結果_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+    try:
+        sh = gc.create(sheet_name)
+    except Exception as e:
+        print(f"❌ 建立試算表失敗：{e}")
+        return
+
+    # 寫入 A1 分頁
+    try:
+        ws1 = sh.sheet1
+        ws1.update_title("A1死亡人數")
+        ws1.update([a1_final.columns.values.tolist()] + a1_final.fillna(0).values.tolist())
+    except Exception as e:
+        print(f"⚠️ 寫入 A1 分頁時發生小問題：{e}")
+
+    # 寫入 A2 分頁
+    try:
+        ws2 = sh.add_worksheet(title="A2受傷人數", rows=20, cols=10)
+        ws2.update([a2_final.columns.values.tolist()] + a2_final.fillna(0).values.tolist())
+    except Exception as e:
+        print(f"⚠️ 寫入 A2 分頁時發生小問題：{e}")
+
+    print("\n" + "="*40)
+    print(f"✅ 成功！已自動辨識檔案並產生報表：")
+    print(f"🔗 連結：{sh.url}")
+    print("="*40)
+
+if __name__ == "__main__":
+    analyze_traffic_stats_gsheet_smart()
