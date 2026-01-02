@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v33 完整寫入版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v34 全表寫入版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,11 +28,10 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v33)
-1.  **寫入完整內容**：包含第一欄的「單位名稱/合計」，不再只寫數據。
-2.  **寫入位置 A4**：資料將從 **A4** 儲存格開始寫入 (覆蓋 A~J 欄)。
+### 📝 使用說明 (v34)
+1.  **全表寫入**：從標題(第1列)到說明(第14列)完整寫入 Google 試算表。
+2.  **寫入位置**：從 **A1** 開始覆蓋。
 3.  **試算表整合**：寫入與「超載統計」相同的檔案 (工作表 1)。
-4.  **功能保留**：Excel 下載格式、定義說明列、自動寄信。
 """)
 
 # ==========================================
@@ -51,9 +50,9 @@ UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所'
 NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
 
 # ==========================================
-# 1. Google Sheets 寫入函數
+# 1. Google Sheets 寫入函數 (修改為接受全表 List)
 # ==========================================
-def update_google_sheet(df, sheet_url, start_cell='A4'):
+def update_google_sheet(data_list, sheet_url, start_cell='A1'):
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 錯誤：未設定 Secrets！")
@@ -67,14 +66,12 @@ def update_google_sheet(df, sheet_url, start_cell='A4'):
         if ws is None: raise Exception("找不到 Index 0 的工作表")
         
         st.info(f"📂 寫入目標工作表：**「{ws.title}」** (Index 0)")
-
-        df_clean = df.fillna("").replace([np.inf, -np.inf], 0)
-        data = df_clean.values.tolist()
         
         try:
-            ws.update(range_name=start_cell, values=data)
+            # 直接寫入二維陣列
+            ws.update(range_name=start_cell, values=data_list)
         except TypeError:
-            ws.update(start_cell, data)
+            ws.update(start_cell, data_list)
         except Exception as e:
             st.error(f"❌ 寫入數據失敗: {e}")
             return False
@@ -189,8 +186,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v33 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v33_full_content")
+# ★★★ v34 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v34_full_rows")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -250,9 +247,7 @@ if uploaded_files:
 
             cols = ['取締方式', '本期_當場攔停', '本期_逕行舉發', '本年_當場攔停', '本年_逕行舉發', '去年_當場攔停', '去年_逕行舉發', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(final_rows, columns=cols)
-            # ★★★ 這裡不 Drop 欄位了，保留第一欄 ★★★
-            # df_write = df_final.drop(columns=['取締方式']) 
-            
+
             # ==========================================
             # ★★★ 網頁預覽區 ★★★
             # ==========================================
@@ -261,9 +256,13 @@ if uploaded_files:
             def format_mixed(text, date_val):
                 return f"<span style='color:black'>{text}</span><br><span style='color:red; font-weight:bold;'>({date_val})</span>"
 
-            str_week = format_mixed("本期", f"{get_mmdd(file_week['start'])}~{get_mmdd(file_week['end'])}")
-            str_year = format_mixed("本年累計", f"{get_mmdd(file_year['start'])}~{get_mmdd(file_year['end'])}")
-            str_last = format_mixed("去年累計", f"{get_mmdd(file_last_year['start'])}~{get_mmdd(file_last_year['end'])}")
+            s_w, e_w = get_mmdd(file_week['start']), get_mmdd(file_week['end'])
+            s_y, e_y = get_mmdd(file_year['start']), get_mmdd(file_year['end'])
+            s_l, e_l = get_mmdd(file_last_year['start']), get_mmdd(file_last_year['end'])
+
+            str_week = format_mixed("本期", f"{s_w}~{e_w}")
+            str_year = format_mixed("本年累計", f"{s_y}~{e_y}")
+            str_last = format_mixed("去年累計", f"{s_l}~{e_l}")
             
             header_compare = "<span style='color:black'>本年與去年<br>同期比較</span>"
             header_target = "<span style='color:black'>目標值</span>"
@@ -324,11 +323,11 @@ if uploaded_files:
                 
                 ws.write('A2', '統計期間', fmt_top_base) 
                 ws.merge_range('B2:C2', "", fmt_top_base)
-                ws.write_rich_string('B2', fmt_font_black, "本期", fmt_font_red, f"\n({get_mmdd(file_week['start'])}~{get_mmdd(file_week['end'])})", fmt_top_base)
+                ws.write_rich_string('B2', fmt_font_black, "本期", fmt_font_red, f"\n({s_w}~{e_w})", fmt_top_base)
                 ws.merge_range('D2:E2', "", fmt_top_base)
-                ws.write_rich_string('D2', fmt_font_black, "本年累計", fmt_font_red, f"\n({get_mmdd(file_year['start'])}~{get_mmdd(file_year['end'])})", fmt_top_base)
+                ws.write_rich_string('D2', fmt_font_black, "本年累計", fmt_font_red, f"\n({s_y}~{e_y})", fmt_top_base)
                 ws.merge_range('F2:G2', "", fmt_top_base)
-                ws.write_rich_string('F2', fmt_font_black, "去年累計", fmt_font_red, f"\n({get_mmdd(file_last_year['start'])}~{get_mmdd(file_last_year['end'])})", fmt_top_base)
+                ws.write_rich_string('F2', fmt_font_black, "去年累計", fmt_font_red, f"\n({s_l}~{e_l})", fmt_top_base)
                 ws.merge_range('H2:H3', '本年與去年\n同期比較', fmt_top_base)
                 ws.merge_range('I2:I3', '目標值', fmt_top_base)
                 ws.merge_range('J2:J3', '達成率', fmt_top_base)
@@ -369,6 +368,29 @@ if uploaded_files:
             if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
             file_ids = ",".join(sorted([f.name for f in uploaded_files]))
             
+            # ==========================================
+            # ★★★ 準備完整寫入資料 (Rows 1-14) ★★★
+            # ==========================================
+            # Row 1
+            sheet_r1 = ['取締重大交通違規件數統計表'] + [''] * 9
+            # Row 2 (使用換行符號)
+            sheet_r2 = [
+                '統計期間', 
+                f'本期\n({s_w}~{e_w})', '', 
+                f'本年累計\n({s_y}~{e_y})', '', 
+                f'去年累計\n({s_l}~{e_l})', '', 
+                '本年與去年\n同期比較', '目標值', '達成率'
+            ]
+            # Row 3
+            sheet_r3 = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
+            # Rows 4-13 (數據)
+            sheet_data = df_final.fillna("").values.tolist()
+            # Row 14
+            sheet_r14 = [NOTE_TEXT] + [''] * 9
+
+            # 組合全表
+            full_sheet_data = [sheet_r1, sheet_r2, sheet_r3] + sheet_data + [sheet_r14]
+
             def run_automation():
                 with st.status("🚀 執行自動化任務...", expanded=True) as status:
                     st.write("📧 正在寄送 Email...")
@@ -378,9 +400,9 @@ if uploaded_files:
                             st.write(f"✅ Email 已發送")
                     else: st.warning("⚠️ 未設定 Email Secrets")
                     
-                    st.write("📊 正在寫入 Google 試算表 (A4)...")
-                    # ★★★ 傳入完整 df_final，且寫入位置改為 A4 ★★★
-                    if update_google_sheet(df_final, GOOGLE_SHEET_URL, start_cell='A4'):
+                    st.write("📊 正在寫入 Google 試算表 (A1 ~ J14)...")
+                    # ★★★ 傳入全表資料，寫入位置 A1 ★★★
+                    if update_google_sheet(full_sheet_data, GOOGLE_SHEET_URL, start_cell='A1'):
                         st.write("✅ 寫入成功！")
                     else: st.write("❌ 寫入失敗")
                     
