@@ -229,41 +229,36 @@ if uploaded_files:
                     if col_name in result.columns: cols_out.append(col_name)
                     else: result[col_name] = 0; cols_out.append(col_name)
             
-            # 數據表準備
             final_table = result[cols_out].copy()
             final_table.rename(columns={'Target_Unit': '取締項目'}, inplace=True)
             try: final_table.iloc[:, 1:] = final_table.iloc[:, 1:].astype(int)
             except: pass
 
-            # 🔥🔥🔥 結構重組 (關鍵修改處) 🔥🔥🔥
-            # 目標順序：
-            # 1. 統計期間 (第一列)
-            # 2. 取締項目 (標題列)
-            # 3. 合計     (數據第一列)
+            st.success("✅ 分析完成！")
             
-            # A. 製作第一列：統計期間
+            # --- 網頁預覽 (顯示乾淨的標準表格，不顯示統計期間列) ---
+            st.dataframe(final_table, use_container_width=True)
+            st.caption("ℹ️ 下載的 Excel 檔案將自動包含首列「統計期間」。")
+
+            # --- Excel 輸出處理 (包含結構重組與標題隱藏) ---
+            output = io.BytesIO()
+            
+            # 1. 製作第一列：統計期間
             row_period = [""] * len(final_table.columns)
             row_period[0] = "統計期間"
             
-            # B. 製作第二列：原本的欄位名稱 (取締項目、酒駕_本期...)
+            # 2. 製作第二列：原本的欄位名稱 (取締項目、酒駕...)
             row_headers = final_table.columns.tolist()
             
-            # C. 建立頂部 DataFrame
+            # 3. 建立頂部 DataFrame
             top_rows = pd.DataFrame([row_period, row_headers], columns=final_table.columns)
             
-            # D. 組合：頂部 + 數據 (合計已在數據的最上面)
+            # 4. 組合：頂部 + 數據
             export_df = pd.concat([top_rows, final_table], ignore_index=True)
-            export_df = export_df.fillna("") # 補空值
-
-            st.success("✅ 分析完成！")
-            # 網頁顯示時，我們通常只顯示數據部分比較美觀，或者顯示完整版
-            # 這裡選擇顯示完整版結構
-            st.dataframe(export_df, use_container_width=True, hide_index=True)
+            export_df = export_df.fillna("") 
             
-            # 輸出 Excel
-            output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                # ❗ header=False 是關鍵，因為我們已經把標題變成了資料列的第二列
+                # 🔥 關鍵：header=False，隱藏預設標題，只保留我們手動建立的那兩列
                 export_df.to_excel(writer, index=False, header=False, sheet_name='交通違規統計')
                 worksheet = writer.sheets['交通違規統計']
                 worksheet.set_column(0, len(export_df.columns)-1, 12)
@@ -271,7 +266,7 @@ if uploaded_files:
             excel_data = output.getvalue()
             file_name_out = '交通違規統計表.xlsx'
 
-            # 寄信與下載 (維持原樣)
+            # 寄信與下載
             email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else "尚未設定"
             if auto_email:
                 if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
