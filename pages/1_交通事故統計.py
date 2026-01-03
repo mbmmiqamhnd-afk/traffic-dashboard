@@ -23,7 +23,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (富文本格式版)", layout="wide", page_icon="🚑")
+st.set_page_config(page_title="交通事故統計 (富文本修復版)", layout="wide", page_icon="🚑")
 st.title("🚑 交通事故統計 (上傳即寄出)")
 st.markdown("### 📝 狀態：標題列「數字與符號」自動轉紅，漢字保持黑色。")
 
@@ -188,33 +188,28 @@ if uploaded_files:
                 a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
                 a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
                 
-                # 定義基本的字體物件 (InlineFont 用於 RichText)
-                # 黑色字 (漢字用)
+                # 定義基本的字體物件
                 font_black = InlineFont(rFont='標楷體', sz=12, b=True, color='000000')
-                # 紅色字 (數字、符號用)
                 font_red = InlineFont(rFont='標楷體', sz=12, b=True, color='FF0000')
 
-                # 一般內容字體 (Cell 屬性)
                 font_normal_cell = Font(name='標楷體', size=12)
                 align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
                 border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
                 
-                # --- 核心：富文本轉換函數 ---
+                # --- 修正後的富文本轉換函數 ---
                 def make_rich_text(text):
                     text = str(text)
                     rich_text = CellRichText()
-                    # 正則表達式：將 "數字和符號" 與 "其他文字(漢字)" 切開
-                    # 匹配 [0-9], (, ), /, -, ., %
                     tokens = re.split(r'([0-9\(\)\/\-\.\%]+)', text)
                     
                     for token in tokens:
                         if not token: continue
-                        # 如果是數字或符號 -> 紅色
                         if re.match(r'^[0-9\(\)\/\-\.\%]+$', token):
-                            rich_text.append(token, font_red)
+                            # 修正：這裡改成傳入 TextBlock
+                            rich_text.append(TextBlock(font_red, token))
                         else:
-                            # 漢字或其他 -> 黑色
-                            rich_text.append(token, font_black)
+                            # 修正：這裡改成傳入 TextBlock
+                            rich_text.append(TextBlock(font_black, token))
                     return rich_text
 
                 for sheet_name in ['A1死亡人數', 'A2受傷人數']:
