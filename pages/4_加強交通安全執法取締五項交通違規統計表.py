@@ -10,13 +10,12 @@ from email.mime.base import MIMEBase
 from email import encoders
 from email.header import Header
 
-st.set_page_config(page_title="五項交通違規統計 (超載同步版)", layout="wide", page_icon="🚦")
+st.set_page_config(page_title="五項交通違規統計 (正式上線版)", layout="wide", page_icon="🚦")
 
 # ==========================================
-# 0. 設定區
+# 0. 設定區 (已填入您的專屬網址)
 # ==========================================
-# 請將此連結替換為您的 Google 試算表連結
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit" 
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
 
 # --- 側邊欄 ---
 with st.sidebar:
@@ -24,24 +23,22 @@ with st.sidebar:
     auto_email = st.checkbox("分析完成後自動寄信與同步", value=True)
     st.markdown("---")
     st.markdown("""
-    ### 📝 操作說明
-    1. 拖曳上傳檔案。
-    2. 系統自動辨識年份與類別。
-    3. **同步功能**：
-       - 參照超載統計邏輯。
-       - 寫入 **第 5 個工作表**。
-       - 自動套用紅黑雙色格式。
+    ### 📝 系統說明
+    1. **網址已鎖定**：已設定為指定的 Google 試算表。
+    2. **寫入位置**：資料將寫入 **第 5 個分頁**。
+    3. **功能**：
+       - 自動讀取報表數據 (鎖定第 4 列)。
+       - 自動抓取日期區間 (鎖定第 3 列)。
+       - 負數紅字、雙色標題。
     """)
     status_container = st.container()
 
 # ==========================================
-# 1. 核心格式指令 (照抄自超載統計)
+# 1. 核心格式指令
 # ==========================================
 def get_header_num_red_req(ws_id, row_idx, col_idx, text):
     """
-    照抄自超載統計程式碼：
     將文字中的 數字、符號、括號 設為紅色粗體。
-    注意：此函數內部使用 row_idx-1，代表傳入參數要是 1-based index (Excel 行號)。
     """
     red_chars = set("0123456789~().%")
     runs = []
@@ -52,33 +49,14 @@ def get_header_num_red_req(ws_id, row_idx, col_idx, text):
             color = {"red": 1.0, "green": 0, "blue": 0} if is_red else {"red": 0, "green": 0, "blue": 0}
             runs.append({"startIndex": i, "format": {"foregroundColor": color, "bold": is_red}})
             last_is_red = is_red
-            
-    return {
-        "updateCells": {
-            "rows": [{
-                "values": [{
-                    "userEnteredValue": {"stringValue": text}, 
-                    "textFormatRuns": runs
-                }]
-            }], 
-            "fields": "userEnteredValue,textFormatRuns", 
-            "range": {
-                "sheetId": ws_id, 
-                "startRowIndex": row_idx-1, 
-                "endRowIndex": row_idx, 
-                "startColumnIndex": col_idx-1, 
-                "endColumnIndex": col_idx
-            }
-        }
-    }
+    return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
 
 # ==========================================
-# 2. 基礎函數 (寄信、讀檔)
+# 2. 基礎函數
 # ==========================================
 def send_email(recipient, subject, body, file_bytes, filename):
     try:
-        if "email" not in st.secrets:
-            return "錯誤：未設定 Secrets [email]"
+        if "email" not in st.secrets: return "錯誤：未設定 Secrets [email]"
         sender = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
         msg = MIMEMultipart()
@@ -97,8 +75,7 @@ def send_email(recipient, subject, body, file_bytes, filename):
         server.sendmail(sender, recipient, msg.as_string())
         server.quit()
         return "成功"
-    except Exception as e:
-        return f"失敗: {e}"
+    except Exception as e: return f"失敗: {e}"
 
 def extract_header_date(file_obj, filename):
     try:
@@ -114,6 +91,7 @@ def extract_header_date(file_obj, filename):
                 file_obj.seek(0)
                 df_head = pd.read_csv(file_obj, header=None, nrows=5, encoding='cp950')
         
+        # 鎖定第 3 列 (Index 2)
         if len(df_head) > 2:
             row_vals = df_head.iloc[2].astype(str).values
             row_text = " ".join(row_vals)
@@ -147,11 +125,10 @@ def smart_read(fobj, fname):
             match = [c for c in df.columns if '單位' in c]
             if match: df.rename(columns={match[0]: '單位'}, inplace=True)
         return df
-    except Exception as e:
-        return pd.DataFrame(columns=['單位'])
+    except: return pd.DataFrame(columns=['單位'])
 
 # ==========================================
-# 3. 主程式邏輯
+# 3. 主程式
 # ==========================================
 uploaded_files = st.file_uploader("請將報表檔案拖曳至此", accept_multiple_files=True)
 
@@ -168,31 +145,23 @@ if uploaded_files:
         file_map[key] = {'file': f, 'name': name}
     
     date_labels = {'week': "", 'curr': "", 'last': ""}
-
     u_map = {
-        '龍潭交通分隊': '交通分隊', '交通分隊': '交通分隊',
-        '交通組': '科技執法', '科技執法': '科技執法',
-        '聖亭派出所': '聖亭所', '聖亭所': '聖亭所',
-        '龍潭派出所': '龍潭所', '龍潭所': '龍潭所',
-        '中興派出所': '中興所', '中興所': '中興所',
-        '石門派出所': '石門所', '石門所': '石門所',
-        '高平派出所': '高平所', '高平所': '高平所',
-        '三和派出所': '三和所', '三和所': '三和所'
+        '龍潭交通分隊': '交通分隊', '交通分隊': '交通分隊', '交通組': '科技執法', '科技執法': '科技執法',
+        '聖亭派出所': '聖亭所', '聖亭所': '聖亭所', '龍潭派出所': '龍潭所', '龍潭所': '龍潭所',
+        '中興派出所': '中興所', '中興所': '中興所', '石門派出所': '石門所', '石門所': '石門所',
+        '高平派出所': '高平所', '高平所': '高平所', '三和派出所': '三和所', '三和所': '三和所'
     }
     def map_unit_name(raw_name):
-        raw = str(raw_name)
         for key, val in u_map.items():
-            if key in raw: return val
+            if key in str(raw_name): return val
         return None
 
     try:
         def process_data(key_gen, key_foot, suffix, period_key):
             df_gen = pd.DataFrame(columns=['單位'])
             if key_gen in file_map:
-                f_obj = file_map[key_gen]['file']
-                f_name = file_map[key_gen]['name']
-                if date_labels[period_key] == "":
-                    date_labels[period_key] = extract_header_date(f_obj, f_name)
+                f_obj, f_name = file_map[key_gen]['file'], file_map[key_gen]['name']
+                if date_labels[period_key] == "": date_labels[period_key] = extract_header_date(f_obj, f_name)
                 df_gen = smart_read(f_obj, f_name)
 
             df = df_gen.copy()
@@ -223,26 +192,19 @@ if uploaded_files:
                 res[f'闖紅燈_{suffix}'] = get_sum(['53條'])
                 res[f'嚴重超速_{suffix}'] = get_sum(['43條'])
                 res[f'車不讓人_{suffix}'] = get_sum(['44條', '48條'])
-            else:
-                res = pd.DataFrame(columns=['單位'])
+            else: res = pd.DataFrame(columns=['單位'])
 
             if key_foot in file_map:
-                f_obj = file_map[key_foot]['file']
-                f_name = file_map[key_foot]['name']
-                if date_labels[period_key] == "":
-                    date_labels[period_key] = extract_header_date(f_obj, f_name)
-                
+                f_obj, f_name = file_map[key_foot]['file'], file_map[key_foot]['name']
+                if date_labels[period_key] == "": date_labels[period_key] = extract_header_date(f_obj, f_name)
                 foot = smart_read(f_obj, f_name)
-                if '單位' not in foot.columns:
+                if '單位' not in foot.columns: # fallback for footman files
                      try:
                          f_obj.seek(0)
                          foot = pd.read_excel(f_obj, header=None)
                          for i, row in foot.iterrows():
                              if '單位' in str(row.values):
-                                 f_obj.seek(0)
-                                 foot = pd.read_excel(f_obj, header=i)
-                                 foot.columns = [str(c).strip() for c in foot.columns]
-                                 break
+                                 f_obj.seek(0); foot = pd.read_excel(f_obj, header=i); foot.columns = [str(c).strip() for c in foot.columns]; break
                      except: pass
 
                 if '單位' in foot.columns:
@@ -253,11 +215,9 @@ if uploaded_files:
                         target_col = ped_cols[0]
                         foot[target_col] = foot[target_col].apply(clean_num)
                         if res.empty: 
-                            res = foot[['單位', target_col]].copy()
-                            res.rename(columns={target_col: f'行人違規_{suffix}'}, inplace=True)
+                            res = foot[['單位', target_col]].copy(); res.rename(columns={target_col: f'行人違規_{suffix}'}, inplace=True)
                         else:
-                            res = res.merge(foot[['單位', target_col]], on='單位', how='left')
-                            res.rename(columns={target_col: f'行人違規_{suffix}'}, inplace=True)
+                            res = res.merge(foot[['單位', target_col]], on='單位', how='left'); res.rename(columns={target_col: f'行人違規_{suffix}'}, inplace=True)
             
             target_col_name = f'行人違規_{suffix}'
             if target_col_name not in res.columns: res[target_col_name] = 0
@@ -269,7 +229,7 @@ if uploaded_files:
         df_l = process_data('last_gen', 'last_foot', '去年', 'last')
 
         with status_container:
-            st.info(f"📅 日期偵測：\n本期 {date_labels['week']} | 本年 {date_labels['curr']} | 去年 {date_labels['last']}")
+            st.info(f"📅 日期偵測：{date_labels['week']} | {date_labels['curr']} | {date_labels['last']}")
 
         unit_sources = []
         for d in [df_w, df_c, df_l]:
@@ -279,21 +239,15 @@ if uploaded_files:
             all_units = pd.concat(unit_sources).unique()
             base_df = pd.DataFrame({'單位': all_units})
             base_df = base_df[base_df['單位'].notna() & (base_df['單位'] != '')]
-            full = base_df.merge(df_c, on='單位', how='left') \
-                          .merge(df_l, on='單位', how='left') \
-                          .merge(df_w, on='單位', how='left') \
-                          .fillna(0)
-        else:
-            full = pd.DataFrame(columns=['單位'])
+            full = base_df.merge(df_c, on='單位', how='left').merge(df_l, on='單位', how='left').merge(df_w, on='單位', how='left').fillna(0)
+        else: full = pd.DataFrame(columns=['單位'])
 
         if '單位' in full.columns:
             full['Target_Unit'] = full['單位'].apply(map_unit_name)
             final = full[full['Target_Unit'].notna()].copy()
-        else:
-            final = pd.DataFrame()
+        else: final = pd.DataFrame()
 
-        if final.empty: 
-            st.error("❌ 找不到有效單位。")
+        if final.empty: st.error("❌ 找不到有效單位。"); st.stop()
         else:
             cats = ['酒駕', '闖紅燈', '嚴重超速', '車不讓人', '行人違規']
             for c in cats: 
@@ -330,13 +284,8 @@ if uploaded_files:
             txt_last = f"去年累計 {date_labels['last']}"
             txt_comp = "本年與去年同期比較"
 
-            # --- 網頁預覽 ---
-            st.markdown("""
-                <h2 style='text-align: center; color: blue; font-family: "Microsoft JhengHei", sans-serif;'>
-                    加強交通安全執法取締五項交通違規統計表
-                </h2>
-            """, unsafe_allow_html=True)
-            
+            # 網頁預覽
+            st.markdown("<h2 style='text-align: center; color: blue;'>加強交通安全執法取締五項交通違規統計表</h2>", unsafe_allow_html=True)
             display_df = final_table.copy()
             new_columns = []
             for col in display_df.columns:
@@ -349,14 +298,11 @@ if uploaded_files:
             display_df.columns = pd.MultiIndex.from_tuples(new_columns)
             
             def highlight_negative_red(val):
-                if isinstance(val, (int, float)) and val < 0: return 'color: red'
-                return None
+                return 'color: red' if isinstance(val, (int, float)) and val < 0 else None
+            
+            st.dataframe(display_df.style.map(highlight_negative_red, subset=display_df.columns[1:]).format("{:.0f}", subset=display_df.columns[1:]), use_container_width=True)
 
-            numeric_cols = display_df.columns[1:]
-            styled_df = display_df.style.map(highlight_negative_red, subset=numeric_cols).format("{:.0f}", subset=numeric_cols)
-            st.dataframe(styled_df, use_container_width=True)
-
-            # --- Excel 輸出 ---
+            # Excel 輸出
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 final_table.to_excel(writer, index=False, header=False, startrow=3, sheet_name='交通違規統計')
@@ -366,14 +312,12 @@ if uploaded_files:
                 fmt_base = workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1})
                 fmt_data = workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'num_format': '0;[Red]-0'})
                 fmt_title = workbook.add_format({'bold': True, 'font_size': 20, 'font_color': 'blue', 'align': 'center', 'valign': 'vcenter'})
-                fmt_black = workbook.add_format({'bold': True, 'color': 'black'})
-                fmt_red = workbook.add_format({'bold': True, 'color': 'red'})
+                fmt_black, fmt_red = workbook.add_format({'bold': True, 'color': 'black'}), workbook.add_format({'bold': True, 'color': 'red'})
                 fmt_header = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1, 'text_wrap': True})
                 fmt_label = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1})
                 
                 worksheet.merge_range('A1:U1', '加強交通安全執法取締五項交通違規統計表', fmt_title)
                 worksheet.write('A2', '統計期間', fmt_label)
-                
                 def write_mixed_cell(r, c1, c2, text):
                     worksheet.merge_range(r, c1, r, c2, "", fmt_base)
                     if "(" in text:
@@ -383,70 +327,54 @@ if uploaded_files:
                         fmt_bold_black = workbook.add_format({'bold': True, 'color': 'black', 'align': 'center', 'valign': 'vcenter', 'border': 1})
                         worksheet.write(r, c1, text, fmt_bold_black)
 
-                write_mixed_cell(1, 1, 5, txt_week)
-                write_mixed_cell(1, 6, 10, txt_curr)
-                write_mixed_cell(1, 11, 15, txt_last)
-                write_mixed_cell(1, 16, 20, txt_comp)
-                
+                write_mixed_cell(1, 1, 5, txt_week); write_mixed_cell(1, 6, 10, txt_curr); write_mixed_cell(1, 11, 15, txt_last); write_mixed_cell(1, 16, 20, txt_comp)
                 headers = ['取締項目'] + ['酒駕', '闖紅燈', '嚴重\n超速', '車不\n讓人', '行人\n違規'] * 4
                 worksheet.write_row('A3', headers, fmt_header)
-                worksheet.set_column('A:A', 15, fmt_base)
-                worksheet.set_column('B:U', 9, fmt_data)
+                worksheet.set_column('A:A', 15, fmt_base); worksheet.set_column('B:U', 9, fmt_data)
 
             excel_data = output.getvalue()
             file_name_out = '交通違規統計表.xlsx'
 
-            # --- 自動化流程 (雲端同步 + 寄信) ---
+            # --- 自動化流程 ---
             email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else "尚未設定"
-            
             if auto_email:
                 file_ids = ",".join(sorted([f.name for f in uploaded_files]))
                 if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
                 
                 if file_ids not in st.session_state["sent_cache"]:
                     with st.status("🚀 正在執行自動化流程...", expanded=True) as s:
-                        # 1. Google Sheets 同步
-                        try:
-                            if "gcp_service_account" not in st.secrets:
-                                st.error("❌ 錯誤：未在 Secrets 設定 [gcp_service_account]，無法同步。")
-                            else:
+                        # 1. 雲端同步
+                        if "gcp_service_account" not in st.secrets:
+                            st.error("❌ 未設定 Secrets，跳過同步")
+                        else:
+                            try:
                                 st.write("☁️ 連線至 Google Sheets...")
                                 gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                                 sh = gc.open_by_url(GOOGLE_SHEET_URL)
                                 
-                                st.write("📄 寫入第 5 個工作表 (Index 4)...")
-                                ws = sh.get_worksheet(4) 
+                                # 自動建立或取得分頁
+                                try: ws = sh.get_worksheet(4)
+                                except: st.write("⚠️ 找不到第 5 個分頁，正在建立..."); ws = sh.add_worksheet(title="交通違規統計", rows=50, cols=25)
                                 
-                                # 準備寫入資料
                                 row1 = ['加強交通安全執法取締五項交通違規統計表']
                                 row2 = ['統計期間', txt_week, '', '', '', '', txt_curr, '', '', '', '', txt_last, '', '', '', '', txt_comp]
                                 row3 = ['取締項目'] + ['酒駕', '闖紅燈', '嚴重超速', '車不讓人', '行人違規'] * 4
                                 row_data = final_table.values.tolist()
                                 
-                                st.write("🧹 清空並寫入新資料...")
                                 ws.clear()
                                 ws.update(values=[row1, row2, row3] + row_data)
                                 
-                                st.write("🎨 執行格式化 (參照超載統計邏輯)...")
                                 requests = []
-                                # 合併標題與日期
                                 requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 21}, "mergeType": "MERGE_ALL"}})
                                 for start_col in [1, 6, 11, 16]:
                                     requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": start_col, "endColumnIndex": start_col+5}, "mergeType": "MERGE_ALL"}})
-                                
-                                # 🔥 雙色文字設定 (呼叫 get_header_num_red_req)
-                                # 這裡傳入 row_idx=2 (因為函數內部會 -1，所以實際作用在 Row 2)
-                                # col_idx 傳入 2, 7, 12, 17 (對應 B, G, L, Q，因為函數內部會 -1)
-                                requests.append(get_header_num_red_req(ws.id, 2, 2, txt_week))
-                                requests.append(get_header_num_red_req(ws.id, 2, 7, txt_curr))
-                                requests.append(get_header_num_red_req(ws.id, 2, 12, txt_last))
-                                requests.append(get_header_num_red_req(ws.id, 2, 17, txt_comp))
+                                for col_idx, text in zip([2, 7, 12, 17], [txt_week, txt_curr, txt_last, txt_comp]):
+                                    requests.append(get_header_num_red_req(ws.id, 2, col_idx, text))
                                 
                                 sh.batch_update({"requests": requests})
                                 st.write("✅ Google Sheets 同步成功！")
-                                
-                        except Exception as sync_err:
-                            st.error(f"❌ 同步失敗: {sync_err}")
+                            except Exception as sync_err:
+                                st.error(f"❌ 同步失敗: {sync_err}")
 
                         # 2. 寄信
                         st.write("📧 正在寄送報表...")
@@ -456,11 +384,8 @@ if uploaded_files:
                             st.session_state["sent_cache"].add(file_ids)
                             s.update(label="🎉 流程執行完畢", state="complete")
                             st.balloons()
-                        else:
-                            st.error(f"❌ 寄信失敗: {mail_res}")
-                            s.update(label="⚠️ 流程部分失敗", state="error")
-                else:
-                    st.info(f"✅ 報表已於剛才發送過。")
+                        else: st.error(f"❌ 寄信失敗: {mail_res}"); s.update(label="⚠️ 流程部分失敗", state="error")
+                else: st.info(f"✅ 報表已於剛才發送過。")
             else:
                 if st.button("📧 立即發送郵件"):
                     mail_res = send_email(email_receiver, f"📊 [手動發送] {file_name_out}", "附件", excel_data, file_name_out)
