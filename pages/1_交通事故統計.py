@@ -9,7 +9,6 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 from openpyxl.styles import Font, Alignment, Border, Side
-# 引入 Rich Text 相關模組
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
 
@@ -23,12 +22,80 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (富文本修復版)", layout="wide", page_icon="🚑")
+st.set_page_config(page_title="交通事故統計 (視覺同步版)", layout="wide", page_icon="🚑")
 st.title("🚑 交通事故統計 (上傳即寄出)")
-st.markdown("### 📝 狀態：標題列「數字與符號」自動轉紅，漢字保持黑色。")
+st.markdown("### 📝 狀態：網頁預覽字體顏色已與 Excel 報表同步 (紅黑雙色)。")
 
 # 1. 檔案上傳區
 uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
+
+# --- 核心工具：產生紅黑雙色的 HTML 標題 ---
+def format_html_header(text):
+    """將文字轉換為 HTML，數字符號轉紅，其餘轉黑"""
+    text = str(text)
+    tokens = re.split(r'([0-9\(\)\/\-\.\%]+)', text)
+    html_str = ""
+    for token in tokens:
+        if not token: continue
+        if re.match(r'^[0-9\(\)\/\-\.\%]+$', token):
+            html_str += f'<span style="color: red;">{token}</span>'
+        else:
+            html_str += f'<span style="color: black;">{token}</span>'
+    return html_str
+
+def render_styled_table(df, title):
+    """在 Streamlit 渲染漂亮的 HTML 表格"""
+    st.subheader(title)
+    
+    # 複製一份以免影響原始數據
+    df_display = df.copy()
+    
+    # 產生 CSS 樣式
+    # 設定標楷體、格線、置中
+    style = """
+    <style>
+        table.acc_table {
+            font-family: 'BiauKai', '標楷體', serif !important;
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 16px;
+        }
+        table.acc_table th {
+            border: 1px solid #000;
+            padding: 8px;
+            text-align: center !important;
+            font-weight: bold;
+            background-color: #f0f2f6; /* 淺灰底色 */
+        }
+        table.acc_table td {
+            border: 1px solid #000;
+            padding: 8px;
+            text-align: center !important;
+            color: black;
+            font-family: 'BiauKai', '標楷體', serif !important;
+        }
+    </style>
+    """
+    
+    # 建構 HTML Table
+    html = f"{style}<table class='acc_table'><thead><tr>"
+    
+    # 處理標題列 (套用紅黑邏輯)
+    for col in df_display.columns:
+        styled_header = format_html_header(col)
+        html += f"<th>{styled_header}</th>"
+    html += "</tr></thead><tbody>"
+    
+    # 處理內容列
+    for _, row in df_display.iterrows():
+        html += "<tr>"
+        for val in row:
+            html += f"<td>{val}</td>"
+        html += "</tr>"
+    html += "</tbody></table>"
+    
+    # 渲染
+    st.markdown(html, unsafe_allow_html=True)
 
 # 2. 寄信函數
 def send_email_auto(attachment_data, filename):
@@ -61,7 +128,7 @@ if uploaded_files:
         st.warning(f"⚠️ 目前已上傳 {len(uploaded_files)} 個檔案，請補齊至 3 個檔案。")
         st.stop()
     
-    with st.spinner("⚡ 正在分析、套用富文本格式並寄送中..."):
+    with st.spinner("⚡ 正在分析、格式化並寄送中..."):
         try:
             # === (A) 資料讀取與清理 ===
             def parse_raw(file_obj):
@@ -107,7 +174,7 @@ if uploaded_files:
                     d_start = date(start_y + 1911, start_m, start_d)
                     d_end = date(end_y + 1911, end_m, end_d)
                     duration_days = (d_end - d_start).days
-                    raw_date_str = f"{start_y}/{start_m:02d}/{start_d:02d}-{end_y}/{end_m:02d}/{end_d:02d}"
+                    raw_date_str = f"{start_m:02d}/{start_d:02d}-{end_m:02d}/{end_d:02d}"
                     files_meta.append({'file': uploaded_file, 'df': df, 'start_tuple': (start_y, start_m, start_d),
                                        'end_year': end_y, 'duration': duration_days, 'raw_date': raw_date_str})
                 else:
@@ -188,27 +255,21 @@ if uploaded_files:
                 a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
                 a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
                 
-                # 定義基本的字體物件
                 font_black = InlineFont(rFont='標楷體', sz=12, b=True, color='000000')
                 font_red = InlineFont(rFont='標楷體', sz=12, b=True, color='FF0000')
-
                 font_normal_cell = Font(name='標楷體', size=12)
                 align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
                 border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
                 
-                # --- 修正後的富文本轉換函數 ---
                 def make_rich_text(text):
                     text = str(text)
                     rich_text = CellRichText()
                     tokens = re.split(r'([0-9\(\)\/\-\.\%]+)', text)
-                    
                     for token in tokens:
                         if not token: continue
                         if re.match(r'^[0-9\(\)\/\-\.\%]+$', token):
-                            # 修正：這裡改成傳入 TextBlock
                             rich_text.append(TextBlock(font_red, token))
                         else:
-                            # 修正：這裡改成傳入 TextBlock
                             rich_text.append(TextBlock(font_black, token))
                     return rich_text
 
@@ -216,14 +277,12 @@ if uploaded_files:
                     ws = writer.book[sheet_name]
                     for col in ws.columns: ws.column_dimensions[col[0].column_letter].width = 20
                     
-                    # 1. 處理標題列 (First Row)
                     for i, cell in enumerate(ws[1]):
                         original_value = cell.value
-                        cell.value = make_rich_text(original_value) # 套用富文本
+                        cell.value = make_rich_text(original_value)
                         cell.alignment = align_center
                         cell.border = border_style
 
-                    # 2. 處理數據內容 (從第二列開始)
                     for row in ws.iter_rows(min_row=2):
                         for cell in row:
                             cell.alignment = align_center
@@ -240,10 +299,12 @@ if uploaded_files:
             else:
                 st.error(msg)
 
-            # 顯示表格
+            # === 🔥 改用 HTML 渲染表格 (視覺同步) ===
             col1, col2 = st.columns(2)
-            with col1: st.subheader("📊 A1 死亡人數"); st.dataframe(a1_final, hide_index=True)
-            with col2: st.subheader("📊 A2 受傷人數"); st.dataframe(a2_final, hide_index=True)
+            with col1: 
+                render_styled_table(a1_final, "📊 A1 死亡人數")
+            with col2: 
+                render_styled_table(a2_final, "📊 A2 受傷人數")
 
         except Exception as e:
             st.error(f"系統錯誤：{e}")
