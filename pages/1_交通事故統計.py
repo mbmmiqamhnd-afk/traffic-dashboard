@@ -26,14 +26,14 @@ SMTP_PORT = 587
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (保留格式版)", layout="wide", page_icon="🚑")
-st.title("🚑 交通事故統計 (上傳即寄出 + 雲端同步)")
-st.markdown("### 📝 狀態：同步時**保留試算表第1、2列原始格式** (如邊框、底色)，僅更新數據與日期。")
+st.set_page_config(page_title="交通事故統計 (純寫入數據版)", layout="wide", page_icon="🚑")
+st.title("🚑 交通事故統計 (上傳即寄出 + 純數據寫入)")
+st.markdown("### 📝 狀態：同步時**完全保留**試算表原本的格式 (合併、底色、邊框)，僅更新數值與紅黑字。")
 
 # 1. 檔案上傳區
 uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
 
-# --- 工具函數 1: HTML 標題專用 (網頁預覽用) ---
+# --- 工具函數 1: HTML 標題專用 ---
 def format_html_header(text):
     text = str(text)
     tokens = re.split(r'([0-9\(\)\/\-\.\%]+)', text)
@@ -50,8 +50,8 @@ def format_html_header(text):
 def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
     """
     產生 textFormatRuns 請求。
-    注意：這裡 fields 只指定 userEnteredValue 和 textFormatRuns，
-    因此【不會】覆蓋原本的背景色、邊框或水平對齊設定。
+    🔥 關鍵：fields 僅指定 userEnteredValue 和 textFormatRuns。
+    這保證了背景色、邊框、水平對齊等格式【絕對不會】被更動。
     """
     text = str(text)
     tokens = re.split(r'([0-9\(\)\/\-\.\%]+)', text)
@@ -61,12 +61,11 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
     for token in tokens:
         if not token: continue
         
-        # 預設維持原本字體設定 (這裡只指定顏色與粗體)
-        # 注意：若未指定 fontSize，預設會使用該儲存格原本的大小
+        # 只設定顏色與粗體，不設定 fontSize 或 fontFamily，沿用原本試算表的設定
         color = {"red": 0, "green": 0, "blue": 0}
         
         if re.match(r'^[0-9\(\)\/\-\.\%]+$', token):
-            color = {"red": 1, "green": 0, "blue": 0}
+            color = {"red": 1, "green": 0, "blue": 0} # 紅色
             
         runs.append({
             "startIndex": current_pos,
@@ -85,7 +84,7 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
                     "textFormatRuns": runs
                 }]
             }],
-            "fields": "userEnteredValue,textFormatRuns", # 🔥 關鍵：只更新值與文字顏色，不碰格式
+            "fields": "userEnteredValue,textFormatRuns", # 🔥 鎖定更新範圍，保護格式
             "range": {
                 "sheetId": sheet_id,
                 "startRowIndex": row_idx,
@@ -129,7 +128,7 @@ def send_email_auto(attachment_data, filename):
         msg['From'] = MY_EMAIL
         msg['To'] = TO_EMAIL
         msg['Subject'] = f"交通事故統計報表 ({pd.Timestamp.now().strftime('%Y/%m/%d')})"
-        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (數據已同步至 Google 試算表，保留原始格式)，請查照。\n\n(此郵件由系統自動發送)"
+        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (數據已同步至 Google 試算表，原始格式已保留)，請查照。\n\n(此郵件由系統自動發送)"
         msg.attach(MIMEText(body, 'plain'))
         part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         part.set_payload(attachment_data.getvalue())
@@ -144,7 +143,7 @@ def send_email_auto(attachment_data, filename):
     except Exception as e:
         return False, f"❌ 寄送失敗：{e}"
 
-# 3. Google Sheets 同步函數 (🔥 格式保留邏輯)
+# 3. Google Sheets 同步函數 (🔥 核心修改：純寫入模式)
 def sync_to_gsheet(df_a1, df_a2):
     try:
         if "gcp_service_account" not in st.secrets:
@@ -153,33 +152,27 @@ def sync_to_gsheet(df_a1, df_a2):
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         
-        # 定義同步邏輯 (針對 A1 與 A2 共用的函式)
-        def update_sheet_preserve_format(ws_index, df, title_text):
+        def update_sheet_values_only(ws_index, df, title_text):
             try:
                 ws = sh.get_worksheet(ws_index)
                 
-                # 1. 🔥 不使用 clear()，改為只清除「數據區域」(Row 3 之後)
-                # 這樣不會把 Row 1 和 Row 2 的背景色、邊框洗掉
-                ws.batch_clear(["A3:Z1000"]) 
+                # 1. 清除舊數據 (僅清除值 Values，保留格式)
+                # "batch_clear" 預設行為就是清除 values，不會動 formatting
+                ws.batch_clear(["A3:Z100"]) 
                 
-                # 2. 更新 Row 1 (標題文字)
-                # update_acell 只更新值，不會動格式
+                # 2. 更新 Row 1 (大標題) - 僅更新文字，不動合併/字體
                 ws.update_acell('A1', title_text)
                 
-                # 3. 更新 Row 3+ (數據內容)
-                # 準備數據 (轉整數)
+                # 3. 更新 Row 3+ (數據內容) - 僅更新值，不動邊框/對齊
                 data_rows = []
                 for row in df.values.tolist():
                     data_rows.append([int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row])
                 
-                # 從 A3 開始寫入數據
                 if data_rows:
                     ws.update(range_name='A3', values=data_rows)
 
-                # 4. 更新 Row 2 (欄位標題 + 紅黑字)
-                # 使用 API 批次更新，確保只更新文字與顏色，不影響底色
+                # 4. 更新 Row 2 (欄位標題) - 更新文字並套用紅黑字，但不依賴 userEnteredFormat
                 reqs = []
-                # 欄位標題在第 2 列 (Index 1)
                 for col_idx, col_name in enumerate(df.columns):
                     reqs.append(get_gsheet_rich_text_req(ws.id, 1, col_idx, col_name))
                 
@@ -190,19 +183,19 @@ def sync_to_gsheet(df_a1, df_a2):
             except Exception as e:
                 raise e
 
-        # 執行 A1 同步 (第3分頁, Index 2)
+        # 執行 A1 同步 (第3分頁)
         try:
-            update_sheet_preserve_format(2, df_a1, "A1類交通事故死亡人數統計表")
+            update_sheet_values_only(2, df_a1, "A1類交通事故死亡人數統計表")
         except Exception as e:
             return False, f"❌ A1 同步失敗: {e}"
 
-        # 執行 A2 同步 (第4分頁, Index 3)
+        # 執行 A2 同步 (第4分頁)
         try:
-            update_sheet_preserve_format(3, df_a2, "A2類交通事故受傷人數統計表")
+            update_sheet_values_only(3, df_a2, "A2類交通事故受傷人數統計表")
         except Exception as e:
             return False, f"❌ A2 同步失敗: {e}"
         
-        return True, "✅ Google 試算表同步成功 (保留原始格式)"
+        return True, "✅ Google 試算表同步成功 (格式完美保留)"
     except Exception as e:
         return False, f"❌ Google 試算表連線失敗: {e}"
 
