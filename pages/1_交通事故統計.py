@@ -1,224 +1,296 @@
 import streamlit as st
 import pandas as pd
-import re
 import io
+import re
 import smtplib
 import gspread
-import calendar
-import traceback
 from datetime import date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from email.header import Header
-
-# --- 初始化 ---
-st.set_page_config(page_title="超載統計", layout="wide", page_icon="🚛")
-st.title("🚛 超載自動統計 (v48 寫入第3分頁版)")
+from openpyxl.styles import Font, Alignment, Border, Side
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+from openpyxl.cell.text import InlineFont
 
 # ==========================================
-# 0. 核心設定 (請確認 Secrets 已填寫)
+# 👇👇👇 【使用者設定區】 👇👇👇
 # ==========================================
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit" 
-TARGETS = {'聖亭所': 24, '龍潭所': 32, '中興所': 24, '石門所': 19, '高平所': 16, '三和所': 9, '警備隊': 0, '交通分隊': 30}
-UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'}
-UNIT_DATA_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
+MY_EMAIL = "mbmmiqamhnd@gmail.com" 
+MY_PASSWORD = "kvpw ymgn xawe qxnl" 
+TO_EMAIL = "mbmmiqamhnd@gmail.com"
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
 
+# Google Sheet 設定
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 # ==========================================
-# 1. 核心格式指令 (Google Sheets API)
-# ==========================================
-def get_footer_precise_red_req(ws_id, row_idx, col_idx, text):
-    runs = [{"startIndex": 0, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}}]
-    anchor = "應達成率為"
-    idx = text.find(anchor)
-    if idx != -1:
-        search_part = text[idx + len(anchor):]
-        match = re.search(r'(\d+\.?\d*%)', search_part)
-        if match:
-            start_pos = idx + len(anchor) + match.start()
-            end_pos = idx + len(anchor) + match.end()
-            runs.append({"startIndex": start_pos, "format": {"foregroundColor": {"red": 1.0, "green": 0, "blue": 0}, "bold": True}})
-            if end_pos < len(text):
-                runs.append({"startIndex": end_pos, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}})
-    return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
 
-def get_header_num_red_req(ws_id, row_idx, col_idx, text):
-    red_chars = set("0123456789~().%")
-    runs = []
-    last_is_red = None
-    for i, char in enumerate(text):
-        is_red = char in red_chars
-        if is_red != last_is_red:
-            color = {"red": 1.0, "green": 0, "blue": 0} if is_red else {"red": 0, "green": 0, "blue": 0}
-            runs.append({"startIndex": i, "format": {"foregroundColor": color, "bold": is_red}})
-            last_is_red = is_red
-    return {"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws_id, "startRowIndex": row_idx-1, "endRowIndex": row_idx, "startColumnIndex": col_idx-1, "endColumnIndex": col_idx}}}
+st.set_page_config(page_title="交通事故統計 (GSheet同步版)", layout="wide", page_icon="🚑")
+st.title("🚑 交通事故統計 (上傳即寄出 + 同步雲端)")
+st.markdown("### 📝 狀態：數據將自動同步至 **Google 試算表 (第3分頁)**，並寄送 Excel 報表。")
 
-# ==========================================
-# 2. 寄信功能與偵錯
-# ==========================================
-def send_report_email(excel_bytes, subject):
+# 1. 檔案上傳區
+uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
+
+# --- 工具函數 ---
+def format_html_header(text):
+    text = str(text)
+    tokens = re.split(r'([0-9\(\)\/\-\.\%]+)', text)
+    html_str = ""
+    for token in tokens:
+        if not token: continue
+        if re.match(r'^[0-9\(\)\/\-\.\%]+$', token):
+            html_str += f'<span style="color: red;">{token}</span>'
+        else:
+            html_str += f'<span style="color: black;">{token}</span>'
+    return html_str
+
+def render_styled_table(df, title):
+    st.subheader(title)
+    df_display = df.copy()
+    style = """
+    <style>
+        table.acc_table {font-family: sans-serif; border-collapse: collapse; width: 100%; font-size: 16px; background-color: #ffffff;}
+        table.acc_table th {border: 1px solid #000; padding: 8px; text-align: center !important; font-weight: bold; background-color: #f0f2f6; color: #000000;}
+        table.acc_table td {border: 1px solid #000; padding: 8px; text-align: center !important; background-color: #ffffff !important;}
+    </style>
+    """
+    html = f"{style}<table class='acc_table'><thead><tr>"
+    for col in df_display.columns:
+        html += f"<th>{format_html_header(col)}</th>"
+    html += "</tr></thead><tbody>"
+    for _, row in df_display.iterrows():
+        html += "<tr>"
+        for col_name, val in row.items():
+            color = "#000000"
+            display_val = f"{int(val)}" if isinstance(val, (int, float)) else str(val)
+            if "比較" in col_name and isinstance(val, (int, float)) and val > 0: color = "red"
+            elif "增減" in col_name and "-" not in display_val and display_val != "0.00%" and display_val != "-": color = "red"
+            html += f'<td style="color: {color};">{display_val}</td>'
+        html += "</tr>"
+    html += "</tbody></table>"
+    st.markdown(html, unsafe_allow_html=True)
+
+# 2. 寄信函數
+def send_email_auto(attachment_data, filename):
     try:
-        if "email" not in st.secrets:
-            return "錯誤：未在 Secrets 中設定 [email] 資訊"
-        
-        user = st.secrets["email"]["user"]
-        pwd = st.secrets["email"]["password"]
-        
         msg = MIMEMultipart()
-        msg['Subject'] = Header(subject, 'utf-8').encode()
-        msg['From'] = user
-        msg['To'] = user
-        msg.attach(MIMEText("自動產生的超載報表已同步，請查閱附件。", 'plain'))
-        
-        part = MIMEBase('application', 'octet-stream')
-        part.set_payload(excel_bytes)
+        msg['From'] = MY_EMAIL
+        msg['To'] = TO_EMAIL
+        msg['Subject'] = f"交通事故統計報表 ({pd.Timestamp.now().strftime('%Y/%m/%d')})"
+        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (數據已同步至 Google 試算表)，請查照。\n\n(此郵件由系統自動發送)"
+        msg.attach(MIMEText(body, 'plain'))
+        part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        part.set_payload(attachment_data.getvalue())
         encoders.encode_base64(part)
-        part.add_header('Content-Disposition', f'attachment; filename="Overload_Report.xlsx"')
+        part.add_header('Content-Disposition', f'attachment; filename={filename}')
         msg.attach(part)
-        
-        # 建立連線並寄信
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(user, pwd)
-        server.send_message(msg)
-        server.quit()
-        return "成功"
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as s:
+            s.starttls()
+            s.login(MY_EMAIL, MY_PASSWORD)
+            s.send_message(msg)
+        return True, f"✅ 報表已自動寄送至：{TO_EMAIL}"
     except Exception as e:
-        return f"郵件錯誤詳細資訊：{str(e) if str(e) else repr(e)}"
+        return False, f"❌ 寄送失敗：{e}"
 
-# ==========================================
-# 3. 解析邏輯
-# ==========================================
-def parse_report(f):
-    if not f: return {}, "0000000", "0000000"
-    counts, s, e = {}, "0000000", "0000000"
+# 3. Google Sheets 同步函數
+def sync_to_gsheet(df_a1, df_a2):
     try:
-        f.seek(0)
-        df_top = pd.read_excel(f, header=None, nrows=15)
-        text_block = df_top.to_string()
-        m = re.search(r'(\d{3,7}).*至\s*(\d{3,7})', text_block)
-        if m: s, e = m.group(1), m.group(2)
+        if "gcp_service_account" not in st.secrets:
+            return False, "❌ Secrets 中找不到 [gcp_service_account] 設定，無法同步。"
+
+        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
         
-        f.seek(0)
-        xls = pd.ExcelFile(f)
-        for sn in xls.sheet_names:
-            df = pd.read_excel(xls, sheet_name=sn, header=None)
-            u = None
-            for _, r in df.iterrows():
-                rs = " ".join(r.astype(str))
-                if "舉發單位：" in rs:
-                    m2 = re.search(r"舉發單位：(\S+)", rs)
-                    if m2: u = m2.group(1).strip()
-                if "總計" in rs and u:
-                    nums = [float(str(x).replace(',','')) for x in r if str(x).replace('.','',1).isdigit()]
-                    if nums:
-                        short = UNIT_MAP.get(u, u)
-                        if short in UNIT_DATA_ORDER: counts[short] = counts.get(short, 0) + int(nums[-1])
-                        u = None
-        return counts, s, e
-    except Exception as ex:
-        raise ValueError(f"解析失敗: {ex}")
-
-# ==========================================
-# 4. 主程式執行
-# ==========================================
-# 側邊欄工具
-st.sidebar.markdown("### 🛠️ 郵件測試工具")
-if st.sidebar.button("📧 寄送測試郵件 (不含附件)"):
-    res = send_report_email(b"", "超載統計 - 寄信測試")
-    if res == "成功": st.sidebar.success("✅ 郵件設定正確，測試信已送出")
-    else: st.sidebar.error(f"❌ 測試失敗\n{res}")
-
-files = st.file_uploader("請同時上傳 3 個 stoneCnt 報表", accept_multiple_files=True, type=['xlsx', 'xls'])
-
-if files and len(files) >= 3:
-    try:
-        file_hash = "".join(sorted([f.name + str(f.size) for f in files]))
+        # ⚠️ 寫入第 3 個工作表 (Index = 2)
+        ws = sh.get_worksheet(2) 
         
-        f_wk, f_yt, f_ly = None, None, None
-        for f in files:
-            if "(1)" in f.name: f_yt = f
-            elif "(2)" in f.name: f_ly = f
-            else: f_wk = f
+        ws.clear() # 清空舊資料
         
-        if not all([f_wk, f_yt, f_ly]):
-            st.error("❌ 檔案命名不符合規則，請確認是否有 (1) 與 (2)。")
-            st.stop()
-
-        # 解析數據
-        d_wk, s_wk, e_wk = parse_report(f_wk)
-        d_yt, s_yt, e_yt = parse_report(f_yt)
-        d_ly, s_ly, e_ly = parse_report(f_ly)
-
-        # 欄位標題與標紅 HTML
-        raw_wk = f"本期 ({s_wk[-4:]}~{e_wk[-4:]})"
-        raw_yt = f"本年累計 ({s_yt[-4:]}~{e_yt[-4:]})"
-        raw_ly = f"去年累計 ({s_ly[-4:]}~{e_ly[-4:]})"
-
-        def h_html(t): return "".join([f"<span style='color:red; font-weight:bold;'>{c}</span>" if c in "0123456789~().%" else c for c in t])
-        h_wk, h_yt, h_ly = map(h_html, [raw_wk, raw_yt, raw_ly])
-
-        # 組裝數據表格
-        body = []
-        for u in UNIT_DATA_ORDER:
-            yv, tv = d_yt.get(u, 0), TARGETS.get(u, 0)
-            body.append({'統計期間': u, h_wk: d_wk.get(u, 0), h_yt: yv, h_ly: d_ly.get(u, 0), '本年與去年同期比較': yv - d_ly.get(u, 0), '目標值': tv, '達成率': f"{yv/tv:.0%}" if tv > 0 else "—"})
+        # 準備資料：A1 表格 + 空行 + A2 表格
+        data_to_write = []
         
-        df_body = pd.DataFrame(body)
-        sum_v = df_body[df_body['統計期間'] != '警備隊'][[h_wk, h_yt, h_ly, '目標值']].sum()
-        total_row = pd.DataFrame([{'統計期間': '合計', h_wk: sum_v[h_wk], h_yt: sum_v[h_yt], h_ly: sum_v[h_ly], '本年與去年同期比較': sum_v[h_yt] - sum_v[h_ly], '目標值': sum_v['目標值'], '達成率': f"{sum_v[h_yt]/sum_v['目標值']:.0%}" if sum_v['目標值'] > 0 else "0%"}])
-        df_final = pd.concat([total_row, df_body], ignore_index=True)
+        # A1 部分
+        data_to_write.append(["【A1 死亡人數統計】"])
+        data_to_write.append(df_a1.columns.tolist())
+        # 將 DataFrame 內容轉為 list，並處理數值型別以利 GSheet 辨識
+        for row in df_a1.values.tolist():
+             data_to_write.append([int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row])
+        
+        data_to_write.append([]) # 空行
+        data_to_write.append([]) # 空行
+        
+        # A2 部分
+        data_to_write.append(["【A2 受傷人數統計】"])
+        data_to_write.append(df_a2.columns.tolist())
+        for row in df_a2.values.tolist():
+             data_to_write.append([int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row])
 
-        # 底部說明文字與百分比標紅
-        y, m, d = int(e_yt[:3])+1911, int(e_yt[3:5]), int(e_yt[5:])
-        prog_str = f"{((date(y, m, d) - date(y, 1, 1)).days + 1) / (366 if calendar.isleap(y) else 365):.1%}"
-        f_plain = f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，統計截至 {e_yt[:3]}年{e_yt[3:5]}月{e_yt[5:]}日 (入案日期)應達成率為{prog_str}"
-        f_html = f_plain.replace(prog_str, f"<span style='color:red; font-weight:bold;'>{prog_str}</span>")
-
-        # 預覽介面
-        st.success("✅ 數據解析成功！")
-        st.write(df_final.to_html(escape=False, index=False), unsafe_allow_html=True)
-        st.write(f"#### {f_html}", unsafe_allow_html=True)
-
-        # --- 自動化流程 ---
-        if st.session_state.get("processed_hash") != file_hash:
-            with st.status("🚀 執行雲端同步與自動寄信...") as s:
-                try:
-                    # 1. Google Sheets 同步
-                    gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-                    sh = gc.open_by_url(GOOGLE_SHEET_URL)
-                    
-                    # ⚠️ 修改處：指定寫入第 3 個工作表 (Index = 2)
-                    ws = sh.get_worksheet(2)  
-                    
-                    clean_cols = ['統計期間', raw_wk, raw_yt, raw_ly, '本年與去年同期比較', '目標值', '達成率']
-                    ws.update(range_name='A2', values=[clean_cols] + df_final.values.tolist())
-                    reqs = [get_header_num_red_req(ws.id, 2, i, t) for i, t in enumerate(clean_cols[1:4], 2)]
-                    reqs.append(get_footer_precise_red_req(ws.id, 2 + len(df_final) + 1, 1, f_plain))
-                    sh.batch_update({"requests": reqs})
-                    st.write("✅ 試算表同步與格式化完成")
-
-                    # 2. 自動寄信
-                    st.write("📧 正在準備郵件附件並寄信...")
-                    out = io.BytesIO()
-                    df_sync = df_final.copy()
-                    df_sync.columns = clean_cols
-                    df_excel_buffer = io.BytesIO()
-                    df_sync.to_excel(df_excel_buffer, index=False)
-                    
-                    mail_res = send_report_email(df_excel_buffer.getvalue(), f"🚛 超載報表 - {e_yt} ({prog_str})")
-                    if mail_res == "成功":
-                        st.write("✅ 電子郵件自動寄送成功")
-                    else:
-                        st.error(f"❌ 郵件自動寄送失敗\n{mail_res}")
-
-                    st.session_state["processed_hash"] = file_hash
-                    st.balloons()
-                    s.update(label="自動化流程處理完畢", state="complete")
-                except Exception as ex:
-                    st.error(f"❌ 自動化流程中斷: {ex}")
-
+        ws.update(values=data_to_write)
+        
+        return True, "✅ Google 試算表同步成功 (工作表 3)"
     except Exception as e:
-        st.error(f"⚠️ 嚴重錯誤: {e}")
+        return False, f"❌ Google 試算表同步失敗: {e}"
+
+# 4. 主流程
+if uploaded_files:
+    if len(uploaded_files) != 3:
+        st.warning(f"⚠️ 目前已上傳 {len(uploaded_files)} 個檔案，請補齊至 3 個檔案。")
+        st.stop()
+    
+    with st.spinner("⚡ 正在分析、同步雲端並寄送中..."):
+        try:
+            # (A) 資料讀取與清理
+            def parse_raw(file_obj):
+                try: return pd.read_csv(file_obj, header=None)
+                except: file_obj.seek(0); return pd.read_excel(file_obj, header=None)
+
+            def clean_data(df_raw):
+                df_raw[0] = df_raw[0].astype(str)
+                df_data = df_raw[df_raw[0].str.contains("所|總計|合計", na=False)].copy()
+                df_data = df_data.reset_index(drop=True)
+                columns_map = {0: "Station", 1: "Total_Cases", 2: "Total_Deaths", 3: "Total_Injuries", 4: "A1_Cases", 5: "A1_Deaths", 6: "A1_Injuries", 7: "A2_Cases", 8: "A2_Deaths", 9: "A2_Injuries", 10: "A3_Cases"}
+                for i in range(11):
+                    if i not in df_data.columns: df_data[i] = 0
+                df_data = df_data.rename(columns=columns_map)
+                df_data = df_data[list(columns_map.values())]
+                for col in list(columns_map.values())[1:]:
+                    df_data[col] = pd.to_numeric(df_data[col].astype(str).str.replace(",", ""), errors='coerce').fillna(0)
+                df_data['Station_Short'] = df_data['Station'].astype(str).str.replace('派出所', '所').str.replace('總計', '合計')
+                return df_data
+
+            # (B) 智慧辨識
+            files_meta = []
+            for uploaded_file in uploaded_files:
+                uploaded_file.seek(0)
+                df = parse_raw(uploaded_file)
+                found_dates = []
+                for r in range(min(5, len(df))):
+                    for c in range(min(3, len(df.columns))):
+                        val = str(df.iloc[r, c])
+                        dates = re.findall(r'(\d{3})[./](\d{1,2})[./](\d{1,2})', val)
+                        if len(dates) >= 2: found_dates = dates; break
+                    if found_dates: break
+                if found_dates:
+                    start_y, start_m, start_d = map(int, found_dates[0])
+                    end_y, end_m, end_d = map(int, found_dates[1])
+                    d_start = date(start_y + 1911, start_m, start_d)
+                    d_end = date(end_y + 1911, end_m, end_d)
+                    duration_days = (d_end - d_start).days
+                    raw_date_str = f"{start_m:02d}/{start_d:02d}-{end_m:02d}/{end_d:02d}"
+                    files_meta.append({'file': uploaded_file, 'df': df, 'end_year': end_y, 'duration': duration_days, 'raw_date': raw_date_str, 'start_tuple': (start_y, start_m, start_d)})
+                else: files_meta.append({'file': uploaded_file, 'end_year': 0})
+
+            # (C) 檔案分配
+            files_meta.sort(key=lambda x: x.get('end_year', 0), reverse=True)
+            df_wk, df_cur, df_lst, h_wk, h_cur, h_lst = None, None, None, "", "", ""
+            valid_files = [f for f in files_meta if f.get('end_year', 0) > 0]
+            if len(valid_files) >= 3:
+                current_year_end = valid_files[0]['end_year']
+                current_files = [f for f in valid_files if f['end_year'] == current_year_end]
+                past_files = [f for f in valid_files if f['end_year'] < current_year_end]
+                if past_files:
+                    past_files.sort(key=lambda x: x['end_year'], reverse=True)
+                    t = past_files[0]; df_lst = clean_data(t['df']); h_lst = t['raw_date']
+                if len(current_files) >= 2:
+                    starts_on_jan1 = [f for f in current_files if f['start_tuple'][1] == 1 and f['start_tuple'][2] == 1]
+                    cumu, wk = None, None
+                    if len(starts_on_jan1) == 1: cumu = starts_on_jan1[0]; wk = [f for f in current_files if f != cumu][0]
+                    else: current_files.sort(key=lambda x: x['duration']); wk = current_files[0]; cumu = current_files[-1]
+                    if cumu: df_cur = clean_data(cumu['df']); h_cur = cumu['raw_date']
+                    if wk: df_wk = clean_data(wk['df']); h_wk = wk['raw_date']
+            if df_wk is None or df_cur is None or df_lst is None: st.error("❌ 檔案辨識失敗。"); st.stop()
+
+            # (D) 合併與計算
+            target_stations = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
+            def process_and_sum(df_main, value_cols):
+                df_sub = df_main[df_main['Station_Short'].isin(target_stations)].copy()
+                df_sub['Station_Short'] = pd.Categorical(df_sub['Station_Short'], categories=target_stations, ordered=True)
+                df_sub.sort_values('Station_Short', inplace=True)
+                sum_values = df_sub[value_cols].sum()
+                row_total = pd.DataFrame([{'Station_Short': '合計', **sum_values.to_dict()}])
+                return pd.concat([row_total, df_sub], ignore_index=True)
+
+            a1_wk = df_wk[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'wk'})
+            a1_cur = df_cur[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'cur'})
+            a1_lst = df_lst[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'last'})
+            m_a1 = pd.merge(a1_wk, a1_cur, on='Station_Short', how='outer')
+            m_a1 = pd.merge(m_a1, a1_lst, on='Station_Short', how='outer').fillna(0)
+            m_a1 = process_and_sum(m_a1, ['wk', 'cur', 'last'])
+            m_a1['Diff'] = m_a1['cur'] - m_a1['last']
+
+            a2_wk = df_wk[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'wk'})
+            a2_cur = df_cur[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'cur'})
+            a2_lst = df_lst[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'last'})
+            m_a2 = pd.merge(a2_wk, a2_cur, on='Station_Short', how='outer')
+            m_a2 = pd.merge(m_a2, a2_lst, on='Station_Short', how='outer').fillna(0)
+            m_a2 = process_and_sum(m_a2, ['wk', 'cur', 'last'])
+            m_a2['Diff'] = m_a2['cur'] - m_a2['last']
+            m_a2['Pct_Str'] = m_a2.apply(lambda x: f"{(x['Diff']/x['last']):.2%}" if x['last']!=0 else "-", axis=1)
+            m_a2['Prev'] = "-"
+
+            a1_final = m_a1[['Station_Short', 'wk', 'cur', 'last', 'Diff']].copy()
+            a1_final.columns = ['統計期間', f'本期({h_wk})', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較']
+            a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
+            a2_final.columns = ['統計期間', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
+
+            # (E) 產生 Excel
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
+                a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
+                font_black = InlineFont(rFont='Calibri', sz=12, b=True, color='000000')
+                font_red = InlineFont(rFont='Calibri', sz=12, b=True, color='FF0000')
+                font_content_black = Font(name='Calibri', size=12, color='000000')
+                font_content_red = Font(name='Calibri', size=12, color='FF0000')
+                align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+                
+                def make_header_rich_text(text):
+                    text = str(text)
+                    rich = CellRichText()
+                    for t in re.split(r'([0-9\(\)\/\-\.\%]+)', text):
+                        if t: rich.append(TextBlock(font_red if re.match(r'^[0-9\(\)\/\-\.\%]+$', t) else font_black, t))
+                    return rich
+
+                for sn in ['A1死亡人數', 'A2受傷人數']:
+                    ws = writer.book[sn]
+                    header_names = [c.value for c in ws[1]]
+                    for col in ws.columns: ws.column_dimensions[col[0].column_letter].width = 20
+                    for cell in ws[1]:
+                        cell.value = make_header_rich_text(cell.value)
+                        cell.alignment = align_center
+                        cell.border = border_style
+                    for row in ws.iter_rows(min_row=2):
+                        for idx, cell in enumerate(row):
+                            if isinstance(cell.value, (int, float)): cell.value = int(cell.value)
+                            target_font = font_content_black
+                            col_n = header_names[idx]
+                            if "比較" in str(col_n) and isinstance(cell.value, (int, float)) and cell.value > 0: target_font = font_content_red
+                            elif "增減" in str(col_n) and "-" not in str(cell.value) and str(cell.value) not in ["0.00%", "-"]: target_font = font_content_red
+                            cell.font = target_font
+                            cell.alignment = align_center
+                            cell.border = border_style
+
+            # (F) 同步到 Google Sheet (新增的功能)
+            gs_success, gs_msg = sync_to_gsheet(a1_final, a2_final)
+            if gs_success: st.write(gs_msg)
+            else: st.error(gs_msg)
+
+            # (G) 自動寄信
+            filename_excel = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
+            success, msg = send_email_auto(output, filename_excel)
+            if success:
+                st.balloons()
+                st.success(msg)
+            else:
+                st.error(msg)
+
+            # (H) 網頁顯示
+            col1, col2 = st.columns(2)
+            with col1: render_styled_table(a1_final, "📊 A1 死亡人數")
+            with col2: render_styled_table(a2_final, "📊 A2 受傷人數")
+
+        except Exception as e:
+            st.error(f"系統錯誤：{e}")
