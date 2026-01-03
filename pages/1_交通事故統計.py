@@ -22,9 +22,9 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (視覺同步版)", layout="wide", page_icon="🚑")
+st.set_page_config(page_title="交通事故統計 (通用字體版)", layout="wide", page_icon="🚑")
 st.title("🚑 交通事故統計 (上傳即寄出)")
-st.markdown("### 📝 狀態：網頁預覽字體顏色已與 Excel 報表同步 (紅黑雙色)。")
+st.markdown("### 📝 狀態：Excel 報表改用通用字體 (Calibri)，不再強制標楷體。")
 
 # 1. 檔案上傳區
 uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
@@ -44,18 +44,15 @@ def format_html_header(text):
     return html_str
 
 def render_styled_table(df, title):
-    """在 Streamlit 渲染漂亮的 HTML 表格"""
+    """在 Streamlit 渲染漂亮的 HTML 表格 (通用字體)"""
     st.subheader(title)
     
-    # 複製一份以免影響原始數據
     df_display = df.copy()
     
-    # 產生 CSS 樣式
-    # 設定標楷體、格線、置中
     style = """
     <style>
         table.acc_table {
-            font-family: 'BiauKai', '標楷體', serif !important;
+            font-family: sans-serif; /* 網頁也使用通用字體 */
             border-collapse: collapse;
             width: 100%;
             font-size: 16px;
@@ -65,28 +62,24 @@ def render_styled_table(df, title):
             padding: 8px;
             text-align: center !important;
             font-weight: bold;
-            background-color: #f0f2f6; /* 淺灰底色 */
+            background-color: #f0f2f6;
         }
         table.acc_table td {
             border: 1px solid #000;
             padding: 8px;
             text-align: center !important;
             color: black;
-            font-family: 'BiauKai', '標楷體', serif !important;
         }
     </style>
     """
     
-    # 建構 HTML Table
     html = f"{style}<table class='acc_table'><thead><tr>"
     
-    # 處理標題列 (套用紅黑邏輯)
     for col in df_display.columns:
         styled_header = format_html_header(col)
         html += f"<th>{styled_header}</th>"
     html += "</tr></thead><tbody>"
     
-    # 處理內容列
     for _, row in df_display.iterrows():
         html += "<tr>"
         for val in row:
@@ -94,7 +87,6 @@ def render_styled_table(df, title):
         html += "</tr>"
     html += "</tbody></table>"
     
-    # 渲染
     st.markdown(html, unsafe_allow_html=True)
 
 # 2. 寄信函數
@@ -105,7 +97,7 @@ def send_email_auto(attachment_data, filename):
         msg['To'] = TO_EMAIL
         msg['Subject'] = f"交通事故統計報表 ({pd.Timestamp.now().strftime('%Y/%m/%d')})"
         
-        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (已套用紅黑雙色標題格式)，請查照。\n\n(此郵件由系統自動發送)"
+        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (Excel 已改為通用字體)，請查照。\n\n(此郵件由系統自動發送)"
         msg.attach(MIMEText(body, 'plain'))
 
         part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -249,15 +241,17 @@ if uploaded_files:
             a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
             a2_final.columns = ['統計期間', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
 
-            # === (E) 產生 Excel (套用 Rich Text) ===
+            # === (E) 產生 Excel (改為 Calibri 通用字體) ===
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
                 a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
                 
-                font_black = InlineFont(rFont='標楷體', sz=12, b=True, color='000000')
-                font_red = InlineFont(rFont='標楷體', sz=12, b=True, color='FF0000')
-                font_normal_cell = Font(name='標楷體', size=12)
+                # ⬇️ 這裡改用 Calibri (Excel 預設字體)
+                font_black = InlineFont(rFont='Calibri', sz=12, b=True, color='000000')
+                font_red = InlineFont(rFont='Calibri', sz=12, b=True, color='FF0000')
+                font_normal_cell = Font(name='Calibri', size=12)
+                
                 align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
                 border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
                 
@@ -299,7 +293,7 @@ if uploaded_files:
             else:
                 st.error(msg)
 
-            # === 🔥 改用 HTML 渲染表格 (視覺同步) ===
+            # === 🔥 網頁顯示 ===
             col1, col2 = st.columns(2)
             with col1: 
                 render_styled_table(a1_final, "📊 A1 死亡人數")
