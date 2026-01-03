@@ -3,36 +3,85 @@ import pandas as pd
 import io
 import smtplib
 import re
+import gspread # 新增：Google Sheets 函式庫
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 from email.header import Header
 
-# 設定頁面資訊
-st.set_page_config(page_title="五項交通違規統計 (深色模式修復版)", layout="wide", page_icon="🚦")
+st.set_page_config(page_title="五項交通違規統計 (雲端同步版)", layout="wide", page_icon="🚦")
+
+# ==========================================
+# 0. 設定區
+# ==========================================
+# 請將此連結替換為您的 Google 試算表連結
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit" 
 
 # --- 側邊欄 ---
 with st.sidebar:
     st.header("⚙️ 設定")
-    auto_email = st.checkbox("分析完成後自動寄信", value=True)
+    auto_email = st.checkbox("分析完成後自動寄信並同步", value=True)
     st.markdown("---")
     st.markdown("""
     ### 📝 操作說明
     1. 拖曳上傳檔案。
     2. 系統自動辨識年份與類別。
-    3. **修復重點**：
-       - 解決網頁預覽在深色模式下看不到字的問題。
-       - 正數自動適應背景色 (黑/白)，負數維持紅色。
+    3. **功能全開**：
+       - Excel 報表 (雙色排版)。
+       - **Google Sheets 同步** (寫入第 5 分頁)。
+       - 自動寄信。
     """)
     status_container = st.container()
 
-# --- 寄信函數 ---
+# ==========================================
+# 1. Google Sheets 格式化工具 (參照超載程式碼)
+# ==========================================
+def get_red_text_format_req(sheet_id, row_idx, col_idx, text):
+    """
+    產生 Google Sheets API 請求，將儲存格內的 數字、符號、括號 設為紅色粗體。
+    row_idx, col_idx 為 0-based index。
+    """
+    red_chars = set("0123456789~().%")
+    runs = []
+    last_is_red = None
+    
+    for i, char in enumerate(text):
+        is_red = char in red_chars
+        if is_red != last_is_red:
+            color = {"red": 1.0, "green": 0, "blue": 0} if is_red else {"red": 0, "green": 0, "blue": 0}
+            runs.append({
+                "startIndex": i, 
+                "format": {"foregroundColor": color, "bold": is_red} # 紅色且加粗
+            })
+            last_is_red = is_red
+            
+    return {
+        "updateCells": {
+            "rows": [{
+                "values": [{
+                    "userEnteredValue": {"stringValue": text}, 
+                    "textFormatRuns": runs
+                }]
+            }], 
+            "fields": "userEnteredValue,textFormatRuns", 
+            "range": {
+                "sheetId": sheet_id, 
+                "startRowIndex": row_idx, 
+                "endRowIndex": row_idx + 1, 
+                "startColumnIndex": col_idx, 
+                "endColumnIndex": col_idx + 1
+            }
+        }
+    }
+
+# ==========================================
+# 2. 基礎函數 (寄信、讀檔)
+# ==========================================
 def send_email(recipient, subject, body, file_bytes, filename):
     try:
         if "email" not in st.secrets:
-            st.error("❌ 未設定 Secrets！")
-            return False
+            return "錯誤：未設定 Secrets"
         sender = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
         msg = MIMEMultipart()
@@ -50,12 +99,10 @@ def send_email(recipient, subject, body, file_bytes, filename):
         server.login(sender, password)
         server.sendmail(sender, recipient, msg.as_string())
         server.quit()
-        return True
+        return "成功"
     except Exception as e:
-        st.error(f"❌ 寄信失敗: {e}")
-        return False
+        return f"失敗: {e}"
 
-# --- 精確日期提取 ---
 def extract_header_date(file_obj, filename):
     try:
         file_obj.seek(0)
@@ -83,7 +130,6 @@ def extract_header_date(file_obj, filename):
         return ""
     except: return ""
 
-# --- 精確讀取函數 ---
 def smart_read(fobj, fname):
     try:
         fobj.seek(0)
@@ -107,7 +153,9 @@ def smart_read(fobj, fname):
     except Exception as e:
         return pd.DataFrame(columns=['單位'])
 
-# --- 主程式 ---
+# ==========================================
+# 3. 主程式邏輯
+# ==========================================
 uploaded_files = st.file_uploader("請將報表檔案拖曳至此", accept_multiple_files=True)
 
 if uploaded_files:
@@ -303,11 +351,10 @@ if uploaded_files:
                 else: new_columns.append(('', col))
             display_df.columns = pd.MultiIndex.from_tuples(new_columns)
             
-            # 🔥🔥🔥 修正：只回傳紅色，否則回傳 None (預設顏色) 🔥🔥🔥
             def highlight_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
                     return 'color: red'
-                return None  # 讓 Streamlit 自動決定 (淺色變黑，深色變白)
+                return None
 
             numeric_cols = display_df.columns[1:]
             styled_df = display_df.style\
@@ -356,18 +403,77 @@ if uploaded_files:
             excel_data = output.getvalue()
             file_name_out = '交通違規統計表.xlsx'
 
+            # --- 自動化流程 (包含寄信與 Google Sheets 同步) ---
             email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else "尚未設定"
+            
             if auto_email:
-                if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
+                # 建立檔案 Hash 避免重複執行
                 file_ids = ",".join(sorted([f.name for f in uploaded_files]))
+                if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
+                
                 if file_ids not in st.session_state["sent_cache"]:
-                    with st.spinner(f"正在自動寄送報表至 {email_receiver}..."):
-                        if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為交通違規統計報表。", excel_data, file_name_out):
-                            st.balloons(); st.success(f"✅ 郵件已發送"); st.session_state["sent_cache"].add(file_ids)
-                else: st.info(f"✅ 報表已發送過。")
+                    with st.status("🚀 正在執行自動化流程...", expanded=True) as s:
+                        # 1. Google Sheets 同步
+                        try:
+                            if "gcp_service_account" in st.secrets:
+                                st.write("☁️ 正在同步至 Google Sheets (第 5 分頁)...")
+                                gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+                                sh = gc.open_by_url(GOOGLE_SHEET_URL)
+                                
+                                # 指定第 5 個分頁 (Index 4)
+                                ws = sh.get_worksheet(4) 
+                                
+                                # 準備寫入的資料矩陣 (模擬 Excel 排版)
+                                # Row 1: 標題
+                                row1 = ['加強交通安全執法取締五項交通違規統計表']
+                                # Row 2: 日期區間
+                                row2 = ['統計期間', txt_week, '', '', '', '', txt_curr, '', '', '', '', txt_last, '', '', '', '', txt_comp]
+                                # Row 3: 欄位名稱
+                                row3 = ['取締項目'] + ['酒駕', '闖紅燈', '嚴重超速', '車不讓人', '行人違規'] * 4
+                                # Row 4+: 數據
+                                row_data = final_table.values.tolist()
+                                
+                                # 清空並寫入
+                                ws.clear()
+                                ws.update(values=[row1, row2, row3] + row_data)
+                                
+                                # 執行格式化 (雙色標題)
+                                requests = []
+                                # 合併大標題 A1:U1
+                                requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 21}, "mergeType": "MERGE_ALL"}})
+                                # 合併日期欄位
+                                for start_col in [1, 6, 11, 16]:
+                                    requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": start_col, "endColumnIndex": start_col+5}, "mergeType": "MERGE_ALL"}})
+                                
+                                # 套用雙色文字格式 (針對 Row 2 的 B, G, L, Q 欄)
+                                for col_idx, text in zip([1, 6, 11], [txt_week, txt_curr, txt_last]):
+                                    requests.append(get_red_text_format_req(ws.id, 1, col_idx, text))
+                                
+                                sh.batch_update({"requests": requests})
+                                st.write("✅ Google Sheets 同步完成")
+                            else:
+                                st.warning("⚠️ 未設定 gcp_service_account，跳過同步")
+                        except Exception as e:
+                            st.error(f"❌ Google Sheets 同步失敗: {e}")
+
+                        # 2. 寄信
+                        st.write("📧 正在寄送報表...")
+                        mail_res = send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為交通違規統計報表。", excel_data, file_name_out)
+                        if mail_res == "成功":
+                            st.write("✅ 郵件已發送")
+                            st.session_state["sent_cache"].add(file_ids)
+                            s.update(label="🎉 流程執行完畢", state="complete")
+                            st.balloons()
+                        else:
+                            st.error(f"❌ 寄信失敗: {mail_res}")
+                            s.update(label="⚠️ 流程部分失敗", state="error")
+                else:
+                    st.info(f"✅ 報表已於剛才發送過。")
             else:
                 if st.button("📧 立即發送郵件"):
-                    if send_email(email_receiver, f"📊 [手動發送] {file_name_out}", "附件", excel_data, file_name_out): st.success("✅ 發送成功")
+                    mail_res = send_email(email_receiver, f"📊 [手動發送] {file_name_out}", "附件", excel_data, file_name_out)
+                    if mail_res == "成功": st.success("✅ 發送成功")
+                    else: st.error(f"失敗: {mail_res}")
 
             st.download_button("📥 下載 Excel", excel_data, file_name_out, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
