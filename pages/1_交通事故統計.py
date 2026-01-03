@@ -26,9 +26,9 @@ SMTP_PORT = 587
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (分頁同步版)", layout="wide", page_icon="🚑")
-st.title("🚑 交通事故統計 (上傳即寄出 + 分頁同步)")
-st.markdown("### 📝 狀態：A1 寫入第3分頁，A2 寫入第4分頁，Excel 保持紅黑格式。")
+st.set_page_config(page_title="交通事故統計 (含標題排版)", layout="wide", page_icon="🚑")
+st.title("🚑 交通事故統計 (上傳即寄出 + 標題排版)")
+st.markdown("### 📝 狀態：同步至 Google 試算表時，會自動新增「藍色大標題」並合併儲存格。")
 
 # 1. 檔案上傳區
 uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
@@ -94,7 +94,7 @@ def send_email_auto(attachment_data, filename):
     except Exception as e:
         return False, f"❌ 寄送失敗：{e}"
 
-# 3. Google Sheets 同步函數 (🔥 分流邏輯修改)
+# 3. Google Sheets 同步函數 (🔥 新增標題排版功能)
 def sync_to_gsheet(df_a1, df_a2):
     try:
         if "gcp_service_account" not in st.secrets:
@@ -108,30 +108,82 @@ def sync_to_gsheet(df_a1, df_a2):
             ws_a1 = sh.get_worksheet(2) 
             ws_a1.clear()
             
-            # 準備 A1 資料
-            data_a1 = [df_a1.columns.tolist()]
+            # 準備 A1 資料 (插入標題列)
+            title_text_a1 = "A1類交通事故死亡人數統計表"
+            data_a1 = [[title_text_a1]] # 第一列：大標題
+            data_a1.append(df_a1.columns.tolist()) # 第二列：欄位名
             for row in df_a1.values.tolist():
                 data_a1.append([int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row])
             
             ws_a1.update(values=data_a1)
+
+            # A1 格式化請求 (合併儲存格 + 藍色大字體)
+            reqs_a1 = [
+                {
+                    "mergeCells": {
+                        "range": {"sheetId": ws_a1.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": len(df_a1.columns)},
+                        "mergeType": "MERGE_ALL"
+                    }
+                },
+                {
+                    "repeatCell": {
+                        "range": {"sheetId": ws_a1.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": len(df_a1.columns)},
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "textFormat": {"foregroundColor": {"blue": 1}, "fontSize": 24, "bold": True, "fontFamily": "標楷體"}
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
+                    }
+                }
+            ]
+            sh.batch_update({"requests": reqs_a1})
+
         except Exception as e_a1:
-             return False, f"❌ A1 同步失敗 (請確認是否有第3個分頁): {e_a1}"
+             return False, f"❌ A1 同步失敗: {e_a1}"
 
         # --- (2) A2 寫入第 4 分頁 (Index 3) ---
         try:
             ws_a2 = sh.get_worksheet(3) 
             ws_a2.clear()
             
-            # 準備 A2 資料
-            data_a2 = [df_a2.columns.tolist()]
+            # 準備 A2 資料 (插入標題列)
+            title_text_a2 = "A2類交通事故受傷人數統計表"
+            data_a2 = [[title_text_a2]] # 第一列：大標題
+            data_a2.append(df_a2.columns.tolist()) # 第二列：欄位名
             for row in df_a2.values.tolist():
                 data_a2.append([int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row])
                 
             ws_a2.update(values=data_a2)
+
+            # A2 格式化請求 (合併儲存格 + 藍色大字體)
+            reqs_a2 = [
+                {
+                    "mergeCells": {
+                        "range": {"sheetId": ws_a2.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": len(df_a2.columns)},
+                        "mergeType": "MERGE_ALL"
+                    }
+                },
+                {
+                    "repeatCell": {
+                        "range": {"sheetId": ws_a2.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": len(df_a2.columns)},
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "textFormat": {"foregroundColor": {"blue": 1}, "fontSize": 24, "bold": True, "fontFamily": "標楷體"}
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
+                    }
+                }
+            ]
+            sh.batch_update({"requests": reqs_a2})
+
         except Exception as e_a2:
-             return False, f"❌ A2 同步失敗 (請確認是否有第4個分頁): {e_a2}"
+             return False, f"❌ A2 同步失敗: {e_a2}"
         
-        return True, "✅ Google 試算表同步成功 (A1->第3頁, A2->第4頁)"
+        return True, "✅ Google 試算表同步成功 (已新增藍色大標題)"
     except Exception as e:
         return False, f"❌ Google 試算表連線失敗: {e}"
 
@@ -275,7 +327,7 @@ if uploaded_files:
                             cell.alignment = align_center
                             cell.border = border_style
 
-            # (F) 同步到 Google Sheet (🔥 A1->第3頁 / A2->第4頁)
+            # (F) 同步到 Google Sheet (🔥 新增標題排版功能)
             gs_success, gs_msg = sync_to_gsheet(a1_final, a2_final)
             if gs_success: st.write(gs_msg)
             else: st.error(gs_msg)
