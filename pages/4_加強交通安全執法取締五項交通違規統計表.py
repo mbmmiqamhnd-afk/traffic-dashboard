@@ -9,7 +9,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 from email.header import Header
 
-st.set_page_config(page_title="五項交通違規統計 (表頭日期版)", layout="wide", page_icon="🚦")
+st.set_page_config(page_title="五項交通違規統計 (最終完美版)", layout="wide", page_icon="🚦")
 
 # --- 側邊欄 ---
 with st.sidebar:
@@ -23,8 +23,9 @@ with st.sidebar:
        - `(1)` → 本年
        - `(2)` → 去年
        - `footman`/`行人` → 行人
-    3. **日期偵測**：鎖定 Excel **第三列 (Row 3)** 統計期間欄位，解析 `(MMDD~MMDD)`。
+    3. **日期偵測**：鎖定 Excel **第三列 (Row 3)** 統計期間，自動擷取並寫入報表。
     """)
+    # 用於顯示偵測到的日期，讓您確認
     status_container = st.container()
 
 # --- 寄信函數 ---
@@ -55,15 +56,15 @@ def send_email(recipient, subject, body, file_bytes, filename):
         st.error(f"❌ 寄信失敗: {e}")
         return False
 
-# --- 🔥 全新日期解析函數 (針對表頭第三列) ---
+# --- 🔥 日期提取函數 (針對自選匯出表格格式) ---
 def extract_header_date(file_obj, filename):
     """
-    只讀取 Excel 前 5 列，針對「第三列」(Index 2) 進行文字解析。
-    尋找 ROC 日期格式 (如 1130101) 並回傳 (MMDD~MMDD)。
+    讀取 Excel 前幾列，專門針對「第三列」(Index 2) 的「統計期間」欄位進行解析。
+    目標：抓取類似 113/01/01 或 1130101 的日期。
     """
     try:
         file_obj.seek(0)
-        # 只讀前 5 列，header=None 確保讀到原始內容
+        # 讀取前 5 列
         if filename.endswith(('.xls', '.xlsx')):
             try:
                 df_head = pd.read_excel(file_obj, header=None, nrows=5)
@@ -71,46 +72,39 @@ def extract_header_date(file_obj, filename):
                 file_obj.seek(0)
                 df_head = pd.read_excel(file_obj, header=None, nrows=5, engine='openpyxl')
         else:
-            # CSV 處理
             try: df_head = pd.read_csv(file_obj, header=None, nrows=5, encoding='utf-8')
             except: 
                 file_obj.seek(0)
                 df_head = pd.read_csv(file_obj, header=None, nrows=5, encoding='cp950')
         
-        # 鎖定第三列 (Index 2)，若沒那麼多列則搜全部
+        # 鎖定第三列 (Row 3, Index 2)
+        # 如果檔案很短，就從所有列找
         target_rows = []
         if len(df_head) > 2:
-            target_rows.append(df_head.iloc[2].astype(str).values) # 主要目標
-            target_rows.append(df_head.iloc[1].astype(str).values) # 備用: 第二列
+            target_rows.append(df_head.iloc[2].astype(str).values) # 優先：第三列
+            target_rows.append(df_head.iloc[1].astype(str).values) # 備用：第二列
         else:
             for i in range(len(df_head)):
                 target_rows.append(df_head.iloc[i].astype(str).values)
         
-        found_dates = []
-        
         for row_vals in target_rows:
-            # 將整列文字串接，並移除干擾符號
+            # 將整列文字合併，移除符號
             row_text = " ".join(row_vals)
-            # 移除 / - ~ . 和空格，讓 113/01/01 變成 1130101
+            # 移除常見分隔符，保留數字
             clean_text = re.sub(r'[/\-\~\.\s]', '', row_text)
             
-            # 尋找 7 碼數字 (ROC年3碼+月2碼+日2碼) e.g., 1130101
-            # 或 6 碼數字 (ROC年2碼+月2碼+日2碼) e.g., 990101
+            # 尋找 6~7 碼數字 (ROC日期)
             matches = re.findall(r'(\d{6,7})', clean_text)
             
-            # 過濾合理的日期 (月 01-12, 日 01-31)
-            valid_dates = []
-            for m in matches:
-                # 簡單檢核長度
-                if len(m) >= 6: 
-                    valid_dates.append(m)
+            # 過濾：只保留看起來像日期的 (長度 >= 6)
+            valid_dates = [m for m in matches if len(m) >= 6]
             
             if len(valid_dates) >= 2:
-                # 假設同一列出現的頭兩個長數字就是 起始日 與 結束日
+                # 取前兩個數字作為 起始日 與 結束日
                 start = valid_dates[0]
                 end = valid_dates[1]
                 
-                # 取後四碼
+                # 取後四碼 (MMDD)
                 s_mmdd = start[-4:]
                 e_mmdd = end[-4:]
                 return f"({s_mmdd}~{e_mmdd})"
@@ -119,7 +113,7 @@ def extract_header_date(file_obj, filename):
     except Exception as e:
         return ""
 
-# --- 智慧讀取函數 (讀取資料本體) ---
+# --- 智慧讀取函數 (讀取數據本體) ---
 def smart_read(fobj, fname):
     try:
         fobj.seek(0)
@@ -131,7 +125,7 @@ def smart_read(fobj, fname):
             
             header_idx = -1
             for i, row in df_temp.iterrows():
-                # 尋找含有 '單位' 的列作為表頭
+                # 尋找含有 '單位' 的列
                 if any('單位' in str(x) for x in row.astype(str).values):
                     header_idx = i
                     break
@@ -158,7 +152,7 @@ def smart_read(fobj, fname):
                 fobj.seek(0)
                 df = pd.read_csv(fobj, header=header_idx, encoding='cp950')
         
-        # 清洗欄位名稱
+        # 清洗欄位名稱：移除換行、空格
         df.columns = [str(c).strip().replace('\n', '').replace(' ', '') for c in df.columns]
         if '單位' not in df.columns:
             match = [c for c in df.columns if '單位' in c]
@@ -188,16 +182,16 @@ if uploaded_files:
         def process_data(key_gen, key_foot, suffix, period_key):
             df_gen = pd.DataFrame(columns=['單位'])
             
-            # 1. 處理一般報表
+            # 1. 處理自選匯出 (一般報表)
             if key_gen in file_map:
                 f_obj = file_map[key_gen]['file']
                 f_name = file_map[key_gen]['name']
                 
-                # 🔥 先抓日期 (針對表頭第三列)
+                # A. 抓取日期 (優先從這裡抓)
                 if date_labels[period_key] == "":
                     date_labels[period_key] = extract_header_date(f_obj, f_name)
                 
-                # 再讀資料
+                # B. 抓取數據
                 df_gen = smart_read(f_obj, f_name)
 
             # 資料清洗
@@ -212,11 +206,12 @@ if uploaded_files:
             for c in df.columns: 
                 if c != '單位': df[c] = df[c].apply(clean_num)
 
+            # 統計邏輯
             cols = df.columns
             def get_sum(keyword_list):
                 matched_cols = []
                 for k in keyword_list:
-                    # 模糊比對
+                    # 寬鬆比對：只要欄位名稱包含關鍵字 (如 "35條") 就算數
                     for c in cols:
                         if k in c or c.startswith(k):
                             matched_cols.append(c)
@@ -227,6 +222,7 @@ if uploaded_files:
             res = pd.DataFrame()
             if not df.empty:
                 res['單位'] = df['單位']
+                # 這裡就是將「自選匯出」數據寫入的關鍵
                 res[f'酒駕_{suffix}'] = get_sum(['35條', '73條2項', '73條3項'])
                 res[f'闖紅燈_{suffix}'] = get_sum(['53條'])
                 res[f'嚴重超速_{suffix}'] = get_sum(['43條'])
@@ -239,7 +235,7 @@ if uploaded_files:
                 f_obj = file_map[key_foot]['file']
                 f_name = file_map[key_foot]['name']
                 
-                # 若一般報表沒抓到日期，試試行人報表的表頭
+                # 補抓日期
                 if date_labels[period_key] == "":
                     date_labels[period_key] = extract_header_date(f_obj, f_name)
                 
@@ -269,14 +265,14 @@ if uploaded_files:
         df_c = process_data('curr_gen', 'curr_foot', '本年', 'curr')
         df_l = process_data('last_gen', 'last_foot', '去年', 'last')
 
-        # 顯示偵測結果
+        # 側邊欄顯示偵測結果
         with status_container:
-            st.info(f"📅 日期偵測結果 (若為空請檢查表頭第三列)：\n"
+            st.info(f"📅 日期偵測狀態 (來自第三列)：\n"
                     f"- 本期: {date_labels['week']}\n"
                     f"- 本年: {date_labels['curr']}\n"
                     f"- 去年: {date_labels['last']}")
 
-        # 合併與輸出邏輯 (保持不變)
+        # 合併數據
         unit_sources = []
         for d in [df_w, df_c, df_l]:
             if not d.empty and '單位' in d.columns: unit_sources.append(d['單位'])
@@ -338,6 +334,7 @@ if uploaded_files:
 
             st.success("✅ 分析完成！")
             
+            # 準備標題字串
             txt_week = f"本期 {date_labels['week']}"
             txt_curr = f"本年累計 {date_labels['curr']}"
             txt_last = f"去年累計 {date_labels['last']}"
@@ -377,20 +374,24 @@ if uploaded_files:
             # --- Excel 輸出 ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                # 數據寫入
                 final_table.to_excel(writer, index=False, header=False, startrow=3, sheet_name='交通違規統計')
                 
                 workbook = writer.book
                 worksheet = writer.sheets['交通違規統計']
                 
+                # 格式
                 fmt_title = workbook.add_format({'bold': True, 'font_size': 20, 'font_color': 'blue', 'align': 'center', 'valign': 'vcenter'})
                 fmt_period_red = workbook.add_format({'bold': True, 'font_color': 'red', 'align': 'center', 'valign': 'vcenter', 'border': 1})
                 fmt_period_black = workbook.add_format({'bold': True, 'font_color': 'black', 'align': 'center', 'valign': 'vcenter', 'border': 1})
                 fmt_header = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1, 'text_wrap': True})
                 fmt_label = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1})
                 
+                # 繪製表頭
                 worksheet.merge_range('A1:U1', '加強交通安全執法取締五項交通違規統計表', fmt_title)
                 
                 worksheet.write('A2', '統計期間', fmt_label)
+                # 🔥 將抓到的日期寫入
                 worksheet.merge_range('B2:F2', txt_week, fmt_period_red)
                 worksheet.merge_range('G2:K2', txt_curr, fmt_period_red)
                 worksheet.merge_range('L2:P2', txt_last, fmt_period_red)
