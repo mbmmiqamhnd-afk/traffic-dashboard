@@ -9,7 +9,8 @@ from email.mime.base import MIMEBase
 from email import encoders
 from email.header import Header
 
-st.set_page_config(page_title="五項交通違規統計 (完美版)", layout="wide", page_icon="🚦")
+# 設定頁面資訊
+st.set_page_config(page_title="五項交通違規統計 (排序調整版)", layout="wide", page_icon="🚦")
 
 # --- 側邊欄 ---
 with st.sidebar:
@@ -20,10 +21,10 @@ with st.sidebar:
     ### 📝 操作說明
     1. 拖曳上傳檔案。
     2. 系統自動辨識年份與類別。
-    3. **格式升級**：
-       - 標題列：中黑、數紅。
-       - 數據列：**負數自動變紅色**。
-       - 精確鎖定欄位與日期。
+    3. **排序更新**：
+       - **交通分隊** 已移至報表最下方。
+       - 負數顯示紅字。
+       - 雙色標題。
     """)
     status_container = st.container()
 
@@ -70,14 +71,12 @@ def extract_header_date(file_obj, filename):
                 file_obj.seek(0)
                 df_head = pd.read_csv(file_obj, header=None, nrows=5, encoding='cp950')
         
-        # 鎖定第 3 列 (Index 2)
         if len(df_head) > 2:
             row_vals = df_head.iloc[2].astype(str).values
             row_text = " ".join(row_vals)
             clean_text = re.sub(r'[/\-\~\.\s]', '', row_text)
             matches = re.findall(r'(\d{6,7})', clean_text)
             valid_dates = [m for m in matches if len(m) >= 6]
-            
             if len(valid_dates) >= 2:
                 s_mmdd = valid_dates[0][-4:]
                 e_mmdd = valid_dates[1][-4:]
@@ -89,9 +88,7 @@ def extract_header_date(file_obj, filename):
 def smart_read(fobj, fname):
     try:
         fobj.seek(0)
-        # 直接鎖定 header=3 (第 4 列)
         header_idx = 3
-        
         if fname.endswith(('.xls', '.xlsx')): 
             try: df = pd.read_excel(fobj, header=header_idx)
             except: 
@@ -104,11 +101,9 @@ def smart_read(fobj, fname):
                 df = pd.read_csv(fobj, header=header_idx, encoding='cp950')
         
         df.columns = [str(c).strip().replace('\n', '').replace(' ', '') for c in df.columns]
-        
         if '單位' not in df.columns:
             match = [c for c in df.columns if '單位' in c]
             if match: df.rename(columns={match[0]: '單位'}, inplace=True)
-            
         return df
     except Exception as e:
         return pd.DataFrame(columns=['單位'])
@@ -150,7 +145,6 @@ if uploaded_files:
     try:
         def process_data(key_gen, key_foot, suffix, period_key):
             df_gen = pd.DataFrame(columns=['單位'])
-            
             if key_gen in file_map:
                 f_obj = file_map[key_gen]['file']
                 f_name = file_map[key_gen]['name']
@@ -174,8 +168,7 @@ if uploaded_files:
                 matched_cols = []
                 for k in keyword_list:
                     for c in cols:
-                        if k in c or c.startswith(k):
-                            matched_cols.append(c)
+                        if k in c or c.startswith(k): matched_cols.append(c)
                 matched_cols = list(set(matched_cols))
                 if not matched_cols: return 0
                 return df[matched_cols].sum(axis=1)
@@ -197,7 +190,6 @@ if uploaded_files:
                     date_labels[period_key] = extract_header_date(f_obj, f_name)
                 
                 foot = smart_read(f_obj, f_name)
-                # 行人Fallback
                 if '單位' not in foot.columns:
                      try:
                          f_obj.seek(0)
@@ -258,7 +250,7 @@ if uploaded_files:
             final = pd.DataFrame()
 
         if final.empty: 
-            st.error("❌ 找不到有效單位。請確認報表格式。")
+            st.error("❌ 找不到有效單位。")
         else:
             cats = ['酒駕', '闖紅燈', '嚴重超速', '車不讓人', '行人違規']
             for c in cats: 
@@ -273,7 +265,8 @@ if uploaded_files:
             total_row['Target_Unit'] = '合計'
             result = pd.concat([total_row, final], ignore_index=True)
 
-            order = ['合計', '科技執法', '交通分隊', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
+            # 🔥🔥🔥 排序邏輯調整：將「交通分隊」移到最後 🔥🔥🔥
+            order = ['合計', '科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '交通分隊']
             result['Target_Unit'] = pd.Categorical(result['Target_Unit'], categories=order, ordered=True)
             result.sort_values('Target_Unit', inplace=True)
 
@@ -302,11 +295,6 @@ if uploaded_files:
                 </h2>
             """, unsafe_allow_html=True)
             
-            # 網頁表格樣式處理 (讓負數變紅有點難，Streamlit 原生支援度有限，這裡主要處理 Excel 輸出)
-            def highlight_negative(val):
-                color = 'red' if isinstance(val, int) and val < 0 else 'black'
-                return f'color: {color}'
-
             display_df = final_table.copy()
             new_columns = []
             for col in display_df.columns:
@@ -318,36 +306,28 @@ if uploaded_files:
                 else: new_columns.append(('', col))
             display_df.columns = pd.MultiIndex.from_tuples(new_columns)
             
-            # 網頁顯示
-            st.dataframe(display_df, use_container_width=True)
+            def highlight_negative_red(val):
+                color = 'red' if isinstance(val, (int, float)) and val < 0 else 'black'
+                return f'color: {color}'
 
-            # --- Excel 輸出 (🔥 負數變紅格式) ---
+            styled_df = display_df.style.map(highlight_negative_red).format("{:.0f}")
+            st.dataframe(styled_df, use_container_width=True)
+
+            # --- Excel 輸出 ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 final_table.to_excel(writer, index=False, header=False, startrow=3, sheet_name='交通違規統計')
                 workbook = writer.book
                 worksheet = writer.sheets['交通違規統計']
                 
-                # --- 格式定義 ---
-                # 基本單元格 (邊框)
                 fmt_base = workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1})
-                
-                # 🔥 數據格式：整數、邊框、置中，且 [Red]-0 代表負數顯示紅色
-                fmt_data = workbook.add_format({
-                    'align': 'center', 
-                    'valign': 'vcenter', 
-                    'border': 1, 
-                    'num_format': '0;[Red]-0' 
-                })
-                
-                # 標題樣式
+                fmt_data = workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'num_format': '0;[Red]-0'})
                 fmt_title = workbook.add_format({'bold': True, 'font_size': 20, 'font_color': 'blue', 'align': 'center', 'valign': 'vcenter'})
                 fmt_black = workbook.add_format({'bold': True, 'color': 'black'})
                 fmt_red = workbook.add_format({'bold': True, 'color': 'red'})
                 fmt_header = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1, 'text_wrap': True})
                 fmt_label = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1})
                 
-                # --- 繪製 ---
                 worksheet.merge_range('A1:U1', '加強交通安全執法取締五項交通違規統計表', fmt_title)
                 worksheet.write('A2', '統計期間', fmt_label)
                 
@@ -367,11 +347,7 @@ if uploaded_files:
                 
                 headers = ['取締項目'] + ['酒駕', '闖紅燈', '嚴重\n超速', '車不\n讓人', '行人\n違規'] * 4
                 worksheet.write_row('A3', headers, fmt_header)
-                
-                # 設定欄寬
-                worksheet.set_column('A:A', 15, fmt_base) # 第一欄不需要紅字格式
-                
-                # 🔥 設定數據欄位 (B~U) 的格式為 fmt_data (含負數變紅)
+                worksheet.set_column('A:A', 15, fmt_base)
                 worksheet.set_column('B:U', 9, fmt_data)
 
             excel_data = output.getvalue()
