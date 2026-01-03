@@ -9,6 +9,9 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 from openpyxl.styles import Font, Alignment, Border, Side
+# 引入 Rich Text 相關模組
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+from openpyxl.cell.text import InlineFont
 
 # ==========================================
 # 👇👇👇 【使用者設定區】 👇👇👇
@@ -20,9 +23,9 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (自動加總版)", layout="wide", page_icon="🚑")
+st.set_page_config(page_title="交通事故統計 (富文本格式版)", layout="wide", page_icon="🚑")
 st.title("🚑 交通事故統計 (上傳即寄出)")
-st.markdown("### 📝 狀態：系統將「自動加總」各所數據產生合計，並自動寄出。")
+st.markdown("### 📝 狀態：標題列「數字與符號」自動轉紅，漢字保持黑色。")
 
 # 1. 檔案上傳區
 uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
@@ -35,7 +38,7 @@ def send_email_auto(attachment_data, filename):
         msg['To'] = TO_EMAIL
         msg['Subject'] = f"交通事故統計報表 ({pd.Timestamp.now().strftime('%Y/%m/%d')})"
         
-        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (系統已自動重新計算合計欄位)，請查照。\n\n(此郵件由系統自動發送)"
+        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (已套用紅黑雙色標題格式)，請查照。\n\n(此郵件由系統自動發送)"
         msg.attach(MIMEText(body, 'plain'))
 
         part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -58,7 +61,7 @@ if uploaded_files:
         st.warning(f"⚠️ 目前已上傳 {len(uploaded_files)} 個檔案，請補齊至 3 個檔案。")
         st.stop()
     
-    with st.spinner("⚡ 正在分析數據、自動計算合計並寄送中..."):
+    with st.spinner("⚡ 正在分析、套用富文本格式並寄送中..."):
         try:
             # === (A) 資料讀取與清理 ===
             def parse_raw(file_obj):
@@ -67,7 +70,6 @@ if uploaded_files:
 
             def clean_data(df_raw):
                 df_raw[0] = df_raw[0].astype(str)
-                # 這裡改寬鬆一點，只要有派出所名稱就抓進來
                 df_data = df_raw[df_raw[0].str.contains("所|總計|合計", na=False)].copy()
                 df_data = df_data.reset_index(drop=True)
                 columns_map = {
@@ -142,83 +144,96 @@ if uploaded_files:
             if df_wk is None or df_cur is None or df_lst is None:
                 st.error("❌ 檔案辨識失敗。"); st.stop()
 
-            # === (D) 合併與計算 (🔥 新增：強制重算合計邏輯) ===
-            
-            # 定義我们要的派出所順序 (不包含合計，合計稍後算出)
+            # === (D) 合併與計算 ===
             target_stations = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
 
             def process_and_sum(df_main, value_cols):
-                """過濾出指定派出所，算出合計，並合併回去"""
-                # 1. 只留目標派出所
                 df_sub = df_main[df_main['Station_Short'].isin(target_stations)].copy()
-                
-                # 2. 排序
                 df_sub['Station_Short'] = pd.Categorical(df_sub['Station_Short'], categories=target_stations, ordered=True)
                 df_sub.sort_values('Station_Short', inplace=True)
-                
-                # 3. 計算合計
                 sum_values = df_sub[value_cols].sum()
                 row_total = pd.DataFrame([{'Station_Short': '合計', **sum_values.to_dict()}])
-                
-                # 4. 合併 (合計放最上面)
                 return pd.concat([row_total, df_sub], ignore_index=True)
 
-            # A1 處理
+            # A1
             a1_wk = df_wk[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'wk'})
             a1_cur = df_cur[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'cur'})
             a1_lst = df_lst[['Station_Short', 'A1_Deaths']].rename(columns={'A1_Deaths': 'last'})
             m_a1 = pd.merge(a1_wk, a1_cur, on='Station_Short', how='outer')
             m_a1 = pd.merge(m_a1, a1_lst, on='Station_Short', how='outer').fillna(0)
-            
-            # 🔥 這裡呼叫加總函數
             m_a1 = process_and_sum(m_a1, ['wk', 'cur', 'last'])
-            m_a1['Diff'] = m_a1['cur'] - m_a1['last'] # 重新計算差異
+            m_a1['Diff'] = m_a1['cur'] - m_a1['last']
 
-            # A2 處理
+            # A2
             a2_wk = df_wk[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'wk'})
             a2_cur = df_cur[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'cur'})
             a2_lst = df_lst[['Station_Short', 'A2_Injuries']].rename(columns={'A2_Injuries': 'last'})
             m_a2 = pd.merge(a2_wk, a2_cur, on='Station_Short', how='outer')
             m_a2 = pd.merge(m_a2, a2_lst, on='Station_Short', how='outer').fillna(0)
-            
-            # 🔥 這裡呼叫加總函數
             m_a2 = process_and_sum(m_a2, ['wk', 'cur', 'last'])
-            m_a2['Diff'] = m_a2['cur'] - m_a2['last'] # 重新計算差異
+            m_a2['Diff'] = m_a2['cur'] - m_a2['last']
             m_a2['Pct_Str'] = m_a2.apply(lambda x: f"{(x['Diff']/x['last']):.2%}" if x['last']!=0 else "-", axis=1)
             m_a2['Prev'] = "-"
 
             # 整理欄位
             a1_final = m_a1[['Station_Short', 'wk', 'cur', 'last', 'Diff']].copy()
-            a1_final.columns = ['單位', f'本期({h_wk})', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較']
+            a1_final.columns = ['統計期間', f'本期({h_wk})', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較']
             
             a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
-            a2_final.columns = ['單位', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
+            a2_final.columns = ['統計期間', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
 
-            # === (E) 產生 Excel 與 寄信 ===
+            # === (E) 產生 Excel (套用 Rich Text) ===
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
                 a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
                 
-                font_normal = Font(name='標楷體', size=12)
-                font_red_bold = Font(name='標楷體', size=12, bold=True, color="FF0000")
-                font_bold = Font(name='標楷體', size=12, bold=True)
+                # 定義基本的字體物件 (InlineFont 用於 RichText)
+                # 黑色字 (漢字用)
+                font_black = InlineFont(rFont='標楷體', sz=12, b=True, color='000000')
+                # 紅色字 (數字、符號用)
+                font_red = InlineFont(rFont='標楷體', sz=12, b=True, color='FF0000')
+
+                # 一般內容字體 (Cell 屬性)
+                font_normal_cell = Font(name='標楷體', size=12)
                 align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
                 border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
                 
+                # --- 核心：富文本轉換函數 ---
+                def make_rich_text(text):
+                    text = str(text)
+                    rich_text = CellRichText()
+                    # 正則表達式：將 "數字和符號" 與 "其他文字(漢字)" 切開
+                    # 匹配 [0-9], (, ), /, -, ., %
+                    tokens = re.split(r'([0-9\(\)\/\-\.\%]+)', text)
+                    
+                    for token in tokens:
+                        if not token: continue
+                        # 如果是數字或符號 -> 紅色
+                        if re.match(r'^[0-9\(\)\/\-\.\%]+$', token):
+                            rich_text.append(token, font_red)
+                        else:
+                            # 漢字或其他 -> 黑色
+                            rich_text.append(token, font_black)
+                    return rich_text
+
                 for sheet_name in ['A1死亡人數', 'A2受傷人數']:
                     ws = writer.book[sheet_name]
                     for col in ws.columns: ws.column_dimensions[col[0].column_letter].width = 20
-                    for cell in ws[1]:
+                    
+                    # 1. 處理標題列 (First Row)
+                    for i, cell in enumerate(ws[1]):
+                        original_value = cell.value
+                        cell.value = make_rich_text(original_value) # 套用富文本
                         cell.alignment = align_center
                         cell.border = border_style
-                        if any(x in str(cell.value) for x in ["本期", "累計", "/"]): cell.font = font_red_bold
-                        else: cell.font = font_bold
+
+                    # 2. 處理數據內容 (從第二列開始)
                     for row in ws.iter_rows(min_row=2):
                         for cell in row:
                             cell.alignment = align_center
                             cell.border = border_style
-                            cell.font = font_normal
+                            cell.font = font_normal_cell
             
             # 🔥 自動寄信
             filename_excel = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
