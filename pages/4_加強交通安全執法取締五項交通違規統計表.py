@@ -10,7 +10,7 @@ from email import encoders
 from email.header import Header
 
 # 設定頁面資訊
-st.set_page_config(page_title="五項交通違規統計 (修復版)", layout="wide", page_icon="🚦")
+st.set_page_config(page_title="五項交通違規統計 (深色模式修復版)", layout="wide", page_icon="🚦")
 
 # --- 側邊欄 ---
 with st.sidebar:
@@ -21,9 +21,9 @@ with st.sidebar:
     ### 📝 操作說明
     1. 拖曳上傳檔案。
     2. 系統自動辨識年份與類別。
-    3. **修復錯誤**：
-       - 解決 `Unknown format code 'f' for object of type 'str'` 錯誤。
-       - 確保文字欄位不被當作數字處理。
+    3. **修復重點**：
+       - 解決網頁預覽在深色模式下看不到字的問題。
+       - 正數自動適應背景色 (黑/白)，負數維持紅色。
     """)
     status_container = st.container()
 
@@ -275,7 +275,6 @@ if uploaded_files:
                     else: result[col_name] = 0; cols_out.append(col_name)
             
             final_table = result[cols_out].copy()
-            # 確保數值欄位是數字
             try: final_table.iloc[:, 1:] = final_table.iloc[:, 1:].astype(float).fillna(0)
             except: pass
 
@@ -304,17 +303,13 @@ if uploaded_files:
                 else: new_columns.append(('', col))
             display_df.columns = pd.MultiIndex.from_tuples(new_columns)
             
+            # 🔥🔥🔥 修正：只回傳紅色，否則回傳 None (預設顏色) 🔥🔥🔥
             def highlight_negative_red(val):
-                # 增加防呆，確保只有數值才判斷
                 if isinstance(val, (int, float)) and val < 0:
                     return 'color: red'
-                return 'color: black'
+                return None  # 讓 Streamlit 自動決定 (淺色變黑，深色變白)
 
-            # 找出數值欄位 (排除第一欄 'Target_Unit')
-            # 這裡要注意 MultiIndex 的情況，第一欄的 Level 1 是 '取締項目'
             numeric_cols = display_df.columns[1:]
-            
-            # 使用 subset 參數來避開文字欄位
             styled_df = display_df.style\
                 .map(highlight_negative_red, subset=numeric_cols)\
                 .format("{:.0f}", subset=numeric_cols)
