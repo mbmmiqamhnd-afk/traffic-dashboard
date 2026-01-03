@@ -22,36 +22,33 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (全表格式同步版)", layout="wide", page_icon="🚑")
+st.set_page_config(page_title="交通事故統計 (整數黑字版)", layout="wide", page_icon="🚑")
 st.title("🚑 交通事故統計 (上傳即寄出)")
-st.markdown("### 📝 狀態：網頁與 Excel 的「所有數字」皆顯示為紅色，文字維持黑色。")
+st.markdown("### 📝 狀態：標題維持紅黑配色，數據列強制為「黑色整數」。")
 
 # 1. 檔案上傳區
 uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
 
-# --- 核心工具：產生紅黑雙色的 HTML ---
-def format_html_text(text):
-    """將文字轉換為 HTML，數字符號轉紅，其餘轉黑"""
+# --- 工具函數：HTML 標題專用 (紅黑雙色) ---
+def format_html_header(text):
+    """標題專用：數字符號轉紅"""
     text = str(text)
-    # 分割：數字、括號、斜線、減號、點、百分比
     tokens = re.split(r'([0-9\(\)\/\-\.\%]+)', text)
     html_str = ""
     for token in tokens:
         if not token: continue
-        # 如果是數字或符號 -> 紅色
         if re.match(r'^[0-9\(\)\/\-\.\%]+$', token):
             html_str += f'<span style="color: red;">{token}</span>'
         else:
             html_str += f'<span style="color: black;">{token}</span>'
     return html_str
 
+# --- 網頁渲染函數 ---
 def render_styled_table(df, title):
-    """在 Streamlit 渲染漂亮的 HTML 表格 (內容也套用紅黑格式)"""
     st.subheader(title)
-    
     df_display = df.copy()
     
-    # CSS 強制白底黑字，確保深色模式可讀
+    # CSS: 強制白底黑字
     style = """
     <style>
         table.acc_table {
@@ -74,24 +71,30 @@ def render_styled_table(df, title):
             padding: 8px;
             text-align: center !important;
             background-color: #ffffff !important;
+            color: #000000 !important; /* 強制黑色 */
         }
     </style>
     """
     
     html = f"{style}<table class='acc_table'><thead><tr>"
     
-    # 1. 標題列
+    # 1. 標題列 (紅黑雙色)
     for col in df_display.columns:
-        styled_header = format_html_text(col)
+        styled_header = format_html_header(col)
         html += f"<th>{styled_header}</th>"
     html += "</tr></thead><tbody>"
     
-    # 2. 內容列 (全部套用紅黑格式)
+    # 2. 內容列 (純黑 + 整數)
     for _, row in df_display.iterrows():
         html += "<tr>"
         for val in row:
-            styled_val = format_html_text(val) # 🔥 這裡讓內容數字也變紅
-            html += f"<td>{styled_val}</td>"
+            # 處理顯示格式：如果是數字，轉整數；如果是字串(如百分比)，保持原樣
+            if isinstance(val, (int, float)):
+                display_val = f"{int(val)}" # 強制轉整數 (去小數點)
+            else:
+                display_val = str(val)
+                
+            html += f"<td>{display_val}</td>"
         html += "</tr>"
     html += "</tbody></table>"
     
@@ -105,7 +108,7 @@ def send_email_auto(attachment_data, filename):
         msg['To'] = TO_EMAIL
         msg['Subject'] = f"交通事故統計報表 ({pd.Timestamp.now().strftime('%Y/%m/%d')})"
         
-        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (全表數據已套用紅黑格式)，請查照。\n\n(此郵件由系統自動發送)"
+        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (數據已修正為黑色整數)，請查照。\n\n(此郵件由系統自動發送)"
         msg.attach(MIMEText(body, 'plain'))
 
         part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -128,7 +131,7 @@ if uploaded_files:
         st.warning(f"⚠️ 目前已上傳 {len(uploaded_files)} 個檔案，請補齊至 3 個檔案。")
         st.stop()
     
-    with st.spinner("⚡ 正在分析、全表格式化並寄送中..."):
+    with st.spinner("⚡ 正在分析、轉換整數格式並寄送中..."):
         try:
             # === (A) 資料讀取與清理 ===
             def parse_raw(file_obj):
@@ -249,7 +252,7 @@ if uploaded_files:
             a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
             a2_final.columns = ['統計期間', f'本期({h_wk})', '前期', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較', '本年較去年增減比例']
 
-            # === (E) 產生 Excel (全表 Rich Text) ===
+            # === (E) 產生 Excel ===
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
@@ -259,10 +262,14 @@ if uploaded_files:
                 font_black = InlineFont(rFont='Calibri', sz=12, b=True, color='000000')
                 font_red = InlineFont(rFont='Calibri', sz=12, b=True, color='FF0000')
                 
+                # 一般內容字體 (全黑)
+                font_content_black = Font(name='Calibri', size=12, color='000000')
+
                 align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
                 border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
                 
-                def make_rich_text(text):
+                # 標題專用：Rich Text 產生器
+                def make_header_rich_text(text):
                     text = str(text)
                     rich_text = CellRichText()
                     tokens = re.split(r'([0-9\(\)\/\-\.\%]+)', text)
@@ -278,14 +285,23 @@ if uploaded_files:
                     ws = writer.book[sheet_name]
                     for col in ws.columns: ws.column_dimensions[col[0].column_letter].width = 20
                     
-                    # 遍歷所有列 (標題 + 內容)
-                    for row in ws.iter_rows(min_row=1):
+                    # 1. 處理標題列 (維持紅黑特效)
+                    for i, cell in enumerate(ws[1]):
+                        original_value = cell.value
+                        cell.value = make_header_rich_text(original_value)
+                        cell.alignment = align_center
+                        cell.border = border_style
+
+                    # 2. 處理內容列 (全部黑色 + 整數)
+                    for row in ws.iter_rows(min_row=2):
                         for cell in row:
-                            original_value = cell.value
-                            if original_value is not None:
-                                cell.value = make_rich_text(original_value) # 🔥 全表套用
+                            # 轉整數邏輯
+                            if isinstance(cell.value, (int, float)):
+                                cell.value = int(cell.value) # Excel 數值去小數
+                            
                             cell.alignment = align_center
                             cell.border = border_style
+                            cell.font = font_content_black # 強制黑色字體
             
             # 🔥 自動寄信
             filename_excel = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
@@ -297,7 +313,7 @@ if uploaded_files:
             else:
                 st.error(msg)
 
-            # === 🔥 網頁顯示 (全表紅黑) ===
+            # === 🔥 網頁顯示 (標題紅黑，內容純黑整數) ===
             col1, col2 = st.columns(2)
             with col1: 
                 render_styled_table(a1_final, "📊 A1 死亡人數")
