@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import numpy as np  # 新增 numpy 用於處理空值
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -27,7 +28,7 @@ with st.sidebar:
     3. 缺少的檔案數值自動補 0。
     """)
 
-# --- 寄信函數 (增加錯誤回傳細節) ---
+# --- 寄信函數 ---
 def send_email(recipient, subject, body, file_bytes, filename):
     try:
         if "email" not in st.secrets:
@@ -119,7 +120,6 @@ uploaded_files = st.file_uploader("請將報表檔案拖曳至此 (支援 Excel/
 if uploaded_files:
     # 1. 檔案分類與識別
     file_map = {}
-    file_status = []
     
     for f in uploaded_files:
         name = f.name
@@ -139,7 +139,6 @@ if uploaded_files:
         'curr_gen': '本年_一般', 'curr_foot': '本年_行人',
         'last_gen': '去年_一般', 'last_foot': '去年_行人'
     }
-    
     found_keys = file_map.keys()
     missing_files = [label for k, label in expected_keys.items() if k not in found_keys]
     
@@ -149,9 +148,8 @@ if uploaded_files:
         st.info("✅ 所有預期檔案皆已上傳")
 
     try:
-        # 2. 核心處理邏輯 (Process Data)
+        # 2. 核心處理邏輯
         def process_data(key_gen, key_foot, suffix):
-            # 如果一般報表沒上傳，回傳空的結構
             if key_gen not in file_map: 
                 return pd.DataFrame(columns=['單位'])
             
@@ -184,9 +182,6 @@ if uploaded_files:
             res[f'嚴重超速_{suffix}'] = get_sum(['43條'])
             res[f'車不讓人_{suffix}'] = get_sum(['44條', '48條'])
             
-            # --- 處理行人報表 ---
-            # 即使沒上傳行人表，也要產生該欄位(補0)，方便後續合併
-            ped_val = 0
             if key_foot in file_map:
                 foot = smart_read(file_map[key_foot]['file'], file_map[key_foot]['name'])
                 if '單位' in foot.columns:
@@ -200,7 +195,6 @@ if uploaded_files:
                         res = res.merge(foot[['單位', target_col]], on='單位', how='left')
                         res.rename(columns={target_col: f'行人違規_{suffix}'}, inplace=True)
             
-            # 確保欄位存在並補零
             target_col_name = f'行人違規_{suffix}'
             if target_col_name not in res.columns: 
                 res[target_col_name] = 0
@@ -213,8 +207,7 @@ if uploaded_files:
         df_c = process_data('curr_gen', 'curr_foot', '本年')
         df_l = process_data('last_gen', 'last_foot', '去年')
 
-        # 合併 (使用 Outer Join 確保單位不遺漏)
-        # 先建立一個包含所有出現過單位的基底
+        # 合併
         all_units = pd.concat([df_w['單位'], df_c['單位'], df_l['單位']]).unique()
         base_df = pd.DataFrame({'單位': all_units})
         base_df = base_df[base_df['單位'].notna() & (base_df['單位'] != '')]
@@ -224,7 +217,7 @@ if uploaded_files:
                       .merge(df_w, on='單位', how='left') \
                       .fillna(0)
         
-        # 單位對照 (龍潭分局專用)
+        # 單位對照
         u_map = {
             '龍潭交通分隊': '交通分隊', '交通組': '科技執法', 
             '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', 
@@ -237,12 +230,11 @@ if uploaded_files:
         if final.empty: 
             st.error("❌ 無法對應到有效單位，請確認報表內容。")
         else:
-            # 計算比較與合計 (改用 .get 避免 Key Error)
+            # 計算比較
             cats = ['酒駕', '闖紅燈', '嚴重超速', '車不讓人', '行人違規']
             for c in cats: 
                 col_curr = f'{c}_本年'
                 col_last = f'{c}_去年'
-                # 確保欄位存在，若不存在視為 0
                 val_curr = final[col_curr] if col_curr in final.columns else 0
                 val_last = final[col_last] if col_last in final.columns else 0
                 final[f'{c}_比較'] = val_curr - val_last
@@ -258,25 +250,36 @@ if uploaded_files:
             result['Target_Unit'] = pd.Categorical(result['Target_Unit'], categories=order, ordered=True)
             result.sort_values('Target_Unit', inplace=True)
 
-            # 整理輸出欄位
             cols_out = ['Target_Unit']
             for p in ['本期', '本年', '去年', '比較']:
                 for c in cats: 
                     col_name = f'{c}_{p}'
-                    # 只有當該欄位真的存在於 DataFrame 中才放入輸出列表
                     if col_name in result.columns:
                         cols_out.append(col_name)
                     else:
-                        # 若缺檔案導致欄位完全不存在，手動建立全0欄位以維持表格格式 (選用)
                         result[col_name] = 0
                         cols_out.append(col_name)
             
             final_table = result[cols_out].copy()
-            final_table.rename(columns={'Target_Unit': '單位'}, inplace=True)
+            final_table.rename(columns={'Target_Unit': '取締項目'}, inplace=True)
             
-            # 轉整數 (美觀)
-            try: final_table.iloc[:, 1:] = final_table.iloc[:, 1:].astype(int)
-            except: pass
+            # --- 🔥 調整：先轉整數，再新增「統計期間」列 ---
+            # 1. 先將數字部分轉為 Int，去除小數點 (e.g. 10.0 -> 10)
+            try: 
+                final_table.iloc[:, 1:] = final_table.iloc[:, 1:].astype(int)
+            except: 
+                pass
+            
+            # 2. 建立新的一列 (全空字串)
+            period_row = pd.DataFrame([[""] * len(final_table.columns)], columns=final_table.columns)
+            # 3. 設定第一欄標題
+            period_row.iloc[0, 0] = "統計期間"
+            
+            # 4. 合併：將統計期間列放在最上方
+            final_table = pd.concat([period_row, final_table], ignore_index=True)
+
+            # 5. 確保空值顯示為空字串，而不是 NaN
+            final_table = final_table.fillna("")
 
             st.success("✅ 分析完成！")
             st.dataframe(final_table, use_container_width=True)
@@ -294,7 +297,6 @@ if uploaded_files:
             # 寄信邏輯
             email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else "尚未設定"
             
-            # A. 自動寄信
             if auto_email:
                 if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
                 file_ids = ",".join(sorted([f.name for f in uploaded_files]))
@@ -307,8 +309,6 @@ if uploaded_files:
                             st.session_state["sent_cache"].add(file_ids)
                 else:
                     st.info(f"✅ 此份報表剛才已自動發送過。")
-            
-            # B. 手動寄信按鈕
             else:
                 if st.button("📧 立即發送郵件"):
                     with st.spinner(f"正在寄送報表至 {email_receiver}..."):
