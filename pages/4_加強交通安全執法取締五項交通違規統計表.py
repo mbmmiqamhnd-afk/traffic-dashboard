@@ -2,16 +2,16 @@ import streamlit as st
 import pandas as pd
 import io
 import smtplib
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 from email.header import Header
 
-# 設定頁面資訊
-st.set_page_config(page_title="五項交通違規統計 (日期修復版)", layout="wide", page_icon="🚦")
+st.set_page_config(page_title="五項交通違規統計 (表頭日期版)", layout="wide", page_icon="🚦")
 
-# --- 側邊欄設定 ---
+# --- 側邊欄 ---
 with st.sidebar:
     st.header("⚙️ 設定")
     auto_email = st.checkbox("分析完成後自動寄信", value=True)
@@ -23,10 +23,8 @@ with st.sidebar:
        - `(1)` → 本年
        - `(2)` → 去年
        - `footman`/`行人` → 行人
-    3. **日期自動填入**：讀取「入案日期」或「違規日期」自動產生 `(MMDD~MMDD)`。
+    3. **日期偵測**：鎖定 Excel **第三列 (Row 3)** 統計期間欄位，解析 `(MMDD~MMDD)`。
     """)
-    
-    # 預留空間顯示偵測結果
     status_container = st.container()
 
 # --- 寄信函數 ---
@@ -57,7 +55,71 @@ def send_email(recipient, subject, body, file_bytes, filename):
         st.error(f"❌ 寄信失敗: {e}")
         return False
 
-# --- 智慧讀取函數 ---
+# --- 🔥 全新日期解析函數 (針對表頭第三列) ---
+def extract_header_date(file_obj, filename):
+    """
+    只讀取 Excel 前 5 列，針對「第三列」(Index 2) 進行文字解析。
+    尋找 ROC 日期格式 (如 1130101) 並回傳 (MMDD~MMDD)。
+    """
+    try:
+        file_obj.seek(0)
+        # 只讀前 5 列，header=None 確保讀到原始內容
+        if filename.endswith(('.xls', '.xlsx')):
+            try:
+                df_head = pd.read_excel(file_obj, header=None, nrows=5)
+            except:
+                file_obj.seek(0)
+                df_head = pd.read_excel(file_obj, header=None, nrows=5, engine='openpyxl')
+        else:
+            # CSV 處理
+            try: df_head = pd.read_csv(file_obj, header=None, nrows=5, encoding='utf-8')
+            except: 
+                file_obj.seek(0)
+                df_head = pd.read_csv(file_obj, header=None, nrows=5, encoding='cp950')
+        
+        # 鎖定第三列 (Index 2)，若沒那麼多列則搜全部
+        target_rows = []
+        if len(df_head) > 2:
+            target_rows.append(df_head.iloc[2].astype(str).values) # 主要目標
+            target_rows.append(df_head.iloc[1].astype(str).values) # 備用: 第二列
+        else:
+            for i in range(len(df_head)):
+                target_rows.append(df_head.iloc[i].astype(str).values)
+        
+        found_dates = []
+        
+        for row_vals in target_rows:
+            # 將整列文字串接，並移除干擾符號
+            row_text = " ".join(row_vals)
+            # 移除 / - ~ . 和空格，讓 113/01/01 變成 1130101
+            clean_text = re.sub(r'[/\-\~\.\s]', '', row_text)
+            
+            # 尋找 7 碼數字 (ROC年3碼+月2碼+日2碼) e.g., 1130101
+            # 或 6 碼數字 (ROC年2碼+月2碼+日2碼) e.g., 990101
+            matches = re.findall(r'(\d{6,7})', clean_text)
+            
+            # 過濾合理的日期 (月 01-12, 日 01-31)
+            valid_dates = []
+            for m in matches:
+                # 簡單檢核長度
+                if len(m) >= 6: 
+                    valid_dates.append(m)
+            
+            if len(valid_dates) >= 2:
+                # 假設同一列出現的頭兩個長數字就是 起始日 與 結束日
+                start = valid_dates[0]
+                end = valid_dates[1]
+                
+                # 取後四碼
+                s_mmdd = start[-4:]
+                e_mmdd = end[-4:]
+                return f"({s_mmdd}~{e_mmdd})"
+                
+        return ""
+    except Exception as e:
+        return ""
+
+# --- 智慧讀取函數 (讀取資料本體) ---
 def smart_read(fobj, fname):
     try:
         fobj.seek(0)
@@ -69,9 +131,8 @@ def smart_read(fobj, fname):
             
             header_idx = -1
             for i, row in df_temp.iterrows():
-                # 強制轉字串並移除空格比對
-                row_str = row.astype(str).values
-                if any('單位' in str(x) for x in row_str):
+                # 尋找含有 '單位' 的列作為表頭
+                if any('單位' in str(x) for x in row.astype(str).values):
                     header_idx = i
                     break
             if header_idx == -1: header_idx = 3 
@@ -97,51 +158,14 @@ def smart_read(fobj, fname):
                 fobj.seek(0)
                 df = pd.read_csv(fobj, header=header_idx, encoding='cp950')
         
-        # 欄位名稱標準化：移除前後空白、換行
-        df.columns = [str(c).strip().replace('\n', '').replace('\r', '') for c in df.columns]
-        
-        # 找單位欄
+        # 清洗欄位名稱
+        df.columns = [str(c).strip().replace('\n', '').replace(' ', '') for c in df.columns]
         if '單位' not in df.columns:
             match = [c for c in df.columns if '單位' in c]
             if match: df.rename(columns={match[0]: '單位'}, inplace=True)
         return df
-    except Exception as e: 
+    except: 
         return pd.DataFrame(columns=['單位'])
-
-# --- 🔥 強化的日期提取函數 ---
-def get_date_range_str(df):
-    target_col = None
-    possible_cols = ['入案日期', '違規日期', '舉發日期', '日期']
-    
-    # 1. 尋找欄位 (忽略空格與換行)
-    for col in df.columns:
-        # 將欄位名稱清洗後比對
-        clean_col_name = str(col).replace(' ', '').replace('\n', '').replace('\r', '')
-        for p in possible_cols:
-            if p in clean_col_name:
-                target_col = col
-                break
-        if target_col: break
-    
-    # 2. 提取數據
-    if target_col and not df[target_col].dropna().empty:
-        try:
-            # 轉字串，移除 / - . 等符號，只留數字
-            dates = df[target_col].astype(str).apply(lambda x: x.replace('/', '').replace('-', '').replace('.', '').strip())
-            dates = dates[dates.str.isnumeric()]
-            
-            if not dates.empty:
-                min_date = dates.min()
-                max_date = dates.max()
-                
-                # 取後 4 碼 (MMDD)
-                min_mmdd = min_date[-4:] if len(min_date) >= 4 else min_date
-                max_mmdd = max_date[-4:] if len(max_date) >= 4 else max_date
-                
-                return f"({min_mmdd}~{max_mmdd})"
-        except:
-            pass
-    return ""
 
 # --- 主程式 ---
 uploaded_files = st.file_uploader("請將報表檔案拖曳至此 (支援 Excel/CSV)", accept_multiple_files=True)
@@ -158,23 +182,25 @@ if uploaded_files:
         key = f"{period}_{type_key}"
         file_map[key] = {'file': f, 'name': name}
     
-    # 初始化日期變數
     date_labels = {'week': "", 'curr': "", 'last': ""}
 
     try:
         def process_data(key_gen, key_foot, suffix, period_key):
             df_gen = pd.DataFrame(columns=['單位'])
             
-            # 1. 讀取一般報表
+            # 1. 處理一般報表
             if key_gen in file_map:
-                df_gen = smart_read(file_map[key_gen]['file'], file_map[key_gen]['name'])
+                f_obj = file_map[key_gen]['file']
+                f_name = file_map[key_gen]['name']
                 
-                # 🔥 嘗試抓取日期 (優先)
-                detected_date = get_date_range_str(df_gen)
-                if detected_date and date_labels[period_key] == "":
-                    date_labels[period_key] = detected_date
+                # 🔥 先抓日期 (針對表頭第三列)
+                if date_labels[period_key] == "":
+                    date_labels[period_key] = extract_header_date(f_obj, f_name)
+                
+                # 再讀資料
+                df_gen = smart_read(f_obj, f_name)
 
-            # 清洗與計算
+            # 資料清洗
             df = df_gen.copy()
             if '單位' in df.columns:
                 df = df[~df['單位'].isin(['合計', '總計', '小計', 'nan'])].dropna(subset=['單位']).copy()
@@ -190,16 +216,13 @@ if uploaded_files:
             def get_sum(keyword_list):
                 matched_cols = []
                 for k in keyword_list:
-                    # 比對時也要忽略空格與換行
-                    clean_k = k.replace('條', '') # 簡化比對
-                    matches = []
+                    # 模糊比對
                     for c in cols:
-                        clean_c = str(c).replace(' ', '').replace('\n', '')
-                        if k in clean_c or str(c).startswith(k):
-                            matches.append(c)
-                    matched_cols.extend(matches)
+                        if k in c or c.startswith(k):
+                            matched_cols.append(c)
+                matched_cols = list(set(matched_cols))
                 if not matched_cols: return 0
-                return df[list(set(matched_cols))].sum(axis=1) # set 去重
+                return df[matched_cols].sum(axis=1)
 
             res = pd.DataFrame()
             if not df.empty:
@@ -213,22 +236,18 @@ if uploaded_files:
 
             # 2. 處理行人報表
             if key_foot in file_map:
-                foot = smart_read(file_map[key_foot]['file'], file_map[key_foot]['name'])
+                f_obj = file_map[key_foot]['file']
+                f_name = file_map[key_foot]['name']
                 
-                # 🔥 若一般報表沒抓到，嘗試抓行人報表的日期
+                # 若一般報表沒抓到日期，試試行人報表的表頭
                 if date_labels[period_key] == "":
-                    detected_date = get_date_range_str(foot)
-                    if detected_date: date_labels[period_key] = detected_date
-
+                    date_labels[period_key] = extract_header_date(f_obj, f_name)
+                
+                foot = smart_read(f_obj, f_name)
                 if '單位' in foot.columns:
                     foot = foot[~foot['單位'].isin(['合計', '總計', '小計', 'nan'])].copy()
                     foot['單位'] = foot['單位'].astype(str).str.strip()
-                    # 寬鬆比對行人欄位
-                    ped_cols = []
-                    for c in foot.columns:
-                        if '78' in str(c) or '行人' in str(c):
-                            ped_cols.append(c)
-                    
+                    ped_cols = [c for c in foot.columns if '78' in str(c) or '行人' in str(c)]
                     if ped_cols:
                         target_col = ped_cols[0]
                         foot[target_col] = foot[target_col].apply(clean_num)
@@ -250,14 +269,14 @@ if uploaded_files:
         df_c = process_data('curr_gen', 'curr_foot', '本年', 'curr')
         df_l = process_data('last_gen', 'last_foot', '去年', 'last')
 
-        # 在側邊欄顯示偵測結果 (除錯用)
+        # 顯示偵測結果
         with status_container:
-            st.info(f"📅 偵測日期結果：\n"
+            st.info(f"📅 日期偵測結果 (若為空請檢查表頭第三列)：\n"
                     f"- 本期: {date_labels['week']}\n"
                     f"- 本年: {date_labels['curr']}\n"
                     f"- 去年: {date_labels['last']}")
 
-        # 合併與報表生成
+        # 合併與輸出邏輯 (保持不變)
         unit_sources = []
         for d in [df_w, df_c, df_l]:
             if not d.empty and '單位' in d.columns: unit_sources.append(d['單位'])
@@ -287,9 +306,8 @@ if uploaded_files:
             final = pd.DataFrame()
 
         if final.empty: 
-            st.error("❌ 找不到有效單位，請確認報表格式。")
+            st.error("❌ 找不到有效單位。")
         else:
-            # 計算比較值
             cats = ['酒駕', '闖紅燈', '嚴重超速', '車不讓人', '行人違規']
             for c in cats: 
                 col_curr = f'{c}_本年'
@@ -320,14 +338,12 @@ if uploaded_files:
 
             st.success("✅ 分析完成！")
             
-            # --- 🔥 產生最終顯示用的字串 ---
-            # 如果偵測到日期是空的，預設顯示空白，避免出現 "None"
             txt_week = f"本期 {date_labels['week']}"
             txt_curr = f"本年累計 {date_labels['curr']}"
             txt_last = f"去年累計 {date_labels['last']}"
             txt_comp = "本年與去年同期比較"
 
-            # --- 網頁預覽 (MultiIndex) ---
+            # --- 網頁預覽 ---
             st.markdown("""
                 <h2 style='text-align: center; color: blue; font-family: "Microsoft JhengHei", sans-serif;'>
                     加強交通安全執法取締五項交通違規統計表
@@ -366,14 +382,12 @@ if uploaded_files:
                 workbook = writer.book
                 worksheet = writer.sheets['交通違規統計']
                 
-                # 格式設定
                 fmt_title = workbook.add_format({'bold': True, 'font_size': 20, 'font_color': 'blue', 'align': 'center', 'valign': 'vcenter'})
                 fmt_period_red = workbook.add_format({'bold': True, 'font_color': 'red', 'align': 'center', 'valign': 'vcenter', 'border': 1})
                 fmt_period_black = workbook.add_format({'bold': True, 'font_color': 'black', 'align': 'center', 'valign': 'vcenter', 'border': 1})
                 fmt_header = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1, 'text_wrap': True})
                 fmt_label = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1})
                 
-                # 繪製
                 worksheet.merge_range('A1:U1', '加強交通安全執法取締五項交通違規統計表', fmt_title)
                 
                 worksheet.write('A2', '統計期間', fmt_label)
