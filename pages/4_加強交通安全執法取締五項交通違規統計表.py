@@ -9,8 +9,9 @@ from email import encoders
 from email.header import Header
 
 # 設定頁面資訊
-st.set_page_config(page_title="五項交通違規統計 (精美版)", layout="wide", page_icon="🚦")
-st.title("🚦 加強交通安全執法取締統計表")
+st.set_page_config(page_title="五項交通違規統計 (自動日期版)", layout="wide", page_icon="🚦")
+# 隱藏預設標題，改用自訂 HTML 標題
+# st.title("🚦 加強交通安全執法取締統計表")
 
 # --- 側邊欄設定 ---
 with st.sidebar:
@@ -24,7 +25,7 @@ with st.sidebar:
        - `(1)` → 本年
        - `(2)` → 去年
        - `footman`/`行人` → 行人
-    3. 缺少的檔案數值自動補 0。
+    3. **自動抓取日期**：依「入案日期」欄位自動填入統計區間。
     """)
 
 # --- 寄信函數 ---
@@ -105,6 +106,39 @@ def smart_read(fobj, fname):
     except Exception as e: 
         return pd.DataFrame(columns=['單位'])
 
+# --- 🔥 新增：日期範圍計算函數 ---
+def get_date_range_str(df, default_str=""):
+    """
+    從 DataFrame 中尋找 '入案日期' 或 '違規日期'，
+    並回傳 'MMDD~MMDD' 格式的字串。
+    """
+    target_col = None
+    for col in df.columns:
+        if '入案日期' in str(col) or '違規日期' in str(col):
+            target_col = col
+            break
+    
+    if target_col and not df[target_col].dropna().empty:
+        try:
+            # 轉字串並移除可能的符號
+            dates = df[target_col].astype(str).apply(lambda x: x.replace('/', '').replace('-', '').replace('.', '').strip())
+            # 過濾非數字 (避免標題列殘留)
+            dates = dates[dates.str.isnumeric()]
+            
+            if not dates.empty:
+                min_date = dates.min()
+                max_date = dates.max()
+                
+                # 取後四碼 (MMDD)
+                min_mmdd = min_date[-4:] if len(min_date) >= 4 else min_date
+                max_mmdd = max_date[-4:] if len(max_date) >= 4 else max_date
+                
+                return f"({min_mmdd}~{max_mmdd})"
+        except:
+            pass
+            
+    return default_str
+
 # --- 主程式 ---
 uploaded_files = st.file_uploader("請將報表檔案拖曳至此 (支援 Excel/CSV)", accept_multiple_files=True)
 
@@ -120,7 +154,6 @@ if uploaded_files:
         key = f"{period}_{type_key}"
         file_map[key] = {'file': f, 'name': name}
     
-    # 檢查缺漏
     expected_keys = {
         'week_gen': '本期_一般', 'week_foot': '本期_行人',
         'curr_gen': '本年_一般', 'curr_foot': '本年_行人',
@@ -135,15 +168,34 @@ if uploaded_files:
         st.info("✅ 所有預期檔案皆已上傳")
 
     try:
-        def process_data(key_gen, key_foot, suffix):
-            if key_gen not in file_map: return pd.DataFrame(columns=['單位'])
-            df = smart_read(file_map[key_gen]['file'], file_map[key_gen]['name'])
-            df = df[~df['單位'].isin(['合計', '總計', '小計', 'nan'])].dropna(subset=['單位']).copy()
-            df['單位'] = df['單位'].astype(str).str.strip()
+        # 儲存計算出的日期字串
+        date_ranges = {
+            'week': "", 
+            'curr': "", 
+            'last': ""
+        }
+
+        def process_data(key_gen, key_foot, suffix, range_key):
+            df_gen = pd.DataFrame(columns=['單位'])
+            
+            # 1. 處理一般報表
+            if key_gen in file_map:
+                df_gen = smart_read(file_map[key_gen]['file'], file_map[key_gen]['name'])
+                
+                # 🔥 計算日期 (優先使用一般報表的日期)
+                if date_ranges[range_key] == "":
+                    date_ranges[range_key] = get_date_range_str(df_gen)
+
+            # 2. 處理資料表內容
+            df = df_gen.copy()
+            if '單位' in df.columns:
+                df = df[~df['單位'].isin(['合計', '總計', '小計', 'nan'])].dropna(subset=['單位']).copy()
+                df['單位'] = df['單位'].astype(str).str.strip()
             
             def clean_num(x):
                 try: return float(str(x).replace(',', '').replace('nan', '0'))
                 except: return 0.0
+            
             for c in df.columns: 
                 if c != '單位': df[c] = df[c].apply(clean_num)
 
@@ -157,14 +209,23 @@ if uploaded_files:
                 return df[matched_cols].sum(axis=1)
 
             res = pd.DataFrame()
-            res['單位'] = df['單位']
-            res[f'酒駕_{suffix}'] = get_sum(['35條', '73條2項', '73條3項'])
-            res[f'闖紅燈_{suffix}'] = get_sum(['53條'])
-            res[f'嚴重超速_{suffix}'] = get_sum(['43條'])
-            res[f'車不讓人_{suffix}'] = get_sum(['44條', '48條'])
-            
+            if not df.empty:
+                res['單位'] = df['單位']
+                res[f'酒駕_{suffix}'] = get_sum(['35條', '73條2項', '73條3項'])
+                res[f'闖紅燈_{suffix}'] = get_sum(['53條'])
+                res[f'嚴重超速_{suffix}'] = get_sum(['43條'])
+                res[f'車不讓人_{suffix}'] = get_sum(['44條', '48條'])
+            else:
+                res = pd.DataFrame(columns=['單位']) # 空白防呆
+
+            # 3. 處理行人報表
             if key_foot in file_map:
                 foot = smart_read(file_map[key_foot]['file'], file_map[key_foot]['name'])
+                
+                # 🔥 如果一般報表沒抓到日期，嘗試從行人報表抓
+                if date_ranges[range_key] == "":
+                    date_ranges[range_key] = get_date_range_str(foot)
+
                 if '單位' in foot.columns:
                     foot = foot[~foot['單位'].isin(['合計', '總計', '小計', 'nan'])].copy()
                     foot['單位'] = foot['單位'].astype(str).str.strip()
@@ -172,38 +233,57 @@ if uploaded_files:
                     if ped_cols:
                         target_col = ped_cols[0]
                         foot[target_col] = foot[target_col].apply(clean_num)
-                        res = res.merge(foot[['單位', target_col]], on='單位', how='left')
-                        res.rename(columns={target_col: f'行人違規_{suffix}'}, inplace=True)
+                        
+                        if res.empty: # 如果只有行人資料
+                             res = foot[['單位', target_col]].copy()
+                             res.rename(columns={target_col: f'行人違規_{suffix}'}, inplace=True)
+                        else:
+                            res = res.merge(foot[['單位', target_col]], on='單位', how='left')
+                            res.rename(columns={target_col: f'行人違規_{suffix}'}, inplace=True)
             
             target_col_name = f'行人違規_{suffix}'
             if target_col_name not in res.columns: res[target_col_name] = 0
             res[target_col_name] = res[target_col_name].fillna(0)
             return res
 
-        df_w = process_data('week_gen', 'week_foot', '本期')
-        df_c = process_data('curr_gen', 'curr_foot', '本年')
-        df_l = process_data('last_gen', 'last_foot', '去年')
+        # 執行運算並同時抓取日期
+        df_w = process_data('week_gen', 'week_foot', '本期', 'week')
+        df_c = process_data('curr_gen', 'curr_foot', '本年', 'curr')
+        df_l = process_data('last_gen', 'last_foot', '去年', 'last')
 
-        all_units = pd.concat([df_w['單位'], df_c['單位'], df_l['單位']]).unique()
-        base_df = pd.DataFrame({'單位': all_units})
-        base_df = base_df[base_df['單位'].notna() & (base_df['單位'] != '')]
-
-        full = base_df.merge(df_c, on='單位', how='left') \
-                      .merge(df_l, on='單位', how='left') \
-                      .merge(df_w, on='單位', how='left') \
-                      .fillna(0)
+        # 合併邏輯
+        unit_sources = []
+        if not df_w.empty and '單位' in df_w.columns: unit_sources.append(df_w['單位'])
+        if not df_c.empty and '單位' in df_c.columns: unit_sources.append(df_c['單位'])
+        if not df_l.empty and '單位' in df_l.columns: unit_sources.append(df_l['單位'])
         
+        if unit_sources:
+            all_units = pd.concat(unit_sources).unique()
+            base_df = pd.DataFrame({'單位': all_units})
+            base_df = base_df[base_df['單位'].notna() & (base_df['單位'] != '')]
+
+            full = base_df.merge(df_c, on='單位', how='left') \
+                          .merge(df_l, on='單位', how='left') \
+                          .merge(df_w, on='單位', how='left') \
+                          .fillna(0)
+        else:
+            full = pd.DataFrame(columns=['單位']) # 完全沒資料的情況
+
         u_map = {
             '龍潭交通分隊': '交通分隊', '交通組': '科技執法', 
             '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', 
             '中興派出所': '中興所', '石門派出所': '石門所', 
             '高平派出所': '高平所', '三和派出所': '三和所'
         }
-        full['Target_Unit'] = full['單位'].map(u_map)
-        final = full[full['Target_Unit'].notna()].copy()
+        
+        if '單位' in full.columns:
+            full['Target_Unit'] = full['單位'].map(u_map)
+            final = full[full['Target_Unit'].notna()].copy()
+        else:
+            final = pd.DataFrame()
 
         if final.empty: 
-            st.error("❌ 無法對應到有效單位。")
+            st.error("❌ 無法對應到有效單位。請確認上傳檔案內容。")
         else:
             cats = ['酒駕', '闖紅燈', '嚴重超速', '車不讓人', '行人違規']
             for c in cats: 
@@ -230,75 +310,96 @@ if uploaded_files:
                     if col_name in result.columns: cols_out.append(col_name)
                     else: result[col_name] = 0; cols_out.append(col_name)
             
-            # --- 數據準備 (不含表頭，表頭由 ExcelWriter 手動繪製) ---
             final_table = result[cols_out].copy()
-            # 這裡不需 rename，因為我們會在 ExcelWriter 裡手動寫入欄位名稱
             try: final_table.iloc[:, 1:] = final_table.iloc[:, 1:].astype(int)
             except: pass
 
             st.success("✅ 分析完成！")
-            st.dataframe(final_table, use_container_width=True)
+            
+            # --- 產生顯示用的標題字串 ---
+            label_week = f"本期 {date_ranges['week']}"
+            label_curr = f"本年累計 {date_ranges['curr']}"
+            label_last = f"去年累計 {date_ranges['last']}"
+            label_comp = "本年與去年同期比較"
 
-            # --- 🔥🔥🔥 Excel 進階排版區塊 🔥🔥🔥 ---
+            # --- 網頁預覽 ---
+            st.markdown("""
+                <h2 style='text-align: center; color: blue; font-family: "Microsoft JhengHei", sans-serif;'>
+                    加強交通安全執法取締五項交通違規統計表
+                </h2>
+            """, unsafe_allow_html=True)
+
+            display_df = final_table.copy()
+            new_columns = []
+            
+            for col in display_df.columns:
+                if col == 'Target_Unit':
+                    new_columns.append(('統計期間', '取締項目'))
+                elif '本期' in col:
+                    item_name = col.replace('_本期', '')
+                    new_columns.append((label_week, item_name))
+                elif '本年' in col:
+                    item_name = col.replace('_本年', '')
+                    new_columns.append((label_curr, item_name))
+                elif '去年' in col:
+                    item_name = col.replace('_去年', '')
+                    new_columns.append((label_last, item_name))
+                elif '比較' in col:
+                    item_name = col.replace('_比較', '')
+                    new_columns.append((label_comp, item_name))
+                else:
+                    new_columns.append(('', col))
+
+            display_df.columns = pd.MultiIndex.from_tuples(new_columns)
+            st.dataframe(display_df, use_container_width=True)
+
+            # --- Excel 輸出 ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                # 1. 將數據寫入，從第 4 列開始 (Row Index 3)，並隱藏預設 Header
                 final_table.to_excel(writer, index=False, header=False, startrow=3, sheet_name='交通違規統計')
                 
                 workbook = writer.book
                 worksheet = writer.sheets['交通違規統計']
                 
-                # --- 定義格式 ---
-                # A. 大標題格式 (藍色、特大、置中)
                 fmt_title = workbook.add_format({
                     'bold': True, 'font_size': 20, 'font_color': 'blue', 
                     'align': 'center', 'valign': 'vcenter'
                 })
-                # B. 統計期間格式 (跨欄、紅色、粗體、置中、邊框)
                 fmt_period_red = workbook.add_format({
                     'bold': True, 'font_color': 'red', 'align': 'center', 
                     'valign': 'vcenter', 'border': 1
                 })
-                # C. 統計期間格式 (跨欄、黑色、粗體、置中、邊框) -> 用於"比較"
                 fmt_period_black = workbook.add_format({
                     'bold': True, 'font_color': 'black', 'align': 'center', 
                     'valign': 'vcenter', 'border': 1
                 })
-                # D. 欄位標題格式 (自動換行、粗體、邊框)
                 fmt_header = workbook.add_format({
                     'bold': True, 'align': 'center', 'valign': 'vcenter', 
                     'border': 1, 'text_wrap': True
                 })
-                # E. 側邊欄位格式 (統計期間/取締項目)
                 fmt_label = workbook.add_format({
                     'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1
                 })
                 
-                # --- 繪製表頭結構 ---
-                
-                # Row 0: 大標題 (合併 A1 到 U1)
+                # 繪製標題與動態日期
                 worksheet.merge_range('A1:U1', '加強交通安全執法取締五項交通違規統計表', fmt_title)
                 
-                # Row 1: 統計期間列
                 worksheet.write('A2', '統計期間', fmt_label)
-                # 合併欄位 (依序對應 5 個項目)
-                worksheet.merge_range('B2:F2', '本期 (請填入日期)', fmt_period_red)
-                worksheet.merge_range('G2:K2', '本年累計 (請填入日期)', fmt_period_red)
-                worksheet.merge_range('L2:P2', '去年累計 (請填入日期)', fmt_period_red)
-                worksheet.merge_range('Q2:U2', '本年與去年同期比較', fmt_period_black)
+                # 使用變數填入日期
+                worksheet.merge_range('B2:F2', label_week, fmt_period_red)
+                worksheet.merge_range('G2:K2', label_curr, fmt_period_red)
+                worksheet.merge_range('L2:P2', label_last, fmt_period_red)
+                worksheet.merge_range('Q2:U2', label_comp, fmt_period_black)
                 
-                # Row 2: 細項欄位名稱 (取締項目 + 違規項目重複 4 次)
                 headers = ['取締項目'] + ['酒駕', '闖紅燈', '嚴重\n超速', '車不\n讓人', '行人\n違規'] * 4
                 worksheet.write_row('A3', headers, fmt_header)
                 
-                # --- 設定欄寬 ---
-                worksheet.set_column('A:A', 15)  # 取締項目欄寬
-                worksheet.set_column('B:U', 9)   # 數據欄寬
+                worksheet.set_column('A:A', 15)
+                worksheet.set_column('B:U', 9)
 
             excel_data = output.getvalue()
             file_name_out = '交通違規統計表.xlsx'
 
-            # 寄信與下載
             email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else "尚未設定"
             if auto_email:
                 if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
