@@ -10,7 +10,7 @@ from email import encoders
 from email.header import Header
 
 # 設定頁面資訊
-st.set_page_config(page_title="五項交通違規統計 (排序調整版)", layout="wide", page_icon="🚦")
+st.set_page_config(page_title="五項交通違規統計 (修復版)", layout="wide", page_icon="🚦")
 
 # --- 側邊欄 ---
 with st.sidebar:
@@ -21,10 +21,9 @@ with st.sidebar:
     ### 📝 操作說明
     1. 拖曳上傳檔案。
     2. 系統自動辨識年份與類別。
-    3. **排序更新**：
-       - **交通分隊** 已移至報表最下方。
-       - 負數顯示紅字。
-       - 雙色標題。
+    3. **修復錯誤**：
+       - 解決 `Unknown format code 'f' for object of type 'str'` 錯誤。
+       - 確保文字欄位不被當作數字處理。
     """)
     status_container = st.container()
 
@@ -56,7 +55,7 @@ def send_email(recipient, subject, body, file_bytes, filename):
         st.error(f"❌ 寄信失敗: {e}")
         return False
 
-# --- 精確日期提取 (鎖定第 3 列) ---
+# --- 精確日期提取 ---
 def extract_header_date(file_obj, filename):
     try:
         file_obj.seek(0)
@@ -84,7 +83,7 @@ def extract_header_date(file_obj, filename):
         return ""
     except: return ""
 
-# --- 精確讀取函數 (鎖定 header=3) ---
+# --- 精確讀取函數 ---
 def smart_read(fobj, fname):
     try:
         fobj.seek(0)
@@ -125,7 +124,6 @@ if uploaded_files:
     
     date_labels = {'week': "", 'curr': "", 'last': ""}
 
-    # 模糊單位對應
     u_map = {
         '龍潭交通分隊': '交通分隊', '交通分隊': '交通分隊',
         '交通組': '科技執法', '科技執法': '科技執法',
@@ -265,7 +263,6 @@ if uploaded_files:
             total_row['Target_Unit'] = '合計'
             result = pd.concat([total_row, final], ignore_index=True)
 
-            # 🔥🔥🔥 排序邏輯調整：將「交通分隊」移到最後 🔥🔥🔥
             order = ['合計', '科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '交通分隊']
             result['Target_Unit'] = pd.Categorical(result['Target_Unit'], categories=order, ordered=True)
             result.sort_values('Target_Unit', inplace=True)
@@ -278,7 +275,8 @@ if uploaded_files:
                     else: result[col_name] = 0; cols_out.append(col_name)
             
             final_table = result[cols_out].copy()
-            try: final_table.iloc[:, 1:] = final_table.iloc[:, 1:].astype(int)
+            # 確保數值欄位是數字
+            try: final_table.iloc[:, 1:] = final_table.iloc[:, 1:].astype(float).fillna(0)
             except: pass
 
             st.success("✅ 分析完成！")
@@ -307,10 +305,20 @@ if uploaded_files:
             display_df.columns = pd.MultiIndex.from_tuples(new_columns)
             
             def highlight_negative_red(val):
-                color = 'red' if isinstance(val, (int, float)) and val < 0 else 'black'
-                return f'color: {color}'
+                # 增加防呆，確保只有數值才判斷
+                if isinstance(val, (int, float)) and val < 0:
+                    return 'color: red'
+                return 'color: black'
 
-            styled_df = display_df.style.map(highlight_negative_red).format("{:.0f}")
+            # 找出數值欄位 (排除第一欄 'Target_Unit')
+            # 這裡要注意 MultiIndex 的情況，第一欄的 Level 1 是 '取締項目'
+            numeric_cols = display_df.columns[1:]
+            
+            # 使用 subset 參數來避開文字欄位
+            styled_df = display_df.style\
+                .map(highlight_negative_red, subset=numeric_cols)\
+                .format("{:.0f}", subset=numeric_cols)
+            
             st.dataframe(styled_df, use_container_width=True)
 
             # --- Excel 輸出 ---
