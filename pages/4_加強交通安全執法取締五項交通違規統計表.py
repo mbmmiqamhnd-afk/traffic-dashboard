@@ -9,13 +9,13 @@ from email import encoders
 from email.header import Header
 
 # 設定頁面資訊
-st.set_page_config(page_title="五項交通違規統計 (彈性版)", layout="wide", page_icon="🚦")
+st.set_page_config(page_title="五項交通違規統計 (精美版)", layout="wide", page_icon="🚦")
 st.title("🚦 加強交通安全執法取締統計表")
 
 # --- 側邊欄設定 ---
 with st.sidebar:
     st.header("⚙️ 設定")
-    auto_email = st.checkbox("分析完成後自動寄信", value=True, help="若關閉，分析後需手動點擊按鈕才會寄出。")
+    auto_email = st.checkbox("分析完成後自動寄信", value=True)
     st.markdown("---")
     st.markdown("""
     ### 📝 操作說明
@@ -120,6 +120,7 @@ if uploaded_files:
         key = f"{period}_{type_key}"
         file_map[key] = {'file': f, 'name': name}
     
+    # 檢查缺漏
     expected_keys = {
         'week_gen': '本期_一般', 'week_foot': '本期_行人',
         'curr_gen': '本年_一般', 'curr_foot': '本年_行人',
@@ -229,40 +230,71 @@ if uploaded_files:
                     if col_name in result.columns: cols_out.append(col_name)
                     else: result[col_name] = 0; cols_out.append(col_name)
             
+            # --- 數據準備 (不含表頭，表頭由 ExcelWriter 手動繪製) ---
             final_table = result[cols_out].copy()
-            final_table.rename(columns={'Target_Unit': '取締項目'}, inplace=True)
+            # 這裡不需 rename，因為我們會在 ExcelWriter 裡手動寫入欄位名稱
             try: final_table.iloc[:, 1:] = final_table.iloc[:, 1:].astype(int)
             except: pass
 
             st.success("✅ 分析完成！")
-            
-            # --- 網頁預覽 (顯示乾淨的標準表格，不顯示統計期間列) ---
             st.dataframe(final_table, use_container_width=True)
-            st.caption("ℹ️ 下載的 Excel 檔案將自動包含首列「統計期間」。")
 
-            # --- Excel 輸出處理 (包含結構重組與標題隱藏) ---
+            # --- 🔥🔥🔥 Excel 進階排版區塊 🔥🔥🔥 ---
             output = io.BytesIO()
-            
-            # 1. 製作第一列：統計期間
-            row_period = [""] * len(final_table.columns)
-            row_period[0] = "統計期間"
-            
-            # 2. 製作第二列：原本的欄位名稱 (取締項目、酒駕...)
-            row_headers = final_table.columns.tolist()
-            
-            # 3. 建立頂部 DataFrame
-            top_rows = pd.DataFrame([row_period, row_headers], columns=final_table.columns)
-            
-            # 4. 組合：頂部 + 數據
-            export_df = pd.concat([top_rows, final_table], ignore_index=True)
-            export_df = export_df.fillna("") 
-            
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                # 🔥 關鍵：header=False，隱藏預設標題，只保留我們手動建立的那兩列
-                export_df.to_excel(writer, index=False, header=False, sheet_name='交通違規統計')
+                # 1. 將數據寫入，從第 4 列開始 (Row Index 3)，並隱藏預設 Header
+                final_table.to_excel(writer, index=False, header=False, startrow=3, sheet_name='交通違規統計')
+                
+                workbook = writer.book
                 worksheet = writer.sheets['交通違規統計']
-                worksheet.set_column(0, len(export_df.columns)-1, 12)
-            
+                
+                # --- 定義格式 ---
+                # A. 大標題格式 (藍色、特大、置中)
+                fmt_title = workbook.add_format({
+                    'bold': True, 'font_size': 20, 'font_color': 'blue', 
+                    'align': 'center', 'valign': 'vcenter'
+                })
+                # B. 統計期間格式 (跨欄、紅色、粗體、置中、邊框)
+                fmt_period_red = workbook.add_format({
+                    'bold': True, 'font_color': 'red', 'align': 'center', 
+                    'valign': 'vcenter', 'border': 1
+                })
+                # C. 統計期間格式 (跨欄、黑色、粗體、置中、邊框) -> 用於"比較"
+                fmt_period_black = workbook.add_format({
+                    'bold': True, 'font_color': 'black', 'align': 'center', 
+                    'valign': 'vcenter', 'border': 1
+                })
+                # D. 欄位標題格式 (自動換行、粗體、邊框)
+                fmt_header = workbook.add_format({
+                    'bold': True, 'align': 'center', 'valign': 'vcenter', 
+                    'border': 1, 'text_wrap': True
+                })
+                # E. 側邊欄位格式 (統計期間/取締項目)
+                fmt_label = workbook.add_format({
+                    'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1
+                })
+                
+                # --- 繪製表頭結構 ---
+                
+                # Row 0: 大標題 (合併 A1 到 U1)
+                worksheet.merge_range('A1:U1', '加強交通安全執法取締五項交通違規統計表', fmt_title)
+                
+                # Row 1: 統計期間列
+                worksheet.write('A2', '統計期間', fmt_label)
+                # 合併欄位 (依序對應 5 個項目)
+                worksheet.merge_range('B2:F2', '本期 (請填入日期)', fmt_period_red)
+                worksheet.merge_range('G2:K2', '本年累計 (請填入日期)', fmt_period_red)
+                worksheet.merge_range('L2:P2', '去年累計 (請填入日期)', fmt_period_red)
+                worksheet.merge_range('Q2:U2', '本年與去年同期比較', fmt_period_black)
+                
+                # Row 2: 細項欄位名稱 (取締項目 + 違規項目重複 4 次)
+                headers = ['取締項目'] + ['酒駕', '闖紅燈', '嚴重\n超速', '車不\n讓人', '行人\n違規'] * 4
+                worksheet.write_row('A3', headers, fmt_header)
+                
+                # --- 設定欄寬 ---
+                worksheet.set_column('A:A', 15)  # 取締項目欄寬
+                worksheet.set_column('B:U', 9)   # 數據欄寬
+
             excel_data = output.getvalue()
             file_name_out = '交通違規統計表.xlsx'
 
