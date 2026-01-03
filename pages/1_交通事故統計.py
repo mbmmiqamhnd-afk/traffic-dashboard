@@ -26,9 +26,9 @@ SMTP_PORT = 587
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (GSheet同步版)", layout="wide", page_icon="🚑")
-st.title("🚑 交通事故統計 (上傳即寄出 + 同步雲端)")
-st.markdown("### 📝 狀態：數據將自動同步至 **Google 試算表 (第3分頁)**，並寄送 Excel 報表。")
+st.set_page_config(page_title="交通事故統計 (分頁同步版)", layout="wide", page_icon="🚑")
+st.title("🚑 交通事故統計 (上傳即寄出 + 分頁同步)")
+st.markdown("### 📝 狀態：A1 寫入第3分頁，A2 寫入第4分頁，Excel 保持紅黑格式。")
 
 # 1. 檔案上傳區
 uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
@@ -79,7 +79,7 @@ def send_email_auto(attachment_data, filename):
         msg['From'] = MY_EMAIL
         msg['To'] = TO_EMAIL
         msg['Subject'] = f"交通事故統計報表 ({pd.Timestamp.now().strftime('%Y/%m/%d')})"
-        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (數據已同步至 Google 試算表)，請查照。\n\n(此郵件由系統自動發送)"
+        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (數據已同步至 Google 試算表分頁)，請查照。\n\n(此郵件由系統自動發送)"
         msg.attach(MIMEText(body, 'plain'))
         part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         part.set_payload(attachment_data.getvalue())
@@ -94,7 +94,7 @@ def send_email_auto(attachment_data, filename):
     except Exception as e:
         return False, f"❌ 寄送失敗：{e}"
 
-# 3. Google Sheets 同步函數
+# 3. Google Sheets 同步函數 (🔥 分流邏輯修改)
 def sync_to_gsheet(df_a1, df_a2):
     try:
         if "gcp_service_account" not in st.secrets:
@@ -103,35 +103,37 @@ def sync_to_gsheet(df_a1, df_a2):
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         
-        # ⚠️ 寫入第 3 個工作表 (Index = 2)
-        ws = sh.get_worksheet(2) 
-        
-        ws.clear() # 清空舊資料
-        
-        # 準備資料：A1 表格 + 空行 + A2 表格
-        data_to_write = []
-        
-        # A1 部分
-        data_to_write.append(["【A1 死亡人數統計】"])
-        data_to_write.append(df_a1.columns.tolist())
-        # 將 DataFrame 內容轉為 list，並處理數值型別以利 GSheet 辨識
-        for row in df_a1.values.tolist():
-             data_to_write.append([int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row])
-        
-        data_to_write.append([]) # 空行
-        data_to_write.append([]) # 空行
-        
-        # A2 部分
-        data_to_write.append(["【A2 受傷人數統計】"])
-        data_to_write.append(df_a2.columns.tolist())
-        for row in df_a2.values.tolist():
-             data_to_write.append([int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row])
+        # --- (1) A1 寫入第 3 分頁 (Index 2) ---
+        try:
+            ws_a1 = sh.get_worksheet(2) 
+            ws_a1.clear()
+            
+            # 準備 A1 資料
+            data_a1 = [df_a1.columns.tolist()]
+            for row in df_a1.values.tolist():
+                data_a1.append([int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row])
+            
+            ws_a1.update(values=data_a1)
+        except Exception as e_a1:
+             return False, f"❌ A1 同步失敗 (請確認是否有第3個分頁): {e_a1}"
 
-        ws.update(values=data_to_write)
+        # --- (2) A2 寫入第 4 分頁 (Index 3) ---
+        try:
+            ws_a2 = sh.get_worksheet(3) 
+            ws_a2.clear()
+            
+            # 準備 A2 資料
+            data_a2 = [df_a2.columns.tolist()]
+            for row in df_a2.values.tolist():
+                data_a2.append([int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row])
+                
+            ws_a2.update(values=data_a2)
+        except Exception as e_a2:
+             return False, f"❌ A2 同步失敗 (請確認是否有第4個分頁): {e_a2}"
         
-        return True, "✅ Google 試算表同步成功 (工作表 3)"
+        return True, "✅ Google 試算表同步成功 (A1->第3頁, A2->第4頁)"
     except Exception as e:
-        return False, f"❌ Google 試算表同步失敗: {e}"
+        return False, f"❌ Google 試算表連線失敗: {e}"
 
 # 4. 主流程
 if uploaded_files:
@@ -139,7 +141,7 @@ if uploaded_files:
         st.warning(f"⚠️ 目前已上傳 {len(uploaded_files)} 個檔案，請補齊至 3 個檔案。")
         st.stop()
     
-    with st.spinner("⚡ 正在分析、同步雲端並寄送中..."):
+    with st.spinner("⚡ 正在分析、分頁同步雲端並寄送中..."):
         try:
             # (A) 資料讀取與清理
             def parse_raw(file_obj):
@@ -273,7 +275,7 @@ if uploaded_files:
                             cell.alignment = align_center
                             cell.border = border_style
 
-            # (F) 同步到 Google Sheet (新增的功能)
+            # (F) 同步到 Google Sheet (🔥 A1->第3頁 / A2->第4頁)
             gs_success, gs_msg = sync_to_gsheet(a1_final, a2_final)
             if gs_success: st.write(gs_msg)
             else: st.error(gs_msg)
