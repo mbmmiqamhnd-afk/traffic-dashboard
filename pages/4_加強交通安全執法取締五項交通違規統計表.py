@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import io
-import numpy as np  # 新增 numpy 用於處理空值
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -64,18 +63,15 @@ def send_email(recipient, subject, body, file_bytes, filename):
 def smart_read(fobj, fname):
     try:
         fobj.seek(0)
-        # 判斷是否為 Excel
         if fname.endswith(('.xls', '.xlsx')): 
-            try:
-                df_temp = pd.read_excel(fobj, header=None, nrows=20)
-            except:
+            try: df_temp = pd.read_excel(fobj, header=None, nrows=20)
+            except: 
                 fobj.seek(0)
                 df_temp = pd.read_excel(fobj, header=None, nrows=20, engine='openpyxl')
-
+            
             header_idx = -1
             for i, row in df_temp.iterrows():
-                row_str = row.astype(str).values
-                if '單位' in row_str:
+                if '單位' in row.astype(str).values:
                     header_idx = i
                     break
             if header_idx == -1: header_idx = 3 
@@ -83,10 +79,8 @@ def smart_read(fobj, fname):
             fobj.seek(0)
             df = pd.read_excel(fobj, header=header_idx)
         else:
-            # CSV 處理
-            try:
-                df_temp = pd.read_csv(fobj, header=None, nrows=20, encoding='utf-8')
-            except:
+            try: df_temp = pd.read_csv(fobj, header=None, nrows=20, encoding='utf-8')
+            except: 
                 fobj.seek(0)
                 df_temp = pd.read_csv(fobj, header=None, nrows=20, encoding='cp950')
 
@@ -98,18 +92,15 @@ def smart_read(fobj, fname):
             if header_idx == -1: header_idx = 3
             
             fobj.seek(0)
-            try:
-                df = pd.read_csv(fobj, header=header_idx, encoding='utf-8')
-            except:
+            try: df = pd.read_csv(fobj, header=header_idx, encoding='utf-8')
+            except: 
                 fobj.seek(0)
                 df = pd.read_csv(fobj, header=header_idx, encoding='cp950')
         
-        # 欄位與單位清洗
         df.columns = [str(c).strip() for c in df.columns]
         if '單位' not in df.columns:
             match = [c for c in df.columns if '單位' in c]
             if match: df.rename(columns={match[0]: '單位'}, inplace=True)
-        
         return df
     except Exception as e: 
         return pd.DataFrame(columns=['單位'])
@@ -118,22 +109,17 @@ def smart_read(fobj, fname):
 uploaded_files = st.file_uploader("請將報表檔案拖曳至此 (支援 Excel/CSV)", accept_multiple_files=True)
 
 if uploaded_files:
-    # 1. 檔案分類與識別
     file_map = {}
-    
     for f in uploaded_files:
         name = f.name
         is_foot = 'footman' in name.lower() or '行人' in name
-        
-        if '(2)' in name: period = 'last'   # 去年
-        elif '(1)' in name: period = 'curr' # 本年
-        else: period = 'week'               # 本期
-        
+        if '(2)' in name: period = 'last'
+        elif '(1)' in name: period = 'curr'
+        else: period = 'week'
         type_key = 'foot' if is_foot else 'gen'
         key = f"{period}_{type_key}"
         file_map[key] = {'file': f, 'name': name}
     
-    # 顯示識別狀態
     expected_keys = {
         'week_gen': '本期_一般', 'week_foot': '本期_行人',
         'curr_gen': '本年_一般', 'curr_foot': '本年_行人',
@@ -148,22 +134,16 @@ if uploaded_files:
         st.info("✅ 所有預期檔案皆已上傳")
 
     try:
-        # 2. 核心處理邏輯
         def process_data(key_gen, key_foot, suffix):
-            if key_gen not in file_map: 
-                return pd.DataFrame(columns=['單位'])
-            
+            if key_gen not in file_map: return pd.DataFrame(columns=['單位'])
             df = smart_read(file_map[key_gen]['file'], file_map[key_gen]['name'])
-            
-            # 基礎清洗
             df = df[~df['單位'].isin(['合計', '總計', '小計', 'nan'])].dropna(subset=['單位']).copy()
             df['單位'] = df['單位'].astype(str).str.strip()
             
             def clean_num(x):
                 try: return float(str(x).replace(',', '').replace('nan', '0'))
                 except: return 0.0
-
-            for c in df.columns:
+            for c in df.columns: 
                 if c != '單位': df[c] = df[c].apply(clean_num)
 
             cols = df.columns
@@ -187,7 +167,6 @@ if uploaded_files:
                 if '單位' in foot.columns:
                     foot = foot[~foot['單位'].isin(['合計', '總計', '小計', 'nan'])].copy()
                     foot['單位'] = foot['單位'].astype(str).str.strip()
-                    
                     ped_cols = [c for c in foot.columns if '78' in str(c) or '行人' in str(c)]
                     if ped_cols:
                         target_col = ped_cols[0]
@@ -196,18 +175,14 @@ if uploaded_files:
                         res.rename(columns={target_col: f'行人違規_{suffix}'}, inplace=True)
             
             target_col_name = f'行人違規_{suffix}'
-            if target_col_name not in res.columns: 
-                res[target_col_name] = 0
+            if target_col_name not in res.columns: res[target_col_name] = 0
             res[target_col_name] = res[target_col_name].fillna(0)
-            
             return res
 
-        # 執行運算
         df_w = process_data('week_gen', 'week_foot', '本期')
         df_c = process_data('curr_gen', 'curr_foot', '本年')
         df_l = process_data('last_gen', 'last_foot', '去年')
 
-        # 合併
         all_units = pd.concat([df_w['單位'], df_c['單位'], df_l['單位']]).unique()
         base_df = pd.DataFrame({'單位': all_units})
         base_df = base_df[base_df['單位'].notna() & (base_df['單位'] != '')]
@@ -217,7 +192,6 @@ if uploaded_files:
                       .merge(df_w, on='單位', how='left') \
                       .fillna(0)
         
-        # 單位對照
         u_map = {
             '龍潭交通分隊': '交通分隊', '交通組': '科技執法', 
             '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', 
@@ -228,9 +202,8 @@ if uploaded_files:
         final = full[full['Target_Unit'].notna()].copy()
 
         if final.empty: 
-            st.error("❌ 無法對應到有效單位，請確認報表內容。")
+            st.error("❌ 無法對應到有效單位。")
         else:
-            # 計算比較
             cats = ['酒駕', '闖紅燈', '嚴重超速', '車不讓人', '行人違規']
             for c in cats: 
                 col_curr = f'{c}_本年'
@@ -245,7 +218,6 @@ if uploaded_files:
             
             result = pd.concat([total_row, final], ignore_index=True)
 
-            # 排序
             order = ['合計', '科技執法', '交通分隊', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
             result['Target_Unit'] = pd.Categorical(result['Target_Unit'], categories=order, ordered=True)
             result.sort_values('Target_Unit', inplace=True)
@@ -254,69 +226,66 @@ if uploaded_files:
             for p in ['本期', '本年', '去年', '比較']:
                 for c in cats: 
                     col_name = f'{c}_{p}'
-                    if col_name in result.columns:
-                        cols_out.append(col_name)
-                    else:
-                        result[col_name] = 0
-                        cols_out.append(col_name)
+                    if col_name in result.columns: cols_out.append(col_name)
+                    else: result[col_name] = 0; cols_out.append(col_name)
             
+            # 數據表準備
             final_table = result[cols_out].copy()
             final_table.rename(columns={'Target_Unit': '取締項目'}, inplace=True)
-            
-            # --- 🔥 調整：先轉整數，再新增「統計期間」列 ---
-            # 1. 先將數字部分轉為 Int，去除小數點 (e.g. 10.0 -> 10)
-            try: 
-                final_table.iloc[:, 1:] = final_table.iloc[:, 1:].astype(int)
-            except: 
-                pass
-            
-            # 2. 建立新的一列 (全空字串)
-            period_row = pd.DataFrame([[""] * len(final_table.columns)], columns=final_table.columns)
-            # 3. 設定第一欄標題
-            period_row.iloc[0, 0] = "統計期間"
-            
-            # 4. 合併：將統計期間列放在最上方
-            final_table = pd.concat([period_row, final_table], ignore_index=True)
+            try: final_table.iloc[:, 1:] = final_table.iloc[:, 1:].astype(int)
+            except: pass
 
-            # 5. 確保空值顯示為空字串，而不是 NaN
-            final_table = final_table.fillna("")
+            # 🔥🔥🔥 結構重組 (關鍵修改處) 🔥🔥🔥
+            # 目標順序：
+            # 1. 統計期間 (第一列)
+            # 2. 取締項目 (標題列)
+            # 3. 合計     (數據第一列)
+            
+            # A. 製作第一列：統計期間
+            row_period = [""] * len(final_table.columns)
+            row_period[0] = "統計期間"
+            
+            # B. 製作第二列：原本的欄位名稱 (取締項目、酒駕_本期...)
+            row_headers = final_table.columns.tolist()
+            
+            # C. 建立頂部 DataFrame
+            top_rows = pd.DataFrame([row_period, row_headers], columns=final_table.columns)
+            
+            # D. 組合：頂部 + 數據 (合計已在數據的最上面)
+            export_df = pd.concat([top_rows, final_table], ignore_index=True)
+            export_df = export_df.fillna("") # 補空值
 
             st.success("✅ 分析完成！")
-            st.dataframe(final_table, use_container_width=True)
+            # 網頁顯示時，我們通常只顯示數據部分比較美觀，或者顯示完整版
+            # 這裡選擇顯示完整版結構
+            st.dataframe(export_df, use_container_width=True, hide_index=True)
             
             # 輸出 Excel
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                final_table.to_excel(writer, index=False, sheet_name='交通違規統計')
+                # ❗ header=False 是關鍵，因為我們已經把標題變成了資料列的第二列
+                export_df.to_excel(writer, index=False, header=False, sheet_name='交通違規統計')
                 worksheet = writer.sheets['交通違規統計']
-                worksheet.set_column(0, len(final_table.columns)-1, 12)
+                worksheet.set_column(0, len(export_df.columns)-1, 12)
             
             excel_data = output.getvalue()
             file_name_out = '交通違規統計表.xlsx'
 
-            # 寄信邏輯
+            # 寄信與下載 (維持原樣)
             email_receiver = st.secrets["email"]["user"] if "email" in st.secrets else "尚未設定"
-            
             if auto_email:
                 if "sent_cache" not in st.session_state: st.session_state["sent_cache"] = set()
                 file_ids = ",".join(sorted([f.name for f in uploaded_files]))
-                
                 if file_ids not in st.session_state["sent_cache"]:
                     with st.spinner(f"正在自動寄送報表至 {email_receiver}..."):
                         if send_email(email_receiver, f"📊 [自動通知] {file_name_out}", "附件為交通違規統計報表。", excel_data, file_name_out):
-                            st.balloons()
-                            st.success(f"✅ 郵件已發送至 {email_receiver}")
-                            st.session_state["sent_cache"].add(file_ids)
-                else:
-                    st.info(f"✅ 此份報表剛才已自動發送過。")
+                            st.balloons(); st.success(f"✅ 郵件已發送"); st.session_state["sent_cache"].add(file_ids)
+                else: st.info(f"✅ 報表已發送過。")
             else:
                 if st.button("📧 立即發送郵件"):
-                    with st.spinner(f"正在寄送報表至 {email_receiver}..."):
-                        if send_email(email_receiver, f"📊 [手動發送] {file_name_out}", "附件為交通違規統計報表。", excel_data, file_name_out):
-                            st.success(f"✅ 郵件已發送至 {email_receiver}")
+                    if send_email(email_receiver, f"📊 [手動發送] {file_name_out}", "附件", excel_data, file_name_out): st.success("✅ 發送成功")
 
-            st.download_button(label="📥 下載 Excel", data=excel_data, file_name=file_name_out, mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            st.download_button("📥 下載 Excel", excel_data, file_name_out, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
     except Exception as e:
-        st.error(f"發生系統錯誤：{e}")
-        st.write("建議：請檢查上傳檔案格式是否為標準警方匯出報表。")
+        st.error(f"系統錯誤：{e}")
