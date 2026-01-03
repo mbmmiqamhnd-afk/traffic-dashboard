@@ -22,9 +22,9 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (通用字體版)", layout="wide", page_icon="🚑")
+st.set_page_config(page_title="交通事故統計 (高對比顯示版)", layout="wide", page_icon="🚑")
 st.title("🚑 交通事故統計 (上傳即寄出)")
-st.markdown("### 📝 狀態：Excel 報表改用通用字體 (Calibri)，不再強制標楷體。")
+st.markdown("### 📝 狀態：已修正表格背景色，深色模式下也能清晰閱讀。")
 
 # 1. 檔案上傳區
 uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
@@ -44,31 +44,36 @@ def format_html_header(text):
     return html_str
 
 def render_styled_table(df, title):
-    """在 Streamlit 渲染漂亮的 HTML 表格 (通用字體)"""
+    """在 Streamlit 渲染漂亮的 HTML 表格 (強制白底黑字)"""
     st.subheader(title)
     
     df_display = df.copy()
     
+    # CSS 樣式修正：強制設定背景色為白色 (#ffffff)，解決深色模式看不見的問題
     style = """
     <style>
         table.acc_table {
-            font-family: sans-serif; /* 網頁也使用通用字體 */
+            font-family: sans-serif;
             border-collapse: collapse;
             width: 100%;
             font-size: 16px;
+            background-color: #ffffff; /* 強制表格背景全白 */
+            color: #000000; /* 強制文字全黑 */
         }
         table.acc_table th {
             border: 1px solid #000;
             padding: 8px;
             text-align: center !important;
             font-weight: bold;
-            background-color: #f0f2f6;
+            background-color: #f0f2f6; /* 標題列維持淺灰 */
+            color: #000000;
         }
         table.acc_table td {
             border: 1px solid #000;
             padding: 8px;
             text-align: center !important;
-            color: black;
+            color: #000000 !important; /* 強制內容文字黑色 */
+            background-color: #ffffff !important; /* 強制內容背景白色 */
         }
     </style>
     """
@@ -247,7 +252,7 @@ if uploaded_files:
                 a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
                 a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
                 
-                # ⬇️ 這裡改用 Calibri (Excel 預設字體)
+                # ⬇️ Excel 樣式 (Calibri)
                 font_black = InlineFont(rFont='Calibri', sz=12, b=True, color='000000')
                 font_red = InlineFont(rFont='Calibri', sz=12, b=True, color='FF0000')
                 font_normal_cell = Font(name='Calibri', size=12)
@@ -293,7 +298,7 @@ if uploaded_files:
             else:
                 st.error(msg)
 
-            # === 🔥 網頁顯示 ===
+            # === 🔥 網頁顯示 (強制白底黑字) ===
             col1, col2 = st.columns(2)
             with col1: 
                 render_styled_table(a1_final, "📊 A1 死亡人數")
