@@ -22,16 +22,15 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (整數黑字版)", layout="wide", page_icon="🚑")
+st.set_page_config(page_title="交通事故統計 (正數紅字版)", layout="wide", page_icon="🚑")
 st.title("🚑 交通事故統計 (上傳即寄出)")
-st.markdown("### 📝 狀態：標題維持紅黑配色，數據列強制為「黑色整數」。")
+st.markdown("### 📝 狀態：比較增減欄位「正數顯示為紅色」，其餘維持黑色整數。")
 
 # 1. 檔案上傳區
 uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
 
 # --- 工具函數：HTML 標題專用 (紅黑雙色) ---
 def format_html_header(text):
-    """標題專用：數字符號轉紅"""
     text = str(text)
     tokens = re.split(r'([0-9\(\)\/\-\.\%]+)', text)
     html_str = ""
@@ -43,12 +42,12 @@ def format_html_header(text):
             html_str += f'<span style="color: black;">{token}</span>'
     return html_str
 
-# --- 網頁渲染函數 ---
+# --- 網頁渲染函數 (含正數轉紅邏輯) ---
 def render_styled_table(df, title):
     st.subheader(title)
     df_display = df.copy()
     
-    # CSS: 強制白底黑字
+    # CSS
     style = """
     <style>
         table.acc_table {
@@ -71,30 +70,44 @@ def render_styled_table(df, title):
             padding: 8px;
             text-align: center !important;
             background-color: #ffffff !important;
-            color: #000000 !important; /* 強制黑色 */
         }
     </style>
     """
     
     html = f"{style}<table class='acc_table'><thead><tr>"
     
-    # 1. 標題列 (紅黑雙色)
+    # 標題列
     for col in df_display.columns:
         styled_header = format_html_header(col)
         html += f"<th>{styled_header}</th>"
     html += "</tr></thead><tbody>"
     
-    # 2. 內容列 (純黑 + 整數)
+    # 內容列
     for _, row in df_display.iterrows():
         html += "<tr>"
-        for val in row:
-            # 處理顯示格式：如果是數字，轉整數；如果是字串(如百分比)，保持原樣
+        for col_name, val in row.items():
+            # 預設黑色
+            color = "#000000"
+            display_val = val
+            
+            # 1. 數值處理：轉整數 (排除百分比字串)
             if isinstance(val, (int, float)):
-                display_val = f"{int(val)}" # 強制轉整數 (去小數點)
+                display_val = f"{int(val)}"
             else:
                 display_val = str(val)
-                
-            html += f"<td>{display_val}</td>"
+
+            # 2. 顏色判斷邏輯
+            # (A) "比較" 欄位：數值 > 0 變紅
+            if "比較" in col_name and isinstance(val, (int, float)):
+                if val > 0: color = "red"
+            
+            # (B) "增減比例" 欄位：字串不含負號且不為0 變紅
+            elif "增減" in col_name:
+                # 排除 "-", "0.00%", "-XX%"
+                if "-" not in display_val and display_val != "0.00%" and display_val != "-":
+                    color = "red"
+
+            html += f'<td style="color: {color};">{display_val}</td>'
         html += "</tr>"
     html += "</tbody></table>"
     
@@ -108,7 +121,7 @@ def send_email_auto(attachment_data, filename):
         msg['To'] = TO_EMAIL
         msg['Subject'] = f"交通事故統計報表 ({pd.Timestamp.now().strftime('%Y/%m/%d')})"
         
-        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (數據已修正為黑色整數)，請查照。\n\n(此郵件由系統自動發送)"
+        body = "長官好，\n\n檢送本期交通事故統計報表如附件 (已設定正數顯示紅字)，請查照。\n\n(此郵件由系統自動發送)"
         msg.attach(MIMEText(body, 'plain'))
 
         part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -131,7 +144,7 @@ if uploaded_files:
         st.warning(f"⚠️ 目前已上傳 {len(uploaded_files)} 個檔案，請補齊至 3 個檔案。")
         st.stop()
     
-    with st.spinner("⚡ 正在分析、轉換整數格式並寄送中..."):
+    with st.spinner("⚡ 正在分析、套用正數紅字格式並寄送中..."):
         try:
             # === (A) 資料讀取與清理 ===
             def parse_raw(file_obj):
@@ -258,17 +271,18 @@ if uploaded_files:
                 a1_final.to_excel(writer, index=False, sheet_name='A1死亡人數')
                 a2_final.to_excel(writer, index=False, sheet_name='A2受傷人數')
                 
-                # 字體設定 (Calibri)
+                # 字體設定
                 font_black = InlineFont(rFont='Calibri', sz=12, b=True, color='000000')
                 font_red = InlineFont(rFont='Calibri', sz=12, b=True, color='FF0000')
                 
-                # 一般內容字體 (全黑)
+                # 一般內容字體 (黑色)
                 font_content_black = Font(name='Calibri', size=12, color='000000')
+                # 正數強調字體 (紅色)
+                font_content_red = Font(name='Calibri', size=12, color='FF0000')
 
                 align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
                 border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
                 
-                # 標題專用：Rich Text 產生器
                 def make_header_rich_text(text):
                     text = str(text)
                     rich_text = CellRichText()
@@ -283,25 +297,45 @@ if uploaded_files:
 
                 for sheet_name in ['A1死亡人數', 'A2受傷人數']:
                     ws = writer.book[sheet_name]
+                    
+                    # 抓取標題名稱列表 (用於判斷欄位)
+                    header_names = [cell.value for cell in ws[1]]
+
                     for col in ws.columns: ws.column_dimensions[col[0].column_letter].width = 20
                     
-                    # 1. 處理標題列 (維持紅黑特效)
+                    # 1. 處理標題列 (First Row)
                     for i, cell in enumerate(ws[1]):
                         original_value = cell.value
                         cell.value = make_header_rich_text(original_value)
                         cell.alignment = align_center
                         cell.border = border_style
 
-                    # 2. 處理內容列 (全部黑色 + 整數)
+                    # 2. 處理內容列 (Row 2+)
                     for row in ws.iter_rows(min_row=2):
-                        for cell in row:
-                            # 轉整數邏輯
-                            if isinstance(cell.value, (int, float)):
-                                cell.value = int(cell.value) # Excel 數值去小數
+                        for col_idx, cell in enumerate(row):
+                            col_name = header_names[col_idx]
                             
+                            # (1) 格式化：轉整數 (排除百分比字串)
+                            if isinstance(cell.value, (int, float)):
+                                cell.value = int(cell.value)
+                            
+                            # (2) 顏色判斷
+                            target_font = font_content_black # 預設黑
+                            
+                            # A. "比較"欄位：正數變紅
+                            if "比較" in str(col_name):
+                                if isinstance(cell.value, (int, float)) and cell.value > 0:
+                                    target_font = font_content_red
+                            
+                            # B. "增減比例"欄位：正成長變紅 (非負號、非0)
+                            elif "增減" in str(col_name):
+                                val_str = str(cell.value)
+                                if "-" not in val_str and val_str != "0.00%" and val_str != "-":
+                                    target_font = font_content_red
+
+                            cell.font = target_font
                             cell.alignment = align_center
                             cell.border = border_style
-                            cell.font = font_content_black # 強制黑色字體
             
             # 🔥 自動寄信
             filename_excel = f'交通事故統計表_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx'
@@ -313,7 +347,7 @@ if uploaded_files:
             else:
                 st.error(msg)
 
-            # === 🔥 網頁顯示 (標題紅黑，內容純黑整數) ===
+            # === 🔥 網頁顯示 ===
             col1, col2 = st.columns(2)
             with col1: 
                 render_styled_table(a1_final, "📊 A1 死亡人數")
