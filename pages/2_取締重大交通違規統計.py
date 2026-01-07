@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v35 格式保留版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v37 警備隊目標刪除版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,10 +28,10 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v35)
-1.  **Google 試算表**：**僅寫入文字與數字**，完全保留您原本在雲端試算表設定的格式 (如合併、顏色)。
-2.  **Excel 下載**：依然保有完整的紅字、黃底、框線等美觀排版。
-3.  **寫入範圍**：全表寫入 (A1 ~ J14)。
+### 📝 使用說明 (v37)
+1.  **目標值更新**：警備隊目標值已刪除 (設定為 0)。
+2.  **寫入設定**：資料寫入 Google 試算表 (Index 0) 的 A1~J14，保留格式。
+3.  **功能完整**：包含自動寄信、混合配色預覽。
 """)
 
 # ==========================================
@@ -45,6 +45,19 @@ UNIT_MAP = {
     '警備隊': '警備隊', '龍潭交通分隊': '交通分隊', '交通組': '科技執法'
 }
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
+
+# ★★★ 目標值設定 (v37: 警備隊歸零) ★★★
+TARGETS = {
+    '聖亭所': 3080, 
+    '龍潭所': 4107, 
+    '中興所': 3080, 
+    '石門所': 2347,
+    '高平所': 2053, 
+    '三和所': 374, 
+    '交通分隊': 4173, 
+    '警備隊': 0,      # 已刪除
+    '科技執法': 0
+}
 
 # 說明文字
 NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
@@ -60,15 +73,13 @@ def update_google_sheet(data_list, sheet_url, start_cell='A1'):
         
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
-        # 指定第一個工作表 (Index 0)
-        ws = sh.get_worksheet(0)
+        ws = sh.get_worksheet(0) # Index 0
         
         if ws is None: raise Exception("找不到 Index 0 的工作表")
         
         st.info(f"📂 寫入目標工作表：**「{ws.title}」** (Index 0) - 僅更新數值，不更動格式")
         
         try:
-            # ★★★ 僅使用 update，這只會寫入 Values，不會動 Formatting ★★★
             ws.update(range_name=start_cell, values=data_list)
         except TypeError:
             ws.update(start_cell, data_list)
@@ -186,8 +197,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v35 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v35_data_only")
+# ★★★ v37 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v37_delete_guard_target")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -234,22 +245,28 @@ if uploaded_files:
                     if u == '科技執法':
                         row_data.extend(['', ''])
                     else:
-                        row_data.extend(['', '']) 
+                        tgt = TARGETS.get(u, 0)
+                        rate_str = f"{y_total/tgt:.0%}" if tgt > 0 else "0%"
+                        row_data.extend([tgt, rate_str])
                 
                 accum['ws']+=w_s; accum['wc']+=w_c
                 accum['ys']+=y_s; accum['yc']+=y_c
                 accum['ls']+=l_s; accum['lc']+=l_c
                 unit_rows.append(row_data)
 
+            total_target = sum([v for k,v in TARGETS.items() if k not in ['警備隊', '科技執法']])
             t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
-            total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, '', '']
+            t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
+            total_rate_str = f"{t_rate:.0%}"
+            
+            total_row = ['合計', accum['ws'], accum['wc'], accum['ys'], accum['yc'], accum['ls'], accum['lc'], t_diff, total_target, total_rate_str]
             final_rows = [total_row] + unit_rows
 
             cols = ['取締方式', '本期_當場攔停', '本期_逕行舉發', '本年_當場攔停', '本年_逕行舉發', '去年_當場攔停', '去年_逕行舉發', '本年與去年比較', '目標值', '達成率']
             df_final = pd.DataFrame(final_rows, columns=cols)
 
             # ==========================================
-            # ★★★ 網頁預覽區 (維持美觀) ★★★
+            # ★★★ 網頁預覽區 ★★★
             # ==========================================
             st.success("✅ 分析完成！下方為預覽畫面")
 
@@ -302,7 +319,7 @@ if uploaded_files:
             st.markdown(final_html, unsafe_allow_html=True)
 
             # ==========================================
-            # Excel 產生邏輯 (維持美觀)
+            # Excel 產生邏輯
             # ==========================================
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -369,7 +386,7 @@ if uploaded_files:
             file_ids = ",".join(sorted([f.name for f in uploaded_files]))
             
             # ==========================================
-            # ★★★ 準備完整寫入資料 (Rows 1-14) ★★★
+            # ★★★ 全表寫入資料 ★★★
             # ==========================================
             sheet_r1 = ['取締重大交通違規件數統計表'] + [''] * 9
             sheet_r2 = [
@@ -395,7 +412,6 @@ if uploaded_files:
                     else: st.warning("⚠️ 未設定 Email Secrets")
                     
                     st.write("📊 正在寫入 Google 試算表 (A1 ~ J14)...")
-                    # 使用 update 更新數值，不更動格式
                     if update_google_sheet(full_sheet_data, GOOGLE_SHEET_URL, start_cell='A1'):
                         st.write("✅ 寫入成功！ (僅更新數據，保留格式)")
                     else: st.write("❌ 寫入失敗")
