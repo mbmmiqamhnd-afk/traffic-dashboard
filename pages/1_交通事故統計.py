@@ -26,9 +26,9 @@ SMTP_PORT = 587
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 # ==========================================
 
-st.set_page_config(page_title="交通事故統計 (純寫入數據版)", layout="wide", page_icon="🚑")
-st.title("🚑 交通事故統計 (上傳即寄出 + 純數據寫入)")
-st.markdown("### 📝 狀態：同步時**完全保留**試算表原本的格式 (合併、底色、邊框)，僅更新數值與紅黑字。")
+st.set_page_config(page_title="交通事故統計 (最終格式版)", layout="wide", page_icon="🚑")
+st.title("🚑 交通事故統計 (上傳即寄出 + 格式微調)")
+st.markdown("### 📝 狀態：日期格式去斜線 (0101-0107)，保留括號，並同步至 Google 試算表。")
 
 # 1. 檔案上傳區
 uploaded_files = st.file_uploader("請一次選取或拖曳 3 個報表檔案", accept_multiple_files=True, key="acc_uploader")
@@ -61,11 +61,12 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
     for token in tokens:
         if not token: continue
         
-        # 只設定顏色與粗體，不設定 fontSize 或 fontFamily，沿用原本試算表的設定
+        # 預設維持原本字體設定
         color = {"red": 0, "green": 0, "blue": 0}
         
+        # 數字、括號、橫線 -> 紅色
         if re.match(r'^[0-9\(\)\/\-\.\%]+$', token):
-            color = {"red": 1, "green": 0, "blue": 0} # 紅色
+            color = {"red": 1, "green": 0, "blue": 0}
             
         runs.append({
             "startIndex": current_pos,
@@ -84,7 +85,7 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
                     "textFormatRuns": runs
                 }]
             }],
-            "fields": "userEnteredValue,textFormatRuns", # 🔥 鎖定更新範圍，保護格式
+            "fields": "userEnteredValue,textFormatRuns", # 🔥 鎖定更新範圍
             "range": {
                 "sheetId": sheet_id,
                 "startRowIndex": row_idx,
@@ -143,7 +144,7 @@ def send_email_auto(attachment_data, filename):
     except Exception as e:
         return False, f"❌ 寄送失敗：{e}"
 
-# 3. Google Sheets 同步函數 (🔥 核心修改：純寫入模式)
+# 3. Google Sheets 同步函數 (純寫入模式)
 def sync_to_gsheet(df_a1, df_a2):
     try:
         if "gcp_service_account" not in st.secrets:
@@ -157,13 +158,12 @@ def sync_to_gsheet(df_a1, df_a2):
                 ws = sh.get_worksheet(ws_index)
                 
                 # 1. 清除舊數據 (僅清除值 Values，保留格式)
-                # "batch_clear" 預設行為就是清除 values，不會動 formatting
                 ws.batch_clear(["A3:Z100"]) 
                 
-                # 2. 更新 Row 1 (大標題) - 僅更新文字，不動合併/字體
+                # 2. 更新 Row 1 (大標題) - 僅更新文字
                 ws.update_acell('A1', title_text)
                 
-                # 3. 更新 Row 3+ (數據內容) - 僅更新值，不動邊框/對齊
+                # 3. 更新 Row 3+ (數據內容) - 僅更新值
                 data_rows = []
                 for row in df.values.tolist():
                     data_rows.append([int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row])
@@ -171,7 +171,7 @@ def sync_to_gsheet(df_a1, df_a2):
                 if data_rows:
                     ws.update(range_name='A3', values=data_rows)
 
-                # 4. 更新 Row 2 (欄位標題) - 更新文字並套用紅黑字，但不依賴 userEnteredFormat
+                # 4. 更新 Row 2 (欄位標題) - 更新文字並套用紅黑字
                 reqs = []
                 for col_idx, col_name in enumerate(df.columns):
                     reqs.append(get_gsheet_rich_text_req(ws.id, 1, col_idx, col_name))
@@ -195,7 +195,7 @@ def sync_to_gsheet(df_a1, df_a2):
         except Exception as e:
             return False, f"❌ A2 同步失敗: {e}"
         
-        return True, "✅ Google 試算表同步成功 (格式完美保留)"
+        return True, "✅ Google 試算表同步成功 (格式保留)"
     except Exception as e:
         return False, f"❌ Google 試算表連線失敗: {e}"
 
@@ -244,7 +244,10 @@ if uploaded_files:
                     d_start = date(start_y + 1911, start_m, start_d)
                     d_end = date(end_y + 1911, end_m, end_d)
                     duration_days = (d_end - d_start).days
-                    raw_date_str = f"{start_m:02d}/{start_d:02d}-{end_m:02d}/{end_d:02d}"
+                    
+                    # 🔥 修改這裡：無斜線，例如 0101-0107
+                    raw_date_str = f"{start_m:02d}{start_d:02d}-{end_m:02d}{end_d:02d}"
+                    
                     files_meta.append({'file': uploaded_file, 'df': df, 'end_year': end_y, 'duration': duration_days, 'raw_date': raw_date_str, 'start_tuple': (start_y, start_m, start_d)})
                 else: files_meta.append({'file': uploaded_file, 'end_year': 0})
 
@@ -296,6 +299,7 @@ if uploaded_files:
             m_a2['Pct_Str'] = m_a2.apply(lambda x: f"{(x['Diff']/x['last']):.2%}" if x['last']!=0 else "-", axis=1)
             m_a2['Prev'] = "-"
 
+            # 🔥 這裡保留括號，並使用上方產生的無斜線日期
             a1_final = m_a1[['Station_Short', 'wk', 'cur', 'last', 'Diff']].copy()
             a1_final.columns = ['統計期間', f'本期({h_wk})', f'本年累計({h_cur})', f'去年累計({h_lst})', '本年與去年同期比較']
             a2_final = m_a2[['Station_Short', 'wk', 'Prev', 'cur', 'last', 'Diff', 'Pct_Str']].copy()
@@ -339,7 +343,7 @@ if uploaded_files:
                             cell.alignment = align_center
                             cell.border = border_style
 
-            # (F) 同步到 Google Sheet (🔥 標題 + Rich Text)
+            # (F) 同步到 Google Sheet (純寫入模式)
             gs_success, gs_msg = sync_to_gsheet(a1_final, a2_final)
             if gs_success: st.write(gs_msg)
             else: st.error(gs_msg)
