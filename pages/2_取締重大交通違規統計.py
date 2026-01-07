@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v37 警備隊目標刪除版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v38 日期修正+目標微調版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,10 +28,10 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v37)
-1.  **目標值更新**：警備隊目標值已刪除 (設定為 0)。
-2.  **寫入設定**：資料寫入 Google 試算表 (Index 0) 的 A1~J14，保留格式。
-3.  **功能完整**：包含自動寄信、混合配色預覽。
+### 📝 使用說明 (v38)
+1.  **日期修正**：已將「本期」與「本年累計」的對應邏輯對調 (針對年初跨年週大於累計日數的情況)。
+2.  **目標更新**：三和所目標值修正為 **373**。
+3.  **功能維持**：寫入 Google 試算表 (A1~J14)，保留雲端格式。
 """)
 
 # ==========================================
@@ -46,16 +46,16 @@ UNIT_MAP = {
 }
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
-# ★★★ 目標值設定 (v37: 警備隊歸零) ★★★
+# ★★★ 目標值設定 (v38: 三和所修正為 373) ★★★
 TARGETS = {
     '聖亭所': 3080, 
     '龍潭所': 4107, 
     '中興所': 3080, 
     '石門所': 2347,
     '高平所': 2053, 
-    '三和所': 374, 
+    '三和所': 373,    # 已修正
     '交通分隊': 4173, 
-    '警備隊': 0,      # 已刪除
+    '警備隊': 0,
     '科技執法': 0
 }
 
@@ -197,8 +197,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 4. 主程式
 # ==========================================
-# ★★★ v37 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v37_delete_guard_target")
+# ★★★ v38 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v38_swap_dates")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -217,8 +217,12 @@ if uploaded_files:
             file_last_year = parsed_files[0]
             others = parsed_files[1:]
             others.sort(key=lambda x: x['duration'], reverse=True)
-            file_year = others[0]
-            file_week = others[1]
+            
+            # ★★★ v38 修改：對調變數分配 ★★★
+            # 說明：因為年初時，跨年週(如7天)可能比本年累計(如6天)還長
+            # 所以將天數長的(others[0])指定為本期(file_week)，天數短的(others[1])指定為本年(file_year)
+            file_week = others[0] 
+            file_year = others[1]
 
             unit_rows = []
             accum = {'ws':0, 'wc':0, 'ys':0, 'yc':0, 'ls':0, 'lc':0}
@@ -386,7 +390,7 @@ if uploaded_files:
             file_ids = ",".join(sorted([f.name for f in uploaded_files]))
             
             # ==========================================
-            # ★★★ 全表寫入資料 ★★★
+            # ★★★ 準備完整寫入資料 (Rows 1-14) ★★★
             # ==========================================
             sheet_r1 = ['取締重大交通違規件數統計表'] + [''] * 9
             sheet_r2 = [
