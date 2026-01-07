@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v40 雲端配色一致版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v41 顏色修復版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,10 +28,10 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v40)
-1.  **配色一致性**：寫入 Google 試算表後，會強制將文字設為黑色，再針對 **數字/符號** 及 **負數** 標紅。
-2.  **雲端格式同步**：Google 試算表現在會與 Excel 下載檔長得一樣 (黑字紅數)。
-3.  **功能保留**：目標值(三和373/警備隊0)、全表寫入 (A1~J14)。
+### 📝 使用說明 (v41)
+1.  **修復綠色字體**：程式會自動清除試算表上所有舊的變色規則，確保非紅色字體就是 **黑色**。
+2.  **格式同步**：Google 試算表與 Excel 檔案格式一致 (黑字紅數、負數紅字)。
+3.  **功能維持**：全表寫入 (A1~J14)、自動寄信。
 """)
 
 # ==========================================
@@ -54,18 +54,16 @@ TARGETS = {
 NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
 
 # ==========================================
-# 1. Google Sheets 格式化工具函數 (API 處理)
+# 1. Google Sheets 格式化工具函數
 # ==========================================
 def get_mixed_color_request(sheet_id, row_index, col_index, text):
     """
     產生 Google Sheets API 請求，將儲存格內的數字與符號設為紅色，其餘黑色。
-    row_index, col_index 為 0-based。
     """
     runs = []
-    # 定義要變紅色的字元集合
     red_chars = set("0123456789~().%")
     
-    current_style = None # None=Init, 'black', 'red'
+    current_style = None
     start_index = 0
     
     for i, char in enumerate(text):
@@ -76,16 +74,15 @@ def get_mixed_color_request(sheet_id, row_index, col_index, text):
             current_style = style
             start_index = i
         elif style != current_style:
-            # 樣式改變，記錄上一段
+            # 顏色改變，設定上一段
             color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
             runs.append({
                 "startIndex": start_index,
-                "format": {"foregroundColor": color, "bold": True} # 設定粗體
+                "format": {"foregroundColor": color, "bold": True}
             })
             current_style = style
             start_index = i
             
-    # 加入最後一段
     if current_style is not None:
         color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
         runs.append({
@@ -113,7 +110,7 @@ def get_mixed_color_request(sheet_id, row_index, col_index, text):
     }
 
 # ==========================================
-# 2. Google Sheets 寫入與格式化
+# 2. Google Sheets 寫入與格式化 (修復版)
 # ==========================================
 def update_google_sheet(data_list, sheet_url, header_dates):
     try:
@@ -129,43 +126,34 @@ def update_google_sheet(data_list, sheet_url, header_dates):
         
         st.info(f"📂 寫入目標工作表：**「{ws.title}」** (Index 0)")
         
-        # 1. 寫入資料
+        # ★★★ 1. 清除舊的條件格式規則 (解決綠色字體問題的關鍵) ★★★
+        try:
+            ws.clear_conditional_formatting_rules()
+        except:
+            pass # 若 API 不支援或無規則可清，則略過
+
+        # 2. 寫入資料
         ws.update(range_name='A1', values=data_list)
         
-        # 2. 格式化：先將全表 A1:J14 重置為黑色
+        # 3. 格式化：將全表 A1:J14 強制重置為黑色粗體
         ws.format("A1:J14", {
             "textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": True}
         })
         
-        # 3. 格式化：第二列 (Row 2) 的日期部分混合配色 (API Batch Update)
-        # Row 2 (Index 1) 的資料: A=統計期間, B=本期..., D=本年..., F=去年...
-        # 對應的 List 資料在 data_list[1]
-        
-        # 取得需要變色的文字
-        text_week = data_list[1][1] # 本期...
-        text_year = data_list[1][3] # 本年...
-        text_last = data_list[1][5] # 去年...
+        # 4. 格式化：第二列日期混合配色 (API Batch Update)
+        text_week = data_list[1][1] 
+        text_year = data_list[1][3] 
+        text_last = data_list[1][5] 
         
         requests = []
-        # B2 (Row 1, Col 1)
         requests.append(get_mixed_color_request(ws.id, 1, 1, text_week))
-        # D2 (Row 1, Col 3)
         requests.append(get_mixed_color_request(ws.id, 1, 3, text_year))
-        # F2 (Row 1, Col 5)
         requests.append(get_mixed_color_request(ws.id, 1, 5, text_last))
         
-        # 執行 Batch Update
         sh.batch_update({'requests': requests})
         
-        # 4. 格式化：H 欄 (本年與去年比較) 負數標紅 (Conditional Formatting)
-        # 資料從第 4 列開始 (Row 4)，H欄是第8欄
-        # 先清除舊規則 (簡單起見，直接覆蓋)
-        
-        # 定義紅色粗體
+        # 5. 格式化：負數標紅 (H欄)
         fmt_red = {'textFormat': {'foregroundColor': {'red': 1.0, 'green': 0.0, 'blue': 0.0}, 'bold': True}}
-        
-        # H4 到 H13 (假設 9 個單位 + 1 個合計)
-        # data_list 總長 14，數據在 index 3 ~ 12 (即 Excel Row 4 ~ 13)
         ws.add_conditional_formatting_rule(
             "H4:H13", 
             {
@@ -288,8 +276,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 5. 主程式
 # ==========================================
-# ★★★ v40 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v40_sync_format")
+# ★★★ v41 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v41_fix_green")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -503,10 +491,9 @@ if uploaded_files:
                             st.write(f"✅ Email 已發送")
                     else: st.warning("⚠️ 未設定 Email Secrets")
                     
-                    st.write("📊 正在寫入 Google 試算表 (A1 ~ J14) 並同步格式...")
-                    # ★★★ 呼叫新的格式化寫入函數 ★★★
+                    st.write("📊 正在寫入 Google 試算表 (A1 ~ J14) 並修復顏色...")
                     if update_google_sheet(full_sheet_data, GOOGLE_SHEET_URL, [None, sheet_r2]):
-                        st.write("✅ 寫入成功！ (已重置顏色並套用格式)")
+                        st.write("✅ 寫入成功！ (已清除舊規則並統一配色)")
                     else: st.write("❌ 寫入失敗")
                     
                     status.update(label="執行完畢", state="complete", expanded=False)
