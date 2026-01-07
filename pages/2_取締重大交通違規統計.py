@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v41 顏色修復版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v42 強制黑字修復版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,9 +28,9 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v41)
-1.  **修復綠色字體**：程式會自動清除試算表上所有舊的變色規則，確保非紅色字體就是 **黑色**。
-2.  **格式同步**：Google 試算表與 Excel 檔案格式一致 (黑字紅數、負數紅字)。
+### 📝 使用說明 (v42)
+1.  **綠字修復**：採用「全表清除 + 強制黑字」策略，徹底解決字體變綠問題。
+2.  **格式重建**：自動補回黃色底色、紅色數字與負數紅字。
 3.  **功能維持**：全表寫入 (A1~J14)、自動寄信。
 """)
 
@@ -74,7 +74,6 @@ def get_mixed_color_request(sheet_id, row_index, col_index, text):
             current_style = style
             start_index = i
         elif style != current_style:
-            # 顏色改變，設定上一段
             color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
             runs.append({
                 "startIndex": start_index,
@@ -110,9 +109,9 @@ def get_mixed_color_request(sheet_id, row_index, col_index, text):
     }
 
 # ==========================================
-# 2. Google Sheets 寫入與格式化 (修復版)
+# 2. Google Sheets 寫入與格式化 (核彈級修復版)
 # ==========================================
-def update_google_sheet(data_list, sheet_url, header_dates):
+def update_google_sheet(data_list, sheet_url):
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 錯誤：未設定 Secrets！")
@@ -126,33 +125,98 @@ def update_google_sheet(data_list, sheet_url, header_dates):
         
         st.info(f"📂 寫入目標工作表：**「{ws.title}」** (Index 0)")
         
-        # ★★★ 1. 清除舊的條件格式規則 (解決綠色字體問題的關鍵) ★★★
-        try:
-            ws.clear_conditional_formatting_rules()
-        except:
-            pass # 若 API 不支援或無規則可清，則略過
-
+        # ★★★ 1. 核彈級清除：清空所有資料與格式 ★★★
+        ws.clear() 
+        
         # 2. 寫入資料
         ws.update(range_name='A1', values=data_list)
         
-        # 3. 格式化：將全表 A1:J14 強制重置為黑色粗體
-        ws.format("A1:J14", {
-            "textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": True}
+        # 3. 建構 Batch Requests (一次性發送所有格式指令)
+        requests = []
+        
+        # [Request A] 全表強制重置：白底、黑字、粗體、基本框線 (A1:J14)
+        # 這一步會把所有綠色字體強制壓回黑色
+        requests.append({
+            "repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10},
+                "cell": {
+                    "userEnteredFormat": {
+                        "backgroundColor": {"red": 1, "green": 1, "blue": 1}, # 白底
+                        "textFormat": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": True}, # 黑字粗體
+                        "horizontalAlignment": "CENTER",
+                        "verticalAlignment": "MIDDLE",
+                        "borders": {
+                            "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, 
+                            "left": {"style": "SOLID"}, "right": {"style": "SOLID"}
+                        }
+                    }
+                },
+                "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,borders)"
+            }
+        })
+
+        # [Request B] 標題列 (Row 1) 合併與置中
+        requests.append({
+            "mergeCells": {
+                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10},
+                "mergeType": "MERGE_ALL"
+            }
         })
         
-        # 4. 格式化：第二列日期混合配色 (API Batch Update)
-        text_week = data_list[1][1] 
-        text_year = data_list[1][3] 
-        text_last = data_list[1][5] 
+        # [Request C] 第二列 (Row 2) 混合配色 (紅數黑字)
+        # data_list[1] 是第二列資料
+        requests.append(get_mixed_color_request(ws.id, 1, 1, data_list[1][1])) # B2
+        requests.append(get_mixed_color_request(ws.id, 1, 3, data_list[1][3])) # D2
+        requests.append(get_mixed_color_request(ws.id, 1, 5, data_list[1][5])) # F2
         
-        requests = []
-        requests.append(get_mixed_color_request(ws.id, 1, 1, text_week))
-        requests.append(get_mixed_color_request(ws.id, 1, 3, text_year))
-        requests.append(get_mixed_color_request(ws.id, 1, 5, text_last))
-        
+        # [Request D] 第二列合併 (B2:C2, D2:E2, F2:G2, H2:H3...)
+        merge_ranges = [(1,1,2,1,3), (1,1,2,3,5), (1,1,2,5,7), (1,2,2,7,8), (1,2,2,8,9), (1,2,2,9,10)]
+        for r in merge_ranges:
+            requests.append({
+                "mergeCells": {
+                    "range": {"sheetId": ws.id, "startRowIndex": r[0], "endRowIndex": r[1]+1, "startColumnIndex": r[2], "endColumnIndex": r[3]},
+                    "mergeType": "MERGE_ALL"
+                }
+            })
+
+        # [Request E] 合計列 (Row 4, index 3) 上黃色底色
+        requests.append({
+            "repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 10},
+                "cell": {
+                    "userEnteredFormat": {
+                        "backgroundColor": {"red": 1.0, "green": 0.92, "blue": 0.61} # #FFEB9C 淺黃
+                    }
+                },
+                "fields": "userEnteredFormat.backgroundColor"
+            }
+        })
+
+        # [Request F] 說明列 (Row 14) 合併與靠左
+        requests.append({
+            "mergeCells": {
+                "range": {"sheetId": ws.id, "startRowIndex": 13, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10},
+                "mergeType": "MERGE_ALL"
+            }
+        })
+        requests.append({
+            "repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 13, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10},
+                "cell": {
+                    "userEnteredFormat": {
+                        "horizontalAlignment": "LEFT",
+                        "textFormat": {"fontSize": 10, "bold": False}
+                    }
+                },
+                "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
+            }
+        })
+
+        # 執行格式化 Batch Update
         sh.batch_update({'requests': requests})
         
-        # 5. 格式化：負數標紅 (H欄)
+        # 4. 最後加上條件式格式 (負數紅字)
+        # H4:H13 (Row 4~13, Col 8)
         fmt_red = {'textFormat': {'foregroundColor': {'red': 1.0, 'green': 0.0, 'blue': 0.0}, 'bold': True}}
         ws.add_conditional_formatting_rule(
             "H4:H13", 
@@ -276,8 +340,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 5. 主程式
 # ==========================================
-# ★★★ v41 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v41_fix_green")
+# ★★★ v42 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v42_force_black")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -492,8 +556,9 @@ if uploaded_files:
                     else: st.warning("⚠️ 未設定 Email Secrets")
                     
                     st.write("📊 正在寫入 Google 試算表 (A1 ~ J14) 並修復顏色...")
-                    if update_google_sheet(full_sheet_data, GOOGLE_SHEET_URL, [None, sheet_r2]):
-                        st.write("✅ 寫入成功！ (已清除舊規則並統一配色)")
+                    # ★★★ 呼叫強制修復版寫入函數 ★★★
+                    if update_google_sheet(full_sheet_data, GOOGLE_SHEET_URL):
+                        st.write("✅ 寫入成功！ (綠字已修復，格式已同步)")
                     else: st.write("❌ 寫入失敗")
                     
                     status.update(label="執行完畢", state="complete", expanded=False)
