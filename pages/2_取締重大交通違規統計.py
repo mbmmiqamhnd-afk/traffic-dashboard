@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v38 日期修正+目標微調版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v40 雲端配色一致版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,10 +28,10 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v38)
-1.  **日期修正**：已將「本期」與「本年累計」的對應邏輯對調 (針對年初跨年週大於累計日數的情況)。
-2.  **目標更新**：三和所目標值修正為 **373**。
-3.  **功能維持**：寫入 Google 試算表 (A1~J14)，保留雲端格式。
+### 📝 使用說明 (v40)
+1.  **配色一致性**：寫入 Google 試算表後，會強制將文字設為黑色，再針對 **數字/符號** 及 **負數** 標紅。
+2.  **雲端格式同步**：Google 試算表現在會與 Excel 下載檔長得一樣 (黑字紅數)。
+3.  **功能保留**：目標值(三和373/警備隊0)、全表寫入 (A1~J14)。
 """)
 
 # ==========================================
@@ -46,26 +46,76 @@ UNIT_MAP = {
 }
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
-# ★★★ 目標值設定 (v38: 三和所修正為 373) ★★★
 TARGETS = {
-    '聖亭所': 3080, 
-    '龍潭所': 4107, 
-    '中興所': 3080, 
-    '石門所': 2347,
-    '高平所': 2053, 
-    '三和所': 373,    # 已修正
-    '交通分隊': 4173, 
-    '警備隊': 0,
-    '科技執法': 0
+    '聖亭所': 3080, '龍潭所': 4107, '中興所': 3080, '石門所': 2347,
+    '高平所': 2053, '三和所': 373, '交通分隊': 4173, '警備隊': 0, '科技執法': 0
 }
 
-# 說明文字
 NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
 
 # ==========================================
-# 1. Google Sheets 寫入函數 (純數據版)
+# 1. Google Sheets 格式化工具函數 (API 處理)
 # ==========================================
-def update_google_sheet(data_list, sheet_url, start_cell='A1'):
+def get_mixed_color_request(sheet_id, row_index, col_index, text):
+    """
+    產生 Google Sheets API 請求，將儲存格內的數字與符號設為紅色，其餘黑色。
+    row_index, col_index 為 0-based。
+    """
+    runs = []
+    # 定義要變紅色的字元集合
+    red_chars = set("0123456789~().%")
+    
+    current_style = None # None=Init, 'black', 'red'
+    start_index = 0
+    
+    for i, char in enumerate(text):
+        char_is_red = char in red_chars
+        style = 'red' if char_is_red else 'black'
+        
+        if current_style is None:
+            current_style = style
+            start_index = i
+        elif style != current_style:
+            # 樣式改變，記錄上一段
+            color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
+            runs.append({
+                "startIndex": start_index,
+                "format": {"foregroundColor": color, "bold": True} # 設定粗體
+            })
+            current_style = style
+            start_index = i
+            
+    # 加入最後一段
+    if current_style is not None:
+        color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
+        runs.append({
+            "startIndex": start_index,
+            "format": {"foregroundColor": color, "bold": True}
+        })
+
+    return {
+        "updateCells": {
+            "rows": [{
+                "values": [{
+                    "userEnteredValue": {"stringValue": text},
+                    "textFormatRuns": runs
+                }]
+            }],
+            "fields": "userEnteredValue,textFormatRuns",
+            "range": {
+                "sheetId": sheet_id,
+                "startRowIndex": row_index,
+                "endRowIndex": row_index + 1,
+                "startColumnIndex": col_index,
+                "endColumnIndex": col_index + 1
+            }
+        }
+    }
+
+# ==========================================
+# 2. Google Sheets 寫入與格式化
+# ==========================================
+def update_google_sheet(data_list, sheet_url, header_dates):
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("❌ 錯誤：未設定 Secrets！")
@@ -73,26 +123,67 @@ def update_google_sheet(data_list, sheet_url, start_cell='A1'):
         
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(sheet_url)
-        ws = sh.get_worksheet(0) # Index 0
+        ws = sh.get_worksheet(0)
         
         if ws is None: raise Exception("找不到 Index 0 的工作表")
         
-        st.info(f"📂 寫入目標工作表：**「{ws.title}」** (Index 0) - 僅更新數值，不更動格式")
+        st.info(f"📂 寫入目標工作表：**「{ws.title}」** (Index 0)")
         
-        try:
-            ws.update(range_name=start_cell, values=data_list)
-        except TypeError:
-            ws.update(start_cell, data_list)
-        except Exception as e:
-            st.error(f"❌ 寫入數據失敗: {e}")
-            return False
+        # 1. 寫入資料
+        ws.update(range_name='A1', values=data_list)
+        
+        # 2. 格式化：先將全表 A1:J14 重置為黑色
+        ws.format("A1:J14", {
+            "textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": True}
+        })
+        
+        # 3. 格式化：第二列 (Row 2) 的日期部分混合配色 (API Batch Update)
+        # Row 2 (Index 1) 的資料: A=統計期間, B=本期..., D=本年..., F=去年...
+        # 對應的 List 資料在 data_list[1]
+        
+        # 取得需要變色的文字
+        text_week = data_list[1][1] # 本期...
+        text_year = data_list[1][3] # 本年...
+        text_last = data_list[1][5] # 去年...
+        
+        requests = []
+        # B2 (Row 1, Col 1)
+        requests.append(get_mixed_color_request(ws.id, 1, 1, text_week))
+        # D2 (Row 1, Col 3)
+        requests.append(get_mixed_color_request(ws.id, 1, 3, text_year))
+        # F2 (Row 1, Col 5)
+        requests.append(get_mixed_color_request(ws.id, 1, 5, text_last))
+        
+        # 執行 Batch Update
+        sh.batch_update({'requests': requests})
+        
+        # 4. 格式化：H 欄 (本年與去年比較) 負數標紅 (Conditional Formatting)
+        # 資料從第 4 列開始 (Row 4)，H欄是第8欄
+        # 先清除舊規則 (簡單起見，直接覆蓋)
+        
+        # 定義紅色粗體
+        fmt_red = {'textFormat': {'foregroundColor': {'red': 1.0, 'green': 0.0, 'blue': 0.0}, 'bold': True}}
+        
+        # H4 到 H13 (假設 9 個單位 + 1 個合計)
+        # data_list 總長 14，數據在 index 3 ~ 12 (即 Excel Row 4 ~ 13)
+        ws.add_conditional_formatting_rule(
+            "H4:H13", 
+            {
+                "condition": {
+                    "type": "NUMBER_LESS", 
+                    "values": [{"userEnteredValue": "0"}]
+                },
+                "format": fmt_red
+            }
+        )
+
         return True
     except Exception as e:
-        st.error(f"❌ 未知錯誤: {e}")
+        st.error(f"❌ 寫入或格式化失敗: {e}")
         return False
 
 # ==========================================
-# 2. 寄信函數
+# 3. 寄信函數
 # ==========================================
 def send_email(recipient, subject, body, file_bytes, filename):
     try:
@@ -118,7 +209,7 @@ def send_email(recipient, subject, body, file_bytes, filename):
     except: return False
 
 # ==========================================
-# 3. 解析函數
+# 4. 解析函數
 # ==========================================
 def parse_focus_report(uploaded_file):
     if not uploaded_file: return None
@@ -195,10 +286,10 @@ def get_mmdd(date_str):
     return clean[-4:] if len(clean) >= 4 else clean
 
 # ==========================================
-# 4. 主程式
+# 5. 主程式
 # ==========================================
-# ★★★ v38 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v38_swap_dates")
+# ★★★ v40 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v40_sync_format")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -218,9 +309,6 @@ if uploaded_files:
             others = parsed_files[1:]
             others.sort(key=lambda x: x['duration'], reverse=True)
             
-            # ★★★ v38 修改：對調變數分配 ★★★
-            # 說明：因為年初時，跨年週(如7天)可能比本年累計(如6天)還長
-            # 所以將天數長的(others[0])指定為本期(file_week)，天數短的(others[1])指定為本年(file_year)
             file_week = others[0] 
             file_year = others[1]
 
@@ -332,7 +420,7 @@ if uploaded_files:
                 ws = writer.sheets['Sheet1']
                 
                 fmt_title = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center', 'valign': 'vcenter'})
-                fmt_top_base = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1, 'bg_color': '#ffffff', 'text_wrap': True})
+                fmt_top_base = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1, 'bg_color': '#ffffff', 'text_wrap': True, 'font_color': 'black'})
                 fmt_font_black = workbook.add_format({'font_color': 'black', 'bold': True})
                 fmt_font_red = workbook.add_format({'font_color': 'red', 'bold': True})
                 fmt_sub = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'border': 1})
@@ -415,9 +503,10 @@ if uploaded_files:
                             st.write(f"✅ Email 已發送")
                     else: st.warning("⚠️ 未設定 Email Secrets")
                     
-                    st.write("📊 正在寫入 Google 試算表 (A1 ~ J14)...")
-                    if update_google_sheet(full_sheet_data, GOOGLE_SHEET_URL, start_cell='A1'):
-                        st.write("✅ 寫入成功！ (僅更新數據，保留格式)")
+                    st.write("📊 正在寫入 Google 試算表 (A1 ~ J14) 並同步格式...")
+                    # ★★★ 呼叫新的格式化寫入函數 ★★★
+                    if update_google_sheet(full_sheet_data, GOOGLE_SHEET_URL, [None, sheet_r2]):
+                        st.write("✅ 寫入成功！ (已重置顏色並套用格式)")
                     else: st.write("❌ 寫入失敗")
                     
                     status.update(label="執行完畢", state="complete", expanded=False)
