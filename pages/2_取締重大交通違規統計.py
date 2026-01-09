@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v56 富文本強制變色版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v57 座標塗色修復版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,9 +28,9 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v56)
-1.  **富文本強制**：將單位名稱與負數視為「帶有顏色的文字」寫入，強迫 Google 顯示紅色。
-2.  **邏輯檢查**：請觀察下方執行時的「🔴 覆蓋日誌」，確認程式有抓到負數。
+### 📝 使用說明 (v57)
+1.  **參考邏輯**：採用「先寫入資料，再針對特定座標塗色」的標準做法 (參照交通事故統計)。
+2.  **變色機制**：程式會鎖定負數所在的「列座標」，直接對該格發送紅色格式指令。
 3.  **功能維持**：全表寫入、目標值更新、自動寄信。
 """)
 
@@ -54,14 +54,17 @@ TARGETS = {
 NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
 
 # ==========================================
-# 1. Google Sheets 格式化工具 (Rich Text)
+# 1. Google Sheets 格式化工具 (API)
 # ==========================================
-def get_header_mixed_color(text):
-    """[Rich Text] 標題列：數字紅、漢字黑"""
+def get_mixed_color_request(sheet_id, row_index, col_index, text):
+    """
+    [Rich Text] 處理標題列 (Row 2) 的紅黑混色
+    """
     runs = []
     red_chars = set("0123456789~().% /")
     current_style = None
     start_index = 0
+    
     for i, char in enumerate(text):
         char_is_red = char in red_chars
         style = 'red' if char_is_red else 'black'
@@ -73,56 +76,43 @@ def get_header_mixed_color(text):
             runs.append({"startIndex": start_index, "format": {"foregroundColor": color, "bold": True}})
             current_style = style
             start_index = i
+            
     if current_style is not None:
         color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
         runs.append({"startIndex": start_index, "format": {"foregroundColor": color, "bold": True}})
 
     return {
-        "userEnteredValue": {"stringValue": text},
-        "textFormatRuns": runs,
-        "userEnteredFormat": {
-            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
-            "textFormat": {"bold": True},
-            "borders": {"top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}}
-        }
-    }
-
-def get_red_rich_text(text):
-    """
-    [Rich Text] 全紅模式 (v56 新增)
-    這會強制將傳入的文字變成紅色 Rich Text，Google 試算表無法拒絕。
-    """
-    text_str = str(text) # 確保轉為字串
-    return {
-        "userEnteredValue": {"stringValue": text_str},
-        "textFormatRuns": [
-            {
-                "startIndex": 0,
-                # 不需要 endIndex，預設到最後
-                "format": {
-                    "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0},
-                    "bold": True
-                }
-            }
-        ],
-        "userEnteredFormat": {
-            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
-            "textFormat": {"bold": True}, # 這裡也設一次保險
-            "borders": {"top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}}
-        }
-    }
-
-def make_cell_overwrite_req(sheet_id, row, col, cell_data):
-    """產生單一儲存格覆蓋指令"""
-    return {
         "updateCells": {
-            "rows": [{"values": [cell_data]}],
-            "fields": "*",
+            "rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}],
+            "fields": "userEnteredValue,textFormatRuns",
+            "range": {
+                "sheetId": sheet_id, "startRowIndex": row_index, "endRowIndex": row_index + 1,
+                "startColumnIndex": col_index, "endColumnIndex": col_index + 1
+            }
+        }
+    }
+
+def get_paint_cell_red_request(sheet_id, row_index, col_index):
+    """
+    [Format Painting] 將特定座標的格子塗成紅色文字
+    這是交通事故統計常用的方法：repeatCell 針對特定 range
+    """
+    return {
+        "repeatCell": {
             "range": {
                 "sheetId": sheet_id,
-                "startRowIndex": row, "endRowIndex": row + 1,
-                "startColumnIndex": col, "endColumnIndex": col + 1
-            }
+                "startRowIndex": row_index, "endRowIndex": row_index + 1,
+                "startColumnIndex": col_index, "endColumnIndex": col_index + 1
+            },
+            "cell": {
+                "userEnteredFormat": {
+                    "textFormat": {
+                        "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0},
+                        "bold": True
+                    }
+                }
+            },
+            "fields": "userEnteredFormat.textFormat" # 只更新文字格式，不影響其他屬性
         }
     }
 
@@ -143,16 +133,16 @@ def update_google_sheet(data_list, sheet_url):
         
         st.info(f"📂 寫入目標工作表：**「{ws.title}」** (Index 0)")
         
-        # 1. 徹底清除
+        # 1. 徹底清除 (Reset)
         ws.clear() 
         
-        # 2. 寫入資料 (基礎黑字)
+        # 2. 寫入資料 (Values only)
         ws.update(range_name='A1', values=data_list)
         
-        # 3. 基礎格式化 (Batch 1)
+        # 3. 格式化請求 (Requests)
         requests = []
         
-        # 全表基礎設定
+        # [A] 全表預設格式 (A1:J14) -> 白底、黑字、粗體、置中、邊框
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -167,13 +157,16 @@ def update_google_sheet(data_list, sheet_url):
                 "fields": "userEnteredFormat"
             }
         })
-        # 合併與特殊色
+
+        # [B] 合併儲存格
         requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}})
         requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 13, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}})
         merge_ranges = [(1,1,2,1,3), (1,1,2,3,5), (1,1,2,5,7), (1,2,2,7,8), (1,2,2,8,9), (1,2,2,9,10)]
         for r in merge_ranges:
             requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": r[0], "endRowIndex": r[1]+1, "startColumnIndex": r[2], "endColumnIndex": r[3]}, "mergeType": "MERGE_ALL"}})
-        
+
+        # [C] 特殊背景色
+        # 合計列 (Row 4) -> 黃底
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -181,6 +174,7 @@ def update_google_sheet(data_list, sheet_url):
                 "fields": "userEnteredFormat.backgroundColor"
             }
         })
+        # 說明列 (Row 14) -> 靠左
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 13, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -189,48 +183,42 @@ def update_google_sheet(data_list, sheet_url):
             }
         })
 
-        # 標題列 Rich Text 覆蓋
-        requests.append(make_cell_overwrite_req(ws.id, 1, 1, get_header_mixed_color(data_list[1][1])))
-        requests.append(make_cell_overwrite_req(ws.id, 1, 3, get_header_mixed_color(data_list[1][3])))
-        requests.append(make_cell_overwrite_req(ws.id, 1, 5, get_header_mixed_color(data_list[1][5])))
+        # [D] 標題列 (Row 2) 混色 -> 使用 Rich Text 覆蓋
+        requests.append(get_mixed_color_request(ws.id, 1, 1, data_list[1][1]))
+        requests.append(get_mixed_color_request(ws.id, 1, 3, data_list[1][3]))
+        requests.append(get_mixed_color_request(ws.id, 1, 5, data_list[1][5]))
 
-        # ★★★ 關鍵修正：針對單位與負數使用 Rich Text 覆蓋 ★★★
+        # ★★★ [E] 座標塗色 (Format Painting) ★★★
         st.write("---")
-        st.write("🔍 **v56 覆蓋日誌**：")
+        st.write("🔍 **v57 塗色日誌**：")
         
-        for i in range(3, len(data_list) - 1): # 遍歷數據列
-            row_idx = i
+        # 遍歷資料列 (Index 3 ~ 12，對應 Excel Row 4 ~ 13)
+        for i in range(3, len(data_list) - 1):
+            row_idx = i # 這是 0-based index，對應 API 的 Row Index
             row_data = data_list[i]
             
             unit_name = str(row_data[0]).strip()
             
-            # 強制型別轉換檢查
+            # 取得數值並判斷負數
             try:
-                val_raw = row_data[7]
-                if isinstance(val_raw, str):
-                    val_str = val_raw.replace(',', '')
-                else:
-                    val_str = str(val_raw)
-                
+                val_str = str(row_data[7]).replace(',', '')
                 comp_val = float(val_str)
             except:
                 comp_val = 0
             
-            # 判斷是否為負數
             is_negative = (comp_val < 0)
             
             if is_negative:
-                # 1. 數值覆蓋為紅色 Rich Text
-                st.write(f"🔴 數值變紅：Row {row_idx+1}, Val: {row_data[7]}")
-                requests.append(make_cell_overwrite_req(ws.id, row_idx, 7, get_red_rich_text(row_data[7])))
+                # 1. 針對 H 欄 (Index 7) 的這個座標，發送塗紅指令
+                requests.append(get_paint_cell_red_request(ws.id, row_idx, 7))
                 
-                # 2. 單位名稱覆蓋為紅色 Rich Text (排除科技執法)
+                # 2. 針對 A 欄 (Index 0) 的這個座標，發送塗紅指令 (排除科技執法)
                 if unit_name != "科技執法":
-                    st.write(f"🔴 單位變紅：Row {row_idx+1}, Unit: {unit_name}")
-                    requests.append(make_cell_overwrite_req(ws.id, row_idx, 0, get_red_rich_text(unit_name)))
+                    st.write(f"🔴 **[塗紅]** Row {row_idx+1}: {unit_name} (值:{comp_val})")
+                    requests.append(get_paint_cell_red_request(ws.id, row_idx, 0))
             
         sh.batch_update({'requests': requests})
-        st.write("✅ **所有指令已送出**")
+        st.write("✅ **格式化完成**")
         st.write("---")
         return True
 
@@ -344,8 +332,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 5. 主程式
 # ==========================================
-# ★★★ v56 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v56_rich_text_overwrite")
+# ★★★ v57 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v57_format_painting")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
