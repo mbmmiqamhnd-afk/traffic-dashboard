@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v44 預覽同步一致版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v47 單位名稱紅字版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,10 +28,10 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v44)
-1.  **格式一致**：Google 試算表配色策略已更新，確保與下方網頁預覽 **完全一致** (漢字黑、數字紅)。
-2.  **強制重置**：每次執行都會先清空工作表，保證沒有殘留的綠色字體。
-3.  **功能維持**：日期對調、目標值(三和373/警備隊0)、全表寫入 (A1~J14)。
+### 📝 使用說明 (v47)
+1.  **單位變色**：若「本年與去年比較」為負數，該單位名稱會變 **紅色**。
+2.  **例外排除**：**科技執法** 即使為負數，名稱仍維持黑色。
+3.  **全平台同步**：預覽、Excel、Google 試算表皆已套用此規則。
 """)
 
 # ==========================================
@@ -47,8 +47,8 @@ UNIT_MAP = {
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
 TARGETS = {
-    '聖亭所': 3080, '龍潭所': 4107, '中興所': 3080, '石門所': 2347,
-    '高平所': 2053, '三和所': 373, '交通分隊': 4173, '警備隊': 0, '科技執法': 0
+    '聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479,
+    '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 0
 }
 
 NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
@@ -61,22 +61,18 @@ def get_mixed_color_request(sheet_id, row_index, col_index, text):
     產生 Google Sheets API 請求，將儲存格內的數字與符號設為紅色，其餘黑色。
     """
     runs = []
-    # 定義要變紅色的字元集合 (包含 括號、波浪號、數字、百分比、點)
     red_chars = set("0123456789~().%")
     
     current_style = None # 'black' or 'red'
     start_index = 0
     
     for i, char in enumerate(text):
-        # 判斷當前字元是紅色還是黑色
         char_is_red = char in red_chars
         style = 'red' if char_is_red else 'black'
         
-        # 初始化
         if current_style is None:
             current_style = style
             start_index = i
-        # 狀態改變，記錄上一段
         elif style != current_style:
             color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
             runs.append({
@@ -86,7 +82,6 @@ def get_mixed_color_request(sheet_id, row_index, col_index, text):
             current_style = style
             start_index = i
             
-    # 記錄最後一段
     if current_style is not None:
         color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
         runs.append({
@@ -130,7 +125,7 @@ def update_google_sheet(data_list, sheet_url):
         
         st.info(f"📂 寫入目標工作表：**「{ws.title}」** (Index 0)")
         
-        # 1. 徹底清除 (這一步非常關鍵，確保沒有綠色殘留)
+        # 1. 徹底清除
         ws.clear() 
         
         # 2. 寫入資料
@@ -139,8 +134,7 @@ def update_google_sheet(data_list, sheet_url):
         # 3. 格式化請求 (Batch Requests)
         requests = []
         
-        # [A] 全表重置：設定為白底、黑字、粗體、置中、有框線
-        # 這確保了除了我們指定的紅色外，其他所有漢字都是黑色
+        # [A] 全表重置：白底、黑字、粗體
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -160,7 +154,7 @@ def update_google_sheet(data_list, sheet_url):
             }
         })
 
-        # [B] 標題列 (Row 1) 合併
+        # [B] 標題列合併
         requests.append({
             "mergeCells": {
                 "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -168,12 +162,12 @@ def update_google_sheet(data_list, sheet_url):
             }
         })
         
-        # [C] 第二列 (Row 2) 混合配色：精準將數字/符號變紅
+        # [C] 第二列混合配色
         requests.append(get_mixed_color_request(ws.id, 1, 1, data_list[1][1])) # B2
         requests.append(get_mixed_color_request(ws.id, 1, 3, data_list[1][3])) # D2
         requests.append(get_mixed_color_request(ws.id, 1, 5, data_list[1][5])) # F2
         
-        # [D] 第二列合併 (Header Structure)
+        # [D] 第二列合併
         merge_ranges = [(1,1,2,1,3), (1,1,2,3,5), (1,1,2,5,7), (1,2,2,7,8), (1,2,2,8,9), (1,2,2,9,10)]
         for r in merge_ranges:
             requests.append({
@@ -183,7 +177,7 @@ def update_google_sheet(data_list, sheet_url):
                 }
             })
 
-        # [E] 合計列 (Row 4) 補上黃色底色
+        # [E] 合計列黃底
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -196,7 +190,7 @@ def update_google_sheet(data_list, sheet_url):
             }
         })
 
-        # [F] 說明列 (Row 14) 合併與靠左
+        # [F] 說明列合併與靠左
         requests.append({
             "mergeCells": {
                 "range": {"sheetId": ws.id, "startRowIndex": 13, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -226,6 +220,20 @@ def update_google_sheet(data_list, sheet_url):
                 "condition": {
                     "type": "NUMBER_LESS", 
                     "values": [{"userEnteredValue": "0"}]
+                },
+                "format": fmt_red
+            }
+        )
+
+        # ★★★ 5. 條件式格式：單位名稱紅字 (A4:A13) ★★★
+        # 規則：H欄 < 0 且 A欄 != "科技執法"
+        # 注意：使用自訂公式 (CUSTOM_FORMULA)
+        ws.add_conditional_formatting_rule(
+            "A4:A13", 
+            {
+                "condition": {
+                    "type": "CUSTOM_FORMULA", 
+                    "values": [{"userEnteredValue": '=AND($H4<0, $A4<>"科技執法")'}]
                 },
                 "format": fmt_red
             }
@@ -342,8 +350,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 5. 主程式
 # ==========================================
-# ★★★ v44 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v44_final_color_sync")
+# ★★★ v47 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v47_unit_red")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -412,7 +420,7 @@ if uploaded_files:
             df_final = pd.DataFrame(final_rows, columns=cols)
 
             # ==========================================
-            # ★★★ 網頁預覽區 ★★★
+            # ★★★ 網頁預覽區 (單位變色邏輯) ★★★
             # ==========================================
             st.success("✅ 分析完成！下方為預覽畫面")
 
@@ -440,20 +448,39 @@ if uploaded_files:
             for row in final_rows:
                 rows_html += "<tr>"
                 is_total_row = (row[0] == '合計')
+                
+                # ★★★ 檢查是否需要將單位名稱變紅 ★★★
+                # 條件：比較值(index 7) < 0 且 單位名稱 != '科技執法'
+                unit_name_red = False
+                try:
+                    comp_val = int(row[7])
+                    unit_name = str(row[0])
+                    if comp_val < 0 and unit_name != '科技執法':
+                        unit_name_red = True
+                except: pass
+
                 for i, cell in enumerate(row):
                     cell_style_list = []
                     if is_total_row: cell_style_list.append("background-color:#FFEB9C;")
                     else: cell_style_list.append("background-color:#fff;")
-                    if i == 0: cell_style_list.append("text-align:left;font-weight:bold;")
                     
-                    is_negative = False
-                    if i == 7:
-                        try:
-                            if int(cell) < 0: is_negative = True
-                        except: pass
-                    
-                    if is_negative: cell_style_list.append("color:red;font-weight:bold;")
-                    else: cell_style_list.append("color:#000;")
+                    if i == 0: 
+                        cell_style_list.append("text-align:left;font-weight:bold;")
+                        # 套用單位變紅邏輯
+                        if unit_name_red:
+                            cell_style_list.append("color:red;")
+                        else:
+                            cell_style_list.append("color:black;")
+                    else:
+                        # 數據欄位邏輯
+                        is_negative = False
+                        if i == 7: # 比較欄位
+                            try:
+                                if int(cell) < 0: is_negative = True
+                            except: pass
+                        
+                        if is_negative: cell_style_list.append("color:red;font-weight:bold;")
+                        else: cell_style_list.append("color:#000;")
                     
                     style_str = f"style='{''.join(cell_style_list)}'"
                     rows_html += f"<td {style_str}>{cell}</td>"
@@ -465,7 +492,7 @@ if uploaded_files:
             st.markdown(final_html, unsafe_allow_html=True)
 
             # ==========================================
-            # Excel 產生邏輯
+            # Excel 產生邏輯 (單位變色邏輯)
             # ==========================================
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -512,8 +539,19 @@ if uploaded_files:
 
                 fmt_red_num = workbook.add_format({'font_color': 'red', 'bold': True})
                 last_data_row = 3 + len(final_rows) - 1
+                
+                # 比較欄位負數紅字
                 ws.conditional_format(4, 7, last_data_row, 7, {
                     'type': 'cell', 'criteria': '<', 'value': 0, 'format': fmt_red_num
+                })
+
+                # ★★★ Excel 單位名稱變紅 (條件格式) ★★★
+                # 範圍 A4:A(last_row)
+                # 條件：H欄<0 且 A欄 != "科技執法"
+                ws.conditional_format(4, 0, last_data_row, 0, {
+                    'type': 'formula',
+                    'criteria': '=AND($H4<0, $A4<>"科技執法")',
+                    'format': fmt_red_num
                 })
 
                 footer_row = last_data_row + 1
