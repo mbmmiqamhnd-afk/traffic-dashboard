@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v52 變數修復版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v53 變數補完修復版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,10 +28,9 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v52)
-1.  **修復錯誤**：解決 `name 'full_sheet_data' is not defined` 的錯誤。
-2.  **強制變色**：維持原子級寫入，確保顏色正確 (標題紅數、單位紅字)。
-3.  **功能維持**：全表寫入、目標值更新。
+### 📝 使用說明 (v53)
+1.  **修復錯誤**：補回遺漏的 `file_ids` 變數，解決嚴重錯誤。
+2.  **完整流程**：包含原子級寫入 (修復綠字)、全表寫入、自動寄信。
 """)
 
 # ==========================================
@@ -93,7 +92,7 @@ def get_solid_color_cell_data(text, is_red):
     """[Solid Color] 產生純色儲存格資料結構"""
     color = {"red": 1.0, "green": 0, "blue": 0} if is_red else {"red": 0, "green": 0, "blue": 0}
     return {
-        "userEnteredValue": {"stringValue": str(text)}, # 強制轉字串避免錯誤
+        "userEnteredValue": {"stringValue": str(text)},
         "userEnteredFormat": {
             "textFormat": {"foregroundColor": color, "bold": True},
             "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
@@ -121,7 +120,7 @@ def update_google_sheet(data_list, sheet_url):
         # 1. 徹底清除
         ws.clear() 
         
-        # 2. 寫入資料 (除了特殊格式格外，先寫一遍底)
+        # 2. 寫入資料 (底層)
         ws.update(range_name='A1', values=data_list)
         
         # 3. 格式化請求
@@ -183,7 +182,7 @@ def update_google_sheet(data_list, sheet_url):
 
         # [E] 原子級寫入：單位名稱與負數 (診斷邏輯)
         st.write("---")
-        st.write("🔍 **變色診斷日誌 (v52)**：")
+        st.write("🔍 **變色診斷日誌 (v53)**：")
         
         for i in range(3, len(data_list) - 1):
             row_idx = i
@@ -198,16 +197,12 @@ def update_google_sheet(data_list, sheet_url):
             
             is_negative = (comp_val < 0)
             
-            # H欄 (數值) 負數變紅
             if is_negative:
                 requests.append(make_update_cell_req(row_idx, 7, get_solid_color_cell_data(row_data[7], True)))
             
-            # A欄 (單位名稱) 負數且非科技執法變紅
             if is_negative and unit_name != "科技執法":
                 st.write(f"🔴 **[變紅]** 單位：{unit_name}, 比較值：{comp_val}")
                 requests.append(make_update_cell_req(row_idx, 0, get_solid_color_cell_data(unit_name, True)))
-            elif is_negative and unit_name == "科技執法":
-                st.write(f"⚫ **[保留黑]** 單位：{unit_name} (排除條款)")
             
         sh.batch_update({'requests': requests})
         st.write("✅ **格式更新指令已送出**")
@@ -324,8 +319,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 5. 主程式
 # ==========================================
-# ★★★ v52 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v52_full_var_fix")
+# ★★★ v53 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v53_variable_fix")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -543,8 +538,11 @@ if uploaded_files:
             sheet_data = df_final.fillna("").values.tolist()
             sheet_r14 = [NOTE_TEXT] + [''] * 9
 
-            # ★★★ v52 補回變數定義 ★★★
+            # ★★★ 補回變數定義 (v52 修復點) ★★★
             full_sheet_data = [sheet_r1, sheet_r2, sheet_r3] + sheet_data + [sheet_r14]
+            
+            # ★★★ 補回變數定義 (v53 修復點) ★★★
+            file_ids = ",".join(sorted([f.name for f in uploaded_files]))
 
             def run_automation():
                 with st.status("🚀 執行自動化任務...", expanded=True) as status:
@@ -556,7 +554,6 @@ if uploaded_files:
                     else: st.warning("⚠️ 未設定 Email Secrets")
                     
                     st.write("📊 正在寫入 Google 試算表 (A1 ~ J14) 並修復顏色...")
-                    # 傳入正確定義的 full_sheet_data
                     if update_google_sheet(full_sheet_data, GOOGLE_SHEET_URL):
                         st.write("✅ 寫入成功！ (綠字已修復，格式已同步)")
                     else: st.write("❌ 寫入失敗")
