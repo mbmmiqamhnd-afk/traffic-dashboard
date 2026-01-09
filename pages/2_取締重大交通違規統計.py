@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v55 覆蓋寫入修復版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v56 富文本強制變色版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,9 +28,9 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v55)
-1.  **覆蓋寫入**：針對日期與需要變紅的單位，程式會執行「刪除舊的->寫入新的紅色字」，確保變色成功。
-2.  **診斷訊息**：請留意下方顯示的「🔴 [覆蓋寫入]」日誌，確認程式有抓到變色目標。
+### 📝 使用說明 (v56)
+1.  **富文本強制**：將單位名稱與負數視為「帶有顏色的文字」寫入，強迫 Google 顯示紅色。
+2.  **邏輯檢查**：請觀察下方執行時的「🔴 覆蓋日誌」，確認程式有抓到負數。
 3.  **功能維持**：全表寫入、目標值更新、自動寄信。
 """)
 
@@ -54,17 +54,14 @@ TARGETS = {
 NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
 
 # ==========================================
-# 1. Google Sheets 格式化工具 (產生 Cell Data)
+# 1. Google Sheets 格式化工具 (Rich Text)
 # ==========================================
-def get_mixed_color_cell_data(text):
-    """
-    [Rich Text] 產生「日期標題」專用的儲存格資料 (紅數黑字)
-    """
+def get_header_mixed_color(text):
+    """[Rich Text] 標題列：數字紅、漢字黑"""
     runs = []
     red_chars = set("0123456789~().% /")
     current_style = None
     start_index = 0
-    
     for i, char in enumerate(text):
         char_is_red = char in red_chars
         style = 'red' if char_is_red else 'black'
@@ -76,7 +73,6 @@ def get_mixed_color_cell_data(text):
             runs.append({"startIndex": start_index, "format": {"foregroundColor": color, "bold": True}})
             current_style = style
             start_index = i
-            
     if current_style is not None:
         color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
         runs.append({"startIndex": start_index, "format": {"foregroundColor": color, "bold": True}})
@@ -91,27 +87,37 @@ def get_mixed_color_cell_data(text):
         }
     }
 
-def get_solid_red_cell_data(text):
+def get_red_rich_text(text):
     """
-    [Solid Red] 產生「整格紅色」的儲存格資料 (強制紅色)
+    [Rich Text] 全紅模式 (v56 新增)
+    這會強制將傳入的文字變成紅色 Rich Text，Google 試算表無法拒絕。
     """
+    text_str = str(text) # 確保轉為字串
     return {
-        "userEnteredValue": {"stringValue": str(text)},
+        "userEnteredValue": {"stringValue": text_str},
+        "textFormatRuns": [
+            {
+                "startIndex": 0,
+                # 不需要 endIndex，預設到最後
+                "format": {
+                    "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0},
+                    "bold": True
+                }
+            }
+        ],
         "userEnteredFormat": {
-            "textFormat": {"foregroundColor": {"red": 1.0, "green": 0, "blue": 0}, "bold": True}, # 強制紅色
             "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
+            "textFormat": {"bold": True}, # 這裡也設一次保險
             "borders": {"top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}}
         }
     }
 
-def make_cell_update_request(sheet_id, row, col, cell_data):
-    """
-    產生 updateCells 請求，這會「連皮帶骨」覆蓋掉原本的格子
-    """
+def make_cell_overwrite_req(sheet_id, row, col, cell_data):
+    """產生單一儲存格覆蓋指令"""
     return {
         "updateCells": {
             "rows": [{"values": [cell_data]}],
-            "fields": "*", # 更新所有屬性 (值+格式)
+            "fields": "*",
             "range": {
                 "sheetId": sheet_id,
                 "startRowIndex": row, "endRowIndex": row + 1,
@@ -140,13 +146,13 @@ def update_google_sheet(data_list, sheet_url):
         # 1. 徹底清除
         ws.clear() 
         
-        # 2. 寫入資料 (底層，全黑)
+        # 2. 寫入資料 (基礎黑字)
         ws.update(range_name='A1', values=data_list)
         
-        # 3. 格式化請求 (Batch Requests)
+        # 3. 基礎格式化 (Batch 1)
         requests = []
         
-        # [A] 全表基礎格式重置 (白底黑字)
+        # 全表基礎設定
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -161,15 +167,13 @@ def update_google_sheet(data_list, sheet_url):
                 "fields": "userEnteredFormat"
             }
         })
-
-        # [B] 合併儲存格
+        # 合併與特殊色
         requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}})
         requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 13, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}})
         merge_ranges = [(1,1,2,1,3), (1,1,2,3,5), (1,1,2,5,7), (1,2,2,7,8), (1,2,2,8,9), (1,2,2,9,10)]
         for r in merge_ranges:
             requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": r[0], "endRowIndex": r[1]+1, "startColumnIndex": r[2], "endColumnIndex": r[3]}, "mergeType": "MERGE_ALL"}})
-
-        # [C] 特殊背景色
+        
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -185,40 +189,48 @@ def update_google_sheet(data_list, sheet_url):
             }
         })
 
-        # ★★★ [D] 覆蓋寫入：日期標題 (Rich Text) ★★★
-        # 直接把原本那一格刪掉，填入新的 Rich Text 資料
-        requests.append(make_cell_update_request(ws.id, 1, 1, get_mixed_color_cell_data(data_list[1][1])))
-        requests.append(make_cell_update_request(ws.id, 1, 3, get_mixed_color_cell_data(data_list[1][3])))
-        requests.append(make_cell_update_request(ws.id, 1, 5, get_mixed_color_cell_data(data_list[1][5])))
+        # 標題列 Rich Text 覆蓋
+        requests.append(make_cell_overwrite_req(ws.id, 1, 1, get_header_mixed_color(data_list[1][1])))
+        requests.append(make_cell_overwrite_req(ws.id, 1, 3, get_header_mixed_color(data_list[1][3])))
+        requests.append(make_cell_overwrite_req(ws.id, 1, 5, get_header_mixed_color(data_list[1][5])))
 
-        # ★★★ [E] 覆蓋寫入：單位名稱與負數 (Solid Red) ★★★
+        # ★★★ 關鍵修正：針對單位與負數使用 Rich Text 覆蓋 ★★★
         st.write("---")
-        st.write("🔍 **變色診斷日誌 (v55)**：")
+        st.write("🔍 **v56 覆蓋日誌**：")
         
         for i in range(3, len(data_list) - 1): # 遍歷數據列
             row_idx = i
             row_data = data_list[i]
             
             unit_name = str(row_data[0]).strip()
+            
+            # 強制型別轉換檢查
             try:
-                val_str = str(row_data[7]).replace(',', '')
+                val_raw = row_data[7]
+                if isinstance(val_raw, str):
+                    val_str = val_raw.replace(',', '')
+                else:
+                    val_str = str(val_raw)
+                
                 comp_val = float(val_str)
             except:
                 comp_val = 0
             
+            # 判斷是否為負數
             is_negative = (comp_val < 0)
             
-            # 1. 數值 (H欄, Index 7) 為負數 -> 覆蓋寫入紅色數值
             if is_negative:
-                requests.append(make_cell_update_request(ws.id, row_idx, 7, get_solid_red_cell_data(row_data[7])))
-            
-            # 2. 單位 (A欄, Index 0) 為負數且非科技執法 -> 覆蓋寫入紅色單位名
-            if is_negative and unit_name != "科技執法":
-                st.write(f"🔴 **[覆蓋寫入]** 單位：{unit_name} -> 設為紅色")
-                requests.append(make_cell_update_request(ws.id, row_idx, 0, get_solid_red_cell_data(unit_name)))
+                # 1. 數值覆蓋為紅色 Rich Text
+                st.write(f"🔴 數值變紅：Row {row_idx+1}, Val: {row_data[7]}")
+                requests.append(make_cell_overwrite_req(ws.id, row_idx, 7, get_red_rich_text(row_data[7])))
+                
+                # 2. 單位名稱覆蓋為紅色 Rich Text (排除科技執法)
+                if unit_name != "科技執法":
+                    st.write(f"🔴 單位變紅：Row {row_idx+1}, Unit: {unit_name}")
+                    requests.append(make_cell_overwrite_req(ws.id, row_idx, 0, get_red_rich_text(unit_name)))
             
         sh.batch_update({'requests': requests})
-        st.write("✅ **格式更新指令已送出**")
+        st.write("✅ **所有指令已送出**")
         st.write("---")
         return True
 
@@ -332,8 +344,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 5. 主程式
 # ==========================================
-# ★★★ v55 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v55_atomic_overwrite")
+# ★★★ v56 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v56_rich_text_overwrite")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
