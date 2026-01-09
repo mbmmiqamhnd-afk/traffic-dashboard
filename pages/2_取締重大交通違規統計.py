@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v57 座標塗色修復版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v58 移植成功邏輯版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,10 +28,10 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v57)
-1.  **參考邏輯**：採用「先寫入資料，再針對特定座標塗色」的標準做法 (參照交通事故統計)。
-2.  **變色機制**：程式會鎖定負數所在的「列座標」，直接對該格發送紅色格式指令。
-3.  **功能維持**：全表寫入、目標值更新、自動寄信。
+### 📝 使用說明 (v58)
+1.  **邏輯移植**：已採用「交通事故統計」的 `re.split` 寫法來處理標題日期，確保紅黑分明。
+2.  **格式修正**：針對本報表的 `~` 符號進行了適配。
+3.  **功能維持**：全表寫入、目標值更新、負數紅字。
 """)
 
 # ==========================================
@@ -54,48 +54,60 @@ TARGETS = {
 NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
 
 # ==========================================
-# 1. Google Sheets 格式化工具 (API)
+# 1. Google Sheets 格式化工具 (移植自參考代碼)
 # ==========================================
-def get_mixed_color_request(sheet_id, row_index, col_index, text):
+def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
     """
-    [Rich Text] 處理標題列 (Row 2) 的紅黑混色
+    [移植成功邏輯] Google Sheets API Rich Text 專用
+    使用 re.split 切割 Token，確保格式精準
     """
+    text = str(text)
+    # ★★★ 關鍵修改：加入 ~ 符號，因為本報表使用波浪號 ★★★
+    tokens = re.split(r'([0-9\(\)\/\-\.\%\~]+)', text)
     runs = []
-    red_chars = set("0123456789~().% /")
-    current_style = None
-    start_index = 0
+    current_pos = 0
     
-    for i, char in enumerate(text):
-        char_is_red = char in red_chars
-        style = 'red' if char_is_red else 'black'
-        if current_style is None:
-            current_style = style
-            start_index = i
-        elif style != current_style:
-            color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
-            runs.append({"startIndex": start_index, "format": {"foregroundColor": color, "bold": True}})
-            current_style = style
-            start_index = i
+    for token in tokens:
+        if not token: continue
+        
+        # 預設黑色
+        color = {"red": 0, "green": 0, "blue": 0}
+        
+        # 如果是數字或符號，改為紅色
+        if re.match(r'^[0-9\(\)\/\-\.\%\~]+$', token):
+            color = {"red": 1, "green": 0, "blue": 0} 
             
-    if current_style is not None:
-        color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
-        runs.append({"startIndex": start_index, "format": {"foregroundColor": color, "bold": True}})
-
+        runs.append({
+            "startIndex": current_pos,
+            "format": {
+                "foregroundColor": color,
+                "bold": True
+            }
+        })
+        current_pos += len(token)
+    
     return {
         "updateCells": {
-            "rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}],
-            "fields": "userEnteredValue,textFormatRuns",
+            "rows": [{
+                "values": [{
+                    "userEnteredValue": {"stringValue": text},
+                    "textFormatRuns": runs
+                }]
+            }],
+            "fields": "userEnteredValue,textFormatRuns", # 鎖定更新範圍
             "range": {
-                "sheetId": sheet_id, "startRowIndex": row_index, "endRowIndex": row_index + 1,
-                "startColumnIndex": col_index, "endColumnIndex": col_index + 1
+                "sheetId": sheet_id,
+                "startRowIndex": row_idx,
+                "endRowIndex": row_idx + 1,
+                "startColumnIndex": col_idx,
+                "endColumnIndex": col_idx + 1
             }
         }
     }
 
 def get_paint_cell_red_request(sheet_id, row_index, col_index):
     """
-    [Format Painting] 將特定座標的格子塗成紅色文字
-    這是交通事故統計常用的方法：repeatCell 針對特定 range
+    [Solid Color] 將特定座標的格子塗成紅色文字 (用於負數與單位)
     """
     return {
         "repeatCell": {
@@ -112,7 +124,7 @@ def get_paint_cell_red_request(sheet_id, row_index, col_index):
                     }
                 }
             },
-            "fields": "userEnteredFormat.textFormat" # 只更新文字格式，不影響其他屬性
+            "fields": "userEnteredFormat.textFormat"
         }
     }
 
@@ -183,18 +195,19 @@ def update_google_sheet(data_list, sheet_url):
             }
         })
 
-        # [D] 標題列 (Row 2) 混色 -> 使用 Rich Text 覆蓋
-        requests.append(get_mixed_color_request(ws.id, 1, 1, data_list[1][1]))
-        requests.append(get_mixed_color_request(ws.id, 1, 3, data_list[1][3]))
-        requests.append(get_mixed_color_request(ws.id, 1, 5, data_list[1][5]))
+        # ★★★ [D] 標題列日期 (移植後的 Rich Text) ★★★
+        # 針對 B2, D2, F2 執行 get_gsheet_rich_text_req
+        requests.append(get_gsheet_rich_text_req(ws.id, 1, 1, data_list[1][1]))
+        requests.append(get_gsheet_rich_text_req(ws.id, 1, 3, data_list[1][3]))
+        requests.append(get_gsheet_rich_text_req(ws.id, 1, 5, data_list[1][5]))
 
-        # ★★★ [E] 座標塗色 (Format Painting) ★★★
+        # ★★★ [E] 單位與負數塗紅 (Solid Color) ★★★
         st.write("---")
-        st.write("🔍 **v57 塗色日誌**：")
+        st.write("🔍 **v58 塗色日誌**：")
         
         # 遍歷資料列 (Index 3 ~ 12，對應 Excel Row 4 ~ 13)
         for i in range(3, len(data_list) - 1):
-            row_idx = i # 這是 0-based index，對應 API 的 Row Index
+            row_idx = i 
             row_data = data_list[i]
             
             unit_name = str(row_data[0]).strip()
@@ -209,12 +222,12 @@ def update_google_sheet(data_list, sheet_url):
             is_negative = (comp_val < 0)
             
             if is_negative:
-                # 1. 針對 H 欄 (Index 7) 的這個座標，發送塗紅指令
+                # 1. 數值(H欄)塗紅
                 requests.append(get_paint_cell_red_request(ws.id, row_idx, 7))
                 
-                # 2. 針對 A 欄 (Index 0) 的這個座標，發送塗紅指令 (排除科技執法)
+                # 2. 單位(A欄)塗紅 (排除科技執法)
                 if unit_name != "科技執法":
-                    st.write(f"🔴 **[塗紅]** Row {row_idx+1}: {unit_name} (值:{comp_val})")
+                    st.write(f"🔴 **[塗紅]** {unit_name} (值:{comp_val})")
                     requests.append(get_paint_cell_red_request(ws.id, row_idx, 0))
             
         sh.batch_update({'requests': requests})
@@ -332,8 +345,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 5. 主程式
 # ==========================================
-# ★★★ v57 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v57_format_painting")
+# ★★★ v58 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v58_ported_logic")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
