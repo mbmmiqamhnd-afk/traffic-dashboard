@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v64 科技執法目標更新版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v65 合計含科技執法版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,10 +28,12 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v64)
-1.  **目標更新**：科技執法目標值已設為 **6006**，並會計算達成率。
-2.  **格式保護**：採用 v63 的精準遮罩技術，保留試算表原有底色與邊框。
-3.  **功能維持**：全表寫入、紅字自動標示、自動寄信。
+### 📝 使用說明 (v65)
+1.  **合計修正**：總目標值現在包含「科技執法 (6006)」。
+2.  **目標設定**：
+    * 科技執法：6006
+    * 交通分隊：2526
+3.  **格式保護**：保留試算表原有格式，僅針對紅字部分進行精準塗色。
 """)
 
 # ==========================================
@@ -46,7 +48,6 @@ UNIT_MAP = {
 }
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 
-# ★★★ v64 更新：科技執法目標改為 6006 ★★★
 TARGETS = {
     '聖亭所': 1941, 
     '龍潭所': 2588, 
@@ -56,7 +57,7 @@ TARGETS = {
     '三和所': 339, 
     '交通分隊': 2526, 
     '警備隊': 0, 
-    '科技執法': 6006  # 已更新
+    '科技執法': 6006
 }
 
 NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
@@ -65,9 +66,7 @@ NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「�
 # 1. Google Sheets 格式化工具 (精準遮罩)
 # ==========================================
 def get_precise_rich_text_req(sheet_id, row_idx, col_idx, text):
-    """
-    [Rich Text] 日期標題混色 (不破壞原格式)
-    """
+    """[Rich Text] 日期標題混色 (不破壞原格式)"""
     text = str(text)
     tokens = re.split(r'([0-9\(\)\/\-\.\%\~\s:：\[\]]+)', text)
     runs = []
@@ -98,9 +97,7 @@ def get_precise_rich_text_req(sheet_id, row_idx, col_idx, text):
     }
 
 def get_precise_color_req(sheet_id, row_index, col_index, is_red):
-    """
-    [Solid Color] 單格變色 (不破壞原格式)
-    """
+    """[Solid Color] 單格變色 (不破壞原格式)"""
     color = {"red": 1.0, "green": 0.0, "blue": 0.0} if is_red else {"red": 0, "green": 0, "blue": 0}
     return {
         "repeatCell": {
@@ -169,7 +166,6 @@ def update_google_sheet(data_list, sheet_url):
         })
 
         # [C] 特殊列微調
-        # 合計列 (Row 4) - 保留黃底
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -177,7 +173,6 @@ def update_google_sheet(data_list, sheet_url):
                 "fields": "userEnteredFormat.backgroundColor"
             }
         })
-        # 說明列 (Row 14)
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 13, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -197,7 +192,7 @@ def update_google_sheet(data_list, sheet_url):
 
         # [E] 單位與負數塗紅
         st.write("---")
-        st.write("🔍 **v64 變色診斷日誌**：")
+        st.write("🔍 **v65 變色診斷日誌**：")
         
         for i in range(3, len(data_list) - 1):
             row_idx = i 
@@ -220,7 +215,7 @@ def update_google_sheet(data_list, sheet_url):
                     requests.append(get_precise_color_req(ws.id, row_idx, 0, True))
             
         sh.batch_update({'requests': requests})
-        st.write("✅ **資料已更新 (含科技執法目標 6006)**")
+        st.write("✅ **資料已更新 (合計已含科技執法)**")
         st.write("---")
         return True
 
@@ -334,8 +329,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 5. 主程式
 # ==========================================
-# ★★★ v64 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v64_tech_target")
+# ★★★ v65 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v65_total_with_tech")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -380,7 +375,6 @@ if uploaded_files:
                 else:
                     diff = int(y_total - l_total)
                     row_data.append(diff)
-                    # ★★★ v64 修改：讓科技執法正常計算目標與達成率 ★★★
                     tgt = TARGETS.get(u, 0)
                     rate_str = f"{y_total/tgt:.0%}" if tgt > 0 else "0%"
                     row_data.extend([tgt, rate_str])
@@ -390,9 +384,8 @@ if uploaded_files:
                 accum['ls']+=l_s; accum['lc']+=l_c
                 unit_rows.append(row_data)
 
-            # 注意：這裡的 total_target 依然排除科技執法，維持「總計=人力總計」的慣例
-            # 若您希望總計包含科技執法，請修改此行
-            total_target = sum([v for k,v in TARGETS.items() if k not in ['警備隊', '科技執法']])
+            # ★★★ v65 修正：total_target 僅排除「警備隊」，這代表「科技執法」會被包含在總目標內 ★★★
+            total_target = sum([v for k,v in TARGETS.items() if k not in ['警備隊']])
             
             t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
             t_rate = (accum['ys']+accum['yc'])/total_target if total_target > 0 else 0
