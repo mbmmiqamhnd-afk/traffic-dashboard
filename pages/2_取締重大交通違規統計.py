@@ -19,7 +19,7 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v54 分層渲染修復版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v55 覆蓋寫入修復版)")
 
 # --- 強制清除快取按鈕 ---
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
@@ -28,9 +28,9 @@ if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v54)
-1.  **參考成功案例**：採用與「超載統計」相同的 `textFormatRuns` 技術處理標題日期。
-2.  **強力染色**：針對單位名稱與負數，改用 `repeatCell` 指令強制蓋上紅色，解決變色失敗問題。
+### 📝 使用說明 (v55)
+1.  **覆蓋寫入**：針對日期與需要變紅的單位，程式會執行「刪除舊的->寫入新的紅色字」，確保變色成功。
+2.  **診斷訊息**：請留意下方顯示的「🔴 [覆蓋寫入]」日誌，確認程式有抓到變色目標。
 3.  **功能維持**：全表寫入、目標值更新、自動寄信。
 """)
 
@@ -54,12 +54,11 @@ TARGETS = {
 NOTE_TEXT = "重大交通違規指：「闖紅燈」、「酒後駕車」、「嚴重超速」、「未依兩段式左轉」、「不暫停讓行人」、 「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」等8項。"
 
 # ==========================================
-# 1. Google Sheets 格式化工具函數
+# 1. Google Sheets 格式化工具 (產生 Cell Data)
 # ==========================================
 def get_mixed_color_cell_data(text):
     """
-    [Rich Text] 產生包含混合配色的儲存格資料結構 (參照超載統計寫法)
-    適用於：統計期間列 (Row 2)
+    [Rich Text] 產生「日期標題」專用的儲存格資料 (紅數黑字)
     """
     runs = []
     red_chars = set("0123456789~().% /")
@@ -82,7 +81,6 @@ def get_mixed_color_cell_data(text):
         color = {"red": 1.0, "green": 0, "blue": 0} if current_style == 'red' else {"red": 0, "green": 0, "blue": 0}
         runs.append({"startIndex": start_index, "format": {"foregroundColor": color, "bold": True}})
 
-    # 這裡必須包含 userEnteredValue，因為 updateCells 會覆蓋內容
     return {
         "userEnteredValue": {"stringValue": text},
         "textFormatRuns": runs,
@@ -93,24 +91,32 @@ def get_mixed_color_cell_data(text):
         }
     }
 
-def get_paint_red_request(sheet_id, row_index, col_index):
+def get_solid_red_cell_data(text):
     """
-    [Solid Color] 產生「將該格塗紅」的 repeatCell 指令
-    適用於：單位名稱、負數數值 (只改格式，不動數值)
+    [Solid Red] 產生「整格紅色」的儲存格資料 (強制紅色)
     """
     return {
-        "repeatCell": {
+        "userEnteredValue": {"stringValue": str(text)},
+        "userEnteredFormat": {
+            "textFormat": {"foregroundColor": {"red": 1.0, "green": 0, "blue": 0}, "bold": True}, # 強制紅色
+            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
+            "borders": {"top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}}
+        }
+    }
+
+def make_cell_update_request(sheet_id, row, col, cell_data):
+    """
+    產生 updateCells 請求，這會「連皮帶骨」覆蓋掉原本的格子
+    """
+    return {
+        "updateCells": {
+            "rows": [{"values": [cell_data]}],
+            "fields": "*", # 更新所有屬性 (值+格式)
             "range": {
-                "sheetId": sheet_id, 
-                "startRowIndex": row_index, "endRowIndex": row_index + 1,
-                "startColumnIndex": col_index, "endColumnIndex": col_index + 1
-            },
-            "cell": {
-                "userEnteredFormat": {
-                    "textFormat": {"foregroundColor": {"red": 1.0, "green": 0, "blue": 0}, "bold": True}
-                }
-            },
-            "fields": "userEnteredFormat.textFormat" # 只更新文字顏色，不影響背景與邊框
+                "sheetId": sheet_id,
+                "startRowIndex": row, "endRowIndex": row + 1,
+                "startColumnIndex": col, "endColumnIndex": col + 1
+            }
         }
     }
 
@@ -131,23 +137,23 @@ def update_google_sheet(data_list, sheet_url):
         
         st.info(f"📂 寫入目標工作表：**「{ws.title}」** (Index 0)")
         
-        # 1. 徹底清除 (Reset)
+        # 1. 徹底清除
         ws.clear() 
         
-        # 2. 寫入資料 (Data Layer)
+        # 2. 寫入資料 (底層，全黑)
         ws.update(range_name='A1', values=data_list)
         
-        # 3. 格式化請求 (Format Layer)
+        # 3. 格式化請求 (Batch Requests)
         requests = []
         
-        # [A] 全表基礎格式：白底、黑字、粗體、置中、邊框
+        # [A] 全表基礎格式重置 (白底黑字)
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10},
                 "cell": {
                     "userEnteredFormat": {
                         "backgroundColor": {"red": 1, "green": 1, "blue": 1},
-                        "textFormat": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": True}, # 預設全黑
+                        "textFormat": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": True},
                         "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
                         "borders": {"top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}}
                     }
@@ -159,12 +165,11 @@ def update_google_sheet(data_list, sheet_url):
         # [B] 合併儲存格
         requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}})
         requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 13, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}})
-        
         merge_ranges = [(1,1,2,1,3), (1,1,2,3,5), (1,1,2,5,7), (1,2,2,7,8), (1,2,2,8,9), (1,2,2,9,10)]
         for r in merge_ranges:
             requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": r[0], "endRowIndex": r[1]+1, "startColumnIndex": r[2], "endColumnIndex": r[3]}, "mergeType": "MERGE_ALL"}})
 
-        # [C] 特殊背景色與對齊 (合計列黃底、說明列靠左)
+        # [C] 特殊背景色
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -180,25 +185,17 @@ def update_google_sheet(data_list, sheet_url):
             }
         })
 
-        # [D] Row 2 日期混色 (使用 updateCells + textFormatRuns，同超載統計)
-        def make_update_cell_req(r, c, cell_data):
-            return {
-                "updateCells": {
-                    "rows": [{"values": [cell_data]}],
-                    "fields": "*",
-                    "range": {"sheetId": ws.id, "startRowIndex": r, "endRowIndex": r+1, "startColumnIndex": c, "endColumnIndex": c+1}
-                }
-            }
+        # ★★★ [D] 覆蓋寫入：日期標題 (Rich Text) ★★★
+        # 直接把原本那一格刪掉，填入新的 Rich Text 資料
+        requests.append(make_cell_update_request(ws.id, 1, 1, get_mixed_color_cell_data(data_list[1][1])))
+        requests.append(make_cell_update_request(ws.id, 1, 3, get_mixed_color_cell_data(data_list[1][3])))
+        requests.append(make_cell_update_request(ws.id, 1, 5, get_mixed_color_cell_data(data_list[1][5])))
 
-        requests.append(make_update_cell_req(1, 1, get_mixed_color_cell_data(data_list[1][1])))
-        requests.append(make_update_cell_req(1, 3, get_mixed_color_cell_data(data_list[1][3])))
-        requests.append(make_update_cell_req(1, 5, get_mixed_color_cell_data(data_list[1][5])))
-
-        # ★★★ [E] 強力染色：針對 單位名稱 與 負數數值 (使用 repeatCell) ★★★
+        # ★★★ [E] 覆蓋寫入：單位名稱與負數 (Solid Red) ★★★
         st.write("---")
-        st.write("🔍 **變色診斷日誌 (v54)**：")
+        st.write("🔍 **變色診斷日誌 (v55)**：")
         
-        for i in range(3, len(data_list) - 1):
+        for i in range(3, len(data_list) - 1): # 遍歷數據列
             row_idx = i
             row_data = data_list[i]
             
@@ -211,19 +208,17 @@ def update_google_sheet(data_list, sheet_url):
             
             is_negative = (comp_val < 0)
             
-            # 1. 數值(H欄)變紅：使用 repeatCell 覆蓋格式
+            # 1. 數值 (H欄, Index 7) 為負數 -> 覆蓋寫入紅色數值
             if is_negative:
-                requests.append(get_paint_red_request(ws.id, row_idx, 7))
+                requests.append(make_cell_update_request(ws.id, row_idx, 7, get_solid_red_cell_data(row_data[7])))
             
-            # 2. 單位(A欄)變紅：使用 repeatCell 覆蓋格式
+            # 2. 單位 (A欄, Index 0) 為負數且非科技執法 -> 覆蓋寫入紅色單位名
             if is_negative and unit_name != "科技執法":
-                st.write(f"🔴 **[執行變色]** 單位：{unit_name} (值:{comp_val})")
-                requests.append(get_paint_red_request(ws.id, row_idx, 0))
-            elif is_negative and unit_name == "科技執法":
-                st.write(f"⚫ **[保持黑色]** 單位：{unit_name} (排除)")
+                st.write(f"🔴 **[覆蓋寫入]** 單位：{unit_name} -> 設為紅色")
+                requests.append(make_cell_update_request(ws.id, row_idx, 0, get_solid_red_cell_data(unit_name)))
             
         sh.batch_update({'requests': requests})
-        st.write("✅ **格式化完成**")
+        st.write("✅ **格式更新指令已送出**")
         st.write("---")
         return True
 
@@ -337,8 +332,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 5. 主程式
 # ==========================================
-# ★★★ v54 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v54_repeat_cell")
+# ★★★ v55 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v55_atomic_overwrite")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -541,7 +536,9 @@ if uploaded_files:
             excel_data = output.getvalue()
             file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
 
-            # ★★★ v53/v54 變數補完 ★★★
+            # ==========================================
+            # ★★★ 準備完整寫入資料 (Rows 1-14) ★★★
+            # ==========================================
             sheet_r1 = ['取締重大交通違規件數統計表'] + [''] * 9
             sheet_r2 = [
                 '統計期間', 
