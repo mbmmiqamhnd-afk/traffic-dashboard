@@ -19,9 +19,9 @@ try:
 except: pass
 
 st.set_page_config(page_title="取締重大交通違規統計", layout="wide", page_icon="🚔")
-st.markdown("## 🚔 取締重大交通違規統計 (v68 Session State 修復版)")
+st.markdown("## 🚔 取締重大交通違規統計 (v69 數值錯置修復版)")
 
-# ★★★ v68 修復：初始化 Session State (關鍵修正) ★★★
+# 初始化 Session State
 if "sent_cache" not in st.session_state:
     st.session_state["sent_cache"] = set()
 
@@ -29,13 +29,13 @@ if "sent_cache" not in st.session_state:
 if st.button("🧹 清除快取 (若更新無效請按此)", type="primary"):
     st.cache_data.clear()
     st.cache_resource.clear()
-    st.session_state["sent_cache"] = set() # 重置發送紀錄
+    st.session_state["sent_cache"] = set()
     st.success("快取已清除！請重新整理頁面 (F5) 並重新上傳檔案。")
 
 st.markdown("""
-### 📝 使用說明 (v68)
-1.  **錯誤修復**：解決 `st.session_state has no key` 的錯誤。
-2.  **格式保護**：嚴格保留試算表原有格式，只修改文字顏色。
+### 📝 使用說明 (v69)
+1.  **邏輯修正**：已修正「本期」與「本年累計」數值顛倒的問題（依據統計天數長短正確分配）。
+2.  **格式保護**：嚴格保留試算表原有格式。
 3.  **資料邏輯**：合計目標值包含科技執法。
 """)
 
@@ -140,7 +140,7 @@ def update_google_sheet(data_list, sheet_url):
         
         requests = []
         
-        # [Phase 1: 顏色重置] - 僅重置文字顏色為黑
+        # [Phase 1: 顏色重置]
         requests.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 14, "startColumnIndex": 0, "endColumnIndex": 10},
@@ -161,9 +161,9 @@ def update_google_sheet(data_list, sheet_url):
 
         # [B] 單位與負數塗紅 (Color Only)
         st.write("---")
-        st.write("🔍 **v68 變色診斷日誌**：")
+        st.write("🔍 **v69 變色診斷日誌**：")
         
-        for i in range(3, len(data_list) - 1): # 遍歷數據列 (Row 4 ~ Row 13)
+        for i in range(3, len(data_list) - 1): 
             row_idx = i 
             row_data = data_list[i]
             unit_name = str(row_data[0]).strip()
@@ -178,7 +178,6 @@ def update_google_sheet(data_list, sheet_url):
             if is_negative:
                 # 1. H欄數值變紅
                 requests.append(get_color_only_req(ws.id, row_idx, 7, True))
-                
                 # 2. A欄單位變紅 (排除科技執法)
                 if unit_name != "科技執法":
                     st.write(f"🔴 **[變紅]** {unit_name} (值:{comp_val})")
@@ -299,8 +298,8 @@ def get_mmdd(date_str):
 # ==========================================
 # 5. 主程式
 # ==========================================
-# ★★★ v68 Key ★★★
-uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v68_session_fix")
+# ★★★ v69 Key ★★★
+uploaded_files = st.file_uploader("請拖曳 3 個 Focus 統計檔案至此", accept_multiple_files=True, type=['xlsx', 'xls'], key="focus_uploader_v69_logic_fix")
 
 if uploaded_files:
     if len(uploaded_files) < 3: st.warning("⏳ 檔案不足 (需 3 個)...")
@@ -315,13 +314,17 @@ if uploaded_files:
                 st.error("❌ 解析失敗。")
                 st.stop()
 
+            # 檔案排序邏輯
             parsed_files.sort(key=lambda x: x['start'])
             file_last_year = parsed_files[0]
-            others = parsed_files[1:]
-            others.sort(key=lambda x: x['duration'], reverse=True)
             
-            file_week = others[0] 
-            file_year = others[1]
+            # 處理今年度檔案 (依天數長短區分)
+            others = parsed_files[1:]
+            others.sort(key=lambda x: x['duration'], reverse=True) # 天數長的排前面
+            
+            # ★★★ v69 修正點：天數長的是「本年累計」，天數短的是「本期」 ★★★
+            file_year = others[0] # Longest -> Year
+            file_week = others[1] # Shorter -> Week
 
             unit_rows = []
             accum = {'ws':0, 'wc':0, 'ys':0, 'yc':0, 'ls':0, 'lc':0}
@@ -354,7 +357,6 @@ if uploaded_files:
                 accum['ls']+=l_s; accum['lc']+=l_c
                 unit_rows.append(row_data)
 
-            # v65 邏輯：總計包含科技執法
             total_target = sum([v for k,v in TARGETS.items() if k not in ['警備隊']])
             
             t_diff = (accum['ys']+accum['yc']) - (accum['ls']+accum['lc'])
@@ -502,7 +504,6 @@ if uploaded_files:
             excel_data = output.getvalue()
             file_name_out = f'重點違規統計_{file_year["end"]}.xlsx'
 
-            # 補回這兩行變數定義
             sheet_r1 = ['取締重大交通違規件數統計表'] + [''] * 9
             sheet_r2 = [
                 '統計期間', 
@@ -535,7 +536,6 @@ if uploaded_files:
                     status.update(label="執行完畢", state="complete", expanded=False)
                     st.balloons()
             
-            # v68: 在這裡使用初始化的 session state
             if file_ids not in st.session_state["sent_cache"]:
                 run_automation()
                 st.session_state["sent_cache"].add(file_ids)
