@@ -11,59 +11,67 @@ from reportlab.lib.colors import white, black
 st.set_page_config(page_title="商標頁碼工具", page_icon="📝")
 st.header("📝 PDF 商標遮蓋與頁碼工具")
 
-# --- 自動偵測字型 (這裡是關鍵修改) ---
+# --- 自動偵測字型 (kaiu.ttf) ---
 def get_font_path():
-    # 程式會依序尋找這些檔案，直到找到為止
     possible_paths = [
-        "kaiu.ttf",         # 您的檔名 (根目錄)
-        "font.ttf",         # 備用檔名
-        "pages/kaiu.ttf",   # 您的檔名 (pages目錄)
-        "pages/font.ttf",   # 備用檔名
-        "../kaiu.ttf",      # 上一層
-        "../font.ttf"
+        "kaiu.ttf", "font.ttf", 
+        "pages/kaiu.ttf", "pages/font.ttf", 
+        "../kaiu.ttf", "../font.ttf"
     ]
-    
     for p in possible_paths:
         if os.path.exists(p):
             return p
     return None
 
-# --- 除錯與註冊 ---
+# --- 字型載入 ---
 font_path = get_font_path()
 if font_path:
-    st.success(f"✅ 成功載入字型檔：{font_path}")
     try:
         pdfmetrics.registerFont(TTFont('CustomFont', font_path))
         font_name = 'CustomFont'
-    except Exception as e:
-        st.error(f"❌ 字型載入失敗，檔案可能損毀：{e}")
+        st.success(f"✅ 字型載入成功 ({os.path.basename(font_path)})")
+    except:
         font_name = "Helvetica"
+        st.error("❌ 字型載入失敗")
 else:
-    st.error("❌ 找不到 kaiu.ttf！請確認檔案已上傳到 GitHub。")
-    font_name = "Helvetica" # 暫時用英文型，避免程式崩潰，但會顯示方塊
+    font_name = "Helvetica"
+    st.warning("⚠️ 未偵測到中文字型 (kaiu.ttf)，文字將顯示為方塊。")
 
-# --- 製作浮水印圖層 ---
+# --- 核心修改：製作貼齊邊緣的遮罩 ---
 def create_overlay(page_width, page_height, page_num, current_font):
     packet = io.BytesIO()
     c = canvas.Canvas(packet, pagesize=(page_width, page_height))
     
     text = f"交通組製 - 第 {page_num} 頁"
     
-    # 設定位置
-    box_width = 200
-    box_height = 30
-    rect_x = page_width - box_width - 20
-    rect_y = 10
+    # --- 【修改點 1】調整寬度 ---
+    # 原本 200，縮短約 1/3 -> 設定為 135
+    # 這個寬度剛好夠放「交通組製 - 第 XX 頁」，不會浪費太多空間
+    box_width = 135
+    box_height = 30  # 高度維持 30，剛好蓋住商標
     
-    # 畫白框
+    # --- 【修改點 2】貼齊邊緣 (移除邊距) ---
+    # rect_x = 頁面寬度 - 盒子寬度 (這樣就剛好貼齊右邊界)
+    # rect_y = 0 (這樣就剛好貼齊下邊界)
+    rect_x = page_width - box_width
+    rect_y = 0
+    
+    # 畫白框 (遮蓋層)
     c.setFillColor(white)
     c.setStrokeColor(white)
     c.rect(rect_x, rect_y, box_width, box_height, fill=1, stroke=1)
     
-    # 寫字
+    # 寫字 (黑色)
     c.setFillColor(black)
-    c.setFont(current_font, 12)
-    c.drawRightString(page_width - 30, rect_y + 8, text)
+    c.setFont(current_font, 11) # 字體稍微縮小一點點 (12 -> 11) 以適應變窄的框
+    
+    # 文字位置微調
+    # 水平：靠右對齊，但留 5 點邊距，以免字貼在螢幕最邊邊
+    text_end_x = page_width - 5
+    # 垂直：置中於盒子內 (高度30，字高約11，放在 y=9 左右看起來最置中)
+    text_y = 9 
+    
+    c.drawRightString(text_end_x, text_y, text)
     
     c.save()
     packet.seek(0)
@@ -73,9 +81,6 @@ def create_overlay(page_width, page_height, page_num, current_font):
 uploaded_file = st.file_uploader("上傳原始 PDF", type=["pdf"])
 
 if uploaded_file and st.button("開始加工"):
-    if font_name == "Helvetica":
-        st.warning("⚠️ 警告：目前使用預設字型，中文可能會顯示為方塊。請先解決上方的紅色錯誤。")
-
     try:
         reader = PdfReader(uploaded_file)
         writer = PdfWriter()
@@ -98,4 +103,4 @@ if uploaded_file and st.button("開始加工"):
         st.download_button("📥 下載加工版 PDF", out.getvalue(), "交通組_加工版.pdf", "application/pdf")
         
     except Exception as e:
-        st.error(f"處理過程發生錯誤: {e}")
+        st.error(f"錯誤: {e}")
