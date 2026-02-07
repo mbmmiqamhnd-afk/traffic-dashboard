@@ -37,22 +37,20 @@ else:
     font_name = "Helvetica"
     st.warning("⚠️ 未偵測到中文字型 (kaiu.ttf)，文字將顯示為方塊。")
 
-# --- 核心修改：製作貼齊邊緣的遮罩 ---
+# --- 核心修改：精確尺寸調整 ---
 def create_overlay(page_width, page_height, page_num, current_font):
     packet = io.BytesIO()
     c = canvas.Canvas(packet, pagesize=(page_width, page_height))
     
     text = f"交通組製 - 第 {page_num} 頁"
     
-    # --- 【修改點 1】調整寬度 ---
-    # 原本 200，縮短約 1/3 -> 設定為 135
-    # 這個寬度剛好夠放「交通組製 - 第 XX 頁」，不會浪費太多空間
-    box_width = 135
-    box_height = 30  # 高度維持 30，剛好蓋住商標
+    # --- 【修改點】尺寸計算 ---
+    # 寬度：135 * (5/6) ≈ 112
+    # 高度：維持 20 (輕薄貼紙風格)
+    box_width = 112
+    box_height = 20
     
-    # --- 【修改點 2】貼齊邊緣 (移除邊距) ---
-    # rect_x = 頁面寬度 - 盒子寬度 (這樣就剛好貼齊右邊界)
-    # rect_y = 0 (這樣就剛好貼齊下邊界)
+    # 貼齊右下角 (無邊距)
     rect_x = page_width - box_width
     rect_y = 0
     
@@ -63,13 +61,15 @@ def create_overlay(page_width, page_height, page_num, current_font):
     
     # 寫字 (黑色)
     c.setFillColor(black)
-    c.setFont(current_font, 11) # 字體稍微縮小一點點 (12 -> 11) 以適應變窄的框
+    
+    # 字體大小設為 10 (配合 112 的寬度)
+    c.setFont(current_font, 10) 
     
     # 文字位置微調
-    # 水平：靠右對齊，但留 5 點邊距，以免字貼在螢幕最邊邊
-    text_end_x = page_width - 5
-    # 垂直：置中於盒子內 (高度30，字高約11，放在 y=9 左右看起來最置中)
-    text_y = 9 
+    # 水平：靠右對齊，留 4 點邊距
+    text_end_x = page_width - 4
+    # 垂直：高度20，字高約10，放在 y=6 左右最置中
+    text_y = 6
     
     c.drawRightString(text_end_x, text_y, text)
     
