@@ -3,11 +3,9 @@ pandas
 openpyxl
 xlsxwriter
 gspread
-pypdf
 numpy
 pypdf
 reportlab
 pdf2image
 python-pptx
-
-
+matplotlib
