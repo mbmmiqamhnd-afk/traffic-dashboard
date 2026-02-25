@@ -25,52 +25,41 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 寄信函式 (修正版) ---
+# --- 2. 寄信與同步功能 (維持 v85 穩定版) ---
 def send_real_email(df):
     try:
         mail_user = st.secrets["email"]["user"]
         mail_pass = st.secrets["email"]["password"]
         receiver = "mbmmiqamhnd@gmail.com"
-        
         msg = MIMEMultipart()
         msg['Subject'] = f"📊 [自動通知] 交通違規統計報表 - {pd.Timestamp.now().strftime('%Y-%m-%d')}"
         msg['From'] = f"交通統計系統 <{mail_user}>"
         msg['To'] = receiver
-        
         html_table = df.to_html(index=False, border=1)
         body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
         msg.attach(MIMEText(body, 'html'))
-        
         excel_buffer = io.BytesIO()
         df.to_excel(excel_buffer, index=False)
         part = MIMEApplication(excel_buffer.getvalue(), Name="Traffic_Stats.xlsx")
         part['Content-Disposition'] = 'attachment; filename="Traffic_Stats.xlsx"'
         msg.attach(part)
-        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(mail_user, mail_pass)
             server.send_message(msg)
         return True
-    except Exception as e:
-        st.error(f"郵件寄送失敗: {e}")
-        return False
+    except: return False
 
-# --- 3. 雲端同步函式 (移除 oauth2client，使用現代化方式) ---
 def sync_to_sheets(df):
     try:
-        # 直接從 secrets 讀取字典，不需額外匯入 Credentials 套件
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-        # 開啟您的試算表名稱 (請確保 Google Sheet 有共用給 Service Account Email)
         sh = gc.open("交通違規統計表")
-        ws = sh.get_worksheet(0) # 開啟第一個工作表
+        ws = sh.get_worksheet(0)
         ws.clear()
         ws.update([df.columns.values.tolist()] + df.values.tolist())
         return True
-    except Exception as e:
-        st.error(f"雲端同步失敗: {e}")
-        return False
+    except: return False
 
-# --- 4. 解析邏輯 ---
+# --- 3. 解析邏輯 ---
 def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
     try:
         content = uploaded_file.getvalue()
@@ -93,17 +82,16 @@ def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
         return unit_data
     except: return None
 
-# --- 5. 介面 ---
-st.title("🚔 交通統計自動化系統 (v85)")
+# --- 4. 主介面 ---
+st.title("🚔 交通統計自動化系統 (v86)")
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
-    file_period = st.file_uploader("📂 1. 上傳「本期」檔案 (週報/月報)", type=['xlsx'])
+    file_period = st.file_uploader("📂 1. 上傳「本期」檔案", type=['xlsx'])
 with col_up2:
-    file_year = st.file_uploader("📂 2. 上傳「累計」檔案 (含本年、去年數據)", type=['xlsx'])
+    file_year = st.file_uploader("📂 2. 上傳「累計」檔案", type=['xlsx'])
 
 if file_period and file_year:
-    # 執行數據解析
     d_week = parse_excel_with_cols(file_period, "重點違規統計表", [15, 16])
     d_year = parse_excel_with_cols(file_year, "(1)", [15, 16])
     d_last = parse_excel_with_cols(file_year, "(1)", [18, 19])
@@ -113,27 +101,38 @@ if file_period and file_year:
         t = {k: 0 for k in ['ws', 'wc', 'ys', 'yc', 'ls', 'lc', 'diff', 'tgt']}
         for u in UNIT_ORDER:
             w, y, l = d_week.get(u, {'stop':0, 'cit':0}), d_year.get(u, {'stop':0, 'cit':0}), d_last.get(u, {'stop':0, 'cit':0})
-            ys, ls = y['stop'] + y['cit'], l['stop'] + l['cit']
-            tgt, diff = TARGETS.get(u, 0), ys - ls
-            rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff, tgt, f"{(ys/tgt):.1%}" if tgt > 0 else "0%"])
-            t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']; t['diff']+=diff; t['tgt']+=tgt
+            ys_sum, ls_sum = y['stop'] + y['cit'], l['stop'] + l['cit']
+            tgt = TARGETS.get(u, 0)
+            
+            # --- 警備隊特殊處理邏輯 ---
+            if u == '警備隊':
+                diff_display = "—"
+                rate_display = "—"
+            else:
+                diff_val = ys_sum - ls_sum
+                diff_display = int(diff_val)
+                rate_display = f"{(ys_sum/tgt):.1%}" if tgt > 0 else "0%"
+                # 僅非警備隊的數據才計入合計的比較值與目標值 (若警備隊目標為0則不影響)
+                t['diff'] += (ys_sum - ls_sum)
+                t['tgt'] += tgt
+            
+            rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
+            
+            # 基礎數值不論是否為警備隊都計入合計
+            t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
-        total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"]
+        # 合計列
+        total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
+        total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
-        df_final = pd.DataFrame(rows, columns=['單位', '本期攔停', '本期逕行', '本年攔停', '本年逕行', '去年攔停', '去年逕行', '增減比較', '目標值', '達成率'])
         
-        st.success("✅ 解析成功！")
+        df_final = pd.DataFrame(rows, columns=['單位', '本期攔停', '本期逕行', '本年攔停', '本年逕行', '去年攔停', '去年逕行', '增減比較', '目標值', '達成率'])
+        st.success("✅ 解析成功！(警備隊已排除比較)")
         st.dataframe(df_final, use_container_width=True)
 
         st.divider()
         if st.button("🚀 同步並寄出報表", type="primary"):
-            # 1. 同步雲端
-            success_cloud = sync_to_sheets(df_final)
-            if success_cloud:
-                st.info("☁️ 雲端試算表更新成功！")
-            
-            # 2. 寄送郵件
-            success_mail = send_real_email(df_final)
-            if success_mail:
+            if sync_to_sheets(df_final): st.info("☁️ 雲端試算表更新成功！")
+            if send_real_email(df_final):
                 st.balloons()
                 st.info("📧 報表已寄送至 mbmmiqamhnd@gmail.com")
