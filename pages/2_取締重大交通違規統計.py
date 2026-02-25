@@ -4,8 +4,7 @@ import re
 import io
 from datetime import date
 
-# --- 1. 定義識別與目標 ---
-# 加強單位識別，防止「龍潭所」與「交通分隊」混淆
+# --- 1. 定義單位識別 ---
 def get_standard_unit(raw_name):
     name = str(raw_name).strip()
     if '分隊' in name: return '交通分隊'
@@ -20,68 +19,58 @@ def get_standard_unit(raw_name):
     return None
 
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
-TARGETS = {
-    '聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479,
-    '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 6006
-}
+TARGETS = {'聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 6006}
 
 # --- 2. 核心解析函數 ---
-def parse_report_precision(uploaded_file, sheet_keyword, target_col_idx):
+def parse_report_with_methods(uploaded_file, sheet_keyword, col_indices):
     """
-    target_col_idx: 
-    - 抓本期/本年總計就傳 17 (R欄)
-    - 抓去年同期總計就傳 20 (U欄)
+    col_indices: 傳入 [攔停Index, 逕行Index]
     """
     try:
         content = uploaded_file.getvalue()
         xl = pd.ExcelFile(io.BytesIO(content))
-        
-        # 自動尋找包含關鍵字的工作表
-        target_sheet = xl.sheet_names[0]
-        for s in xl.sheet_names:
-            if sheet_keyword in s:
-                target_sheet = s
-                break
-        
+        target_sheet = next((s for s in xl.sheet_names if sheet_keyword in s), xl.sheet_names[0])
         df = pd.read_excel(xl, sheet_name=target_sheet, header=None)
         
-        # 提取日期以利後續自動辨識檔案
+        # 提取日期
         info_text = "".join(df.iloc[:5].astype(str).values.flatten())
         match = re.search(r'(\d{3,7}).*至\s*(\d{3,7})', info_text)
         start_date = match.group(1) if match else "0000000"
         end_date = match.group(2) if match else "0000000"
         
-        unit_data = {}
-        # 遍歷每一列，動態捕捉單位
+        unit_results = {}
         for _, row in df.iterrows():
-            unit_name = get_standard_unit(row.iloc[0])
-            if unit_name and "合計" not in str(row.iloc[0]):
-                # 清洗數值
-                val_raw = str(row.iloc[target_col_idx]).replace(',', '').strip()
-                val = float(val_raw) if val_raw not in ['', 'nan', 'None', '-'] else 0.0
-                unit_data[unit_name] = unit_data.get(unit_name, 0) + val
+            u = get_standard_unit(row.iloc[0])
+            if u and "合計" not in str(row.iloc[0]):
+                def clean(v):
+                    try:
+                        s = str(v).replace(',', '').strip()
+                        return int(float(s)) if s not in ['', 'nan', 'None', '-'] else 0
+                    except: return 0
                 
-        return {'data': unit_data, 'start': start_date, 'end': end_date}
+                # 分別存儲攔停與逕行
+                unit_results[u] = {
+                    'stop': clean(row.iloc[col_indices[0]]),
+                    'cit': clean(row.iloc[col_indices[1]])
+                }
+        return {'data': unit_results, 'start': start_date, 'end': end_date}
     except Exception as e:
         st.error(f"解析失敗: {e}")
         return None
 
 # --- 3. 主程式介面 ---
-st.markdown("## 🚔 交通違規統計 (來源檔案精準對齊版)")
+st.markdown("## 🚔 交通違規統計 (攔停/逕行細分版)")
 
-files = st.file_uploader("📂 請上傳 2 個檔案 (本期報表 & 累計報表)", accept_multiple_files=True)
+files = st.file_uploader("📂 上傳 2 個檔案 (本期檔 + 累計檔)", accept_multiple_files=True)
 
 if files and len(files) == 2:
-    # A. 識別哪個是累計檔（天數較長者）
     meta = []
     for f in files:
-        # 暫以 R 欄 (17) 讀取來測天數
-        res = parse_report_precision(f, "重點違規統計表", 17)
+        res = parse_report_with_methods(f, "重點違規統計表", [15, 16])
         if res:
             try:
                 s, e = res['start'], res['end']
-                d = (date(int(e[:3])+1911, int(e[3:5]), int(e[5:])) - 
-                     date(int(s[:3])+1911, int(s[3:5]), int(s[5:]))).days
+                d = (date(int(e[:3])+1911, int(e[3:5]), int(e[5:])) - date(int(s[:3])+1911, int(s[3:5]), int(s[5:]))).days
                 res['duration'] = d
             except: res['duration'] = 0
             res['file_obj'] = f
@@ -91,23 +80,38 @@ if files and len(files) == 2:
         meta.sort(key=lambda x: x['duration'], reverse=True)
         f_long, f_short = meta[0]['file_obj'], meta[1]['file_obj']
         
-        # B. 依照需求抓取指定欄位
-        # 1. 本期：短檔 -> R欄 (Index 17)
-        d_week = parse_report_precision(f_short, "重點違規統計表", 17)['data']
-        # 2. 本年：長檔 -> 工作表(1) -> R欄 (Index 17)
-        d_year = parse_report_precision(f_long, "(1)", 17)['data']
-        # 3. 去年：長檔 -> 工作表(1) -> U欄 (Index 20)
-        d_last = parse_report_precision(f_long, "(1)", 20)['data']
+        # 抓取數據：本期 (短檔 P, Q), 本年 (長檔 (1) P, Q), 去年 (長檔 (1) S, T)
+        d_week = parse_report_with_methods(f_short, "重點違規統計表", [15, 16])['data']
+        d_year = parse_report_with_methods(f_long, "(1)", [15, 16])['data']
+        d_last = parse_report_with_methods(f_long, "(1)", [18, 19])['data']
         
-        # C. 組合報表
         rows = []
         for u in UNIT_ORDER:
-            w, y, l = d_week.get(u,0), d_year.get(u,0), d_last.get(u,0)
-            tgt = TARGETS.get(u, 0)
-            diff = y - l
-            rate = f"{(y/tgt):.1%}" if tgt > 0 else "0%"
-            rows.append([u, int(w), int(y), int(l), int(diff), tgt, rate])
+            w = d_week.get(u, {'stop':0, 'cit':0})
+            y = d_year.get(u, {'stop':0, 'cit':0})
+            l = d_last.get(u, {'stop':0, 'cit':0})
             
-        df_res = pd.DataFrame(rows, columns=['單位', '本期數值(P-R)', '本年累計(P-R)', '去年同期(S-U)', '增減比較', '目標值', '達成率'])
-        st.success("✅ 報表統計完成！")
-        st.dataframe(df_res, use_container_width=True)
+            y_total = y['stop'] + y['cit']
+            l_total = l['stop'] + l['cit']
+            tgt = TARGETS.get(u, 0)
+            
+            rows.append([
+                u, 
+                w['stop'], w['cit'],    # 本期
+                y['stop'], y['cit'],    # 本年
+                l['stop'], l['cit'],    # 去年
+                y_total - l_total,      # 比較
+                tgt, 
+                f"{(y_total/tgt):.1%}" if tgt > 0 else "0%"
+            ])
+            
+        columns = [
+            '單位', 
+            '本期攔停', '本期逕行', 
+            '本年攔停', '本年逕行', 
+            '去年攔停', '去年逕行', 
+            '增減比較', '目標值', '達成率'
+        ]
+        df_final = pd.DataFrame(rows, columns=columns)
+        st.success("✅ 解析成功！已按攔停/逕行分類統計。")
+        st.dataframe(df_final, use_container_width=True)
