@@ -36,11 +36,9 @@ def sync_to_specified_sheet(df):
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 處理多層索引：同步到試算表時，將兩層標題合併成兩列
-        headers = df.columns.levels
-        codes = df.columns.codes
-        top_row = [headers[0][i] for i in codes[0]]
-        bottom_row = [headers[1][i] for i in codes[1]]
+        # 處理多層標題寫入
+        top_row = df.columns.get_level_values(0).tolist()
+        bottom_row = df.columns.get_level_values(1).tolist()
         data_list = [top_row, bottom_row] + df.values.tolist()
         
         ws.clear()
@@ -61,7 +59,7 @@ def send_stats_email(df):
         msg['From'] = f"交通統計系統 <{mail_user}>"
         msg['To'] = receiver
         
-        # 寄信時轉換為 HTML 表格，Pandas 會自動處理多層索引合併儲存格
+        # Pandas to_html 會自動處理合併單元格
         html_table = df.to_html(border=1)
         body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
         msg.attach(MIMEText(body, 'html'))
@@ -78,7 +76,7 @@ def send_stats_email(df):
         return True
     except: return False
 
-# --- 4. 解析邏輯 (保持不變) ---
+# --- 4. 解析邏輯 ---
 def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
     try:
         content = uploaded_file.getvalue()
@@ -102,7 +100,7 @@ def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
     except: return None
 
 # --- 5. 主介面 ---
-st.title("🚔 交通統計自動化系統 (多層索引版)")
+st.title("🚔 交通統計自動化系統 (格式優化版)")
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
@@ -140,17 +138,32 @@ if file_period and file_year:
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 【修改重點】建立多層索引 (MultiIndex)
-        header_top = ['統計期間'] + ['本期']*2 + ['本年累計']*2 + ['去年累計']*2 + ['增減比較', '目標值', '達成率']
-        header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
+        # 【修改重點】多層標題結構設計
+        # 第一層 (大標題)：負責合併單元格
+        header_top = [
+            '統計期間', 
+            '本期', '本期', 
+            '本年累計', '本年累計', 
+            '去年累計', '去年累計', 
+            '本年與去年同期比較', # 垂直合併
+            '目標值',               # 垂直合併
+            '達成率'               # 垂直合併
+        ]
         
-        # 使用 MultiIndex.from_arrays 建立層級標題
+        # 第二層 (子標題)：垂直合併的地方留空
+        header_bottom = [
+            '取締方式', 
+            '當場攔停', '逕行舉發', 
+            '當場攔停', '逕行舉發', 
+            '當場攔停', '逕行舉發', 
+            '', '', '' 
+        ]
+        
         multi_col = pd.MultiIndex.from_arrays([header_top, header_bottom])
-        
         df_final = pd.DataFrame(rows, columns=multi_col)
         
         st.success("✅ 解析成功！")
-        # 顯示多層索引表格
+        # 顯示表格 (Streamlit 會自動渲染合併樣式)
         st.dataframe(df_final, use_container_width=True)
 
         st.divider()
