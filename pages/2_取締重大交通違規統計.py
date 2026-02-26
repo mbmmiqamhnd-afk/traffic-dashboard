@@ -150,3 +150,66 @@ def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
                 else: 
                     unit_data[u]['stop'] += stop_val
                     unit_data[u]['cit'] += cit_val
+        return unit_data
+    except: return None
+
+# --- 5. 主介面 ---
+st.title("🚔 交通統計自動化系統")
+
+col_up1, col_up2 = st.columns(2)
+with col_up1:
+    file_period = st.file_uploader("📂 1. 上傳「本期」檔案", type=['xlsx'])
+with col_up2:
+    file_year = st.file_uploader("📂 2. 上傳「累計」檔案", type=['xlsx'])
+
+if file_period and file_year:
+    d_week = parse_excel_with_cols(file_period, "重點違規統計表", [15, 16])
+    d_year = parse_excel_with_cols(file_year, "(1)", [15, 16])
+    d_last = parse_excel_with_cols(file_year, "(1)", [18, 19])
+    
+    if d_week and d_year and d_last:
+        rows = []
+        t = {k: 0 for k in ['ws', 'wc', 'ys', 'yc', 'ls', 'lc', 'diff', 'tgt']}
+        for u in UNIT_ORDER:
+            w, y, l = d_week.get(u, {'stop':0, 'cit':0}), d_year.get(u, {'stop':0, 'cit':0}), d_last.get(u, {'stop':0, 'cit':0})
+            ys_sum, ls_sum = y['stop'] + y['cit'], l['stop'] + l['cit']
+            tgt = TARGETS.get(u, 0)
+            
+            if u == '警備隊':
+                diff_display, rate_display = "—", "—"
+            else:
+                diff_val = ys_sum - ls_sum
+                diff_display = int(diff_val)
+                rate_display = f"{(ys_sum/tgt):.1%}" if tgt > 0 else "0%"
+                t['diff'] += diff_val
+                t['tgt'] += tgt
+            
+            rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
+            t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
+        
+        # 合計列置頂 (第 3 列)
+        total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
+        total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
+        rows.insert(0, total_row)
+        
+        # 新增說明註解列
+        rows.append([FOOTNOTE_TEXT] + [""] * 9)
+        
+        # 定義多層標題
+        header_top = ['統計期間', '本期', '本期', '本年累計', '本年累計', '去年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
+        header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
+        
+        multi_col = pd.MultiIndex.from_arrays([header_top, header_bottom])
+        df_final = pd.DataFrame(rows, columns=multi_col)
+        
+        st.success("✅ 解析成功！")
+        st.dataframe(df_final, use_container_width=True)
+
+        st.divider()
+        if st.button("🚀 同步雲端並寄出報表", type="primary"):
+            if sync_to_specified_sheet(df_final): 
+                st.info(f"☁️ 雲端同步成功！前三列格式已統一。")
+            
+            if send_stats_email(df_final):
+                st.balloons()
+                st.info("📧 報表已寄送。")
