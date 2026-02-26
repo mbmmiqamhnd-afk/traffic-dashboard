@@ -40,19 +40,29 @@ def sync_to_specified_sheet(df):
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 準備數據
         col_tuples = df.columns.tolist()
         top_row = [t[0] for t in col_tuples]
         bottom_row = [t[1] for t in col_tuples]
         data_list = [top_row, bottom_row] + df.values.tolist()
         
-        # 僅更新數據
+        ws.clear()
         ws.update(range_name='A1', values=data_list)
         
-        data_rows_count = len(data_list) - 1 # 排除最後一列備註
+        data_rows_count = len(data_list) - 1 
         
         requests = [
-            # 規則 1：H 欄數值小於 0 顯示紅字 (通用)
+            {"unmergeCells": {"range": {"sheetId": ws.id}}},
+            # 重新執行合併 (因為標題文字變長，合併規則不變)
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 3, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 5, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 8, "endColumnIndex": 9}, "mergeType": "MERGE_ALL"}},
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 9, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": data_rows_count, "endRowIndex": data_rows_count+1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
+            
+            # 負值紅字規則
             {
                 "addConditionalFormatRule": {
                     "rule": {
@@ -61,12 +71,9 @@ def sync_to_specified_sheet(df):
                             "condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": "0"}]},
                             "format": {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
                         }
-                    },
-                    "index": 0
+                    }, "index": 0
                 }
             },
-            # 規則 2：A 欄名稱同步變紅 (排除合計、科技執法)
-            # 使用自訂公式：當 H 欄 < 0 且 A 欄不等於合計/科技執法時
             {
                 "addConditionalFormatRule": {
                     "rule": {
@@ -78,8 +85,7 @@ def sync_to_specified_sheet(df):
                             },
                             "format": {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
                         }
-                    },
-                    "index": 0
+                    }, "index": 0
                 }
             }
         ]
@@ -89,58 +95,23 @@ def sync_to_specified_sheet(df):
         st.error(f"雲端同步失敗: {e}")
         return False
 
-# --- 3. 寄信功能 ---
-def send_stats_email(df):
-    try:
-        mail_user = st.secrets["email"]["user"]
-        mail_pass = st.secrets["email"]["password"]
-        receiver = "mbmmiqamhnd@gmail.com"
-        msg = MIMEMultipart()
-        msg['Subject'] = f"📊 [自動通知] 交通違規統計報表 - {pd.Timestamp.now().strftime('%Y-%m-%d')}"
-        msg['From'] = f"交通統計系統 <{mail_user}>"
-        msg['To'] = receiver
-        
-        def color_logic(row):
-            # 建立一個與 row 同樣長度的樣式清單，預設為空字串
-            styles = [''] * len(row)
-            try:
-                # 比較值在索引 7
-                val = float(row.iloc[7])
-                name = str(row.iloc[0])
-                if val < 0:
-                    # H 欄(索引 7)變紅
-                    styles[7] = 'color: red'
-                    # 如果不是合計或科技執法，A 欄(索引 0)也變紅
-                    if name not in ["合計", "科技執法"]:
-                        styles[0] = 'color: red'
-            except:
-                pass
-            return styles
-
-        html_table = df.style.apply(color_logic, axis=1).to_html(border=1)
-        
-        body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
-        msg.attach(MIMEText(body, 'html'))
-        
-        excel_buffer = io.BytesIO()
-        df.to_excel(excel_buffer)
-        part = MIMEApplication(excel_buffer.getvalue(), Name="Traffic_Stats.xlsx")
-        part['Content-Disposition'] = 'attachment; filename="Traffic_Stats.xlsx"'
-        msg.attach(part)
-        
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(mail_user, mail_pass)
-            server.send_message(msg)
-        return True
-    except: return False
-
-# --- 4. 解析邏輯 (略，與之前相同) ---
-def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
+# --- 4. 解析邏輯 (新增日期偵測) ---
+def parse_excel_and_get_date(uploaded_file, sheet_keyword, col_indices):
     try:
         content = uploaded_file.getvalue()
         xl = pd.ExcelFile(io.BytesIO(content))
         target_sheet = next((s for s in xl.sheet_names if sheet_keyword in s), xl.sheet_names[0])
         df = pd.read_excel(xl, sheet_name=target_sheet, header=None)
+        
+        # 嘗試從前 5 列中尋找日期格式 (如 113.01.01-113.01.07)
+        date_range = ""
+        for i in range(5):
+            row_str = "".join(df.iloc[i].astype(str))
+            match = re.search(r'\d{3}\.\d{2}\.\d{2}[-~]\d{3}\.\d{2}\.\d{2}', row_str)
+            if match:
+                date_range = match.group()
+                break
+        
         unit_data = {}
         for _, row in df.iterrows():
             u = get_standard_unit(row.iloc[0])
@@ -154,11 +125,17 @@ def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
                 else: 
                     unit_data[u]['stop'] += stop_val
                     unit_data[u]['cit'] += cit_val
-        return unit_data
-    except: return None
+        return unit_data, date_range
+    except: return None, ""
 
 # --- 5. 主介面 ---
-st.title("🚔 交通統計自動化系統")
+st.title("🚔 交通統計自動化系統 (日期區間版)")
+
+# 讓使用者也可以手動修正日期
+st.sidebar.header("📅 統計日期設定")
+custom_date_week = st.sidebar.text_input("本期日期 (例: 02.17-02.23)", "")
+custom_date_year = st.sidebar.text_input("年度日期 (例: 01.01-02.23)", "")
+custom_date_last = st.sidebar.text_input("去年同期 (例: 01.01-02.23)", "")
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
@@ -167,11 +144,16 @@ with col_up2:
     file_year = st.file_uploader("📂 2. 上傳「累計」檔案", type=['xlsx'])
 
 if file_period and file_year:
-    d_week = parse_excel_with_cols(file_period, "重點違規統計表", [15, 16])
-    d_year = parse_excel_with_cols(file_year, "(1)", [15, 16])
-    d_last = parse_excel_with_cols(file_year, "(1)", [18, 19])
+    d_week, auto_week = parse_excel_and_get_date(file_period, "重點違規統計表", [15, 16])
+    d_year, auto_year = parse_excel_and_get_date(file_year, "(1)", [15, 16])
+    d_last, _ = parse_excel_and_get_date(file_year, "(1)", [18, 19])
     
-    if d_week and d_year and d_last:
+    # 日期決定邏輯：優先使用手動輸入，若無則使用自動偵測
+    date_w = custom_date_week if custom_date_week else auto_week
+    date_y = custom_date_year if custom_date_year else auto_year
+    date_l = custom_date_last if custom_date_last else auto_year # 去年同期通常與今年累計區間相同
+    
+    if d_week and d_year:
         rows = []
         t = {k: 0 for k in ['ws', 'wc', 'ys', 'yc', 'ls', 'lc', 'diff', 'tgt']}
         for u in UNIT_ORDER:
@@ -192,11 +174,15 @@ if file_period and file_year:
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
-        total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
-        rows.insert(0, total_row)
+        rows.insert(0, ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate])
         rows.append([FOOTNOTE_TEXT] + [""] * 9)
         
-        header_top = ['統計期間', '本期', '本期', '本年累計', '本年累計', '去年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
+        # --- 核心修改：標題加上日期符號 ---
+        title_week = f"本期\n({date_w})" if date_w else "本期"
+        title_year = f"本年累計\n({date_y})" if date_y else "本年累計"
+        title_last = f"去年累計\n({date_l})" if date_l else "去年累計"
+        
+        header_top = ['統計期間', title_week, title_week, title_year, title_year, title_last, title_last, '本年與去年同期比較', '目標值', '達成率']
         header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
         
         multi_col = pd.MultiIndex.from_arrays([header_top, header_bottom])
@@ -210,8 +196,7 @@ if file_period and file_year:
             try:
                 if row.iloc[7] < 0:
                     styles[7] = 'color: red'
-                    if row.iloc[0] not in ["合計", "科技執法"]:
-                        styles[0] = 'color: red'
+                    if row.iloc[0] not in ["合計", "科技執法"]: styles[0] = 'color: red'
             except: pass
             return styles
         
@@ -220,7 +205,4 @@ if file_period and file_year:
         st.divider()
         if st.button("🚀 同步數據並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 數據已同步！負值列名稱已同步變更。")
-            if send_stats_email(df_final):
-                st.balloons()
-                st.info("📧 報表已寄送。")
+                st.info(f"☁️ 數據已同步！標題已包含日期區間。")
