@@ -45,13 +45,11 @@ def sync_to_specified_sheet(df):
         bottom_row = [t[1] for t in col_tuples]
         data_list = [top_row, bottom_row] + df.values.tolist()
         
-        # 僅更新數據，保留格式
         ws.update(range_name='A1', values=data_list)
         
         data_rows_count = len(data_list) - 1 
         
         requests = [
-            # 負值紅字規則 (H欄)
             {
                 "addConditionalFormatRule": {
                     "rule": {
@@ -63,7 +61,6 @@ def sync_to_specified_sheet(df):
                     }, "index": 0
                 }
             },
-            # 名稱同步變紅 (排除合計、科技執法)
             {
                 "addConditionalFormatRule": {
                     "rule": {
@@ -85,7 +82,7 @@ def sync_to_specified_sheet(df):
         st.error(f"雲端同步失敗: {e}")
         return False
 
-# --- 4. 解析邏輯 (抓取第3列日期區間) ---
+# --- 4. 解析邏輯 (更新日期抓取 Regex) ---
 def parse_excel_with_date_extraction(uploaded_file, sheet_keyword, col_indices):
     try:
         content = uploaded_file.getvalue()
@@ -93,16 +90,15 @@ def parse_excel_with_date_extraction(uploaded_file, sheet_keyword, col_indices):
         target_sheet = next((s for s in xl.sheet_names if sheet_keyword in s), xl.sheet_names[0])
         df = pd.read_excel(xl, sheet_name=target_sheet, header=None)
         
-        # 指定抓取第 3 列 (Index 2) 的日期區間
         date_str = ""
         try:
-            # 搜尋第 3 列的內容，尋找「統計期間：」之後的內容
+            # 抓取第 3 列 (Index 2)
             row_content = "".join(df.iloc[2].astype(str))
-            if "統計期間" in row_content:
-                # 抓取包含數字、點、及日期分隔符號的區間
-                match = re.search(r'(\d+\.\d+\.\d+[-至~]\d+\.\d+\.\d+)', row_content)
-                if match:
-                    date_str = match.group(1)
+            # 更新後的 Regex：支援「1150219至1150225」這種格式
+            # 匹配 7 位數字 + [至-~] + 7 位數字
+            match = re.search(r'(\d{7}[至\-~]\d{7})', row_content)
+            if match:
+                date_str = match.group(1)
         except:
             date_str = ""
         
@@ -156,16 +152,14 @@ if file_period and file_year:
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
-        # 合計列
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         rows.insert(0, ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate])
         rows.append([FOOTNOTE_TEXT] + [""] * 9)
         
-        # --- 核心修改：標題文字動態組合 ---
-        # 若有抓到日期則加上括號
+        # 標題加上日期
         label_week = f"本期({date_w})" if date_w else "本期"
         label_year = f"本年累計({date_y})" if date_y else "本年累計"
-        label_last = f"去年累計({date_y})" if date_y else "去年累計" # 去年日期通常同步今年區間
+        label_last = f"去年累計({date_y})" if date_y else "去年累計" 
         
         header_top = ['統計期間', label_week, label_week, label_year, label_year, label_last, label_last, '本年與去年同期比較', '目標值', '達成率']
         header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
@@ -175,7 +169,6 @@ if file_period and file_year:
         
         st.success("✅ 解析成功！")
         
-        # 網頁預覽樣式邏輯
         def style_sync(row):
             styles = [''] * len(row)
             try:
