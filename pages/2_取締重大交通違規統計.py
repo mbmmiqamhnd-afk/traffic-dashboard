@@ -13,18 +13,11 @@ from email.mime.application import MIMEApplication
 # ==========================================
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 
-# 單位排序與目標值
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
-TARGETS = {
-    '聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, 
-    '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 6006
-}
-
-# 備註文字內容
+TARGETS = {'聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 6006}
 FOOTNOTE_TEXT = "重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」"
 
 def get_standard_unit(raw_name):
-    """將原始名稱轉換為標準單位名稱"""
     name = str(raw_name).strip()
     if '分隊' in name: return '交通分隊'
     if '科技' in name or '交通組' in name: return '科技執法'
@@ -37,14 +30,14 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (包含格式與合併) ---
+# --- 2. 雲端同步功能 ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 準備資料與寫入 (提取 MultiIndex 兩層標題)
+        # 準備寫入內容：兩層標題 + 數據列
         col_tuples = df.columns.tolist()
         top_row = [t[0] for t in col_tuples]
         bottom_row = [t[1] for t in col_tuples]
@@ -53,53 +46,43 @@ def sync_to_specified_sheet(df):
         ws.clear()
         ws.update(range_name='A1', values=data_list)
         
+        # 備註列的索引
         footnote_row_idx = len(data_list) - 1
         
-        # 設定格式請求
+        # 格式指令集
         requests = [
             {"unmergeCells": {"range": {"sheetId": ws.id}}},
-            
-            # 標題合併邏輯 (A1:A2, B1:C1, D1:E1, F1:G1, H1:H2, I1:I2, J1:J2)
+            # A1:A2 合併 (取締方式)
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
+            # 第一層標題水平合併
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 3, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 5, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
+            # 右側三項垂直合併
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 8, "endColumnIndex": 9}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 9, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
-            
-            # 末列備註合併 A-J 欄
+            # 備註列合併 A-J 欄
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
             
-            # 【重點】統一第 1, 2, 3 列格式 (標題與合計列：加粗、字體12、置中)
-            {
-                "repeatCell": {
-                    "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10},
-                    "cell": {
-                        "userEnteredFormat": {
-                            "textFormat": {"bold": True, "fontSize": 12},
-                            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
-                        }
-                    },
-                    "fields": "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment)"
-                }
-            },
-            # 一般資料列對齊
-            {
-                "repeatCell": {
-                    "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": footnote_row_idx},
-                    "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
-                    "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment)"
-                }
-            },
-            # 備註列格式 (靠左、斜體)
-            {
-                "repeatCell": {
-                    "range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1},
-                    "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT", "textFormat": {"italic": True}}},
-                    "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
-                }
-            }
+            # 全體格式設定 (置中對齊)
+            {"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": footnote_row_idx},
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment)"
+            }},
+            # 標題加粗
+            {"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2},
+                "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+                "fields": "userEnteredFormat(textFormat)"
+            }},
+            # 備註列靠左斜體
+            {"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1},
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT", "textFormat": {"italic": True}}},
+                "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
+            }}
         ]
         sh.batch_update({"requests": requests})
         return True
@@ -117,19 +100,14 @@ def send_stats_email(df):
         msg['Subject'] = f"📊 [自動通知] 交通違規統計報表 - {pd.Timestamp.now().strftime('%Y-%m-%d')}"
         msg['From'] = f"交通統計系統 <{mail_user}>"
         msg['To'] = receiver
-        
-        # 生成 HTML 並包含多層標題
         html_table = df.to_html(border=1)
         body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
         msg.attach(MIMEText(body, 'html'))
-        
-        # 附件 Excel
         excel_buffer = io.BytesIO()
         df.to_excel(excel_buffer)
         part = MIMEApplication(excel_buffer.getvalue(), Name="Traffic_Stats.xlsx")
         part['Content-Disposition'] = 'attachment; filename="Traffic_Stats.xlsx"'
         msg.attach(part)
-        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(mail_user, mail_pass)
             server.send_message(msg)
@@ -193,15 +171,15 @@ if file_period and file_year:
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
-        # 合計列 (置於資料列第一列，整體第三列)
+        # 合計列置頂
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 註解列
+        # 新增備註列
         rows.append([FOOTNOTE_TEXT] + [""] * 9)
         
-        # 多層標題
+        # 定義多層標題
         header_top = ['統計期間', '本期', '本期', '本年累計', '本年累計', '去年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
         header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
         
@@ -214,8 +192,8 @@ if file_period and file_year:
         st.divider()
         if st.button("🚀 同步雲端並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 雲端同步成功！前三列格式已統一。")
+                st.info(f"☁️ 雲端同步成功！")
             
             if send_stats_email(df_final):
                 st.balloons()
-                st.info("📧 報表已寄送至信箱。")
+                st.info("📧 報表已寄送。")
