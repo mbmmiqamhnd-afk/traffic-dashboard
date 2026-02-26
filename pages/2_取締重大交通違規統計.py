@@ -29,25 +29,44 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (精準修正版) ---
+# --- 2. 雲端同步功能 (加入自動格式化與合併儲存格) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 強制提取兩層標題，避免索引跑掉
-        # 這裡不使用 df.columns.levels，直接從 MultiIndex 物件提取完整的 Tuple 清單
+        # 1. 準備資料與寫入
         col_tuples = df.columns.tolist()
         top_row = [t[0] for t in col_tuples]
         bottom_row = [t[1] for t in col_tuples]
-        
-        # 組合標題與數據
         data_list = [top_row, bottom_row] + df.values.tolist()
         
         ws.clear()
-        # 寫入資料
         ws.update(range_name='A1', values=data_list)
+        
+        # 2. 執行格式化指令 (合併儲存格與置中)
+        requests = [
+            # 合併 A1:A2 (統計期間/取締方式)
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
+            # 合併 B1:C1 (本期)
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
+            # 合併 D1:E1 (本年累計)
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 3, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
+            # 合併 F1:G1 (去年累計)
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 5, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
+            # 合併 H1:H2 (比較)、I1:I2 (目標)、J1:J2 (達成率)
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 8, "endColumnIndex": 9}, "mergeType": "MERGE_ALL"}},
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 9, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
+            # 全表文字置中
+            {"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": len(data_list)},
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment)"
+            }}
+        ]
+        sh.batch_update({"requests": requests})
         return True
     except Exception as e:
         st.error(f"雲端同步失敗: {e}")
@@ -63,7 +82,6 @@ def send_stats_email(df):
         msg['Subject'] = f"📊 [自動通知] 交通違規統計報表 - {pd.Timestamp.now().strftime('%Y-%m-%d')}"
         msg['From'] = f"交通統計系統 <{mail_user}>"
         msg['To'] = receiver
-        
         html_table = df.to_html(border=1)
         body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
         msg.attach(MIMEText(body, 'html'))
@@ -104,7 +122,7 @@ def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
     except: return None
 
 # --- 5. 主介面 ---
-st.title("🚔 交通統計自動化系統 (截圖修正版)")
+st.title("🚔 交通統計自動化系統 (雲端同步增強版)")
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
@@ -137,31 +155,13 @@ if file_period and file_year:
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
-        # 建立合計列
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # --- 核心修正：重新定義標題串列 ---
-        header_top = [
-            '統計期間', 
-            '本期', '本期', 
-            '本年累計', '本年累計', 
-            '去年累計', '去年累計', 
-            '本年與去年同期比較', 
-            '目標值', 
-            '達成率'
-        ]
+        header_top = ['統計期間', '本期', '本期', '本年累計', '本年累計', '去年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
+        header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
         
-        header_bottom = [
-            '取締方式', 
-            '當場攔停', '逕行舉發', 
-            '當場攔停', '逕行舉發', 
-            '當場攔停', '逕行舉發', 
-            '', '', '' 
-        ]
-        
-        # 使用 MultiIndex.from_arrays 確保結構唯一
         multi_col = pd.MultiIndex.from_arrays([header_top, header_bottom])
         df_final = pd.DataFrame(rows, columns=multi_col)
         
@@ -171,7 +171,7 @@ if file_period and file_year:
         st.divider()
         if st.button("🚀 同步雲端並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 已修正同步邏輯，請檢查雲端試算表 A1 儲存格起點")
+                st.info(f"☁️ 雲端同步成功！已完成自動合併儲存格與置中對齊。")
             
             if send_stats_email(df_final):
                 st.balloons()
