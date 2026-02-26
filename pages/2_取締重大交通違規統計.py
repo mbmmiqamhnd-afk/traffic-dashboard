@@ -33,14 +33,13 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (所有列格式統一) ---
+# --- 2. 雲端同步功能 (恢復標題與合計列加強格式) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 準備資料
         col_tuples = df.columns.tolist()
         top_row = [t[0] for t in col_tuples]
         bottom_row = [t[1] for t in col_tuples]
@@ -54,7 +53,7 @@ def sync_to_specified_sheet(df):
         requests = [
             {"unmergeCells": {"range": {"sheetId": ws.id}}},
             
-            # 合併標題與垂直合併儲存格
+            # 1. 執行合併單元格
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 3, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
@@ -64,29 +63,34 @@ def sync_to_specified_sheet(df):
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 9, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
             
-            # --- 核心修改：所有資料列 (含標題與合計) 統一格式，不加粗、不放大 ---
+            # 2. 恢復重點列格式：第 1, 2, 3 列 (加粗、置中、字型 12)
             {
                 "repeatCell": {
-                    "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": footnote_row_idx, "startColumnIndex": 0, "endColumnIndex": 10},
+                    "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10},
                     "cell": {
                         "userEnteredFormat": {
-                            "textFormat": {
-                                "bold": False,
-                                "fontSize": 10  # 使用標準字型大小
-                            },
-                            "horizontalAlignment": "CENTER",
-                            "verticalAlignment": "MIDDLE"
+                            "textFormat": {"bold": True, "fontSize": 12},
+                            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
                         }
                     },
                     "fields": "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment)"
                 }
             },
             
-            # 備註列格式 (維持靠左、斜體)
+            # 3. 一般資料列格式 (第 4 列到備註前)
+            {
+                "repeatCell": {
+                    "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": footnote_row_idx},
+                    "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+                    "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment)"
+                }
+            },
+            
+            # 4. 備註列格式 (靠左、斜體)
             {
                 "repeatCell": {
                     "range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1},
-                    "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT", "textFormat": {"italic": True, "fontSize": 10}}},
+                    "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT", "textFormat": {"italic": True}}},
                     "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
                 }
             }
@@ -178,12 +182,12 @@ if file_period and file_year:
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
-        # 合計列置頂 (第 3 列)
+        # 合計列置頂
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 新增說明註解列
+        # 註解列
         rows.append([FOOTNOTE_TEXT] + [""] * 9)
         
         # 定義多層標題
@@ -199,7 +203,7 @@ if file_period and file_year:
         st.divider()
         if st.button("🚀 同步雲端並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 雲端同步成功！全表格式已統一。")
+                st.info(f"☁️ 雲端同步成功！已恢復重點加強格式。")
             
             if send_stats_email(df_final):
                 st.balloons()
