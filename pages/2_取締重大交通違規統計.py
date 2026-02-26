@@ -29,19 +29,23 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 ---
+# --- 2. 雲端同步功能 (修正版) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 標題列
-        top_row = df.columns.get_level_values(0).tolist()
-        bottom_row = df.columns.get_level_values(1).tolist()
+        # 解決關鍵：明確提取 MultiIndex 的兩層標題
+        # 使用 list(df.columns) 會得到一組 tuple 的清單
+        top_row = [col[0] for col in df.columns]
+        bottom_row = [col[1] for col in df.columns]
+        
+        # 組合標題與數據
         data_list = [top_row, bottom_row] + df.values.tolist()
         
         ws.clear()
+        # 一次更新所有內容
         ws.update(range_name='A1', values=data_list)
         return True
     except Exception as e:
@@ -59,7 +63,6 @@ def send_stats_email(df):
         msg['From'] = f"交通統計系統 <{mail_user}>"
         msg['To'] = receiver
         
-        # to_html 會自動根據 MultiIndex 生成合併儲存格的 HTML 語法
         html_table = df.to_html(border=1)
         body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
         msg.attach(MIMEText(body, 'html'))
@@ -100,7 +103,7 @@ def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
     except: return None
 
 # --- 5. 主介面 ---
-st.title("🚔 交通統計自動化系統 (格式優化版)")
+st.title("🚔 交通統計自動化系統 (雲端修復版)")
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
@@ -138,26 +141,9 @@ if file_period and file_year:
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 【修改重點】多層標題 (MultiIndex) 設計
-        # 第一層標題：定義大群組與垂直合併的標題名稱
-        header_top = [
-            '統計期間', 
-            '本期', '本期', 
-            '本年累計', '本年累計', 
-            '去年累計', '去年累計', 
-            '本年與去年同期比較', # 垂直合併
-            '目標值',               # 垂直合併
-            '達成率'               # 垂直合併
-        ]
-        
-        # 第二層標題：垂直合併的位置設為空字串
-        header_bottom = [
-            '取締方式', 
-            '當場攔停', '逕行舉發', 
-            '當場攔停', '逕行舉發', 
-            '當場攔停', '逕行舉發', 
-            '', '', '' 
-        ]
+        # 標題設計
+        header_top = ['統計期間', '本期', '本期', '本年累計', '本年累計', '去年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
+        header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
         
         multi_col = pd.MultiIndex.from_arrays([header_top, header_bottom])
         df_final = pd.DataFrame(rows, columns=multi_col)
@@ -167,8 +153,9 @@ if file_period and file_year:
 
         st.divider()
         if st.button("🚀 同步雲端並寄出報表", type="primary"):
+            # 執行修正後的同步功能
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 已成功同步至雲端試算表")
+                st.info(f"☁️ 已成功同步至雲端試算表 (包含兩層標題)")
             
             if send_stats_email(df_final):
                 st.balloons()
