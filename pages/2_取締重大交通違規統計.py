@@ -9,7 +9,7 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
 # ==========================================
-# 0. 設定區 (參照原代碼網址)
+# 0. 設定區
 # ==========================================
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 
@@ -29,12 +29,10 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (同步至指定網址) ---
+# --- 2. 雲端同步功能 ---
 def sync_to_specified_sheet(df):
     try:
-        # 使用現代化連線方式
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-        # 開啟指定的 URL
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
@@ -61,11 +59,13 @@ def send_stats_email(df):
         html_table = df.to_html(index=False, border=1)
         body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
         msg.attach(MIMEText(body, 'html'))
+        
         excel_buffer = io.BytesIO()
         df.to_excel(excel_buffer, index=False)
         part = MIMEApplication(excel_buffer.getvalue(), Name="Traffic_Stats.xlsx")
         part['Content-Disposition'] = 'attachment; filename="Traffic_Stats.xlsx"'
         msg.attach(part)
+        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(mail_user, mail_pass)
             server.send_message(msg)
@@ -129,17 +129,22 @@ if file_period and file_year:
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
+        # 建立合計列
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
+        # 建立 DataFrame
         df_final = pd.DataFrame(rows, columns=['單位', '本期攔停', '本期逕行', '本年攔停', '本年逕行', '去年攔停', '去年逕行', '增減比較', '目標值', '達成率'])
+        
+        # 【修改重點】將合計列的名稱改為「取締方式」
+        df_final.iloc[0, 0] = "取締方式"
+        
         st.success("✅ 解析成功！")
         st.dataframe(df_final, use_container_width=True)
 
         st.divider()
         if st.button("🚀 同步雲端並寄出報表", type="primary"):
-            # 同步至指定的 GOOGLE_SHEET_URL
             if sync_to_specified_sheet(df_final): 
                 st.info(f"☁️ 已成功同步至雲端試算表")
             
