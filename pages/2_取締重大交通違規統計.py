@@ -33,7 +33,7 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 ---
+# --- 2. 雲端同步功能 (增加標題紅字邏輯) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
@@ -50,6 +50,7 @@ def sync_to_specified_sheet(df):
         data_rows_count = len(data_list) - 1 
         
         requests = [
+            # 規則 1：H 欄負數變紅
             {
                 "addConditionalFormatRule": {
                     "rule": {
@@ -61,6 +62,7 @@ def sync_to_specified_sheet(df):
                     }, "index": 0
                 }
             },
+            # 規則 2：A 欄名稱同步變紅
             {
                 "addConditionalFormatRule": {
                     "rule": {
@@ -74,6 +76,21 @@ def sync_to_specified_sheet(df):
                         }
                     }, "index": 0
                 }
+            },
+            # 規則 3：標題列(第1列)若包含 "(" 則整格變紅
+            {
+                "addConditionalFormatRule": {
+                    "rule": {
+                        "ranges": [{"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 7}],
+                        "booleanRule": {
+                            "condition": {
+                                "type": "TEXT_CONTAINS",
+                                "values": [{"userEnteredValue": "("}]
+                            },
+                            "format": {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
+                        }
+                    }, "index": 0
+                }
             }
         ]
         sh.batch_update({"requests": requests})
@@ -82,7 +99,7 @@ def sync_to_specified_sheet(df):
         st.error(f"雲端同步失敗: {e}")
         return False
 
-# --- 4. 解析邏輯 (新增去除年份邏輯) ---
+# --- 4. 解析邏輯 (修正分隔符號) ---
 def parse_excel_with_date_extraction(uploaded_file, sheet_keyword, col_indices):
     try:
         content = uploaded_file.getvalue()
@@ -93,15 +110,13 @@ def parse_excel_with_date_extraction(uploaded_file, sheet_keyword, col_indices):
         date_display = ""
         try:
             row_content = "".join(df.iloc[2].astype(str))
-            # 抓取原始格式，如 1150219至1150225
+            # 抓取數字區間
             match = re.search(r'(\d{7})([至\-~])(\d{7})', row_content)
             if match:
-                start_date = match.group(1) # 1150219
-                separator = match.group(2)  # 至
-                end_date = match.group(3)   # 1150225
-                
-                # 【核心修改】去除前 3 碼
-                date_display = f"{start_date[3:]}{separator}{end_date[3:]}"
+                start_date = match.group(1)
+                end_date = match.group(3)
+                # 【核心修改】去除前3碼年份，並將分隔符改為 "-"
+                date_display = f"{start_date[3:]}-{end_date[3:]}"
         except:
             date_display = ""
         
@@ -159,7 +174,8 @@ if file_period and file_year:
         rows.insert(0, ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate])
         rows.append([FOOTNOTE_TEXT] + [""] * 9)
         
-        # 標題套用處理後的簡短日期
+        # 標題設定：將括號內容包在 HTML span 標籤中（用於網頁顯示）
+        # 雲端則會透過規則變紅
         label_week = f"本期({date_w})" if date_w else "本期"
         label_year = f"本年累計({date_y})" if date_y else "本年累計"
         label_last = f"去年累計({date_y})" if date_y else "去年累計" 
@@ -172,18 +188,28 @@ if file_period and file_year:
         
         st.success("✅ 解析成功！")
         
-        def style_sync(row):
-            styles = [''] * len(row)
-            try:
-                if row.iloc[7] < 0:
-                    styles[7] = 'color: red'
-                    if row.iloc[0] not in ["合計", "科技執法"]: styles[0] = 'color: red'
-            except: pass
-            return styles
+        # 網頁預覽樣式：增加標題列紅字邏輯
+        def style_final(df):
+            def cell_style(v):
+                if isinstance(v, (int, float)) and v < 0: return 'color: red'
+                if isinstance(v, str) and '(' in v: return 'color: red'
+                return None
+            
+            # 對特定名稱同步紅字
+            def row_style(row):
+                s = [''] * len(row)
+                try:
+                    if row.iloc[7] < 0:
+                        s[7] = 'color: red'
+                        if row.iloc[0] not in ["合計", "科技執法"]: s[0] = 'color: red'
+                except: pass
+                return s
+            
+            return df.style.applymap(cell_style).apply(row_style, axis=1)
         
-        st.dataframe(df_final.style.apply(style_sync, axis=1), use_container_width=True)
+        st.dataframe(style_final(df_final), use_container_width=True)
 
         st.divider()
         if st.button("🚀 同步數據並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 數據已同步！日期已精簡顯示。")
+                st.info(f"☁️ 數據已同步！標題日期已設為紅色並改為橫線分隔。")
