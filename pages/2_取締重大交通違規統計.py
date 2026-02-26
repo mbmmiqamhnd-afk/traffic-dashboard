@@ -131,18 +131,17 @@ if file_period and file_year:
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 【修改重點】移除「本期」、「本年」、「去年」字眼
-        # 注意：Pandas 允許欄位名稱重複，但為了避免後續處理困擾，這裡直接定義名稱串列
+        # 【解決方案】使用零寬度空格 (\u200b) 區分重複標題
+        # 人眼看起來一樣，但程式會認為它們是唯一的
         new_columns = [
             '取締方式', 
-            '當場攔停', '逕行舉發', # 原本的本期
-            '當場攔停', '逕行舉發', # 原本的本年
-            '當場攔停', '逕行舉發', # 原本的去年
+            '當場攔停', '逕行舉發',              # 第一組
+            '當場攔停\u200b', '逕行舉發\u200b',    # 第二組 (加一個隱形空格)
+            '當場攔停\u200b\u200b', '逕行舉發\u200b\u200b', # 第三組 (加兩個隱形空格)
             '增減比較', '目標值', '達成率'
         ]
         
-        df_final = pd.DataFrame(rows)
-        df_final.columns = new_columns # 強制覆蓋標題
+        df_final = pd.DataFrame(rows, columns=new_columns)
         
         st.success("✅ 解析成功！")
         st.dataframe(df_final, use_container_width=True)
