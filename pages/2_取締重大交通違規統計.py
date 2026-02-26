@@ -13,18 +13,14 @@ from email.mime.application import MIMEApplication
 # ==========================================
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 
-# 單位排序與目標值
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 TARGETS = {
     '聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, 
     '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 6006
 }
-
-# 備註文字內容
 FOOTNOTE_TEXT = "重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」"
 
 def get_standard_unit(raw_name):
-    """將原始名稱轉換為標準單位名稱"""
     name = str(raw_name).strip()
     if '分隊' in name: return '交通分隊'
     if '科技' in name or '交通組' in name: return '科技執法'
@@ -37,14 +33,14 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (包含格式與合併) ---
+# --- 2. 雲端同步功能 (同步標題與合計列格式) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 準備資料與寫入 (提取 MultiIndex 兩層標題)
+        # 準備寫入資料
         col_tuples = df.columns.tolist()
         top_row = [t[0] for t in col_tuples]
         bottom_row = [t[1] for t in col_tuples]
@@ -55,38 +51,38 @@ def sync_to_specified_sheet(df):
         
         footnote_row_idx = len(data_list) - 1
         
-        # 設定格式請求
         requests = [
             {"unmergeCells": {"range": {"sheetId": ws.id}}},
             
-            # 標題合併邏輯
+            # 合併標題單元格
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 3, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 5, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
-            
-            # 右側三項垂直合併 (跨 1, 2 列)
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 8, "endColumnIndex": 9}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 9, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
-            
-            # 末列備註合併 A-J 欄
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
             
-            # 【重點】統一第 1, 2, 3 列格式 (標題與合計列)
+            # --- 重點：將第 1, 2 列標題 參照 第 3 列合計列的格式 ---
             {
                 "repeatCell": {
                     "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10},
                     "cell": {
                         "userEnteredFormat": {
-                            "textFormat": {"bold": True, "fontSize": 12},
-                            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+                            "textFormat": {
+                                "bold": True,      # 恢復合計列的加粗格式
+                                "fontSize": 12     # 恢復合計列預設或指定的字型大小
+                            },
+                            "horizontalAlignment": "CENTER",
+                            "verticalAlignment": "MIDDLE"
                         }
                     },
                     "fields": "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment)"
                 }
             },
-            # 一般資料列對齊
+            
+            # 一般資料列格式
             {
                 "repeatCell": {
                     "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": footnote_row_idx},
@@ -94,6 +90,7 @@ def sync_to_specified_sheet(df):
                     "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment)"
                 }
             },
+            
             # 備註列格式
             {
                 "repeatCell": {
@@ -119,19 +116,14 @@ def send_stats_email(df):
         msg['Subject'] = f"📊 [自動通知] 交通違規統計報表 - {pd.Timestamp.now().strftime('%Y-%m-%d')}"
         msg['From'] = f"交通統計系統 <{mail_user}>"
         msg['To'] = receiver
-        
-        # 生成 HTML 並包含多層標題
         html_table = df.to_html(border=1)
         body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
         msg.attach(MIMEText(body, 'html'))
-        
-        # 附件 Excel
         excel_buffer = io.BytesIO()
         df.to_excel(excel_buffer)
         part = MIMEApplication(excel_buffer.getvalue(), Name="Traffic_Stats.xlsx")
         part['Content-Disposition'] = 'attachment; filename="Traffic_Stats.xlsx"'
         msg.attach(part)
-        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(mail_user, mail_pass)
             server.send_message(msg)
@@ -195,15 +187,15 @@ if file_period and file_year:
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
-        # 合計列
+        # 合計列置頂
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 註解列
+        # 新增備註
         rows.append([FOOTNOTE_TEXT] + [""] * 9)
         
-        # 多層標題
+        # 定義多層標題
         header_top = ['統計期間', '本期', '本期', '本年累計', '本年累計', '去年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
         header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
         
@@ -216,8 +208,8 @@ if file_period and file_year:
         st.divider()
         if st.button("🚀 同步雲端並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 雲端同步成功！前三列格式已統一。")
+                st.info(f"☁️ 雲端同步成功！前三列格式已參照合計列完成統一。")
             
             if send_stats_email(df_final):
                 st.balloons()
-                st.info("📧 報表已寄送至信箱。")
+                st.info("📧 報表已寄送。")
