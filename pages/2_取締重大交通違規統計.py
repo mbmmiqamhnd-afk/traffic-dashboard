@@ -35,7 +35,14 @@ def sync_to_specified_sheet(df):
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
-        data_list = [df.columns.values.tolist()] + df.values.tolist()
+        
+        # 處理多層索引：同步到試算表時，將兩層標題合併成兩列
+        headers = df.columns.levels
+        codes = df.columns.codes
+        top_row = [headers[0][i] for i in codes[0]]
+        bottom_row = [headers[1][i] for i in codes[1]]
+        data_list = [top_row, bottom_row] + df.values.tolist()
+        
         ws.clear()
         ws.update(range_name='A1', values=data_list)
         return True
@@ -53,12 +60,14 @@ def send_stats_email(df):
         msg['Subject'] = f"📊 [自動通知] 交通違規統計報表 - {pd.Timestamp.now().strftime('%Y-%m-%d')}"
         msg['From'] = f"交通統計系統 <{mail_user}>"
         msg['To'] = receiver
-        html_table = df.to_html(index=False, border=1)
+        
+        # 寄信時轉換為 HTML 表格，Pandas 會自動處理多層索引合併儲存格
+        html_table = df.to_html(border=1)
         body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
         msg.attach(MIMEText(body, 'html'))
         
         excel_buffer = io.BytesIO()
-        df.to_excel(excel_buffer, index=False)
+        df.to_excel(excel_buffer)
         part = MIMEApplication(excel_buffer.getvalue(), Name="Traffic_Stats.xlsx")
         part['Content-Disposition'] = 'attachment; filename="Traffic_Stats.xlsx"'
         msg.attach(part)
@@ -69,7 +78,7 @@ def send_stats_email(df):
         return True
     except: return False
 
-# --- 4. 解析邏輯 ---
+# --- 4. 解析邏輯 (保持不變) ---
 def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
     try:
         content = uploaded_file.getvalue()
@@ -93,7 +102,7 @@ def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
     except: return None
 
 # --- 5. 主介面 ---
-st.title("🚔 交通統計自動化系統 (雲端同步版)")
+st.title("🚔 交通統計自動化系統 (多層索引版)")
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
@@ -131,19 +140,17 @@ if file_period and file_year:
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 【解決方案】使用零寬度空格 (\u200b) 區分重複標題
-        # 人眼看起來一樣，但程式會認為它們是唯一的
-        new_columns = [
-            '取締方式', 
-            '當場攔停', '逕行舉發',              # 第一組
-            '當場攔停\u200b', '逕行舉發\u200b',    # 第二組 (加一個隱形空格)
-            '當場攔停\u200b\u200b', '逕行舉發\u200b\u200b', # 第三組 (加兩個隱形空格)
-            '增減比較', '目標值', '達成率'
-        ]
+        # 【修改重點】建立多層索引 (MultiIndex)
+        header_top = ['統計期間'] + ['本期']*2 + ['本年累計']*2 + ['去年累計']*2 + ['增減比較', '目標值', '達成率']
+        header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
         
-        df_final = pd.DataFrame(rows, columns=new_columns)
+        # 使用 MultiIndex.from_arrays 建立層級標題
+        multi_col = pd.MultiIndex.from_arrays([header_top, header_bottom])
+        
+        df_final = pd.DataFrame(rows, columns=multi_col)
         
         st.success("✅ 解析成功！")
+        # 顯示多層索引表格
         st.dataframe(df_final, use_container_width=True)
 
         st.divider()
