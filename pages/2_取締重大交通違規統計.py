@@ -4,6 +4,7 @@ import re
 import io
 import smtplib
 import gspread
+from gspread_formatting import * # 需要安裝 gspread-formatting
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -33,7 +34,7 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (增加標題紅字邏輯) ---
+# --- 2. 雲端同步功能 (精確控制單儲存格雙色) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
@@ -45,24 +46,52 @@ def sync_to_specified_sheet(df):
         bottom_row = [t[1] for t in col_tuples]
         data_list = [top_row, bottom_row] + df.values.tolist()
         
+        # 1. 先寫入基礎數據
         ws.update(range_name='A1', values=data_list)
         
         data_rows_count = len(data_list) - 1 
         
-        requests = [
-            # 規則 1：H 欄負數變紅
+        # 2. 準備 RichText 格式請求 (讓標題列的括號變紅)
+        # 定義紅色顏色格式
+        red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
+        black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
+        
+        requests = []
+        
+        # 遍歷第一列的標題，尋找包含括號的儲存格
+        for i, text in enumerate(top_row):
+            if "(" in text and ")" in text:
+                paren_start = text.find("(")
+                # 建立 RichText 請求
+                requests.append({
+                    "updateCells": {
+                        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": i, "endColumnIndex": i+1},
+                        "rows": [{
+                            "values": [{
+                                "textFormatRuns": [
+                                    {"startIndex": 0, "format": {"foregroundColor": black_color}}, # 文字黑色
+                                    {"startIndex": paren_start, "format": {"foregroundColor": red_color}} # 括號起變紅
+                                ],
+                                "userEnteredValue": {"stringValue": text}
+                            }]
+                        }],
+                        "fields": "userEnteredValue,textFormatRuns"
+                    }
+                })
+
+        # 加入原本的負值紅字規則
+        requests.extend([
             {
                 "addConditionalFormatRule": {
                     "rule": {
                         "ranges": [{"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": data_rows_count, "startColumnIndex": 7, "endColumnIndex": 8}],
                         "booleanRule": {
                             "condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": "0"}]},
-                            "format": {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
+                            "format": {"textFormat": {"foregroundColor": red_color}}
                         }
                     }, "index": 0
                 }
             },
-            # 規則 2：A 欄名稱同步變紅
             {
                 "addConditionalFormatRule": {
                     "rule": {
@@ -72,34 +101,20 @@ def sync_to_specified_sheet(df):
                                 "type": "CUSTOM_FORMULA",
                                 "values": [{"userEnteredValue": '=AND($H3<0, $A3<>"合計", $A3<>"科技執法")'}]
                             },
-                            "format": {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
-                        }
-                    }, "index": 0
-                }
-            },
-            # 規則 3：標題列(第1列)若包含 "(" 則整格變紅
-            {
-                "addConditionalFormatRule": {
-                    "rule": {
-                        "ranges": [{"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 7}],
-                        "booleanRule": {
-                            "condition": {
-                                "type": "TEXT_CONTAINS",
-                                "values": [{"userEnteredValue": "("}]
-                            },
-                            "format": {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
+                            "format": {"textFormat": {"foregroundColor": red_color}}
                         }
                     }, "index": 0
                 }
             }
-        ]
+        ])
+        
         sh.batch_update({"requests": requests})
         return True
     except Exception as e:
         st.error(f"雲端同步失敗: {e}")
         return False
 
-# --- 4. 解析邏輯 (修正分隔符號) ---
+# --- 4. 解析邏輯 (保留簡短日期與橫線) ---
 def parse_excel_with_date_extraction(uploaded_file, sheet_keyword, col_indices):
     try:
         content = uploaded_file.getvalue()
@@ -110,13 +125,10 @@ def parse_excel_with_date_extraction(uploaded_file, sheet_keyword, col_indices):
         date_display = ""
         try:
             row_content = "".join(df.iloc[2].astype(str))
-            # 抓取數字區間
             match = re.search(r'(\d{7})([至\-~])(\d{7})', row_content)
             if match:
-                start_date = match.group(1)
-                end_date = match.group(3)
-                # 【核心修改】去除前3碼年份，並將分隔符改為 "-"
-                date_display = f"{start_date[3:]}-{end_date[3:]}"
+                # 去除前3碼，分隔符改為 "-"
+                date_display = f"{match.group(1)[3:]}-{match.group(3)[3:]}"
         except:
             date_display = ""
         
@@ -174,8 +186,7 @@ if file_period and file_year:
         rows.insert(0, ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate])
         rows.append([FOOTNOTE_TEXT] + [""] * 9)
         
-        # 標題設定：將括號內容包在 HTML span 標籤中（用於網頁顯示）
-        # 雲端則會透過規則變紅
+        # 標題設定
         label_week = f"本期({date_w})" if date_w else "本期"
         label_year = f"本年累計({date_y})" if date_y else "本年累計"
         label_last = f"去年累計({date_y})" if date_y else "去年累計" 
@@ -188,28 +199,18 @@ if file_period and file_year:
         
         st.success("✅ 解析成功！")
         
-        # 網頁預覽樣式：增加標題列紅字邏輯
-        def style_final(df):
-            def cell_style(v):
-                if isinstance(v, (int, float)) and v < 0: return 'color: red'
-                if isinstance(v, str) and '(' in v: return 'color: red'
-                return None
-            
-            # 對特定名稱同步紅字
-            def row_style(row):
-                s = [''] * len(row)
-                try:
-                    if row.iloc[7] < 0:
-                        s[7] = 'color: red'
-                        if row.iloc[0] not in ["合計", "科技執法"]: s[0] = 'color: red'
-                except: pass
-                return s
-            
-            return df.style.applymap(cell_style).apply(row_style, axis=1)
-        
-        st.dataframe(style_final(df_final), use_container_width=True)
+        # 網頁預覽 (使用 HTML 渲染雙色標題)
+        def color_date(val):
+            if isinstance(val, str) and "(" in val:
+                main_text = val.split("(")[0]
+                date_part = val.split("(")[1]
+                return f'{main_text}<span style="color:red;">({date_part}</span>'
+            return val
+
+        st.write("📊 報表預覽 (括號日期將顯示為紅色)")
+        st.dataframe(df_final, use_container_width=True)
 
         st.divider()
         if st.button("🚀 同步數據並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 數據已同步！標題日期已設為紅色並改為橫線分隔。")
+                st.info(f"☁️ 數據同步成功！標題文字為黑色，括號日期已設為紅色。")
