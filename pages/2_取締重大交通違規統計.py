@@ -8,7 +8,11 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
-# --- 1. 定義識別與目標 ---
+# ==========================================
+# 0. 設定區 (參照原代碼網址)
+# ==========================================
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
+
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 TARGETS = {'聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 6006}
 
@@ -25,8 +29,27 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 寄信與同步功能 (維持 v85 穩定版) ---
-def send_real_email(df):
+# --- 2. 雲端同步功能 (同步至指定網址) ---
+def sync_to_specified_sheet(df):
+    try:
+        # 使用現代化連線方式
+        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+        # 開啟指定的 URL
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        ws = sh.get_worksheet(0)
+        
+        # 轉換 DataFrame 為清單格式
+        data_list = [df.columns.values.tolist()] + df.values.tolist()
+        
+        ws.clear()
+        ws.update(range_name='A1', values=data_list)
+        return True
+    except Exception as e:
+        st.error(f"雲端同步失敗: {e}")
+        return False
+
+# --- 3. 寄信功能 ---
+def send_stats_email(df):
     try:
         mail_user = st.secrets["email"]["user"]
         mail_pass = st.secrets["email"]["password"]
@@ -49,17 +72,7 @@ def send_real_email(df):
         return True
     except: return False
 
-def sync_to_sheets(df):
-    try:
-        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-        sh = gc.open("交通違規統計表")
-        ws = sh.get_worksheet(0)
-        ws.clear()
-        ws.update([df.columns.values.tolist()] + df.values.tolist())
-        return True
-    except: return False
-
-# --- 3. 解析邏輯 ---
+# --- 4. 解析邏輯 ---
 def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
     try:
         content = uploaded_file.getvalue()
@@ -82,8 +95,8 @@ def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
         return unit_data
     except: return None
 
-# --- 4. 主介面 ---
-st.title("🚔 交通統計自動化系統 (v86)")
+# --- 5. 主介面 ---
+st.title("🚔 交通統計自動化系統 (雲端同步版)")
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
@@ -104,35 +117,32 @@ if file_period and file_year:
             ys_sum, ls_sum = y['stop'] + y['cit'], l['stop'] + l['cit']
             tgt = TARGETS.get(u, 0)
             
-            # --- 警備隊特殊處理邏輯 ---
             if u == '警備隊':
-                diff_display = "—"
-                rate_display = "—"
+                diff_display, rate_display = "—", "—"
             else:
                 diff_val = ys_sum - ls_sum
                 diff_display = int(diff_val)
                 rate_display = f"{(ys_sum/tgt):.1%}" if tgt > 0 else "0%"
-                # 僅非警備隊的數據才計入合計的比較值與目標值 (若警備隊目標為0則不影響)
-                t['diff'] += (ys_sum - ls_sum)
+                t['diff'] += diff_val
                 t['tgt'] += tgt
             
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
-            
-            # 基礎數值不論是否為警備隊都計入合計
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
-        # 合計列
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
         df_final = pd.DataFrame(rows, columns=['單位', '本期攔停', '本期逕行', '本年攔停', '本年逕行', '去年攔停', '去年逕行', '增減比較', '目標值', '達成率'])
-        st.success("✅ 解析成功！(警備隊已排除比較)")
+        st.success("✅ 解析成功！")
         st.dataframe(df_final, use_container_width=True)
 
         st.divider()
-        if st.button("🚀 同步並寄出報表", type="primary"):
-            if sync_to_sheets(df_final): st.info("☁️ 雲端試算表更新成功！")
-            if send_real_email(df_final):
+        if st.button("🚀 同步雲端並寄出報表", type="primary"):
+            # 同步至指定的 GOOGLE_SHEET_URL
+            if sync_to_specified_sheet(df_final): 
+                st.info(f"☁️ 已成功同步至雲端試算表")
+            
+            if send_stats_email(df_final):
                 st.balloons()
                 st.info("📧 報表已寄送至 mbmmiqamhnd@gmail.com")
