@@ -1,63 +1,57 @@
-# --- 修正後的核心計算邏輯 ---
+# --- 主流程開始 ---
+uploaded_files = st.file_uploader("請上傳 3 個報表檔案", accept_multiple_files=True)
 
-# 1. 定義 A1 計算函式 (傳入 3 個資料集與派出所清單)
-def build_a1_final(wk, cur, lst, stations):
-    col_name = 'A1_Deaths'
-    # 合併：本期 + 本年累計 + 去年累計
-    m = pd.merge(wk[['Station_Short', col_name]], 
-                 cur[['Station_Short', col_name]], on='Station_Short', suffixes=('_wk', '_cur'))
-    m = pd.merge(m, lst[['Station_Short', col_name]], on='Station_Short').rename(columns={col_name: col_name+'_lst'})
-    
-    # 篩選派出所
-    m = m[m['Station_Short'].isin(stations)].copy()
-    
-    # 計算合計列
-    total_row = m.select_dtypes(include='number').sum().to_dict()
-    total_row['Station_Short'] = '合計'
-    m = pd.concat([pd.DataFrame([total_row]), m], ignore_index=True)
-    
-    # 計算比較 (本年累計 - 去年累計)
-    m['Diff'] = m[col_name+'_cur'] - m[col_name+'_lst']
-    
-    # 整理欄位順序 (確保共 5 欄)
-    m = m[['Station_Short', col_name+'_wk', col_name+'_cur', col_name+'_lst', 'Diff']]
-    return m
+if uploaded_files and len(uploaded_files) == 3:
+    with st.spinner("⚡ 處理中..."):
+        try:
+            # 1. 解析檔案與日期 (維持原本邏輯)
+            files_meta = []
+            for f in uploaded_files:
+                f.seek(0)
+                df = parse_raw(f)
+                # 偵測日期 (範例: 112/01/01)
+                dates = re.findall(r'(\d{3})[./](\d{1,2})[./](\d{1,2})', str(df.iloc[:5, :3].values))
+                if len(dates) >= 2:
+                    d_str = f"{int(dates[0][1]):02d}{int(dates[1][1]):02d}-{int(dates[1][1]):02d}{int(dates[1][2]):02d}"
+                    files_meta.append({
+                        'df': clean_data(df), 
+                        'year': int(dates[1][0]), 
+                        'date_range': d_str, 
+                        'is_cumu': (int(dates[0][1]) == 1)
+                    })
 
-# 2. 定義 A2 計算函式 (傳入 3 個資料集與派出所清單)
-def build_a2_final(wk, cur, lst, stations):
-    col_name = 'A2_Injuries'
-    # 合併
-    m = pd.merge(wk[['Station_Short', col_name]], 
-                 cur[['Station_Short', col_name]], on='Station_Short', suffixes=('_wk', '_cur'))
-    m = pd.merge(m, lst[['Station_Short', col_name]], on='Station_Short').rename(columns={col_name: col_name+'_lst'})
-    
-    # 篩選派出所
-    m = m[m['Station_Short'].isin(stations)].copy()
-    
-    # 計算合計列
-    total_row = m.select_dtypes(include='number').sum().to_dict()
-    total_row['Station_Short'] = '合計'
-    m = pd.concat([pd.DataFrame([total_row]), m], ignore_index=True)
-    
-    # 計算比較 (Diff) 與 百分比 (Pct)
-    m['Diff'] = m[col_name+'_cur'] - m[col_name+'_lst']
-    m['Pct'] = m.apply(lambda x: f"{(x['Diff']/x[col_name+'_lst']):.2%}" if x[col_name+'_lst'] != 0 else "0.00%", axis=1)
-    
-    # 插入「前期」占位符，確保數值不偏移 (現在欄位順序：0:單位, 1:本期, 2:前期, 3:本年, 4:去年, 5:比較, 6:比例)
-    m.insert(2, 'Prev', '-') 
-    
-    # 重新整理順序 (確保共 7 欄)
-    m = m[['Station_Short', col_name+'_wk', 'Prev', col_name+'_cur', col_name+'_lst', 'Diff', 'Pct']]
-    return m
+            # 🛑 關鍵檢查：確保有 3 個成功解析的檔案
+            if len(files_meta) < 3:
+                st.error(f"❌ 解析失敗：僅偵測到 {len(files_meta)} 個有效日期區間。請確認報表內含民國年月日格式。")
+                st.stop()
 
-# --- 在主程式邏輯中使用 ---
-# 當檔案解析完成後，呼叫方式如下：
-# (假設 df_wk, df_cur, df_lst 已經解析為含有 'df' 鍵值的字典)
+            # 2. 變數分配 (先初始化為 None)
+            df_wk = df_cur = df_lst = None
+            
+            # 排序：年份大到小
+            files_meta.sort(key=lambda x: x['year'], reverse=True)
+            cur_year = files_meta[0]['year']
+            
+            # 分配邏輯
+            try:
+                df_wk = [f for f in files_meta if f['year'] == cur_year and not f['is_cumu']][0]
+                df_cur = [f for f in files_meta if f['year'] == cur_year and f['is_cumu']][0]
+                df_lst = [f for f in files_meta if f['year'] < cur_year][0]
+            except IndexError:
+                st.error("❌ 檔案分類失敗：需包含「今年本期」、「今年累計」與「去年同期累計」各一份。")
+                st.stop()
 
-stations = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
+            # 3. 呼叫函式生成結果 (傳入 df_wk['df'] 等)
+            stations = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
+            
+            a1_res = build_a1_final(df_wk['df'], df_cur['df'], df_lst['df'], stations)
+            a1_res.columns = ['統計期間', f'本期({df_wk["date_range"]})', f'本年累計({df_cur["date_range"]})', f'去年累計({df_lst["date_range"]})', '比較']
+            
+            a2_res = build_a2_final(df_wk['df'], df_cur['df'], df_lst['df'], stations)
+            a2_res.columns = ['統計期間', f'本期({df_wk["date_range"]})', '前期', f'本年累計({df_cur["date_range"]})', f'去年累計({df_lst["date_range"]})', '比較', '增減比例']
 
-a1_res = build_a1_final(df_wk['df'], df_cur['df'], df_lst['df'], stations)
-a1_res.columns = ['統計期間', f'本期({df_wk["date_range"]})', f'本年累計({df_cur["date_range"]})', f'去年累計({df_lst["date_range"]})', '比較']
+            # --- 後續 Excel 產製與同步邏輯 ---
+            # ... (略)
 
-a2_res = build_a2_final(df_wk['df'], df_cur['df'], df_lst['df'], stations)
-a2_res.columns = ['統計期間', f'本期({df_wk["date_range"]})', '前期', f'本年累計({df_cur["date_range"]})', f'去年累計({df_lst["date_range"]})', '比較', '增減比例']
+        except Exception as e:
+            st.error(f"分析失敗，詳細錯誤：{e}")
