@@ -35,10 +35,7 @@ def sync_to_specified_sheet(df):
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
-        
-        # 轉換 DataFrame 為清單格式
         data_list = [df.columns.values.tolist()] + df.values.tolist()
-        
         ws.clear()
         ws.update(range_name='A1', values=data_list)
         return True
@@ -129,16 +126,13 @@ if file_period and file_year:
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
-        # 建立合計列
+        # 建立合計列 (保持名稱為 '合計')
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 建立 DataFrame
-        df_final = pd.DataFrame(rows, columns=['單位', '本期攔停', '本期逕行', '本年攔停', '本年逕行', '去年攔停', '去年逕行', '增減比較', '目標值', '達成率'])
-        
-        # 【修改重點】將合計列的名稱改為「取締方式」
-        df_final.iloc[0, 0] = "取締方式"
+        # 【修改重點 1】將欄位名稱從 '單位' 改為 '取締方式'
+        df_final = pd.DataFrame(rows, columns=['取締方式', '本期攔停', '本期逕行', '本年攔停', '本年逕行', '去年攔停', '去年逕行', '增減比較', '目標值', '達成率'])
         
         st.success("✅ 解析成功！")
         st.dataframe(df_final, use_container_width=True)
