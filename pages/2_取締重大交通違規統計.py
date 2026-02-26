@@ -82,7 +82,7 @@ def sync_to_specified_sheet(df):
         st.error(f"雲端同步失敗: {e}")
         return False
 
-# --- 4. 解析邏輯 (更新日期抓取 Regex) ---
+# --- 4. 解析邏輯 (新增去除年份邏輯) ---
 def parse_excel_with_date_extraction(uploaded_file, sheet_keyword, col_indices):
     try:
         content = uploaded_file.getvalue()
@@ -90,17 +90,20 @@ def parse_excel_with_date_extraction(uploaded_file, sheet_keyword, col_indices):
         target_sheet = next((s for s in xl.sheet_names if sheet_keyword in s), xl.sheet_names[0])
         df = pd.read_excel(xl, sheet_name=target_sheet, header=None)
         
-        date_str = ""
+        date_display = ""
         try:
-            # 抓取第 3 列 (Index 2)
             row_content = "".join(df.iloc[2].astype(str))
-            # 更新後的 Regex：支援「1150219至1150225」這種格式
-            # 匹配 7 位數字 + [至-~] + 7 位數字
-            match = re.search(r'(\d{7}[至\-~]\d{7})', row_content)
+            # 抓取原始格式，如 1150219至1150225
+            match = re.search(r'(\d{7})([至\-~])(\d{7})', row_content)
             if match:
-                date_str = match.group(1)
+                start_date = match.group(1) # 1150219
+                separator = match.group(2)  # 至
+                end_date = match.group(3)   # 1150225
+                
+                # 【核心修改】去除前 3 碼
+                date_display = f"{start_date[3:]}{separator}{end_date[3:]}"
         except:
-            date_str = ""
+            date_display = ""
         
         unit_data = {}
         for _, row in df.iterrows():
@@ -115,7 +118,7 @@ def parse_excel_with_date_extraction(uploaded_file, sheet_keyword, col_indices):
                 else: 
                     unit_data[u]['stop'] += stop_val
                     unit_data[u]['cit'] += cit_val
-        return unit_data, date_str
+        return unit_data, date_display
     except: return None, ""
 
 # --- 5. 主介面 ---
@@ -156,7 +159,7 @@ if file_period and file_year:
         rows.insert(0, ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate])
         rows.append([FOOTNOTE_TEXT] + [""] * 9)
         
-        # 標題加上日期
+        # 標題套用處理後的簡短日期
         label_week = f"本期({date_w})" if date_w else "本期"
         label_year = f"本年累計({date_y})" if date_y else "本年累計"
         label_last = f"去年累計({date_y})" if date_y else "去年累計" 
@@ -183,4 +186,4 @@ if file_period and file_year:
         st.divider()
         if st.button("🚀 同步數據並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 數據已同步！")
+                st.info(f"☁️ 數據已同步！日期已精簡顯示。")
