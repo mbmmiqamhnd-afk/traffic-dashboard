@@ -1,3 +1,4 @@
+gspread-formatting
 streamlit
 pandas
 openpyxl
@@ -9,3 +10,4 @@ reportlab
 pdf2image
 python-pptx
 matplotlib
+
