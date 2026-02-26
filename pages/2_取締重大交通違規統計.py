@@ -14,7 +14,10 @@ from email.mime.application import MIMEApplication
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
-TARGETS = {'聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 6006}
+TARGETS = {
+    '聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, 
+    '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 6006
+}
 FOOTNOTE_TEXT = "重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」"
 
 def get_standard_unit(raw_name):
@@ -30,61 +33,23 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 ---
+# --- 2. 雲端同步功能 (僅覆蓋數據，不觸發任何格式指令) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 準備寫入內容：兩層標題 + 數據列
+        # 準備資料內容 (包含兩層標題與數據列)
         col_tuples = df.columns.tolist()
         top_row = [t[0] for t in col_tuples]
         bottom_row = [t[1] for t in col_tuples]
         data_list = [top_row, bottom_row] + df.values.tolist()
         
-        ws.clear()
+        # 【核心修正】不使用 ws.clear()，直接從 A1 開始覆寫數據
+        # 這樣 Google 試算表原本設定的合併儲存格、框線、顏色都會被保留
         ws.update(range_name='A1', values=data_list)
         
-        # 備註列的索引
-        footnote_row_idx = len(data_list) - 1
-        
-        # 格式指令集
-        requests = [
-            {"unmergeCells": {"range": {"sheetId": ws.id}}},
-            # A1:A2 合併 (取締方式)
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
-            # 第一層標題水平合併
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 3, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 5, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
-            # 右側三項垂直合併
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 8, "endColumnIndex": 9}, "mergeType": "MERGE_ALL"}},
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 9, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
-            # 備註列合併 A-J 欄
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
-            
-            # 全體格式設定 (置中對齊)
-            {"repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": footnote_row_idx},
-                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment)"
-            }},
-            # 標題加粗
-            {"repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2},
-                "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
-                "fields": "userEnteredFormat(textFormat)"
-            }},
-            # 備註列靠左斜體
-            {"repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1},
-                "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT", "textFormat": {"italic": True}}},
-                "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
-            }}
-        ]
-        sh.batch_update({"requests": requests})
         return True
     except Exception as e:
         st.error(f"雲端同步失敗: {e}")
@@ -176,10 +141,10 @@ if file_period and file_year:
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 新增備註列
+        # 新增註解列
         rows.append([FOOTNOTE_TEXT] + [""] * 9)
         
-        # 定義多層標題
+        # 多層標題
         header_top = ['統計期間', '本期', '本期', '本年累計', '本年累計', '去年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
         header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
         
@@ -190,9 +155,9 @@ if file_period and file_year:
         st.dataframe(df_final, use_container_width=True)
 
         st.divider()
-        if st.button("🚀 同步雲端並寄出報表", type="primary"):
+        if st.button("🚀 同備份數據並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 雲端同步成功！")
+                st.info(f"☁️ 數據已同步！您的雲端試算表格式（顏色、合併、對齊）已被保留。")
             
             if send_stats_email(df_final):
                 st.balloons()
