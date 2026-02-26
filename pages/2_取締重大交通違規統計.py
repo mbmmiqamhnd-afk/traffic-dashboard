@@ -33,7 +33,7 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (同步標題與合計列格式) ---
+# --- 2. 雲端同步功能 (所有列格式統一) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
@@ -64,15 +64,15 @@ def sync_to_specified_sheet(df):
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 9, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
             
-            # --- 核心：第 1, 2, 3 列 統一格式 (加粗、置中、字體 12) ---
+            # --- 核心修改：所有資料列 (含標題與合計) 統一格式，不加粗、不放大 ---
             {
                 "repeatCell": {
-                    "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10},
+                    "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": footnote_row_idx, "startColumnIndex": 0, "endColumnIndex": 10},
                     "cell": {
                         "userEnteredFormat": {
                             "textFormat": {
-                                "bold": True,
-                                "fontSize": 12
+                                "bold": False,
+                                "fontSize": 10  # 使用標準字型大小
                             },
                             "horizontalAlignment": "CENTER",
                             "verticalAlignment": "MIDDLE"
@@ -82,20 +82,11 @@ def sync_to_specified_sheet(df):
                 }
             },
             
-            # 一般資料列格式 (第 4 列開始)
-            {
-                "repeatCell": {
-                    "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": footnote_row_idx},
-                    "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
-                    "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment)"
-                }
-            },
-            
-            # 備註列格式 (靠左、斜體)
+            # 備註列格式 (維持靠左、斜體)
             {
                 "repeatCell": {
                     "range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1},
-                    "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT", "textFormat": {"italic": True}}},
+                    "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT", "textFormat": {"italic": True, "fontSize": 10}}},
                     "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
                 }
             }
@@ -208,7 +199,7 @@ if file_period and file_year:
         st.divider()
         if st.button("🚀 同步雲端並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 雲端同步成功！前三列格式已統一。")
+                st.info(f"☁️ 雲端同步成功！全表格式已統一。")
             
             if send_stats_email(df_final):
                 st.balloons()
