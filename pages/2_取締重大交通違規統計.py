@@ -33,22 +33,56 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (僅覆蓋數據，不觸發任何格式指令) ---
+# --- 2. 雲端同步功能 (僅更新數據並設定負值紅字) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 準備資料內容 (包含兩層標題與數據列)
+        # 準備數據
         col_tuples = df.columns.tolist()
         top_row = [t[0] for t in col_tuples]
         bottom_row = [t[1] for t in col_tuples]
         data_list = [top_row, bottom_row] + df.values.tolist()
         
-        # 【核心修正】不使用 ws.clear()，直接從 A1 開始覆寫數據
-        # 這樣 Google 試算表原本設定的合併儲存格、框線、顏色都會被保留
+        # 僅更新數據，保留原有格式
         ws.update(range_name='A1', values=data_list)
+        
+        # 設定「本年與去年同期比較」欄位（H 欄，Index 為 7）的負值紅字規則
+        # 範圍從第 3 列（Index 2）開始到備註列之前
+        data_rows_count = len(data_list) - 1 # 排除最後一列備註
+        
+        requests = [
+            {
+                "addConditionalFormatRule": {
+                    "rule": {
+                        "ranges": [
+                            {
+                                "sheetId": ws.id,
+                                "startRowIndex": 2,      # 從合計列開始
+                                "endRowIndex": data_rows_count, 
+                                "startColumnIndex": 7,   # H 欄
+                                "endColumnIndex": 8
+                            }
+                        ],
+                        "booleanRule": {
+                            "condition": {
+                                "type": "NUMBER_LESS",
+                                "values": [{"userEnteredValue": "0"}]
+                            },
+                            "format": {
+                                "textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}
+                            }
+                        }
+                    },
+                    "index": 0
+                }
+            }
+        ]
+        
+        # 執行條件格式更新（這不會影響你原本手動設定的合併或框線）
+        sh.batch_update({"requests": requests})
         
         return True
     except Exception as e:
@@ -65,14 +99,27 @@ def send_stats_email(df):
         msg['Subject'] = f"📊 [自動通知] 交通違規統計報表 - {pd.Timestamp.now().strftime('%Y-%m-%d')}"
         msg['From'] = f"交通統計系統 <{mail_user}>"
         msg['To'] = receiver
-        html_table = df.to_html(border=1)
+        
+        # 網頁與郵件表格也加入負值紅字樣式
+        def color_negative_red(val):
+            try:
+                color = 'red' if float(val) < 0 else 'black'
+            except:
+                color = 'black'
+            return f'color: {color}'
+        
+        # 僅針對比較欄位套用樣式
+        html_table = df.style.applymap(color_negative_red, subset=df.columns[7:8]).to_html(border=1)
+        
         body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
         msg.attach(MIMEText(body, 'html'))
+        
         excel_buffer = io.BytesIO()
         df.to_excel(excel_buffer)
         part = MIMEApplication(excel_buffer.getvalue(), Name="Traffic_Stats.xlsx")
         part['Content-Disposition'] = 'attachment; filename="Traffic_Stats.xlsx"'
         msg.attach(part)
+        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(mail_user, mail_pass)
             server.send_message(msg)
@@ -152,12 +199,17 @@ if file_period and file_year:
         df_final = pd.DataFrame(rows, columns=multi_col)
         
         st.success("✅ 解析成功！")
-        st.dataframe(df_final, use_container_width=True)
+        
+        # 網頁預覽也加上紅字
+        def style_negative(v):
+            return 'color: red' if isinstance(v, (int, float)) and v < 0 else None
+        
+        st.dataframe(df_final.style.applymap(style_negative, subset=df_final.columns[7:8]), use_container_width=True)
 
         st.divider()
-        if st.button("🚀 同備份數據並寄出報表", type="primary"):
+        if st.button("🚀 同步數據並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 數據已同步！您的雲端試算表格式（顏色、合併、對齊）已被保留。")
+                st.info(f"☁️ 數據已同步！比較欄位的負數已自動設為紅字。")
             
             if send_stats_email(df_final):
                 st.balloons()
