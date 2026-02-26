@@ -126,13 +126,23 @@ if file_period and file_year:
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
-        # 建立合計列 (保持名稱為 '合計')
+        # 建立合計列
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 【修改重點 1】將欄位名稱從 '單位' 改為 '取締方式'
-        df_final = pd.DataFrame(rows, columns=['取締方式', '本期攔停', '本期逕行', '本年攔停', '本年逕行', '去年攔停', '去年逕行', '增減比較', '目標值', '達成率'])
+        # 【修改重點】移除「本期」、「本年」、「去年」字眼
+        # 注意：Pandas 允許欄位名稱重複，但為了避免後續處理困擾，這裡直接定義名稱串列
+        new_columns = [
+            '取締方式', 
+            '當場攔停', '逕行舉發', # 原本的本期
+            '當場攔停', '逕行舉發', # 原本的本年
+            '當場攔停', '逕行舉發', # 原本的去年
+            '增減比較', '目標值', '達成率'
+        ]
+        
+        df_final = pd.DataFrame(rows)
+        df_final.columns = new_columns # 強制覆蓋標題
         
         st.success("✅ 解析成功！")
         st.dataframe(df_final, use_container_width=True)
