@@ -29,25 +29,30 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (加入自動格式化與合併儲存格) ---
+# --- 2. 雲端同步功能 (修正合併衝突版本) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 1. 準備資料與寫入
+        # 準備資料
         col_tuples = df.columns.tolist()
         top_row = [t[0] for t in col_tuples]
         bottom_row = [t[1] for t in col_tuples]
         data_list = [top_row, bottom_row] + df.values.tolist()
         
+        # 先清除資料，避免舊資料干擾
         ws.clear()
         ws.update(range_name='A1', values=data_list)
         
-        # 2. 執行格式化指令 (合併儲存格與置中)
+        # 修正後的格式指令
         requests = [
-            # 合併 A1:A2 (統計期間/取締方式)
+            # 1. 先解除該工作表的所有合併 (防止 400 錯誤)
+            {"unmergeCells": {"range": {"sheetId": ws.id}}},
+            
+            # 2. 重新執行合併單元格
+            # 合併 A1:A2 (取締方式)
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
             # 合併 B1:C1 (本期)
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
@@ -55,13 +60,19 @@ def sync_to_specified_sheet(df):
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 3, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
             # 合併 F1:G1 (去年累計)
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 5, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
-            # 合併 H1:H2 (比較)、I1:I2 (目標)、J1:J2 (達成率)
+            # 合併 H1:H2 (本年與去年比較)、I1:I2 (目標值)、J1:J2 (達成率)
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 8, "endColumnIndex": 9}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 9, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
-            # 全表文字置中
+            
+            # 3. 設定置中對齊與字體加粗標題
             {"repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": len(data_list)},
+                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2},
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "textFormat": {"bold": True}}},
+                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+            }},
+            {"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": len(data_list)},
                 "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
                 "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment)"
             }}
@@ -122,7 +133,7 @@ def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
     except: return None
 
 # --- 5. 主介面 ---
-st.title("🚔 交通統計自動化系統 (雲端同步增強版)")
+st.title("🚔 交通統計自動化系統 (格式修復版)")
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
@@ -171,7 +182,7 @@ if file_period and file_year:
         st.divider()
         if st.button("🚀 同步雲端並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 雲端同步成功！已完成自動合併儲存格與置中對齊。")
+                st.info(f"☁️ 雲端同步成功！已處理合併儲存格衝突。")
             
             if send_stats_email(df_final):
                 st.balloons()
