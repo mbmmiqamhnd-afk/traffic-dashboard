@@ -36,7 +36,7 @@ def sync_to_specified_sheet(df):
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 處理多層標題寫入
+        # 標題列
         top_row = df.columns.get_level_values(0).tolist()
         bottom_row = df.columns.get_level_values(1).tolist()
         data_list = [top_row, bottom_row] + df.values.tolist()
@@ -59,7 +59,7 @@ def send_stats_email(df):
         msg['From'] = f"交通統計系統 <{mail_user}>"
         msg['To'] = receiver
         
-        # Pandas to_html 會自動處理合併單元格
+        # to_html 會自動根據 MultiIndex 生成合併儲存格的 HTML 語法
         html_table = df.to_html(border=1)
         body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
         msg.attach(MIMEText(body, 'html'))
@@ -138,8 +138,8 @@ if file_period and file_year:
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 【修改重點】多層標題結構設計
-        # 第一層 (大標題)：負責合併單元格
+        # 【修改重點】多層標題 (MultiIndex) 設計
+        # 第一層標題：定義大群組與垂直合併的標題名稱
         header_top = [
             '統計期間', 
             '本期', '本期', 
@@ -150,7 +150,7 @@ if file_period and file_year:
             '達成率'               # 垂直合併
         ]
         
-        # 第二層 (子標題)：垂直合併的地方留空
+        # 第二層標題：垂直合併的位置設為空字串
         header_bottom = [
             '取締方式', 
             '當場攔停', '逕行舉發', 
@@ -163,7 +163,6 @@ if file_period and file_year:
         df_final = pd.DataFrame(rows, columns=multi_col)
         
         st.success("✅ 解析成功！")
-        # 顯示表格 (Streamlit 會自動渲染合併樣式)
         st.dataframe(df_final, use_container_width=True)
 
         st.divider()
