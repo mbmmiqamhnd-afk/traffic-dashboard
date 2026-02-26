@@ -33,7 +33,7 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (僅更新數據並設定負值紅字) ---
+# --- 2. 雲端同步功能 (同步名稱紅字，排除合計與科技執法) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
@@ -46,44 +46,44 @@ def sync_to_specified_sheet(df):
         bottom_row = [t[1] for t in col_tuples]
         data_list = [top_row, bottom_row] + df.values.tolist()
         
-        # 僅更新數據，保留原有格式
+        # 僅更新數據
         ws.update(range_name='A1', values=data_list)
         
-        # 設定「本年與去年同期比較」欄位（H 欄，Index 為 7）的負值紅字規則
-        # 範圍從第 3 列（Index 2）開始到備註列之前
         data_rows_count = len(data_list) - 1 # 排除最後一列備註
         
         requests = [
+            # 規則 1：H 欄數值小於 0 顯示紅字 (通用)
             {
                 "addConditionalFormatRule": {
                     "rule": {
-                        "ranges": [
-                            {
-                                "sheetId": ws.id,
-                                "startRowIndex": 2,      # 從合計列開始
-                                "endRowIndex": data_rows_count, 
-                                "startColumnIndex": 7,   # H 欄
-                                "endColumnIndex": 8
-                            }
-                        ],
+                        "ranges": [{"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": data_rows_count, "startColumnIndex": 7, "endColumnIndex": 8}],
+                        "booleanRule": {
+                            "condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": "0"}]},
+                            "format": {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
+                        }
+                    },
+                    "index": 0
+                }
+            },
+            # 規則 2：A 欄名稱同步變紅 (排除合計、科技執法)
+            # 使用自訂公式：當 H 欄 < 0 且 A 欄不等於合計/科技執法時
+            {
+                "addConditionalFormatRule": {
+                    "rule": {
+                        "ranges": [{"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": data_rows_count, "startColumnIndex": 0, "endColumnIndex": 1}],
                         "booleanRule": {
                             "condition": {
-                                "type": "NUMBER_LESS",
-                                "values": [{"userEnteredValue": "0"}]
+                                "type": "CUSTOM_FORMULA",
+                                "values": [{"userEnteredValue": '=AND($H3<0, $A3<>"合計", $A3<>"科技執法")'}]
                             },
-                            "format": {
-                                "textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}
-                            }
+                            "format": {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
                         }
                     },
                     "index": 0
                 }
             }
         ]
-        
-        # 執行條件格式更新（這不會影響你原本手動設定的合併或框線）
         sh.batch_update({"requests": requests})
-        
         return True
     except Exception as e:
         st.error(f"雲端同步失敗: {e}")
@@ -100,16 +100,24 @@ def send_stats_email(df):
         msg['From'] = f"交通統計系統 <{mail_user}>"
         msg['To'] = receiver
         
-        # 網頁與郵件表格也加入負值紅字樣式
-        def color_negative_red(val):
+        def color_logic(row):
+            # 建立一個與 row 同樣長度的樣式清單，預設為空字串
+            styles = [''] * len(row)
             try:
-                color = 'red' if float(val) < 0 else 'black'
+                # 比較值在索引 7
+                val = float(row.iloc[7])
+                name = str(row.iloc[0])
+                if val < 0:
+                    # H 欄(索引 7)變紅
+                    styles[7] = 'color: red'
+                    # 如果不是合計或科技執法，A 欄(索引 0)也變紅
+                    if name not in ["合計", "科技執法"]:
+                        styles[0] = 'color: red'
             except:
-                color = 'black'
-            return f'color: {color}'
-        
-        # 僅針對比較欄位套用樣式
-        html_table = df.style.applymap(color_negative_red, subset=df.columns[7:8]).to_html(border=1)
+                pass
+            return styles
+
+        html_table = df.style.apply(color_logic, axis=1).to_html(border=1)
         
         body = f"<h3>您好，以下為本次交通違規統計數據：</h3>{html_table}"
         msg.attach(MIMEText(body, 'html'))
@@ -126,7 +134,7 @@ def send_stats_email(df):
         return True
     except: return False
 
-# --- 4. 解析邏輯 ---
+# --- 4. 解析邏輯 (略，與之前相同) ---
 def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
     try:
         content = uploaded_file.getvalue()
@@ -183,15 +191,11 @@ if file_period and file_year:
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
-        # 合計列置頂
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
-        
-        # 新增註解列
         rows.append([FOOTNOTE_TEXT] + [""] * 9)
         
-        # 多層標題
         header_top = ['統計期間', '本期', '本期', '本年累計', '本年累計', '去年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
         header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
         
@@ -200,17 +204,23 @@ if file_period and file_year:
         
         st.success("✅ 解析成功！")
         
-        # 網頁預覽也加上紅字
-        def style_negative(v):
-            return 'color: red' if isinstance(v, (int, float)) and v < 0 else None
+        # 網頁預覽樣式
+        def style_sync(row):
+            styles = [''] * len(row)
+            try:
+                if row.iloc[7] < 0:
+                    styles[7] = 'color: red'
+                    if row.iloc[0] not in ["合計", "科技執法"]:
+                        styles[0] = 'color: red'
+            except: pass
+            return styles
         
-        st.dataframe(df_final.style.applymap(style_negative, subset=df_final.columns[7:8]), use_container_width=True)
+        st.dataframe(df_final.style.apply(style_sync, axis=1), use_container_width=True)
 
         st.divider()
         if st.button("🚀 同步數據並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 數據已同步！比較欄位的負數已自動設為紅字。")
-            
+                st.info(f"☁️ 數據已同步！負值列名稱已同步變更。")
             if send_stats_email(df_final):
                 st.balloons()
                 st.info("📧 報表已寄送。")
