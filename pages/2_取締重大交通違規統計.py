@@ -33,7 +33,7 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (同步名稱紅字，排除合計與科技執法) ---
+# --- 2. 雲端同步功能 ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
@@ -45,24 +45,13 @@ def sync_to_specified_sheet(df):
         bottom_row = [t[1] for t in col_tuples]
         data_list = [top_row, bottom_row] + df.values.tolist()
         
-        ws.clear()
+        # 僅更新數據，保留格式
         ws.update(range_name='A1', values=data_list)
         
         data_rows_count = len(data_list) - 1 
         
         requests = [
-            {"unmergeCells": {"range": {"sheetId": ws.id}}},
-            # 重新執行合併 (因為標題文字變長，合併規則不變)
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 3, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 5, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 8, "endColumnIndex": 9}, "mergeType": "MERGE_ALL"}},
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 9, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": data_rows_count, "endRowIndex": data_rows_count+1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
-            
-            # 負值紅字規則
+            # 負值紅字規則 (H欄)
             {
                 "addConditionalFormatRule": {
                     "rule": {
@@ -74,6 +63,7 @@ def sync_to_specified_sheet(df):
                     }, "index": 0
                 }
             },
+            # 名稱同步變紅 (排除合計、科技執法)
             {
                 "addConditionalFormatRule": {
                     "rule": {
@@ -95,22 +85,26 @@ def sync_to_specified_sheet(df):
         st.error(f"雲端同步失敗: {e}")
         return False
 
-# --- 4. 解析邏輯 (新增日期偵測) ---
-def parse_excel_and_get_date(uploaded_file, sheet_keyword, col_indices):
+# --- 4. 解析邏輯 (抓取第3列日期區間) ---
+def parse_excel_with_date_extraction(uploaded_file, sheet_keyword, col_indices):
     try:
         content = uploaded_file.getvalue()
         xl = pd.ExcelFile(io.BytesIO(content))
         target_sheet = next((s for s in xl.sheet_names if sheet_keyword in s), xl.sheet_names[0])
         df = pd.read_excel(xl, sheet_name=target_sheet, header=None)
         
-        # 嘗試從前 5 列中尋找日期格式 (如 113.01.01-113.01.07)
-        date_range = ""
-        for i in range(5):
-            row_str = "".join(df.iloc[i].astype(str))
-            match = re.search(r'\d{3}\.\d{2}\.\d{2}[-~]\d{3}\.\d{2}\.\d{2}', row_str)
-            if match:
-                date_range = match.group()
-                break
+        # 指定抓取第 3 列 (Index 2) 的日期區間
+        date_str = ""
+        try:
+            # 搜尋第 3 列的內容，尋找「統計期間：」之後的內容
+            row_content = "".join(df.iloc[2].astype(str))
+            if "統計期間" in row_content:
+                # 抓取包含數字、點、及日期分隔符號的區間
+                match = re.search(r'(\d+\.\d+\.\d+[-至~]\d+\.\d+\.\d+)', row_content)
+                if match:
+                    date_str = match.group(1)
+        except:
+            date_str = ""
         
         unit_data = {}
         for _, row in df.iterrows():
@@ -125,17 +119,11 @@ def parse_excel_and_get_date(uploaded_file, sheet_keyword, col_indices):
                 else: 
                     unit_data[u]['stop'] += stop_val
                     unit_data[u]['cit'] += cit_val
-        return unit_data, date_range
+        return unit_data, date_str
     except: return None, ""
 
 # --- 5. 主介面 ---
-st.title("🚔 交通統計自動化系統 (日期區間版)")
-
-# 讓使用者也可以手動修正日期
-st.sidebar.header("📅 統計日期設定")
-custom_date_week = st.sidebar.text_input("本期日期 (例: 02.17-02.23)", "")
-custom_date_year = st.sidebar.text_input("年度日期 (例: 01.01-02.23)", "")
-custom_date_last = st.sidebar.text_input("去年同期 (例: 01.01-02.23)", "")
+st.title("🚔 交通統計自動化系統")
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
@@ -144,14 +132,9 @@ with col_up2:
     file_year = st.file_uploader("📂 2. 上傳「累計」檔案", type=['xlsx'])
 
 if file_period and file_year:
-    d_week, auto_week = parse_excel_and_get_date(file_period, "重點違規統計表", [15, 16])
-    d_year, auto_year = parse_excel_and_get_date(file_year, "(1)", [15, 16])
-    d_last, _ = parse_excel_and_get_date(file_year, "(1)", [18, 19])
-    
-    # 日期決定邏輯：優先使用手動輸入，若無則使用自動偵測
-    date_w = custom_date_week if custom_date_week else auto_week
-    date_y = custom_date_year if custom_date_year else auto_year
-    date_l = custom_date_last if custom_date_last else auto_year # 去年同期通常與今年累計區間相同
+    d_week, date_w = parse_excel_with_date_extraction(file_period, "重點違規統計表", [15, 16])
+    d_year, date_y = parse_excel_with_date_extraction(file_year, "(1)", [15, 16])
+    d_last, _ = parse_excel_with_date_extraction(file_year, "(1)", [18, 19])
     
     if d_week and d_year:
         rows = []
@@ -173,16 +156,18 @@ if file_period and file_year:
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
+        # 合計列
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         rows.insert(0, ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate])
         rows.append([FOOTNOTE_TEXT] + [""] * 9)
         
-        # --- 核心修改：標題加上日期符號 ---
-        title_week = f"本期\n({date_w})" if date_w else "本期"
-        title_year = f"本年累計\n({date_y})" if date_y else "本年累計"
-        title_last = f"去年累計\n({date_l})" if date_l else "去年累計"
+        # --- 核心修改：標題文字動態組合 ---
+        # 若有抓到日期則加上括號
+        label_week = f"本期({date_w})" if date_w else "本期"
+        label_year = f"本年累計({date_y})" if date_y else "本年累計"
+        label_last = f"去年累計({date_y})" if date_y else "去年累計" # 去年日期通常同步今年區間
         
-        header_top = ['統計期間', title_week, title_week, title_year, title_year, title_last, title_last, '本年與去年同期比較', '目標值', '達成率']
+        header_top = ['統計期間', label_week, label_week, label_year, label_year, label_last, label_last, '本年與去年同期比較', '目標值', '達成率']
         header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
         
         multi_col = pd.MultiIndex.from_arrays([header_top, header_bottom])
@@ -190,7 +175,7 @@ if file_period and file_year:
         
         st.success("✅ 解析成功！")
         
-        # 網頁預覽樣式
+        # 網頁預覽樣式邏輯
         def style_sync(row):
             styles = [''] * len(row)
             try:
@@ -205,4 +190,4 @@ if file_period and file_year:
         st.divider()
         if st.button("🚀 同步數據並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 數據已同步！標題已包含日期區間。")
+                st.info(f"☁️ 數據已同步！")
