@@ -15,6 +15,7 @@ GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9kh
 
 UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 TARGETS = {'聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 6006}
+FOOTNOTE_TEXT = "重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」"
 
 def get_standard_unit(raw_name):
     name = str(raw_name).strip()
@@ -29,14 +30,13 @@ def get_standard_unit(raw_name):
     if '三和' in name: return '三和所'
     return None
 
-# --- 2. 雲端同步功能 (精準定義欄位版本) ---
+# --- 2. 雲端同步功能 (加入末列合併功能) ---
 def sync_to_specified_sheet(df):
     try:
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 準備資料與寫入
         col_tuples = df.columns.tolist()
         top_row = [t[0] for t in col_tuples]
         bottom_row = [t[1] for t in col_tuples]
@@ -45,36 +45,39 @@ def sync_to_specified_sheet(df):
         ws.clear()
         ws.update(range_name='A1', values=data_list)
         
-        # 格式指令：確保當場攔停與逕行舉發各佔一格，不跨欄
+        # 計算備註列的索引 (兩列標題 + 資料列數 - 1)
+        footnote_row_idx = len(data_list) - 1
+        
         requests = [
             {"unmergeCells": {"range": {"sheetId": ws.id}}},
-            
-            # 合併 A1:A2 (統計期間/取締方式)
+            # 標題合併邏輯
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
-            
-            # 水平合併：第一層大標題橫跨兩格 (對應下方的攔停與逕行)
-            # 本期 (B1:C1)
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
-            # 本年累計 (D1:E1)
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 3, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
-            # 去年累計 (F1:G1)
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 5, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
-            
-            # 垂直合併：右側三項 (H1:H2, I1:I2, J1:J2)
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 8}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 8, "endColumnIndex": 9}, "mergeType": "MERGE_ALL"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 9, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
             
-            # 設定置中與標題加粗
+            # 【新功能】合併最末列 A 欄至 J 欄 (備註說明)
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
+            
+            # 全表文字置中，但備註列設定為靠左
             {"repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2},
-                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "textFormat": {"bold": True}}},
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }},
-            {"repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": len(data_list)},
+                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": footnote_row_idx},
                 "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
                 "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment)"
+            }},
+            {"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": footnote_row_idx, "endRowIndex": footnote_row_idx + 1},
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE", "textFormat": {"italic": True}}},
+                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+            }},
+            # 標題加粗
+            {"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2},
+                "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+                "fields": "userEnteredFormat(textFormat)"
             }}
         ]
         sh.batch_update({"requests": requests})
@@ -83,7 +86,7 @@ def sync_to_specified_sheet(df):
         st.error(f"雲端同步失敗: {e}")
         return False
 
-# --- 3. 寄信功能 (保持不變) ---
+# --- 3. 寄信功能 ---
 def send_stats_email(df):
     try:
         mail_user = st.secrets["email"]["user"]
@@ -131,7 +134,7 @@ def parse_excel_with_cols(uploaded_file, sheet_keyword, col_indices):
     except: return None
 
 # --- 5. 主介面 ---
-st.title("🚔 交通統計自動化系統 (最終優化版)")
+st.title("🚔 交通統計自動化系統 (完整備註版)")
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
@@ -164,11 +167,15 @@ if file_period and file_year:
             rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff_display, tgt, rate_display])
             t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
         
+        # 建立合計列
         total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
         total_row = ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate]
         rows.insert(0, total_row)
         
-        # 標題定義：確保攔停與逕行舉發交替排列
+        # 【修改重點】在交通分隊下一列新增備註列
+        footnote_row = [FOOTNOTE_TEXT] + [""] * 9
+        rows.append(footnote_row)
+        
         header_top = ['統計期間', '本期', '本期', '本年累計', '本年累計', '去年累計', '去年累計', '本年與去年同期比較', '目標值', '達成率']
         header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
         
@@ -181,7 +188,7 @@ if file_period and file_year:
         st.divider()
         if st.button("🚀 同步雲端並寄出報表", type="primary"):
             if sync_to_specified_sheet(df_final): 
-                st.info(f"☁️ 雲端同步完成！當場攔停與逕行舉發已分開顯示。")
+                st.info(f"☁️ 雲端同步成功！備註說明已正確合併並靠左顯示。")
             
             if send_stats_email(df_final):
                 st.balloons()
