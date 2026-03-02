@@ -48,10 +48,10 @@ def get_counts(df, unit, categories_list):
     return counts
 
 # ==========================================
-# 1. 側邊欄：功能選單直接置頂 (移除標題)
+# 1. 側邊欄：依據 Pages 順序排列的功能選單 (直接置頂)
 # ==========================================
 choice = st.sidebar.radio(
-    "功能導覽",
+    "功能選單",
     [
         "📊 交通事故統計",
         "🚔 取締重大交通違規統計",
@@ -62,21 +62,21 @@ choice = st.sidebar.radio(
         "🏷️ 商標頁碼工具",
         "📄 PDF轉檔工具"
     ],
-    index=5,  # 預設直接顯示「強化交通安全執法專案」
-    label_visibility="collapsed"
+    index=5,  # 預設開啟第 6 項「強化交通安全執法專案」
+    label_visibility="collapsed" # 隱藏標題，讓功能鍵貼齊最上方
 )
 
 # ==========================================
 # 2. 主畫面執行邏輯
 # ==========================================
 
+# --- 強化專案功能 (第 6 項) ---
 if choice == "📈 " + PROJECT_NAME:
     st.header(PROJECT_NAME)
     
-    # 檔案上傳區
     col1, col2 = st.columns(2)
-    f1 = col1.file_uploader("1. 第一份報表 (統計前五項)", type=["csv", "xlsx"], key="p_f1")
-    f2 = col2.file_uploader("2. 第二份報表 (統計大型車)", type=["csv", "xlsx"], key="p_f2")
+    f1 = col1.file_uploader("1. 上傳第一份報表 (統計前五項)", type=["csv", "xlsx"], key="p_f1")
+    f2 = col2.file_uploader("2. 上傳第二份報表 (統計大型車)", type=["csv", "xlsx"], key="p_f2")
 
     if f1 and f2:
         # 讀取數據
@@ -85,7 +85,6 @@ if choice == "📈 " + PROJECT_NAME:
         df1.columns = [str(c).strip() for c in df1.columns]
         df2.columns = [str(c).strip() for c in df2.columns]
 
-        # 彙整數據
         final_rows = []
         for unit, targets in TARGET_CONFIG.items():
             data1 = get_counts(df1, unit, CATS[:5])
@@ -104,7 +103,7 @@ if choice == "📈 " + PROJECT_NAME:
         for cat in CATS: headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
         df_final = pd.DataFrame(final_rows, columns=headers)
 
-        # 合計計算
+        # 合計列計算
         totals = ["合計"]
         for i in range(1, len(headers), 3):
             c_sum = df_final.iloc[:, i].sum()
@@ -129,11 +128,12 @@ if choice == "📈 " + PROJECT_NAME:
                 
                 ws.clear()
                 ws.update(values=[h1, h2, h3] + df_final.values.tolist())
-                st.success("✅ 雲端同步成功！")
+                st.success("✅ 雲端數據更新成功！")
                 st.balloons()
             except Exception as e:
                 st.error(f"同步失敗：{e}")
 
+# --- 其他功能預留顯示 ---
 else:
-    # 其他功能僅顯示標題，下方無多餘區塊
     st.header(choice)
+    # 此處可貼入各功能對應的原本代碼邏輯
