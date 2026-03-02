@@ -1,0 +1,106 @@
+import streamlit as st
+import pandas as pd
+import gspread
+from datetime import datetime
+import io
+
+# ==========================================
+# 1. 基礎設定 (延用您的架構)
+# ==========================================
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
+PROJECT_NAME = "強化交通安全執法專案勤務取締件數統計表"
+
+# 單位映射表
+u_map = {
+    '龍潭交通分隊': '交通分隊', '交通分隊': '交通分隊', '交通組': '科技執法',
+    '聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所',
+    '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所'
+}
+
+def map_unit_name(raw_name):
+    for key, val in u_map.items():
+        if key in str(raw_name): return val
+    return None
+
+# ==========================================
+# 2. 核心統計邏輯
+# ==========================================
+def get_unit_stats(fobj):
+    # 讀取報表 (鎖定第 4 列為標題)
+    df = pd.read_csv(fobj, skiprows=3)
+    df = df[df['單位'].notna()]
+    df = df[~df['單位'].isin(['總計', '合計', '列印人員：'])]
+    
+    # 轉數字並計算總件數
+    df['合計'] = pd.to_numeric(df['合計'], errors='coerce').fillna(0)
+    df['顯示單位'] = df['單位'].apply(map_unit_name)
+    
+    # 分組統計
+    res = df.dropna(subset=['顯示單位']).groupby('顯示單位')['合計'].sum().reset_index()
+    res.columns = ['單位', '取締件數']
+    
+    # 加入總計行
+    total_val = res['取締件數'].sum()
+    total_row = pd.DataFrame([['合計', total_val]], columns=['單位', '取締件數'])
+    
+    # 排序
+    order = ['合計', '科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '交通分隊']
+    res['排序'] = pd.Categorical(res['單位'], categories=order, ordered=True)
+    final = pd.concat([total_row, res]).sort_values('排序').drop(columns=['排序'])
+    return final
+
+# ==========================================
+# 3. Google Sheets 同步功能
+# ==========================================
+def sync_to_cloud(df):
+    try:
+        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        
+        # 使用您指定的新名稱取得分頁
+        try:
+            ws = sh.worksheet(PROJECT_NAME)
+        except:
+            ws = sh.add_worksheet(title=PROJECT_NAME, rows=50, cols=5)
+            
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        data = [[PROJECT_NAME, ""], [f"更新時間：{now}", ""], ["單位", "取締件數"]] + df.values.tolist()
+        
+        ws.clear()
+        ws.update(values=data)
+        ws.format("A1:B3", {"textFormat": {"bold": True}, "horizontalAlignment": "CENTER"})
+        return "✅ 同步成功"
+    except Exception as e:
+        return f"❌ 同步失敗: {e}"
+
+# ==========================================
+# 4. Streamlit 介面佈局
+# ==========================================
+st.markdown(f"### 📊 {PROJECT_NAME}")
+
+# 使用 Tab 區分功能
+tab_main, tab_stat = st.tabs(["🚀 原有五項違規功能", "📈 專案取締件數統計"])
+
+with tab_stat:
+    uploaded_file = st.file_uploader("請上傳『法條件數統計報表.csv』", type="csv", key="new_stat_upload")
+
+    if uploaded_file:
+        summary_df = get_unit_stats(uploaded_file)
+        
+        # 顯示結果
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            st.write("📋 統計清單")
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+        
+        with c2:
+            st.write("📊 數據圖表")
+            chart_df = summary_df[summary_df['單位'] != '合計']
+            st.bar_chart(chart_df.set_index('單位'))
+
+        # 同步按鈕
+        if st.button(f"📤 同步至雲端分頁", use_container_width=True):
+            with st.spinner("同步中..."):
+                msg = sync_to_cloud(summary_df)
+                st.info(msg)
+                if "成功" in msg: st.balloons()
