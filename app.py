@@ -4,14 +4,14 @@ import gspread
 from datetime import datetime
 
 # ==========================================
-# 0. 基本設定與目標值
+# 0. 基本配置與專案目標值
 # ==========================================
 st.set_page_config(page_title="龍潭分局交通戰情室", page_icon="🚓", layout="wide")
 
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 PROJECT_NAME = "強化交通安全執法專案勤務取締件數統計表"
 
-# 單位與目標值設定
+# 專案目標值 (酒駕, 闖紅燈, 嚴重超速, 車不讓人, 行人違規, 大型車違規)
 TARGET_CONFIG = {
     '聖亭所': [5, 115, 5, 16, 7, 10],
     '龍潭所': [6, 145, 7, 20, 9, 12],
@@ -48,12 +48,12 @@ def get_counts(df, unit, categories_list):
     return counts
 
 # ==========================================
-# 1. 側邊欄：純淨功能選單
+# 1. 側邊欄：統一單一區塊選單
 # ==========================================
 with st.sidebar:
-    st.title("🚓 交通功能導覽")
+    st.title("🚓 交通戰情室")
     choice = st.radio(
-        "請選取功能項目：",
+        "功能導覽",
         [
             "🏠 系統首頁",
             "📊 交通事故統計",
@@ -64,37 +64,43 @@ with st.sidebar:
             "📈 " + PROJECT_NAME,
             "🏷️ 商標頁碼工具",
             "📄 PDF轉檔工具"
-        ]
+        ],
+        label_visibility="collapsed" # 隱藏標題，讓選單更緊湊
     )
 
 # ==========================================
-# 2. 主畫面：功能執行區
+# 2. 主畫面執行邏輯
 # ==========================================
 
-if choice == "📈 " + PROJECT_NAME:
+if choice == "🏠 系統首頁":
+    st.title("🚓 龍潭分局交通戰情室")
+    st.write("請從左側選單選擇功能項目。")
+
+elif choice == "📈 " + PROJECT_NAME:
     st.header(PROJECT_NAME)
     
+    # 專屬上傳區
     col1, col2 = st.columns(2)
-    f1 = col1.file_uploader("1. 上傳第一份法條報表 (前5項)", type=["csv", "xlsx"], key="p_f1")
-    f2 = col2.file_uploader("2. 上傳第二份法條報表 (大型車)", type=["csv", "xlsx"], key="p_f2")
+    f1 = col1.file_uploader("1. 第一份報表 (統計前五項)", type=["csv", "xlsx"], key="p_f1")
+    f2 = col2.file_uploader("2. 第二份報表 (統計大型車)", type=["csv", "xlsx"], key="p_f2")
 
     if f1 and f2:
-        # 讀取數據
+        # 讀取數據 (自動處理 CSV 或 Excel)
         df1 = pd.read_csv(f1, skiprows=3) if f1.name.endswith('.csv') else pd.read_excel(f1, skiprows=3)
         df2 = pd.read_csv(f2, skiprows=3) if f2.name.endswith('.csv') else pd.read_excel(f2, skiprows=3)
         df1.columns = [str(c).strip() for c in df1.columns]
         df2.columns = [str(c).strip() for c in df2.columns]
 
-        # 數據計算
+        # 彙整數據
         final_rows = []
         for unit, targets in TARGET_CONFIG.items():
-            data_1to5 = get_counts(df1, unit, CATS[:5])
-            data_6 = get_counts(df2, unit, [CATS[5]])
-            all_counts = {**data_1to5, **data_6}
+            data1 = get_counts(df1, unit, CATS[:5])
+            data2 = get_counts(df2, unit, [CATS[5]])
+            all_data = {**data1, **data2}
             
             unit_row = [unit]
             for i, cat in enumerate(CATS):
-                cnt = all_counts[cat]
+                cnt = all_data[cat]
                 tgt = targets[i]
                 ratio = f"{(cnt/tgt*100):.0f}%" if tgt > 0 else "0%"
                 unit_row.extend([cnt, tgt, ratio])
@@ -104,39 +110,37 @@ if choice == "📈 " + PROJECT_NAME:
         for cat in CATS: headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
         df_final = pd.DataFrame(final_rows, columns=headers)
 
-        # 合計列
+        # 合計列計算
         totals = ["合計"]
         for i in range(1, len(headers), 3):
             c_sum = df_final.iloc[:, i].sum()
             t_sum = df_final.iloc[:, i+1].sum()
-            ratio_sum = f"{(c_sum/t_sum*100):.0f}%" if t_sum > 0 else "0%"
-            totals.extend([int(c_sum), int(t_sum), ratio_sum])
+            r_sum = f"{(c_sum/t_sum*100):.0f}%" if t_sum > 0 else "0%"
+            totals.extend([int(c_sum), int(t_sum), r_sum])
         df_final = pd.concat([pd.DataFrame([totals], columns=headers), df_final]).reset_index(drop=True)
 
-        # 顯示統計表
+        # 顯示統計結果
         st.dataframe(df_final, use_container_width=True, hide_index=True)
 
-        # 同步按鈕
         if st.button("🚀 同步至 Google Sheets", use_container_width=True):
             try:
                 gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                 sh = gc.open_by_url(GOOGLE_SHEET_URL)
                 ws = sh.worksheet(PROJECT_NAME)
+                
+                # 準備雲端表格抬頭
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-                h1 = [f"{PROJECT_NAME} (雙報表同步：{now_str})"] + [""] * 18
+                h1 = [f"{PROJECT_NAME} (同步時間：{now_str})"] + [""] * 18
                 h2 = [""] + [c for c in CATS for _ in range(3)]
                 h3 = ["單位"] + ["取締", "目標", "達成率"] * 6
+                
                 ws.clear()
                 ws.update(values=[h1, h2, h3] + df_final.values.tolist())
-                st.success("✅ 雲端同步完成")
+                st.success("✅ 雲端數據更新成功！")
                 st.balloons()
             except Exception as e:
                 st.error(f"同步失敗：{e}")
 
-elif choice == "🏠 系統首頁":
-    st.title("🚓 龍潭分局交通戰情室")
-    st.write("請由左側選單啟動功能。")
-
 else:
-    # 其他未實作功能顯示空白或標題即可，移除「開發中」等區塊
+    # 顯示選中功能的標題，下方保持空白，不顯示「開發中」等雜訊
     st.header(choice)
