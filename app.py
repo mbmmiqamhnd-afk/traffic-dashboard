@@ -48,44 +48,38 @@ def get_counts(df, unit, categories_list):
     return counts
 
 # ==========================================
-# 1. 側邊欄：統一單一區塊選單
+# 1. 側邊欄：功能選單直接置頂 (移除標題)
 # ==========================================
-with st.sidebar:
-    st.title("🚓 交通戰情室")
-    choice = st.radio(
-        "功能導覽",
-        [
-            "🏠 系統首頁",
-            "📊 交通事故統計",
-            "🚔 取締重大交通違規統計",
-            "🚛 超載統計",
-            "🚦 加強交通安全執法取締五項交通違規統計表",
-            "🛡️ 科技執法成效",
-            "📈 " + PROJECT_NAME,
-            "🏷️ 商標頁碼工具",
-            "📄 PDF轉檔工具"
-        ],
-        label_visibility="collapsed" # 隱藏標題，讓選單更緊湊
-    )
+choice = st.sidebar.radio(
+    "功能導覽",
+    [
+        "📊 交通事故統計",
+        "🚔 取締重大交通違規統計",
+        "🚛 超載統計",
+        "🚦 加強交通安全執法取締五項交通違規統計表",
+        "🛡️ 科技執法成效",
+        "📈 " + PROJECT_NAME,
+        "🏷️ 商標頁碼工具",
+        "📄 PDF轉檔工具"
+    ],
+    index=5,  # 預設直接顯示「強化交通安全執法專案」
+    label_visibility="collapsed"
+)
 
 # ==========================================
 # 2. 主畫面執行邏輯
 # ==========================================
 
-if choice == "🏠 系統首頁":
-    st.title("🚓 龍潭分局交通戰情室")
-    st.write("請從左側選單選擇功能項目。")
-
-elif choice == "📈 " + PROJECT_NAME:
+if choice == "📈 " + PROJECT_NAME:
     st.header(PROJECT_NAME)
     
-    # 專屬上傳區
+    # 檔案上傳區
     col1, col2 = st.columns(2)
     f1 = col1.file_uploader("1. 第一份報表 (統計前五項)", type=["csv", "xlsx"], key="p_f1")
     f2 = col2.file_uploader("2. 第二份報表 (統計大型車)", type=["csv", "xlsx"], key="p_f2")
 
     if f1 and f2:
-        # 讀取數據 (自動處理 CSV 或 Excel)
+        # 讀取數據
         df1 = pd.read_csv(f1, skiprows=3) if f1.name.endswith('.csv') else pd.read_excel(f1, skiprows=3)
         df2 = pd.read_csv(f2, skiprows=3) if f2.name.endswith('.csv') else pd.read_excel(f2, skiprows=3)
         df1.columns = [str(c).strip() for c in df1.columns]
@@ -110,7 +104,7 @@ elif choice == "📈 " + PROJECT_NAME:
         for cat in CATS: headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
         df_final = pd.DataFrame(final_rows, columns=headers)
 
-        # 合計列計算
+        # 合計計算
         totals = ["合計"]
         for i in range(1, len(headers), 3):
             c_sum = df_final.iloc[:, i].sum()
@@ -128,7 +122,6 @@ elif choice == "📈 " + PROJECT_NAME:
                 sh = gc.open_by_url(GOOGLE_SHEET_URL)
                 ws = sh.worksheet(PROJECT_NAME)
                 
-                # 準備雲端表格抬頭
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
                 h1 = [f"{PROJECT_NAME} (同步時間：{now_str})"] + [""] * 18
                 h2 = [""] + [c for c in CATS for _ in range(3)]
@@ -136,11 +129,11 @@ elif choice == "📈 " + PROJECT_NAME:
                 
                 ws.clear()
                 ws.update(values=[h1, h2, h3] + df_final.values.tolist())
-                st.success("✅ 雲端數據更新成功！")
+                st.success("✅ 雲端同步成功！")
                 st.balloons()
             except Exception as e:
                 st.error(f"同步失敗：{e}")
 
 else:
-    # 顯示選中功能的標題，下方保持空白，不顯示「開發中」等雜訊
+    # 其他功能僅顯示標題，下方無多餘區塊
     st.header(choice)
