@@ -4,7 +4,7 @@ import gspread
 from datetime import datetime
 
 # ==========================================
-# 0. 基本設定與目標值 (依據您上傳的專案格式)
+# 0. 基本設定與專案目標值
 # ==========================================
 st.set_page_config(page_title="龍潭分局交通戰情室", page_icon="🚓", layout="wide")
 
@@ -24,12 +24,13 @@ TARGET_CONFIG = {
 
 CATS = ["酒後駕車", "闖紅燈", "嚴重超速", "車不讓人", "行人違規", "大型車違規"]
 
-# 法條與欄位定義 (對應自選匯出 (7) 系列檔案)
+# 法條對應關鍵字
 LAW_MAP = {
     "酒後駕車": ["35條", "73條2項", "73條3項"],
     "闖紅燈": ["53條"],
     "嚴重超速": ["43條", "40條"],
     "車不讓人": ["44條", "48條"],
+    "行人違規": ["78條"],
     "大型車違規": ["29", "30", "18之1", "33條1項03款"]
 }
 
@@ -39,90 +40,96 @@ def map_unit_name(raw_name):
         if key in str(raw_name): return val
     return None
 
+def get_counts(df, unit, categories_list):
+    """從 DataFrame 中提取特定單位與類別的數據"""
+    row = df[df['單位'].apply(map_unit_name) == unit]
+    counts = {}
+    for cat in categories_list:
+        keywords = LAW_MAP[cat]
+        matched_cols = [c for c in df.columns if any(k in c for k in keywords)]
+        counts[cat] = int(row[matched_cols].sum(axis=1).values[0]) if not row.empty else 0
+    return counts
+
 # ==========================================
-# 1. 介面導覽
+# 1. 介面顯示
 # ==========================================
 st.title("🚓 龍潭分局交通數據戰情室")
 st.header("🚦 (一) 加強交通安全執法取締五項交通違規統計表")
-st.info("請在此執行原本的五項違規分析流程...")
-# [保留原本代碼...]
+st.info("此處為原本的五項違規報表區塊...")
 
 st.markdown("<br><hr style='border:2px solid #ddd'><br>", unsafe_allow_html=True)
 
 # ==========================================
-# 2. 強化專案功能 (對應新檔案格式)
+# 2. 強化專案功能 (跨檔案統計)
 # ==========================================
 st.header(f"📈 (二) {PROJECT_NAME}")
 
-col_f1, col_f2 = st.columns(2)
-file_statute = col_f1.file_uploader("1. 上傳『法條件數統計報表』", type="csv", key="f_stat")
-file_type = col_f2.file_uploader("2. 上傳『案件類型-件數統計報表』", type="csv", key="f_type")
+col1, col2 = st.columns(2)
+file1 = col1.file_uploader("1. 上傳第一份報表 (統計前五項)", type=["csv", "xlsx"], key="f1")
+file2 = col2.file_uploader("2. 上傳第二份報表 (統計大型車)", type=["csv", "xlsx"], key="f2")
 
-if file_statute and file_type:
-    # 讀取法條數據 (skip 3 rows)
-    df_s = pd.read_csv(file_statute, skiprows=3)
-    df_s.columns = [str(c).strip() for c in df_s.columns]
+if file1 and file2:
+    # 讀取檔案
+    df1 = pd.read_csv(file1, skiprows=3) if file1.name.endswith('.csv') else pd.read_excel(file1, skiprows=3)
+    df2 = pd.read_csv(file2, skiprows=3) if file2.name.endswith('.csv') else pd.read_excel(file2, skiprows=3)
     
-    # 讀取案件類型數據 (用於抓取行人違規)
-    df_t = pd.read_csv(file_type, skiprows=3)
-    df_t.columns = [str(c).strip() for c in df_t.columns]
+    # 清洗欄位名稱
+    df1.columns = [str(c).strip() for c in df1.columns]
+    df2.columns = [str(c).strip() for c in df2.columns]
 
-    results = []
+    final_results = []
     for unit, targets in TARGET_CONFIG.items():
-        # 匹配單位
-        row_s = df_s[df_s['單位'].apply(map_unit_name) == unit]
-        row_t = df_t[df_t['單位'].apply(map_unit_name) == unit]
+        # 從第一個檔案提取前 5 項
+        data_1to5 = get_counts(df1, unit, CATS[:5])
+        # 從第二個檔案提取第 6 項 (大型車)
+        data_6 = get_counts(df2, unit, [CATS[5]])
         
-        unit_data = [unit]
+        # 合併數據
+        all_counts = {**data_1to5, **data_6}
+        
+        unit_row = [unit]
         for i, cat in enumerate(CATS):
-            count = 0
-            if cat == "行人違規":
-                # 從『案件類型』中抓取『行人攤販』欄位
-                if not row_t.empty and '行人攤販' in df_t.columns:
-                    count = row_t['行人攤販'].values[0]
-            else:
-                # 從『法條報表』中抓取對應法條
-                keywords = LAW_MAP[cat]
-                matched_cols = [c for c in df_s.columns if any(k in c for k in keywords)]
-                count = row_s[matched_cols].sum(axis=1).values[0] if not row_s.empty else 0
-            
+            count = all_counts[cat]
             target = targets[i]
             ratio = f"{(count/target*100):.0f}%" if target > 0 else "0%"
-            unit_data.extend([int(count), target, ratio])
-        results.append(unit_data)
+            unit_row.extend([count, target, ratio])
+        final_results.append(unit_row)
 
-    # 建立統計表
-    cols_header = ["單位"]
+    # 建立統計表格
+    headers = ["單位"]
     for cat in CATS:
-        cols_header.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
-    df_final = pd.DataFrame(results, columns=cols_header)
+        headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
+    
+    df_final = pd.DataFrame(final_results, columns=headers)
     
     # 計算合計
     totals = ["合計"]
-    for i in range(1, len(cols_header), 3):
+    for i in range(1, len(headers), 3):
         c_sum = df_final.iloc[:, i].sum()
         t_sum = df_final.iloc[:, i+1].sum()
         r_sum = f"{(c_sum/t_sum*100):.0f}%" if t_sum > 0 else "0%"
         totals.extend([int(c_sum), int(t_sum), r_sum])
-    df_final = pd.concat([pd.DataFrame([totals], columns=cols_header), df_final]).reset_index(drop=True)
+    
+    df_final = pd.concat([pd.DataFrame([totals], columns=headers), df_final]).reset_index(drop=True)
 
-    st.subheader("📊 專案數據彙整表")
+    st.subheader("📊 雙檔案彙整統計表")
     st.dataframe(df_final, use_container_width=True)
 
-    # 同步按鈕
-    if st.button("🚀 同步至 Google Sheets (大型車違規更新版)"):
+    # 同步雲端按鈕
+    if st.button("🚀 同步整合數據至 Google Sheets", use_container_width=True):
         try:
             gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
             sh = gc.open_by_url(GOOGLE_SHEET_URL)
             ws = sh.worksheet(PROJECT_NAME)
             
-            now_dt = datetime.now().strftime("%Y-%m-%d %H:%M")
-            h1 = [f"{PROJECT_NAME} (更新：{now_dt})"] + [""] * 18
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+            h1 = [f"{PROJECT_NAME} (雙檔同步：{now_str})"] + [""] * 18
             h2 = [""] + [c for c in CATS for _ in range(3)]
             h3 = ["單位"] + ["取締", "目標", "達成率"] * 6
+            
             ws.clear()
             ws.update(values=[h1, h2, h3] + df_final.values.tolist())
-            st.success("✅ 大型車違規數據已成功同步！")
+            st.success("✅ 雙檔案數據已成功彙整並同步至雲端！")
             st.balloons()
         except Exception as e:
             st.error(f"同步失敗：{e}")
