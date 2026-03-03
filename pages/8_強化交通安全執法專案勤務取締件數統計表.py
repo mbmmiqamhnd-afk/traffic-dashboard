@@ -206,4 +206,53 @@ if f1 and f2:
         # ==========================================
         # 2. 雲端同步功能 (只覆寫數值，保護格式)
         # ==========================================
-        if st.button("🚀 同步數據與
+        if st.button("🚀 同步數據與顏色至雲端試算表", use_container_width=True):
+            with st.spinner("同步數據與格式中，請稍候..."):
+                try:
+                    gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+                    sh = gc.open_by_url(GOOGLE_SHEET_URL)
+                    
+                    try:
+                        ws = sh.worksheet(PROJECT_NAME)
+                    except:
+                        ws = sh.add_worksheet(title=PROJECT_NAME, rows=50, cols=20)
+                    
+                    # 雲端表格首行文字更新為「統計期間」
+                    h1 = [f"{PROJECT_NAME} (統計期間：{date_range_str})"] + [""] * 18
+                    h2 = [""] + [c for c in CATS for _ in range(3)]
+                    h3 = ["單位"] + ["取締件數", "目標值", "達成率"] * 6
+                    
+                    # 只更新數值內容，完全不清除既有的排版格式！
+                    ws.update(values=[h1, h2, h3] + df_final.values.tolist())
+                    
+                    # 準備 Google Sheets 的字體變色請求
+                    requests = []
+                    
+                    # 1. 將『單位』欄位全部初始化為黑色字體 (防呆機制，清除前一次的紅色)
+                    requests.append({
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": ws.id,
+                                "startRowIndex": 3,  # 標題佔了 0,1,2 行
+                                "endRowIndex": 3 + len(df_final),
+                                "startColumnIndex": 0,
+                                "endColumnIndex": 1
+                            },
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "textFormat": {
+                                        "foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0},
+                                        "bold": False
+                                    }
+                                }
+                            },
+                            "fields": "userEnteredFormat.textFormat(foregroundColor,bold)"
+                        }
+                    })
+
+                    # 2. 將『最後三名』的儲存格標記為紅色粗體
+                    for unit in bottom_3_units:
+                        idx_list = df_final.index[df_final['單位'] == unit].tolist()
+                        if idx_list:
+                            # 加上表頭的 3 行偏移量
+                            sheet_row_idx
