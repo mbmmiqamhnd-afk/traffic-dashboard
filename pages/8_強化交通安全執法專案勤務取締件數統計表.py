@@ -58,7 +58,7 @@ def get_counts(df, unit, categories_list):
 # ==========================================
 # 1. 畫面顯示與檔案上傳
 # ==========================================
-st.title(f"📈 {PROJECT_NAME}")
+st.title(f"📈 強化交通安全執法專案")
 
 col1, col2 = st.columns(2)
 f1 = col1.file_uploader("📂 1. 上傳『法條件數報表』\n(統計前5項)", type=["csv", "xlsx"], key="f_top5")
@@ -182,7 +182,10 @@ if f1 and f2:
 
         styled_df = df_final.style.map(highlight_bottom, subset=['單位'])
 
-        st.subheader(f"📊 雙檔案整合分析結果 (統計期間：{date_range_str})")
+        # ==========================================
+        # 👑 網頁介面：藍色專案名稱＋紅色日期
+        # ==========================================
+        st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(統計期間：{date_range_str})]")
         st.markdown(f"*(提示：總達成率最後三名單位 **{', '.join(bottom_3_units)}** 已標示為紅色)*")
         st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
@@ -200,13 +203,49 @@ if f1 and f2:
                     except:
                         ws = sh.add_worksheet(title=PROJECT_NAME, rows=50, cols=20)
                     
-                    h1 = [f"{PROJECT_NAME} (統計期間：{date_range_str})"] + [""] * 18
+                    # 組合出第一列的完整字串
+                    title_text = f"{PROJECT_NAME} (統計期間：{date_range_str})"
+                    
+                    h1 = [title_text] + [""] * 18
                     h2 = [""] + [c for c in CATS for _ in range(3)]
                     h3 = ["單位"] + ["取締件數", "目標值", "達成率"] * 6
                     
+                    # 更新數值 (保留儲存格的底色與框線格式)
                     ws.update(values=[h1, h2, h3] + df_final.values.tolist())
                     
                     requests = []
+                    
+                    # Google Sheets 第一列：動態文字上色 (富文本格式)
+                    requests.append({
+                        "updateCells": {
+                            "range": {
+                                "sheetId": ws.id,
+                                "startRowIndex": 0,
+                                "endRowIndex": 1,
+                                "startColumnIndex": 0,
+                                "endColumnIndex": 1
+                            },
+                            "rows": [{
+                                "values": [{
+                                    "userEnteredValue": {"stringValue": title_text},
+                                    "textFormatRuns": [
+                                        {
+                                            "startIndex": 0,
+                                            "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}} # 藍色
+                                        },
+                                        {
+                                            "startIndex": len(PROJECT_NAME),
+                                            "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}} # 紅色
+                                        }
+                                    ]
+                                }]
+                            }],
+                            # 只更新值和富文本顏色，不影響背景與置中排版
+                            "fields": "userEnteredValue,textFormatRuns"
+                        }
+                    })
+
+                    # 將『單位』欄位全部初始化為黑色字體
                     requests.append({
                         "repeatCell": {
                             "range": {
@@ -228,6 +267,7 @@ if f1 and f2:
                         }
                     })
 
+                    # 將『最後三名』的儲存格標記為紅色粗體
                     for unit in bottom_3_units:
                         idx_list = df_final.index[df_final['單位'] == unit].tolist()
                         if idx_list:
@@ -254,7 +294,7 @@ if f1 and f2:
                             })
 
                     sh.batch_update({"requests": requests})
-                    st.success("✅ 數據與最後三名顏色已成功同步，且完美保留了您的專屬表頭格式！")
+                    st.success("✅ 雙色標題與最後三名顏色已成功同步，且完美保留了您的專屬表頭格式！")
                     st.balloons()
                 except Exception as e:
                     st.error(f"雲端連線或格式化失敗：{e}")
