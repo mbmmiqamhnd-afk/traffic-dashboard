@@ -37,14 +37,14 @@ else:
     font_name = "Helvetica"
     st.warning("⚠️ 未偵測到中文字型 (kaiu.ttf)，文字將顯示為方塊。")
 
-# --- 核心修改：字體調整 ---
+# --- 核心修改：字體調整至 14 ---
 def create_overlay(page_width, page_height, page_num, current_font):
     packet = io.BytesIO()
     c = canvas.Canvas(packet, pagesize=(page_width, page_height))
     
     text = f"交通組製 - 第 {page_num} 頁"
     
-    # 尺寸維持上一版的設定
+    # 尺寸維持您的設定
     # 寬度：112
     # 高度：20
     box_width = 112
@@ -62,14 +62,14 @@ def create_overlay(page_width, page_height, page_num, current_font):
     # 寫字 (黑色)
     c.setFillColor(black)
     
-    # --- 【修改點】字體改為 12 ---
-    c.setFont(current_font, 12) 
+    # --- 【修改點】字體改為 14 ---
+    c.setFont(current_font, 14) 
     
     # 文字位置微調
     # 水平：靠右對齊，留 4 點邊距
     text_end_x = page_width - 4
-    # 垂直：高度20，字高約12，為了置中，將 y 稍微降低一點 (6 -> 5)
-    text_y = 5
+    # 垂直：高度20，字高14。為了視覺置中，將 y 調整為 4
+    text_y = 4
     
     c.drawRightString(text_end_x, text_y, text)
     
