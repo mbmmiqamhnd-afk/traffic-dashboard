@@ -165,10 +165,40 @@ if f1 and f2:
         df_final = pd.concat([pd.DataFrame([totals], columns=headers), df_final]).reset_index(drop=True)
 
         # ==========================================
+        # 👑 尋找各項目達成率最後兩名的儲存格
+        # ==========================================
+        unit_count = len(TARGET_CONFIG) # 總共 7 個單位
+        red_cells_coords = [] # 存放要標示紅色的 (列索引, 欄索引)
+        
+        for cat in CATS:
+            col_name = f"{cat}_達成率"
+            col_idx = df_final.columns.get_loc(col_name)
+            # 取得各單位的達成率字串 (排除最下方的'合計'列)，並轉為數字
+            rates = df_final.loc[:unit_count-1, col_name].str.rstrip('%').astype(float)
+            
+            if not rates.empty:
+                # 找出最低的兩個值，並取這兩個之中較大的當作門檻
+                bot2_val = rates.nsmallest(2).iloc[-1]
+                # 將小於等於該門檻的單位標示為紅色 (若有多個0%平手，會一併標紅)
+                for row_idx in range(unit_count):
+                    if rates.iloc[row_idx] <= bot2_val:
+                        red_cells_coords.append((row_idx, col_idx))
+
+        # 負責給 DataFrame 網頁樣式上色的函數
+        def highlight_cells(x):
+            df_color = pd.DataFrame('', index=x.index, columns=x.columns)
+            for r, c in red_cells_coords:
+                df_color.iloc[r, c] = 'color: red; font-weight: bold;'
+            return df_color
+
+        styled_df = df_final.style.apply(highlight_cells, axis=None)
+
+        # ==========================================
         # 👑 網頁介面：藍色專案名稱＋紅色日期
         # ==========================================
         st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(統計期間：{date_range_str})]")
-        st.dataframe(df_final, use_container_width=True, hide_index=True)
+        st.markdown("*(提示：各別項目達成率 **最後兩名** 的儲存格已標示為紅色)*")
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
         # ==========================================
         # 2. 雲端同步功能
@@ -184,19 +214,18 @@ if f1 and f2:
                     except:
                         ws = sh.add_worksheet(title=PROJECT_NAME, rows=50, cols=20)
                     
-                    # 組合出第一列的完整字串
                     title_text = f"{PROJECT_NAME} (統計期間：{date_range_str})"
                     
                     h1 = [title_text] + [""] * 18
                     h2 = [""] + [c for c in CATS for _ in range(3)]
                     h3 = ["單位"] + ["取締件數", "目標值", "達成率"] * 6
                     
-                    # 更新數值 (保留儲存格的底色與框線格式)
+                    # 更新數值
                     ws.update(values=[h1, h2, h3] + df_final.values.tolist())
                     
                     requests = []
                     
-                    # Google Sheets 第一列：動態文字上色 (富文本格式)
+                    # Google Sheets 第一列：動態文字雙色上色 (藍色專案 + 紅色日期)
                     requests.append({
                         "updateCells": {
                             "range": {
@@ -221,12 +250,11 @@ if f1 and f2:
                                     ]
                                 }]
                             }],
-                            # 只更新值和富文本顏色，不影響背景與置中排版
                             "fields": "userEnteredValue,textFormatRuns"
                         }
                     })
 
-                    # 將『單位』欄位全部初始化為黑色字體 (防呆機制，清除前一次可能有殘留的紅色)
+                    # 將整張數據表的字體全部初始化為黑色字體 (包含之前可能塗紅的地方)
                     requests.append({
                         "repeatCell": {
                             "range": {
@@ -234,7 +262,7 @@ if f1 and f2:
                                 "startRowIndex": 3,
                                 "endRowIndex": 3 + len(df_final),
                                 "startColumnIndex": 0,
-                                "endColumnIndex": 1
+                                "endColumnIndex": len(df_final.columns)
                             },
                             "cell": {
                                 "userEnteredFormat": {
@@ -248,8 +276,33 @@ if f1 and f2:
                         }
                     })
 
+                    # 將『各項達成率最後兩名』的特定儲存格標記為紅色粗體
+                    for r, c in red_cells_coords:
+                        sheet_row_idx = r + 3  # 表頭佔了 0,1,2 行
+                        sheet_col_idx = c
+                        requests.append({
+                            "repeatCell": {
+                                "range": {
+                                    "sheetId": ws.id,
+                                    "startRowIndex": sheet_row_idx,
+                                    "endRowIndex": sheet_row_idx + 1,
+                                    "startColumnIndex": sheet_col_idx,
+                                    "endColumnIndex": sheet_col_idx + 1
+                                },
+                                "cell": {
+                                    "userEnteredFormat": {
+                                        "textFormat": {
+                                            "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0},
+                                            "bold": True
+                                        }
+                                    }
+                                },
+                                "fields": "userEnteredFormat.textFormat(foregroundColor,bold)"
+                            }
+                        })
+
                     sh.batch_update({"requests": requests})
-                    st.success("✅ 雙色標題已成功同步，且完美保留了您的專屬表頭格式！")
+                    st.success("✅ 數據與各項倒數兩名的紅色已成功同步！")
                     st.balloons()
                 except Exception as e:
                     st.error(f"雲端連線或格式化失敗：{e}")
