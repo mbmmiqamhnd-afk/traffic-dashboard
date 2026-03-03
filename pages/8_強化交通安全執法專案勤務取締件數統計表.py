@@ -79,7 +79,6 @@ if f1 and f2:
         header_idx_2 = None
         for idx, row in df2.head(20).iterrows():
             row_vals = [str(x).strip() for x in row.values]
-            # 尋找同時包含「單位」與「舉發總數」的那一行作為欄位標題
             if '單位' in row_vals and '舉發總數' in row_vals:
                 header_idx_2 = idx
                 break
@@ -90,7 +89,6 @@ if f1 and f2:
             
         cols = [str(c).strip() for c in df2.iloc[header_idx_2]]
         
-        # 處理新報表中常見的「重複欄位名稱」(如兩個 '單位' 欄位)
         seen = {}
         new_cols = []
         for c in cols:
@@ -110,16 +108,13 @@ if f1 and f2:
         # --- 開始彙整兩份檔案的數據 ---
         final_results = []
         for unit in TARGET_CONFIG.keys():
-            # 1. 提取前五項 (來自 df1)
             data_1to5 = get_counts(df1, unit, CATS[:5])
             
-            # 2. 提取第六項 (來自 df2_clean 的『舉發總數』)
             unit_rows = df2_clean[df2_clean['標準單位'] == unit]
             heavy_count = int(unit_rows['舉發總數'].sum()) if not unit_rows.empty else 0
             
             all_c = {**data_1to5, CATS[5]: heavy_count}
             
-            # 3. 計算達成率
             unit_row = [unit]
             for i, cat in enumerate(CATS):
                 cnt = all_c[cat]
@@ -128,7 +123,6 @@ if f1 and f2:
                 unit_row.extend([cnt, tgt, ratio])
             final_results.append(unit_row)
 
-        # 建立 DataFrame
         headers = ["單位"]
         for cat in CATS:
             headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
@@ -144,9 +138,36 @@ if f1 and f2:
         
         df_final = pd.concat([pd.DataFrame([totals], columns=headers), df_final]).reset_index(drop=True)
 
-        # 顯示結果
+        # ==========================================
+        # 👑 計算總達成率，並標記最後三名
+        # ==========================================
+        unit_overall_ratio = {}
+        for unit in TARGET_CONFIG.keys():
+            # 抓取該單位該列的索引
+            idx_list = df_final.index[df_final['單位'] == unit].tolist()
+            if idx_list:
+                idx = idx_list[0]
+                # 加總該單位所有類別的取締數與目標數
+                total_c = df_final.loc[idx, [f"{cat}_取締" for cat in CATS]].sum()
+                total_t = df_final.loc[idx, [f"{cat}_目標" for cat in CATS]].sum()
+                unit_overall_ratio[unit] = total_c / total_t if total_t > 0 else 0
+
+        # 將達成率由低到高排序，取前三名 (墊底的三名)
+        bottom_3_units = sorted(unit_overall_ratio, key=unit_overall_ratio.get)[:3]
+
+        # 定義上色函數
+        def highlight_bottom(val):
+            if val in bottom_3_units:
+                return 'color: red; font-weight: bold;'
+            return ''
+
+        # 套用樣式到 '單位' 欄位
+        styled_df = df_final.style.map(highlight_bottom, subset=['單位'])
+
+        # 顯示結果 (使用加上樣式的 styled_df)
         st.subheader("📊 雙檔案整合分析結果")
-        st.dataframe(df_final, use_container_width=True, hide_index=True)
+        st.markdown(f"*(提示：總達成率最後三名單位 **{', '.join(bottom_3_units)}** 已標示為紅色)*")
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
         # ==========================================
         # 2. 雲端同步功能
@@ -168,6 +189,7 @@ if f1 and f2:
                     h3 = ["單位"] + ["取締件數", "目標值", "達成率"] * 6
                     
                     ws.clear()
+                    # 寫入雲端必須用原始 DataFrame (df_final)
                     ws.update(values=[h1, h2, h3] + df_final.values.tolist())
                     
                     # 合併表頭單元格
