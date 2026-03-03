@@ -70,7 +70,7 @@ f2 = col2.file_uploader("📂 2. 上傳『大型車輛違規績效統計表』\n
 
 if f1 and f2:
     try:
-        # --- 動態擷取「統計期間」---
+        # --- 動態擷取「統計期間」並格式化 ---
         f1.seek(0)
         try:
             df1_head = pd.read_csv(f1, nrows=10, header=None) if f1.name.endswith('.csv') else pd.read_excel(f1, nrows=10, header=None)
@@ -86,10 +86,12 @@ if f1 and f2:
                 for cell in row.values:
                     cell_str = str(cell)
                     if '統計期間' in cell_str:
-                        # 自動擷取日期 (例如 1150301至1150302)
+                        # 自動擷取日期 (例如 1150301至1150302 或 115年0301至0302)
                         match = re.search(r'統計期間.*?[：:](?:\s*\(入案日\))?\s*([0-9年月日\-至]+)', cell_str)
                         if match:
-                            date_range_str = match.group(1).strip()
+                            date_raw = match.group(1).strip()
+                            # 依照需求：取消年，至改為-
+                            date_range_str = date_raw.replace('年', '').replace('至', '-')
         f1.seek(0)
 
         # --- 處理第一份報表 (固定跳過前3行) ---
