@@ -135,11 +135,23 @@ if f1 and f2:
         df2_clean['標準單位'] = df2_clean['單位'].apply(map_unit_name)
         df2_clean['舉發總數'] = pd.to_numeric(df2_clean['舉發總數'], errors='coerce').fillna(0)
 
+        # ====== 排除特定違規項目 ======
+        for exclude_col in ['違反管制規定', '其他違規']:
+            if exclude_col in df2_clean.columns:
+                df2_clean[exclude_col] = pd.to_numeric(df2_clean[exclude_col], errors='coerce').fillna(0)
+            else:
+                df2_clean[exclude_col] = 0
+                
+        # 調整後的大型車違規 = 總數 - 違反管制規定 - 其他違規 (最低為0，防呆)
+        df2_clean['調整後大型車違規'] = (df2_clean['舉發總數'] - df2_clean['違反管制規定'] - df2_clean['其他違規']).clip(lower=0)
+
         final_results = []
         for unit in TARGET_CONFIG.keys():
             data_1to5 = get_counts(df1, unit, CATS[:5])
+            
+            # 改用「調整後大型車違規」的加總
             unit_rows = df2_clean[df2_clean['標準單位'] == unit]
-            heavy_count = int(unit_rows['舉發總數'].sum()) if not unit_rows.empty else 0
+            heavy_count = int(unit_rows['調整後大型車違規'].sum()) if not unit_rows.empty else 0
             
             all_c = {**data_1to5, CATS[5]: heavy_count}
             unit_row = [unit]
