@@ -162,29 +162,31 @@ if f1 and f2:
             r_sum = f"{(c_sum/t_sum*100):.1f}%" if t_sum > 0 else "0%"
             totals.extend([int(c_sum), int(t_sum), r_sum])
         
+        # 把合計加入，現在 index 0 就是「合計」
         df_final = pd.concat([pd.DataFrame([totals], columns=headers), df_final]).reset_index(drop=True)
 
         # ==========================================
-        # 👑 尋找各項目達成率最後兩名的儲存格
+        # 👑 尋找各項目達成率最後兩名的儲存格 (已排除合計！)
         # ==========================================
-        unit_count = len(TARGET_CONFIG) # 總共 7 個單位
-        red_cells_coords = [] # 存放要標示紅色的 (列索引, 欄索引)
+        red_cells_coords = []
         
         for cat in CATS:
             col_name = f"{cat}_達成率"
             col_idx = df_final.columns.get_loc(col_name)
-            # 取得各單位的達成率字串 (排除最下方的'合計'列)，並轉為數字
-            rates = df_final.loc[:unit_count-1, col_name].str.rstrip('%').astype(float)
+            
+            # 取得各單位的達成率 (從 index 1 開始，完美避開 index 0 的「合計」)
+            rates = df_final.loc[1:, col_name].str.rstrip('%').astype(float)
             
             if not rates.empty:
-                # 找出最低的兩個值，並取這兩個之中較大的當作門檻
+                # 找出最低的兩個值，並取較大的那個當作門檻
                 bot2_val = rates.nsmallest(2).iloc[-1]
-                # 將小於等於該門檻的單位標示為紅色 (若有多個0%平手，會一併標紅)
-                for row_idx in range(unit_count):
-                    if rates.iloc[row_idx] <= bot2_val:
+                
+                # 掃描 index 1~7 (各派出所與交通分隊)
+                for row_idx in rates.index:
+                    if rates.loc[row_idx] <= bot2_val:
                         red_cells_coords.append((row_idx, col_idx))
 
-        # 負責給 DataFrame 網頁樣式上色的函數
+        # 網頁端上色函數
         def highlight_cells(x):
             df_color = pd.DataFrame('', index=x.index, columns=x.columns)
             for r, c in red_cells_coords:
@@ -194,7 +196,7 @@ if f1 and f2:
         styled_df = df_final.style.apply(highlight_cells, axis=None)
 
         # ==========================================
-        # 👑 網頁介面：藍色專案名稱＋紅色日期
+        # 👑 網頁介面
         # ==========================================
         st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(統計期間：{date_range_str})]")
         st.markdown("*(提示：各別項目達成率 **最後兩名** 的儲存格已標示為紅色)*")
@@ -254,7 +256,7 @@ if f1 and f2:
                         }
                     })
 
-                    # 將整張數據表的字體全部初始化為黑色字體 (包含之前可能塗紅的地方)
+                    # 將整張數據表的字體全部初始化為黑色字體 (防呆機制)
                     requests.append({
                         "repeatCell": {
                             "range": {
@@ -276,7 +278,7 @@ if f1 and f2:
                         }
                     })
 
-                    # 將『各項達成率最後兩名』的特定儲存格標記為紅色粗體
+                    # 將『各項達成率最後兩名』標記為紅色粗體
                     for r, c in red_cells_coords:
                         sheet_row_idx = r + 3  # 表頭佔了 0,1,2 行
                         sheet_col_idx = c
