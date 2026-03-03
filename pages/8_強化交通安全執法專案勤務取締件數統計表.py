@@ -86,12 +86,18 @@ if f1 and f2:
                 for cell in row.values:
                     cell_str = str(cell)
                     if '統計期間' in cell_str:
-                        # 自動擷取日期 (例如 1150301至1150302 或 115年0301至0302)
+                        # 自動擷取日期字串
                         match = re.search(r'統計期間.*?[：:](?:\s*\(入案日\))?\s*([0-9年月日\-至]+)', cell_str)
                         if match:
                             date_raw = match.group(1).strip()
-                            # 依照需求：取消年，至改為-
-                            date_range_str = date_raw.replace('年', '').replace('至', '-')
+                            # 1. 取消「年」
+                            # 2. 將「至」改為「-」
+                            # 3. 擷取第3個字元之後的字串 (即取消前三碼)
+                            temp_date = date_raw.replace('年', '').replace('至', '-')
+                            if len(temp_date) >= 3:
+                                date_range_str = temp_date[3:]
+                            else:
+                                date_range_str = temp_date
         f1.seek(0)
 
         # --- 處理第一份報表 (固定跳過前3行) ---
