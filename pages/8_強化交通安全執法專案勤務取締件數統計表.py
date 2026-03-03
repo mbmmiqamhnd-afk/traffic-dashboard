@@ -143,37 +143,32 @@ if f1 and f2:
         # ==========================================
         unit_overall_ratio = {}
         for unit in TARGET_CONFIG.keys():
-            # 抓取該單位該列的索引
             idx_list = df_final.index[df_final['單位'] == unit].tolist()
             if idx_list:
                 idx = idx_list[0]
-                # 加總該單位所有類別的取締數與目標數
                 total_c = df_final.loc[idx, [f"{cat}_取締" for cat in CATS]].sum()
                 total_t = df_final.loc[idx, [f"{cat}_目標" for cat in CATS]].sum()
                 unit_overall_ratio[unit] = total_c / total_t if total_t > 0 else 0
 
-        # 將達成率由低到高排序，取前三名 (墊底的三名)
+        # 取前三名 (達成率墊底的三名)
         bottom_3_units = sorted(unit_overall_ratio, key=unit_overall_ratio.get)[:3]
 
-        # 定義上色函數
         def highlight_bottom(val):
             if val in bottom_3_units:
                 return 'color: red; font-weight: bold;'
             return ''
 
-        # 套用樣式到 '單位' 欄位
         styled_df = df_final.style.map(highlight_bottom, subset=['單位'])
 
-        # 顯示結果 (使用加上樣式的 styled_df)
         st.subheader("📊 雙檔案整合分析結果")
         st.markdown(f"*(提示：總達成率最後三名單位 **{', '.join(bottom_3_units)}** 已標示為紅色)*")
         st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
         # ==========================================
-        # 2. 雲端同步功能
+        # 2. 雲端同步功能 (加入變色格式)
         # ==========================================
-        if st.button("🚀 同步數據至雲端試算表", use_container_width=True):
-            with st.spinner("同步中，請稍候..."):
+        if st.button("🚀 同步數據與顏色至雲端試算表", use_container_width=True):
+            with st.spinner("同步數據與格式中，請稍候..."):
                 try:
                     gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                     sh = gc.open_by_url(GOOGLE_SHEET_URL)
@@ -189,19 +184,72 @@ if f1 and f2:
                     h3 = ["單位"] + ["取締件數", "目標值", "達成率"] * 6
                     
                     ws.clear()
-                    # 寫入雲端必須用原始 DataFrame (df_final)
                     ws.update(values=[h1, h2, h3] + df_final.values.tolist())
                     
-                    # 合併表頭單元格
-                    requests = [{"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}}]
+                    # 準備 Google Sheets 的格式化請求
+                    requests = []
+
+                    # 1. 合併表頭單元格
+                    requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}})
                     for j in range(1, 19, 3):
                         requests.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": j, "endColumnIndex": j+3}, "mergeType": "MERGE_ALL"}})
                     
+                    # 2. 將『單位』欄位全部初始化為黑色字體 (防呆機制，清除前一次的紅色)
+                    requests.append({
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": ws.id,
+                                "startRowIndex": 3,  # 標題佔了 0,1,2 行
+                                "endRowIndex": 3 + len(df_final),
+                                "startColumnIndex": 0,
+                                "endColumnIndex": 1
+                            },
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "textFormat": {
+                                        "foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0},
+                                        "bold": False
+                                    }
+                                }
+                            },
+                            "fields": "userEnteredFormat.textFormat(foregroundColor,bold)"
+                        }
+                    })
+
+                    # 3. 將『最後三名』的儲存格標記為紅色粗體
+                    for unit in bottom_3_units:
+                        idx_list = df_final.index[df_final['單位'] == unit].tolist()
+                        if idx_list:
+                            # 加上表頭的 3 行偏移量
+                            sheet_row_idx = idx_list[0] + 3 
+                            requests.append({
+                                "repeatCell": {
+                                    "range": {
+                                        "sheetId": ws.id,
+                                        "startRowIndex": sheet_row_idx,
+                                        "endRowIndex": sheet_row_idx + 1,
+                                        "startColumnIndex": 0,
+                                        "endColumnIndex": 1
+                                    },
+                                    "cell": {
+                                        "userEnteredFormat": {
+                                            "textFormat": {
+                                                "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0},
+                                                "bold": True
+                                            }
+                                        }
+                                    },
+                                    "fields": "userEnteredFormat.textFormat(foregroundColor,bold)"
+                                }
+                            })
+
+                    # 執行所有格式更新
                     sh.batch_update({"requests": requests})
-                    st.success("✅ 數據已成功同步並自動格式化！")
+
+                    st.success("✅ 數據與最後三名顏色已成功同步至雲端試算表！")
                     st.balloons()
                 except Exception as e:
-                    st.error(f"雲端連線失敗：{e}")
+                    st.error(f"雲端連線或格式化失敗：{e}")
 
     except Exception as e:
         st.error(f"處理檔案時發生錯誤：{e}")
