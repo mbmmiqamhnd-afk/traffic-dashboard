@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread
+import re
 from datetime import datetime
 
 # ==========================================
@@ -69,8 +70,35 @@ f2 = col2.file_uploader("📂 2. 上傳『大型車輛違規績效統計表』\n
 
 if f1 and f2:
     try:
+        # --- 動態擷取「統計期間」---
+        f1.seek(0)
+        try:
+            df1_head = pd.read_csv(f1, nrows=10, header=None) if f1.name.endswith('.csv') else pd.read_excel(f1, nrows=10, header=None)
+        except UnicodeDecodeError:
+            f1.seek(0)
+            df1_head = pd.read_csv(f1, nrows=10, header=None, encoding='cp950') if f1.name.endswith('.csv') else pd.DataFrame()
+        except Exception:
+            df1_head = pd.DataFrame()
+            
+        date_range_str = "未知期間"
+        if not df1_head.empty:
+            for _, row in df1_head.iterrows():
+                for cell in row.values:
+                    cell_str = str(cell)
+                    if '統計期間' in cell_str:
+                        # 自動擷取日期 (例如 1150301至1150302)
+                        match = re.search(r'統計期間.*?[：:](?:\s*\(入案日\))?\s*([0-9年月日\-至]+)', cell_str)
+                        if match:
+                            date_range_str = match.group(1).strip()
+        f1.seek(0)
+
         # --- 處理第一份報表 (固定跳過前3行) ---
-        df1 = pd.read_csv(f1, skiprows=3) if f1.name.endswith('.csv') else pd.read_excel(f1, skiprows=3)
+        try:
+            df1 = pd.read_csv(f1, skiprows=3) if f1.name.endswith('.csv') else pd.read_excel(f1, skiprows=3)
+        except UnicodeDecodeError:
+            f1.seek(0)
+            df1 = pd.read_csv(f1, skiprows=3, encoding='cp950') if f1.name.endswith('.csv') else pd.DataFrame()
+            
         df1.columns = [str(c).strip() for c in df1.columns]
 
         # --- 處理第二份報表 (動態尋找標頭列，因行數不固定) ---
@@ -160,12 +188,13 @@ if f1 and f2:
 
         styled_df = df_final.style.map(highlight_bottom, subset=['單位'])
 
-        st.subheader("📊 雙檔案整合分析結果")
+        # 顯示整合結果標題 (帶上日期)
+        st.subheader(f"📊 雙檔案整合分析結果 (統計期間：{date_range_str})")
         st.markdown(f"*(提示：總達成率最後三名單位 **{', '.join(bottom_3_units)}** 已標示為紅色)*")
         st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
         # ==========================================
-        # 2. 雲端同步功能 (加入變色格式)
+        # 2. 雲端同步功能 (加入變色格式與日期標題)
         # ==========================================
         if st.button("🚀 同步數據與顏色至雲端試算表", use_container_width=True):
             with st.spinner("同步數據與格式中，請稍候..."):
@@ -178,12 +207,13 @@ if f1 and f2:
                     except:
                         ws = sh.add_worksheet(title=PROJECT_NAME, rows=50, cols=20)
                     
-                    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    h1 = [f"{PROJECT_NAME} (同步時間：{now})"] + [""] * 18
+                    # 雲端表格首行文字更新為「統計期間」
+                    h1 = [f"{PROJECT_NAME} (統計期間：{date_range_str})"] + [""] * 18
                     h2 = [""] + [c for c in CATS for _ in range(3)]
                     h3 = ["單位"] + ["取締件數", "目標值", "達成率"] * 6
                     
                     ws.clear()
+                    # 寫入雲端必須用原始 DataFrame (df_final)
                     ws.update(values=[h1, h2, h3] + df_final.values.tolist())
                     
                     # 準備 Google Sheets 的格式化請求
