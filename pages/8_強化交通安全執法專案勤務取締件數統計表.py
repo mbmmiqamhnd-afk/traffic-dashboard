@@ -164,30 +164,11 @@ if f1 and f2:
         
         df_final = pd.concat([pd.DataFrame([totals], columns=headers), df_final]).reset_index(drop=True)
 
-        unit_overall_ratio = {}
-        for unit in TARGET_CONFIG.keys():
-            idx_list = df_final.index[df_final['單位'] == unit].tolist()
-            if idx_list:
-                idx = idx_list[0]
-                total_c = df_final.loc[idx, [f"{cat}_取締" for cat in CATS]].sum()
-                total_t = df_final.loc[idx, [f"{cat}_目標" for cat in CATS]].sum()
-                unit_overall_ratio[unit] = total_c / total_t if total_t > 0 else 0
-
-        bottom_3_units = sorted(unit_overall_ratio, key=unit_overall_ratio.get)[:3]
-
-        def highlight_bottom(val):
-            if val in bottom_3_units:
-                return 'color: red; font-weight: bold;'
-            return ''
-
-        styled_df = df_final.style.map(highlight_bottom, subset=['單位'])
-
         # ==========================================
         # 👑 網頁介面：藍色專案名稱＋紅色日期
         # ==========================================
         st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(統計期間：{date_range_str})]")
-        st.markdown(f"*(提示：總達成率最後三名單位 **{', '.join(bottom_3_units)}** 已標示為紅色)*")
-        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+        st.dataframe(df_final, use_container_width=True, hide_index=True)
 
         # ==========================================
         # 2. 雲端同步功能
@@ -245,7 +226,7 @@ if f1 and f2:
                         }
                     })
 
-                    # 將『單位』欄位全部初始化為黑色字體
+                    # 將『單位』欄位全部初始化為黑色字體 (防呆機制，清除前一次可能有殘留的紅色)
                     requests.append({
                         "repeatCell": {
                             "range": {
@@ -267,34 +248,8 @@ if f1 and f2:
                         }
                     })
 
-                    # 將『最後三名』的儲存格標記為紅色粗體
-                    for unit in bottom_3_units:
-                        idx_list = df_final.index[df_final['單位'] == unit].tolist()
-                        if idx_list:
-                            sheet_row_idx = idx_list[0] + 3 
-                            requests.append({
-                                "repeatCell": {
-                                    "range": {
-                                        "sheetId": ws.id,
-                                        "startRowIndex": sheet_row_idx,
-                                        "endRowIndex": sheet_row_idx + 1,
-                                        "startColumnIndex": 0,
-                                        "endColumnIndex": 1
-                                    },
-                                    "cell": {
-                                        "userEnteredFormat": {
-                                            "textFormat": {
-                                                "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0},
-                                                "bold": True
-                                            }
-                                        }
-                                    },
-                                    "fields": "userEnteredFormat.textFormat(foregroundColor,bold)"
-                                }
-                            })
-
                     sh.batch_update({"requests": requests})
-                    st.success("✅ 雙色標題與最後三名顏色已成功同步，且完美保留了您的專屬表頭格式！")
+                    st.success("✅ 雙色標題已成功同步，且完美保留了您的專屬表頭格式！")
                     st.balloons()
                 except Exception as e:
                     st.error(f"雲端連線或格式化失敗：{e}")
