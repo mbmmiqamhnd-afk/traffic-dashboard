@@ -90,14 +90,20 @@ if f1 and f2:
                         match = re.search(r'統計期間.*?[：:](?:\s*\(入案日\))?\s*([0-9年月日\-至]+)', cell_str)
                         if match:
                             date_raw = match.group(1).strip()
-                            # 1. 取消「年」
-                            # 2. 將「至」改為「-」
-                            # 3. 擷取第3個字元之後的字串 (即取消前三碼)
-                            temp_date = date_raw.replace('年', '').replace('至', '-')
-                            if len(temp_date) >= 3:
-                                date_range_str = temp_date[3:]
-                            else:
-                                date_range_str = temp_date
+                            # 依照「至」或「-」拆分為起訖日期
+                            parts = date_raw.split('至') if '至' in date_raw else date_raw.split('-')
+                            clean_parts = []
+                            for p in parts:
+                                p = p.strip()
+                                # 如果包含「年」，直接取「年」後面的字串
+                                if '年' in p:
+                                    p = p.split('年')[-1]
+                                # 如果全是數字且長度為 7 (例如 1150301)，切掉前三碼
+                                elif len(p) == 7 and p.isdigit():
+                                    p = p[3:]
+                                clean_parts.append(p)
+                            # 用 "-" 將起訖日期重新接合
+                            date_range_str = "-".join(clean_parts)
         f1.seek(0)
 
         # --- 處理第一份報表 (固定跳過前3行) ---
