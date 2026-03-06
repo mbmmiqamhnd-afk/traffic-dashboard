@@ -36,7 +36,7 @@ LAW_MAP = {
 }
 
 def map_unit_name(raw_name):
-    # 讓交通組與警備隊獨立對應，不再歸入交通分隊
+    # 讓交通組與警備隊獨立對應
     raw = str(raw_name)
     if '交通組' in raw: return '交通組'
     if '警備隊' in raw: return '警備隊'
@@ -152,14 +152,13 @@ if f1 and f2:
             else:
                 df2_clean[exclude_col] = 0
                 
-        # 調整後的大型車違規 = 總數 - 違反管制規定 - 其他違規 (最低為0，防呆)
+        # 調整後的大型車違規
         df2_clean['調整後大型車違規'] = (df2_clean['舉發總數'] - df2_clean['違反管制規定'] - df2_clean['其他違規']).clip(lower=0)
 
         final_results = []
         for unit in TARGET_CONFIG.keys():
             data_1to5 = get_counts(df1, unit, CATS[:5])
             
-            # 改用「調整後大型車違規」的加總
             unit_rows = df2_clean[df2_clean['標準單位'] == unit]
             heavy_count = int(unit_rows['調整後大型車違規'].sum()) if not unit_rows.empty else 0
             
@@ -177,18 +176,24 @@ if f1 and f2:
             headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
         df_final = pd.DataFrame(final_results, columns=headers)
 
+        # 計算最下方的合計列 (在修改為 '-' 之前計算)
         totals = ["合計"]
         for i in range(1, len(headers), 3):
             c_sum = df_final.iloc[:, i].sum()
             t_sum = df_final.iloc[:, i+1].sum()
             r_sum = f"{(c_sum/t_sum*100):.1f}%" if t_sum > 0 else "0.0%"
             totals.extend([int(c_sum), int(t_sum), r_sum])
+            
+        # 👑 將交通組與警備隊的「目標」與「達成率」改為 '-'
+        cols_to_mask = [c for c in df_final.columns if '目標' in c or '達成率' in c]
+        mask_units = ['交通組', '警備隊']
+        df_final.loc[df_final['單位'].isin(mask_units), cols_to_mask] = '-'
         
         # 把合計加入，現在 index 0 就是「合計」
         df_final = pd.concat([pd.DataFrame([totals], columns=headers), df_final]).reset_index(drop=True)
 
         # ==========================================
-        # 👑 尋找各項目達成率最後兩名的儲存格 (已排除合計！)
+        # 👑 尋找各項目達成率最後兩名的儲存格 (排除合計、排除 '-')
         # ==========================================
         red_cells_coords = []
         
@@ -196,16 +201,18 @@ if f1 and f2:
             col_name = f"{cat}_達成率"
             col_idx = df_final.columns.get_loc(col_name)
             
-            # 取得各單位的達成率 (從 index 1 開始，完美避開 index 0 的「合計」)
-            rates = df_final.loc[1:, col_name].str.rstrip('%').astype(float)
+            # 取得各單位的達成率 (從 index 1 開始)
+            # 使用 pd.to_numeric(..., errors='coerce') 將 '-' 轉為 NaN，以便自動排除
+            raw_series = df_final.loc[1:, col_name].astype(str).str.rstrip('%')
+            rates = pd.to_numeric(raw_series, errors='coerce')
             
-            if not rates.empty:
-                # 找出最低的兩個值，並取較大的那個當作門檻
+            if not rates.dropna().empty:
+                # 找出最低的兩個值 (NaN 會自動被忽略)
                 bot2_val = rates.nsmallest(2).iloc[-1]
                 
-                # 掃描 index 1~ (各派出所與交通分隊等)
+                # 掃描 (各派出所與交通分隊)
                 for row_idx in rates.index:
-                    if rates.loc[row_idx] <= bot2_val:
+                    if pd.notna(rates.loc[row_idx]) and rates.loc[row_idx] <= bot2_val:
                         red_cells_coords.append((row_idx, col_idx))
 
         # 網頁端上色函數
@@ -244,7 +251,7 @@ if f1 and f2:
                     h2 = [""] + [c for c in CATS for _ in range(3)]
                     h3 = ["單位"] + ["取締件數", "目標值", "達成率"] * 6
                     
-                    # 更新數值
+                    # 更新數值 (會正確寫入 '-' 到雲端)
                     ws.update(values=[h1, h2, h3] + df_final.values.tolist())
                     
                     requests = []
