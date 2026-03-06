@@ -18,7 +18,7 @@ except Exception as e:
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 
 # ==========================================
-# 🛠️ 2. 資料解析與清洗工具
+# 🛠️ 2. 工具函式
 # ==========================================
 
 def parse_raw(f):
@@ -34,9 +34,7 @@ def parse_raw(f):
 
 def clean_data(df_raw):
     df_raw[0] = df_raw[0].astype(str)
-    # 篩選包含「所」或「合計」的列
     df_data = df_raw[df_raw[0].str.contains("所|總計|合計", na=False)].copy()
-    # CSV 索引對應：0 單位, 5 A1死亡, 9 A2受傷
     cols = {0: "Station", 5: "A1_Deaths", 9: "A2_Injuries"}
     df_data = df_data.rename(columns=cols)
     for c in [5, 9]:
@@ -46,10 +44,10 @@ def clean_data(df_raw):
     return df_data
 
 # ==========================================
-# 📊 3. 核心合併邏輯 (4 檔案版本)
+# 📊 3. 核心合併邏輯 (找回括號與日期)
 # ==========================================
 
-def build_final_table(df_wk, df_prev, df_cur, df_lst, stations, col_name, is_a2=False):
+def build_final_table(df_wk, df_prev, df_cur, df_lst, stations, col_name, date_labels, is_a2=False):
     # 合併四份報表
     m = pd.merge(df_wk[['Station_Short', col_name]], df_prev[['Station_Short', col_name]], on='Station_Short', suffixes=('_wk', '_prev'))
     m = pd.merge(m, df_cur[['Station_Short', col_name]], on='Station_Short').rename(columns={col_name: col_name+'_cur'})
@@ -70,18 +68,25 @@ def build_final_table(df_wk, df_prev, df_cur, df_lst, stations, col_name, is_a2=
     
     if is_a2:
         m['Pct'] = m.apply(lambda x: f"{(x['Diff']/x[col_name+'_lst']):.2%}" if x[col_name+'_lst'] != 0 else "0.00%", axis=1)
-        # A2 表格欄位與標題 (前期在 C 欄)
         res = m[['Station_Short', col_name+'_wk', col_name+'_prev', col_name+'_cur', col_name+'_lst', 'Diff', 'Pct']]
-        res.columns = ['統計期間', '本期', '前期', '本年累計', '去年累計', '本年與去年同期比較', '增減比例']
+        # 🌟 找回括號日期
+        res.columns = [
+            f'統計期間({date_labels["wk"]})', 
+            '本期', '前期', '本年累計', '去年累計', 
+            '本年與去年同期比較', '增減比例'
+        ]
     else:
-        # A1 表格欄位與標題 (F 欄為比較)
         res = m[['Station_Short', col_name+'_wk', col_name+'_cur', col_name+'_lst', 'Diff']]
-        res.columns = ['統計期間', '本期', '本年累計', '去年累計', '本年與去年同期比較']
+        res.columns = [
+            f'統計期間({date_labels["wk"]})', 
+            '本期', '本年累計', '去年累計', 
+            '本年與去年同期比較'
+        ]
     
     return res
 
 # ==========================================
-# ☁️ 4. 雲端同步 (包含標題輸出)
+# ☁️ 4. 雲端同步
 # ==========================================
 
 def sync_to_gsheet(df_a1, df_a2):
@@ -89,28 +94,21 @@ def sync_to_gsheet(df_a1, df_a2):
         gc = gspread.service_account_from_dict(GCP_CREDS)
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         
-        # --- A1 同步 (第 3 分頁) ---
+        # A1 同步
         ws1 = sh.get_worksheet(2)
-        ws1.batch_clear(["A2:F100"]) # 清除舊資料(含標題列)
-        # 寫入標題 (A2 儲存格開始)
+        ws1.batch_clear(["A2:F100"])
         ws1.update('A2', [df_a1.columns.tolist()])
-        # 寫入資料 (A3 儲存格開始)
         ws1.update('A3', df_a1.values.tolist())
         
-        # --- A2 同步 (第 4 分頁) ---
+        # A2 同步
         ws2 = sh.get_worksheet(3)
         ws2.batch_clear(["A2:G100"])
-        # 寫入標題
         ws2.update('A2', [df_a2.columns.tolist()])
         
-        # 轉換數值為整數並寫入資料
-        data_to_save = []
-        for row in df_a2.values.tolist():
-            clean_row = [int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row]
-            data_to_save.append(clean_row)
-            
+        data_to_save = [[int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row] for row in df_a2.values.tolist()]
         ws2.update('A3', data_to_save)
-        return True, "✅ 同步成功：F 欄標題已更新為「本年與去年同期比較」"
+        
+        return True, "✅ 同步成功：括號日期與 F 欄標題均已正確輸出。"
     except Exception as e:
         return False, f"❌ 同步失敗: {e}"
 
@@ -118,12 +116,10 @@ def sync_to_gsheet(df_a1, df_a2):
 # 🚀 5. Streamlit UI 流程
 # ==========================================
 
-st.title("🚑 交通事故統計 (標題對齊版)")
-
-files = st.file_uploader("請上傳 4 個報表檔案", accept_multiple_files=True)
+files = st.file_uploader("請一次上傳 4 個報表檔案", accept_multiple_files=True)
 
 if files and len(files) == 4:
-    with st.status("正在處理並同步雲端...") as status:
+    with st.status("處理中...") as status:
         try:
             meta = []
             for f in files:
@@ -131,15 +127,17 @@ if files and len(files) == 4:
                 text = str(df.iloc[:5, :5].values)
                 dates = re.findall(r'(\d{3})[./](\d{1,2})[./](\d{1,2})', text)
                 if len(dates) >= 2:
+                    d_label = f"{dates[0][0]}/{int(dates[0][1]):02d}/{int(dates[0][2]):02d}-{int(dates[1][1]):02d}/{int(dates[1][2]):02d}"
                     meta.append({
                         'df': clean_data(df),
                         'year': int(dates[1][0]),
                         'start_day': int(dates[0][1])*100 + int(dates[0][2]),
+                        'range': d_label,
                         'is_cumu': (int(dates[0][1]) == 1 and int(dates[0][2]) == 1)
                     })
 
             if len(meta) < 4:
-                st.error("日期解析失敗，請確認檔案。")
+                st.error("日期解析失敗。")
                 st.stop()
 
             # 分配檔案
@@ -150,11 +148,12 @@ if files and len(files) == 4:
             df_prev = period_files[0]
             df_wk = period_files[1]
 
+            date_labels = {"wk": df_wk['range']} # 提取本期日期區間
             stations = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
             
             # 生成結果
-            a1_res = build_final_table(df_wk['df'], df_prev['df'], df_cur['df'], df_lst['df'], stations, 'A1_Deaths')
-            a2_res = build_final_table(df_wk['df'], df_prev['df'], df_cur['df'], df_lst['df'], stations, 'A2_Injuries', is_a2=True)
+            a1_res = build_final_table(df_wk['df'], df_prev['df'], df_cur['df'], df_lst['df'], stations, 'A1_Deaths', date_labels)
+            a2_res = build_final_table(df_wk['df'], df_prev['df'], df_cur['df'], df_lst['df'], stations, 'A2_Injuries', date_labels, is_a2=True)
 
             # 更新雲端
             ok, msg = sync_to_gsheet(a1_res, a2_res)
