@@ -12,6 +12,7 @@ st.set_page_config(page_title="強化專案統計 - 龍潭分局", layout="wide"
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 PROJECT_NAME = "強化交通安全執法專案勤務取締件數統計表"
 
+# 新增交通組與警備隊，目標值設為 0 (僅統計數據)
 TARGET_CONFIG = {
     '聖亭所': [5, 115, 5, 16, 7, 10],
     '龍潭所': [6, 145, 7, 20, 9, 12],
@@ -19,7 +20,9 @@ TARGET_CONFIG = {
     '石門所': [3, 80, 4, 11, 5, 7],
     '高平所': [3, 80, 4, 11, 5, 7],
     '三和所': [2, 40, 2, 6, 2, 5],
-    '交通分隊': [5, 115, 4, 16, 6, 8]
+    '交通分隊': [5, 115, 4, 16, 6, 8],
+    '交通組': [0, 0, 0, 0, 0, 0],
+    '警備隊': [0, 0, 0, 0, 0, 0]
 }
 
 CATS = ["酒後駕車", "闖紅燈", "嚴重超速", "車不讓人", "行人違規", "大型車違規"]
@@ -33,10 +36,12 @@ LAW_MAP = {
 }
 
 def map_unit_name(raw_name):
-    # 定義單位對應表 (注意：越特定的名稱或優先級高的要放前面)
+    # 讓交通組與警備隊獨立對應，不再歸入交通分隊
+    raw = str(raw_name)
+    if '交通組' in raw: return '交通組'
+    if '警備隊' in raw: return '警備隊'
+    
     u_map = {
-        '交通組': '交通分隊',   # 新增：交通組 -> 交通分隊
-        '警備隊': '交通分隊',   # 新增：警備隊 -> 交通分隊
         '交通分隊': '交通分隊', '龍潭交通分隊': '交通分隊',
         '聖亭': '聖亭所', '聖亭派出所': '聖亭所',
         '龍潭': '龍潭所', '龍潭派出所': '龍潭所',
@@ -46,17 +51,17 @@ def map_unit_name(raw_name):
         '三和': '三和所', '三和派出所': '三和所'
     }
     for key, val in u_map.items():
-        if key in str(raw_name): return val
+        if key in raw: return val
     return None
 
 def get_counts(df, unit, categories_list):
-    # 篩選出該單位的所有資料列 (可能包含多個原始單位，如交通分隊+交通組)
+    # 篩選出該單位的所有資料列
     rows = df[df['單位'].apply(map_unit_name) == unit]
     counts = {}
     for cat in categories_list:
         keywords = LAW_MAP.get(cat, [])
         matched_cols = [c for c in df.columns if any(k in str(c) for k in keywords)]
-        # 改為 sum().sum() 以加總所有符合列的數據
+        # 加總該單位所有符合列的數據
         counts[cat] = int(rows[matched_cols].sum().sum()) if not rows.empty else 0
     return counts
 
@@ -154,7 +159,7 @@ if f1 and f2:
         for unit in TARGET_CONFIG.keys():
             data_1to5 = get_counts(df1, unit, CATS[:5])
             
-            # 改用「調整後大型車違規」的加總 (此處會自動將交通組、警備隊、交通分隊的數據加總)
+            # 改用「調整後大型車違規」的加總
             unit_rows = df2_clean[df2_clean['標準單位'] == unit]
             heavy_count = int(unit_rows['調整後大型車違規'].sum()) if not unit_rows.empty else 0
             
@@ -163,7 +168,7 @@ if f1 and f2:
             for i, cat in enumerate(CATS):
                 cnt = all_c[cat]
                 tgt = TARGET_CONFIG[unit][i]
-                ratio = f"{(cnt/tgt*100):.1f}%" if tgt > 0 else "0%"
+                ratio = f"{(cnt/tgt*100):.1f}%" if tgt > 0 else "0.0%"
                 unit_row.extend([cnt, tgt, ratio])
             final_results.append(unit_row)
 
@@ -176,7 +181,7 @@ if f1 and f2:
         for i in range(1, len(headers), 3):
             c_sum = df_final.iloc[:, i].sum()
             t_sum = df_final.iloc[:, i+1].sum()
-            r_sum = f"{(c_sum/t_sum*100):.1f}%" if t_sum > 0 else "0%"
+            r_sum = f"{(c_sum/t_sum*100):.1f}%" if t_sum > 0 else "0.0%"
             totals.extend([int(c_sum), int(t_sum), r_sum])
         
         # 把合計加入，現在 index 0 就是「合計」
@@ -198,7 +203,7 @@ if f1 and f2:
                 # 找出最低的兩個值，並取較大的那個當作門檻
                 bot2_val = rates.nsmallest(2).iloc[-1]
                 
-                # 掃描 index 1~7 (各派出所與交通分隊)
+                # 掃描 index 1~ (各派出所與交通分隊等)
                 for row_idx in rates.index:
                     if rates.loc[row_idx] <= bot2_val:
                         red_cells_coords.append((row_idx, col_idx))
