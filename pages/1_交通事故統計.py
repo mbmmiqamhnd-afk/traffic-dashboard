@@ -70,18 +70,18 @@ def build_final_table(df_wk, df_prev, df_cur, df_lst, stations, col_name, is_a2=
     
     if is_a2:
         m['Pct'] = m.apply(lambda x: f"{(x['Diff']/x[col_name+'_lst']):.2%}" if x[col_name+'_lst'] != 0 else "0.00%", axis=1)
-        # A2 表格欄位與標題
+        # A2 表格欄位與標題 (前期在 C 欄)
         res = m[['Station_Short', col_name+'_wk', col_name+'_prev', col_name+'_cur', col_name+'_lst', 'Diff', 'Pct']]
         res.columns = ['統計期間', '本期', '前期', '本年累計', '去年累計', '本年與去年同期比較', '增減比例']
     else:
-        # A1 表格欄位與標題
+        # A1 表格欄位與標題 (F 欄為比較)
         res = m[['Station_Short', col_name+'_wk', col_name+'_cur', col_name+'_lst', 'Diff']]
         res.columns = ['統計期間', '本期', '本年累計', '去年累計', '本年與去年同期比較']
     
     return res
 
 # ==========================================
-# ☁️ 4. 雲端同步 (輸出至 C 欄)
+# ☁️ 4. 雲端同步 (包含標題輸出)
 # ==========================================
 
 def sync_to_gsheet(df_a1, df_a2):
@@ -89,24 +89,28 @@ def sync_to_gsheet(df_a1, df_a2):
         gc = gspread.service_account_from_dict(GCP_CREDS)
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         
-        # A1 同步 (第 3 分頁)
+        # --- A1 同步 (第 3 分頁) ---
         ws1 = sh.get_worksheet(2)
-        ws1.batch_clear(["A3:F100"])
+        ws1.batch_clear(["A2:F100"]) # 清除舊資料(含標題列)
+        # 寫入標題 (A2 儲存格開始)
+        ws1.update('A2', [df_a1.columns.tolist()])
+        # 寫入資料 (A3 儲存格開始)
         ws1.update('A3', df_a1.values.tolist())
         
-        # A2 同步 (第 4 分頁) - 此時 df_a2 的順序已經是 [單位, 本期, 前期...]
-        # 所以 df_a2.values.tolist() 的第 3 個元素 (Index 2) 自然就是 C 欄
+        # --- A2 同步 (第 4 分頁) ---
         ws2 = sh.get_worksheet(3)
-        ws2.batch_clear(["A3:G100"])
+        ws2.batch_clear(["A2:G100"])
+        # 寫入標題
+        ws2.update('A2', [df_a2.columns.tolist()])
         
-        # 轉換數值為整數，避免雲端出現 .0
+        # 轉換數值為整數並寫入資料
         data_to_save = []
         for row in df_a2.values.tolist():
             clean_row = [int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row]
             data_to_save.append(clean_row)
             
         ws2.update('A3', data_to_save)
-        return True, "✅ 雲端同步成功：A2 受傷前期已填入 C 欄，F 欄標題已更新。"
+        return True, "✅ 同步成功：F 欄標題已更新為「本年與去年同期比較」"
     except Exception as e:
         return False, f"❌ 同步失敗: {e}"
 
@@ -114,43 +118,41 @@ def sync_to_gsheet(df_a1, df_a2):
 # 🚀 5. Streamlit UI 流程
 # ==========================================
 
-files = st.file_uploader("請一次選取並上傳 4 個報表檔案", accept_multiple_files=True)
+st.title("🚑 交通事故統計 (標題對齊版)")
+
+files = st.file_uploader("請上傳 4 個報表檔案", accept_multiple_files=True)
 
 if files and len(files) == 4:
-    with st.status("正在辨識期別並計算...") as status:
+    with st.status("正在處理並同步雲端...") as status:
         try:
             meta = []
             for f in files:
                 df = parse_raw(f)
                 text = str(df.iloc[:5, :5].values)
-                # 偵測民國年月日
                 dates = re.findall(r'(\d{3})[./](\d{1,2})[./](\d{1,2})', text)
                 if len(dates) >= 2:
                     meta.append({
                         'df': clean_data(df),
                         'year': int(dates[1][0]),
-                        'start_day': int(dates[0][1])*100 + int(dates[0][2]), # 月份*100+日期用於排序
+                        'start_day': int(dates[0][1])*100 + int(dates[0][2]),
                         'is_cumu': (int(dates[0][1]) == 1 and int(dates[0][2]) == 1)
                     })
 
             if len(meta) < 4:
-                st.error("日期解析不足 4 份，請確認檔案格式。")
+                st.error("日期解析失敗，請確認檔案。")
                 st.stop()
 
-            # --- 檔案分配邏輯 ---
-            # 1. 去年累計
-            df_lst = sorted([f for f in meta if f['year'] < max(m['year'] for m in meta)], key=lambda x: x['year'])[-1]
-            # 2. 今年累計
+            # 分配檔案
             this_year = max(m['year'] for m in meta)
+            df_lst = sorted([f for f in meta if f['year'] < this_year], key=lambda x: x['year'])[-1]
             df_cur = [f for f in meta if f['year'] == this_year and f['is_cumu']][0]
-            # 3. 本期 vs 前期 (日期較晚為本期)
             period_files = sorted([f for f in meta if f['year'] == this_year and not f['is_cumu']], key=lambda x: x['start_day'])
             df_prev = period_files[0]
             df_wk = period_files[1]
 
             stations = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
             
-            # 執行合併
+            # 生成結果
             a1_res = build_final_table(df_wk['df'], df_prev['df'], df_cur['df'], df_lst['df'], stations, 'A1_Deaths')
             a2_res = build_final_table(df_wk['df'], df_prev['df'], df_cur['df'], df_lst['df'], stations, 'A2_Injuries', is_a2=True)
 
@@ -159,10 +161,9 @@ if files and len(files) == 4:
             
             status.update(label="✅ 同步完成", state="complete")
             st.success(msg)
-            st.write("### A2類 預覽 (C欄為前期受傷人數)")
-            st.table(a2_res)
+            st.dataframe(a2_res)
 
         except Exception as e:
-            st.error(f"分析錯誤：{e}")
+            st.error(f"分析失敗：{e}")
 else:
-    st.info("💡 請一次上傳 4 個報表檔案（本期、前期、本年累計、去年同期）。")
+    st.info("💡 請一次上傳 4 個報表檔案。")
