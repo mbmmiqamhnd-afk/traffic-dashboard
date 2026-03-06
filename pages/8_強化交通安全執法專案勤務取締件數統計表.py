@@ -33,7 +33,10 @@ LAW_MAP = {
 }
 
 def map_unit_name(raw_name):
+    # 定義單位對應表 (注意：越特定的名稱或優先級高的要放前面)
     u_map = {
+        '交通組': '交通分隊',   # 新增：交通組 -> 交通分隊
+        '警備隊': '交通分隊',   # 新增：警備隊 -> 交通分隊
         '交通分隊': '交通分隊', '龍潭交通分隊': '交通分隊',
         '聖亭': '聖亭所', '聖亭派出所': '聖亭所',
         '龍潭': '龍潭所', '龍潭派出所': '龍潭所',
@@ -47,12 +50,14 @@ def map_unit_name(raw_name):
     return None
 
 def get_counts(df, unit, categories_list):
-    row = df[df['單位'].apply(map_unit_name) == unit]
+    # 篩選出該單位的所有資料列 (可能包含多個原始單位，如交通分隊+交通組)
+    rows = df[df['單位'].apply(map_unit_name) == unit]
     counts = {}
     for cat in categories_list:
         keywords = LAW_MAP.get(cat, [])
         matched_cols = [c for c in df.columns if any(k in str(c) for k in keywords)]
-        counts[cat] = int(row[matched_cols].sum(axis=1).values[0]) if not row.empty else 0
+        # 改為 sum().sum() 以加總所有符合列的數據
+        counts[cat] = int(rows[matched_cols].sum().sum()) if not rows.empty else 0
     return counts
 
 # ==========================================
@@ -149,7 +154,7 @@ if f1 and f2:
         for unit in TARGET_CONFIG.keys():
             data_1to5 = get_counts(df1, unit, CATS[:5])
             
-            # 改用「調整後大型車違規」的加總
+            # 改用「調整後大型車違規」的加總 (此處會自動將交通組、警備隊、交通分隊的數據加總)
             unit_rows = df2_clean[df2_clean['標準單位'] == unit]
             heavy_count = int(unit_rows['調整後大型車違規'].sum()) if not unit_rows.empty else 0
             
