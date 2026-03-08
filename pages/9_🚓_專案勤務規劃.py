@@ -8,22 +8,23 @@ st.set_page_config(page_title="專案勤務規劃", layout="wide")
 st.title("🚓 專案勤務規劃表產生器")
 st.caption("即時編輯勤務名單，並輸出標準格式報表")
 
-# --- 側邊欄：全域設定 ---
-with st.sidebar:
-    st.header("⚙️ 勤務基本設定")
-    plan_date = st.text_input("勤務日期", value="115年2月26日")
-    plan_time = st.text_input("勤務時間", value="19至23時")
+# --- 1. 勤務基礎資訊 (移至主畫面，方便修改) ---
+st.subheader("1. 勤務基礎資訊")
+st.info("💡 在此設定報表抬頭、時間與專案名稱")
+
+col1, col2 = st.columns(2)
+with col1:
     unit_name = st.text_input("執行單位", value="桃園市政府警察局龍潭分局")
+    # 【修改重點】將日期與時間合併為單一欄位，讓您可以自由輸入 (例如：115年2月26日19至23時)
+    plan_full_time = st.text_input("勤務時間 (完整顯示文字)", value="115年2月26日19至23時")
+with col2:
     project_name = st.text_input("專案名稱", value="0226「取締改裝(噪音)車輛專案監、警、環聯合稽查勤務」")
 
-# --- 核心資料區 ---
-
-# 1. 指揮與幕僚編組
-st.subheader("1. 指揮與幕僚編組")
-st.info("💡 提示：姓名若有多人，請用「、」分隔，報表輸出時會自動變為「上下並列」。")
+# --- 2. 指揮與幕僚編組 ---
+st.subheader("2. 指揮與幕僚編組")
+st.caption("💡 姓名若有多人，請用「、」或「,」分隔，報表輸出時會自動變為「上下並列」。")
 
 with st.expander("📝 點此編輯【指揮官與幕僚】名單", expanded=True):
-    # 預設資料：姓名使用頓號分隔
     command_data = [
         {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導。"},
         {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長 何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
@@ -42,15 +43,15 @@ with st.expander("📝 點此編輯【指揮官與幕僚】名單", expanded=Tru
         key="command_editor"
     )
 
-# 2. 勤務細節
-col1, col2 = st.columns(2)
-with col1:
+# --- 3. 勤務細節 (勤教與檢驗站) ---
+col3, col4 = st.columns(2)
+with col3:
     briefing_info = st.text_area("📢 勤前教育", value="19時30分於分局二樓會議室召開", height=100)
-with col2:
+with col4:
     check_station = st.text_area("🚧 環保局臨時檢驗站", value="時間：20時至23時\n地點：桃園市龍潭區大昌路一段277號（龍潭區警政聯合辦公大樓）廣場", height=100)
 
-# 3. 巡邏編組
-st.subheader("2. 執行勤務編組 (巡邏組)")
+# --- 4. 巡邏編組 ---
+st.subheader("3. 執行勤務編組 (巡邏組)")
 st.caption("👇 直接在表格中修改人員或地點，下方會即時更新")
 
 patrol_data = [
@@ -70,18 +71,17 @@ df_patrol = st.data_editor(
 )
 
 # --- 輸出邏輯 (HTML 生成) ---
-def generate_html(unit, project, date, time, briefing, station, df_cmd, df_ptl):
+def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     style = """
     <style>
         body { font-family: 'DFKai-SB', 'BiauKai', '標楷體', serif; color: #000; }
         .container { width: 100%; max-width: 800px; margin: 0 auto; padding: 20px; }
-        h2 { text-align: center; margin-bottom: 5px; }
-        .info { text-align: center; font-weight: bold; margin-bottom: 15px; }
+        h2 { text-align: center; margin-bottom: 5px; letter-spacing: 2px; }
+        .info { text-align: center; font-weight: bold; margin-bottom: 15px; font-size: 16px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
         th, td { border: 1px solid black; padding: 8px; text-align: center; font-size: 14px; vertical-align: middle; }
         th { background-color: #f2f2f2; }
         .left-align { text-align: left; }
-        .name-col { white-space: nowrap; } /* 避免名字被過度擠壓 */
         .rain-plan { color: blue; font-size: 0.9em; display: block; margin-top: 4px; }
     </style>
     """
@@ -92,7 +92,7 @@ def generate_html(unit, project, date, time, briefing, station, df_cmd, df_ptl):
     <body>
     <div class="container">
         <h2>{unit}執行{project}規劃表</h2>
-        <div class="info">勤務時間：{date} {time}</div>
+        <div class="info">勤務時間：{time_str}</div>
     """
     
     # 第一個表格：任務編組
@@ -107,14 +107,13 @@ def generate_html(unit, project, date, time, briefing, station, df_cmd, df_ptl):
             </tr>
     """
     for _, row in df_cmd.iterrows():
-        # 【關鍵修改】將頓號(、)、逗號(,) 取代為換行標籤 <br>
+        # 處理多姓名換行
         formatted_name = str(row['姓名']).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
-        
         html += f"""
             <tr>
                 <td><b>{row['職稱']}</b></td>
                 <td>{row['代號']}</td>
-                <td style="line-height: 1.5;">{formatted_name}</td>
+                <td style="line-height: 1.4;">{formatted_name}</td>
                 <td class="left-align">{row['任務']}</td>
             </tr>
         """
@@ -122,9 +121,9 @@ def generate_html(unit, project, date, time, briefing, station, df_cmd, df_ptl):
     
     # 勤前教育與檢驗站
     html += f"""
-        <div class="left-align" style="margin-bottom: 20px;">
+        <div class="left-align" style="margin-bottom: 20px; line-height: 1.6;">
             <div><b>📢 勤前教育：</b>{briefing}</div>
-            <div style="margin-top:5px;"><b>🚧 {station.replace(chr(10), '<br>')}</b></div>
+            <div style="white-space: pre-wrap;"><b>🚧 {station}</b></div>
         </div>
     """
     
@@ -140,7 +139,6 @@ def generate_html(unit, project, date, time, briefing, station, df_cmd, df_ptl):
             </tr>
     """
     for _, row in df_ptl.iterrows():
-        # 巡邏組的人員也可能需要換行，這裡一併處理
         formatted_ptl_name = str(row['服勤人員']).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
         rain_text = f"<span class='rain-plan'>*雨備：{row['雨備']}</span>" if row['雨備'] else ""
         
@@ -149,7 +147,7 @@ def generate_html(unit, project, date, time, briefing, station, df_cmd, df_ptl):
                 <td>{row['編組']}</td>
                 <td>{row['無線電']}</td>
                 <td>{row['單位']}</td>
-                <td style="line-height: 1.5;">{formatted_ptl_name}</td>
+                <td style="line-height: 1.4;">{formatted_ptl_name}</td>
                 <td class="left-align">
                     {row['任務分工']}
                     {rain_text}
@@ -165,7 +163,7 @@ def generate_html(unit, project, date, time, briefing, station, df_cmd, df_ptl):
     return html
 
 # 產生 HTML
-html_content = generate_html(unit_name, project_name, plan_date, plan_time, briefing_info, check_station, df_command, df_patrol)
+html_content = generate_html(unit_name, project_name, plan_full_time, briefing_info, check_station, df_command, df_patrol)
 
 # --- 預覽與下載區 ---
 st.markdown("---")
@@ -185,4 +183,4 @@ with col_download:
         file_name=f"勤務規劃表_{datetime.now().strftime('%Y%m%d')}.html",
         mime="text/html"
     )
-    st.info("💡 姓名欄位已設定自動換行。\n(編輯時用「、」分隔即可)")
+    st.info("💡 姓名欄位若有多人，請用「、」分隔，報表會自動換行對齊。")
