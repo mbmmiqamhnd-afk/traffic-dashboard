@@ -14,8 +14,8 @@ SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/a
 
 # --- 預設範本資料 ---
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
-DEFAULT_TIME    = "115年2月26日19至23時"
-DEFAULT_PROJ    = "0226「取締改裝(噪音)車輛專案監、警、環聯合稽查勤務」"
+DEFAULT_TIME    = "115年3月20日19至23時"
+DEFAULT_PROJ    = "0320「取締改裝(噪音)車輛專案監、警、環聯合稽查勤務」"
 DEFAULT_BRIEF   = "19時30分於分局二樓會議室召開"
 DEFAULT_STATION = "環保局臨時檢驗站開設時間：20時至23時\n地點：桃園市龍潭區大昌路一段277號（龍潭區警政聯合辦公大樓）廣場"
 
