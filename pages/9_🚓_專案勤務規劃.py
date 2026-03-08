@@ -137,7 +137,15 @@ plan_time    = c2.text_input("勤務時間 (完整顯示文字)", value=current_
 st.subheader("2. 指揮與幕僚編組")
 st.caption("💡 姓名若有多人，請用「、」分隔，報表輸出時會自動變為「上下並列」。")
 with st.expander("編輯名單", expanded=True):
-    edited_cmd = st.data_editor(df_command_edit, num_rows="dynamic", use_container_width=True)
+    edited_cmd = st.data_editor(
+        df_command_edit,
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={"任務": None}  # 隱藏任務欄
+    )
+    # 確保任務欄資料不因隱藏而遺失
+    if "任務" not in edited_cmd.columns:
+        edited_cmd["任務"] = df_command_edit["任務"]
 
 c3, c4 = st.columns(2)
 brief_info = c3.text_area("📢 勤前教育",   value=current_brief,   height=100)
