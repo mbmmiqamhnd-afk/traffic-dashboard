@@ -1,40 +1,76 @@
 import streamlit as st
 import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
 from datetime import datetime
-from urllib.parse import quote
 
 # --- 1. 頁面設定 ---
 st.set_page_config(page_title="雲端勤務規劃", layout="wide")
 st.title("🚓 專案勤務規劃表 (雲端同步版)")
 st.caption("資料與 Google Sheets 即時連線，手機、電腦皆可編輯")
 
-# 試算表 ID
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
+SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
-# --- 2. 讀取函數（使用公開 CSV 端點，不需套件）---
+# --- 2. 建立 gspread 連線 ---
+def get_client():
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    return gspread.authorize(creds)
 
-def get_sheet(worksheet_name):
-    encoded_name = quote(worksheet_name)
-    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
-    df = pd.read_csv(url, encoding="utf-8")
-    return df
-
+# --- 3. 讀取函數 ---
 def load_data():
     try:
-        df_settings = get_sheet("設定")
-        df_command  = get_sheet("指揮組")
-        df_patrol   = get_sheet("巡邏組")
+        client = get_client()
+        sh = client.open_by_key(SHEET_ID)
+        df_settings = pd.DataFrame(sh.worksheet("設定").get_all_records())
+        df_command  = pd.DataFrame(sh.worksheet("指揮組").get_all_records())
+        df_patrol   = pd.DataFrame(sh.worksheet("巡邏組").get_all_records())
         return df_settings, df_command, df_patrol, None
     except Exception as e:
         return None, None, None, str(e)
 
-# --- 3. 初始化資料邏輯 ---
+# --- 4. 寫入函數 ---
+def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
+    try:
+        client = get_client()
+        sh = client.open_by_key(SHEET_ID)
+
+        # 寫入「設定」分頁
+        ws_set = sh.worksheet("設定")
+        ws_set.clear()
+        ws_set.update([["Key", "Value"],
+                       ["unit_name",      unit],
+                       ["plan_full_time", time_str],
+                       ["project_name",   project],
+                       ["briefing_info",  briefing],
+                       ["check_station",  station]])
+
+        # 寫入「指揮組」分頁
+        ws_cmd = sh.worksheet("指揮組")
+        ws_cmd.clear()
+        df_cmd = df_cmd.fillna("")
+        ws_cmd.update([df_cmd.columns.tolist()] + df_cmd.values.tolist())
+
+        # 寫入「巡邏組」分頁
+        ws_ptl = sh.worksheet("巡邏組")
+        ws_ptl.clear()
+        df_ptl = df_ptl.fillna("")
+        ws_ptl.update([df_ptl.columns.tolist()] + df_ptl.values.tolist())
+
+        st.toast("✅ 雲端存檔成功！", icon="☁️")
+        return True
+    except Exception as e:
+        st.error(f"❌ 存檔失敗：{e}")
+        return False
+
+# --- 5. 初始化資料 ---
 df_set, df_cmd, df_ptl, error_msg = load_data()
 
 if error_msg:
-    st.error(f"❌ 無法讀取 Google Sheets，原因如下：\n{error_msg}")
-    st.info("💡 請確認試算表已設定為「知道連結的人可以檢視」")
-    st.warning("⚠️ 目前暫時使用「本機預設範本」模式")
+    st.error(f"❌ 無法讀取 Google Sheets：\n{error_msg}")
+    st.warning("⚠️ 目前使用預設範本模式")
     current_unit    = "桃園市政府警察局龍潭分局"
     current_time    = "115年2月26日19至23時"
     current_proj    = "0226「取締改裝(噪音)車輛專案監、警、環聯合稽查勤務」"
@@ -52,14 +88,14 @@ if error_msg:
     ])
 
 elif df_set is None or df_set.empty:
-    st.warning("⚠️ Google Sheets 連線成功，但內容是空的。")
+    st.warning("⚠️ 連線成功，但設定分頁是空的，請填入資料後儲存。")
     current_unit    = "桃園市政府警察局龍潭分局"
     current_time    = "115年2月26日19至23時"
     current_proj    = "0226「取締改裝(噪音)車輛專案監、警、環聯合稽查勤務」"
     current_brief   = "19時30分於分局二樓會議室召開"
     current_station = "時間：20時至23時\n地點：龍潭區大昌路一段277號"
-    df_command_edit = pd.DataFrame([{"職稱":"職稱","代號":"代號","姓名":"姓名","任務":"任務"}])
-    df_patrol_edit  = pd.DataFrame([{"編組":"編組","無線電":"無線電","單位":"單位","服勤人員":"人員","任務分工":"任務","雨備":"雨備"}])
+    df_command_edit = pd.DataFrame([{"職稱": "職稱", "代號": "代號", "姓名": "姓名", "任務": "任務"}])
+    df_patrol_edit  = pd.DataFrame([{"編組": "編組", "無線電": "無線電", "單位": "單位", "服勤人員": "人員", "任務分工": "任務", "雨備": "雨備"}])
 
 else:
     try:
@@ -69,17 +105,19 @@ else:
         current_proj    = settings_dict.get("project_name", "")
         current_brief   = settings_dict.get("briefing_info", "")
         current_station = settings_dict.get("check_station", "")
-        df_command_edit = df_cmd
-        df_patrol_edit  = df_ptl
-    except Exception as parse_error:
-        st.error(f"資料格式解析失敗：{parse_error}")
+        df_command_edit = df_cmd if not df_cmd.empty else pd.DataFrame([{"職稱": "職稱", "代號": "代號", "姓名": "姓名", "任務": "任務"}])
+        df_patrol_edit  = df_ptl if not df_ptl.empty else pd.DataFrame([{"編組": "編組", "無線電": "無線電", "單位": "單位", "服勤人員": "人員", "任務分工": "任務", "雨備": "雨備"}])
+    except Exception as e:
+        st.error(f"資料格式解析失敗：{e}")
         st.stop()
 
-# --- 4. 介面編輯區 ---
+# --- 6. 介面編輯區 ---
 with st.sidebar:
-    st.header("🔄 雲端操作")
-    st.info("請直接在 Google Sheets 編輯資料後，按下方按鈕重新載入。")
-    if st.button("重新載入雲端資料", type="primary"):
+    st.header("💾 雲端操作")
+    st.info("修改後請點擊下方按鈕，將資料同步回 Google Sheets。")
+    if st.button("儲存並同步到雲端", type="primary"):
+        st.session_state['do_save'] = True
+    if st.button("🔄 重新載入雲端資料"):
         st.cache_data.clear()
         st.rerun()
 
@@ -101,7 +139,14 @@ check_st   = c4.text_area("🚧 檢驗站資訊", value=current_station, height=
 st.subheader("3. 執行勤務編組 (巡邏組)")
 edited_ptl = st.data_editor(df_patrol_edit, num_rows="dynamic", use_container_width=True)
 
-# --- 5. 輸出 HTML 報表邏輯 ---
+# 執行儲存
+if st.session_state.get('do_save', False):
+    success = save_data(unit_name, plan_time, project_name, brief_info, check_st, edited_cmd, edited_ptl)
+    st.session_state['do_save'] = False
+    if success:
+        st.rerun()
+
+# --- 7. 輸出 HTML 報表 ---
 def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     style = """
     <style>
@@ -123,15 +168,15 @@ def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     html += "<table><tr><th colspan='4'>任　務　編　組</th></tr>"
     html += "<tr><th width='15%'>職稱</th><th width='10%'>代號</th><th width='25%'>姓名</th><th width='50%'>任務</th></tr>"
     for _, row in df_cmd.iterrows():
-        name = str(row.get('姓名','')).replace("、","<br>").replace(",","<br>").replace("\n","<br>")
+        name = str(row.get('姓名', '')).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
         html += f"<tr><td><b>{row.get('職稱','')}</b></td><td>{row.get('代號','')}</td><td style='line-height:1.4'>{name}</td><td class='left-align'>{row.get('任務','')}</td></tr>"
     html += f"</table><div class='left-align' style='margin-bottom:20px;line-height:1.6'>"
     html += f"<div><b>📢 勤前教育：</b>{briefing}</div>"
     html += f"<div style='white-space:pre-wrap'><b>🚧 {station}</b></div></div>"
     html += "<table><tr><th width='12%'>編組</th><th width='10%'>代號</th><th width='15%'>單位</th><th width='20%'>服勤人員</th><th width='43%'>任務分工 / 雨備方案</th></tr>"
     for _, row in df_ptl.iterrows():
-        name  = str(row.get('服勤人員','')).replace("、","<br>").replace(",","<br>").replace("\n","<br>")
-        rain  = row.get('雨備','')
+        name = str(row.get('服勤人員', '')).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
+        rain = row.get('雨備', '')
         rain_text = f"<span class='rain-plan'>*雨備：{rain}</span>" if rain and str(rain) != "nan" else ""
         html += f"<tr><td>{row.get('編組','')}</td><td>{row.get('無線電','')}</td><td>{row.get('單位','')}</td><td style='line-height:1.4'>{name}</td><td class='left-align'>{row.get('任務分工','')}{rain_text}</td></tr>"
     html += "</table></div></body></html>"
@@ -139,7 +184,7 @@ def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
 
 html_out = generate_html(unit_name, plan_time, project_name, brief_info, check_st, edited_cmd, edited_ptl)
 
-# --- 6. 輸出區域 ---
+# --- 8. 輸出區域 ---
 st.markdown("---")
 col_view, col_dl = st.columns([3, 1])
 with col_view:
