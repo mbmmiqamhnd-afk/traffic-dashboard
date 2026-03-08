@@ -177,7 +177,7 @@ def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     for _, row in df_ptl.iterrows():
         name = str(row.get('服勤人員', '')).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
         unit_cell = str(row.get("單位","")).replace("、","<br>").replace(",","<br>")
-        html += f"<tr><td>{row.get('編組','')}</td><td>{row.get('無線電','')}</td><td style='line-height:1.4'>{unit_cell}</td><td style='line-height:1.4'>{name}</td><td class='left-align'>{row.get('任務分工','')}</td></tr>"
+        html += f"<tr><td>{row.get('編組','')}</td><td>{row.get('無線電','')}</td><td style='line-height:1.4'>{unit_cell}</td><td style='line-height:1.4'>{name}</td><td class='left-align'>{row.get('任務分工','')}<br><span style='color:blue;font-size:0.9em'>*雨備方案：轄區治安要點巡邏。</span></td></tr>"
     html += "</table></div></body></html>"
     return html
 
