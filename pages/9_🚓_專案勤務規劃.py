@@ -161,9 +161,9 @@ def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
         body { font-family: 'DFKai-SB', 'BiauKai', '標楷體', serif; color: #000; }
         .container { width: 100%; max-width: 800px; margin: 0 auto; padding: 20px; }
         h2 { text-align: center; margin-bottom: 5px; letter-spacing: 2px; }
-        .info { text-align: center; font-weight: bold; margin-bottom: 15px; font-size: 16px; }
+        .info { text-align: center; font-weight: bold; margin-bottom: 15px; font-size: 14px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { border: 1px solid black; padding: 5px; text-align: center; font-size: 12px; vertical-align: middle; }
+        th, td { border: 1px solid black; padding: 5px; text-align: center; font-size: 14px; vertical-align: middle; }
         th { background-color: #f2f2f2; }
         .left-align { text-align: left; }
         .rain-plan { color: blue; font-size: 0.9em; display: block; margin-top: 4px; }
