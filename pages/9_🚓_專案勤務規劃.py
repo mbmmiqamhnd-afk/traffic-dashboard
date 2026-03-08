@@ -198,7 +198,7 @@ def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     html += "</table></div></body></html>"
     return html
 
-html_out = generate_html(unit_name, plan_time, project_name, brief_info, check_st, edited_cmd, edited_ptl)
+html_out = generate_html(unit_name, project_name, plan_time, brief_info, check_st, edited_cmd, edited_ptl)
 
 # --- 8. 輸出區域 ---
 st.markdown("---")
