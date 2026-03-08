@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from urllib.parse import quote
 
 # --- 1. 頁面設定 ---
 st.set_page_config(page_title="雲端勤務規劃", layout="wide")
@@ -13,8 +14,9 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 # --- 2. 讀取函數（使用公開 CSV 端點，不需套件）---
 
 def get_sheet(worksheet_name):
-    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={worksheet_name}"
-    df = pd.read_csv(url)
+    encoded_name = quote(worksheet_name)
+    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={encoded_name}"
+    df = pd.read_csv(url, encoding="utf-8")
     return df
 
 def load_data():
