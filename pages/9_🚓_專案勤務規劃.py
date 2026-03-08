@@ -163,7 +163,7 @@ def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
         h2 { text-align: center; margin-bottom: 5px; letter-spacing: 2px; }
         .info { text-align: center; font-weight: bold; margin-bottom: 15px; font-size: 16px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { border: 1px solid black; padding: 8px; text-align: center; font-size: 14px; vertical-align: middle; }
+        th, td { border: 1px solid black; padding: 5px; text-align: center; font-size: 12px; vertical-align: middle; }
         th { background-color: #f2f2f2; }
         .left-align { text-align: left; }
         .rain-plan { color: blue; font-size: 0.9em; display: block; margin-top: 4px; }
@@ -181,7 +181,7 @@ def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     html += f"</table><div class='left-align' style='margin-bottom:20px;line-height:1.6'>"
     html += f"<div><b>📢 勤前教育：</b>{briefing}</div>"
     html += f"<div style='white-space:pre-wrap'><b>🚧 {station}</b></div></div>"
-    html += "<table><tr><th width='12%'>編組</th><th width='10%'>代號</th><th width='15%'>單位</th><th width='20%'>服勤人員</th><th width='53%'>任務分工</th></tr>"
+    html += "<table><tr><th width='10%'>編組</th><th width='8%'>代號</th><th width='12%'>單位</th><th width='18%'>服勤人員</th><th width='52%'>任務分工</th></tr>"
     for _, row in df_ptl.iterrows():
         name = str(row.get('服勤人員', '')).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
         unit_cell = str(row.get("單位","")).replace("、","<br>").replace(",","<br>")
