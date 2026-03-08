@@ -127,13 +127,7 @@ else:
         st.error(f"資料格式解析失敗：{e}")
         st.stop()
 
-# --- 6. 介面編輯區 ---
-with st.sidebar:
-    st.header("☁️ 雲端操作")
-    st.info("按下「下載報表」時會自動同步儲存到 Google Sheets。")
-    if st.button("🔄 重新載入雲端資料"):
-        st.cache_data.clear()
-        st.rerun()
+
 
 st.subheader("1. 勤務基礎資訊")
 c1, c2 = st.columns(2)
