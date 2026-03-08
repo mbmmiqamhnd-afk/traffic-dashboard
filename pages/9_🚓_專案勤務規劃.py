@@ -140,8 +140,8 @@ with st.sidebar:
 st.subheader("1. 勤務基礎資訊")
 c1, c2 = st.columns(2)
 unit_name    = c1.text_input("執行單位", value=current_unit)
-plan_time    = c1.text_input("勤務時間 (完整顯示文字)", value=current_time)
-project_name = c2.text_input("專案名稱", value=current_proj)
+project_name = c1.text_input("專案名稱", value=current_proj)
+plan_time    = c2.text_input("勤務時間 (完整顯示文字)", value=current_time)
 
 st.subheader("2. 指揮與幕僚編組")
 st.caption("💡 姓名若有多人，請用「、」分隔，報表輸出時會自動變為「上下並列」。")
