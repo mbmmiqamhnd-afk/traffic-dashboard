@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# 設定頁面資訊 (這行必須是第一行執行)
+# 設定頁面資訊
 st.set_page_config(page_title="專案勤務規劃", layout="wide")
 
 st.title("🚓 專案勤務規劃表產生器")
@@ -18,9 +18,12 @@ with st.sidebar:
 
 # --- 核心資料區 ---
 
-# 1. 指揮與幕僚編組 (預設資料來自您的原始文件)
+# 1. 指揮與幕僚編組
 st.subheader("1. 指揮與幕僚編組")
-with st.expander("📝 點此編輯【指揮官與幕僚】名單", expanded=False):
+st.info("💡 提示：姓名若有多人，請用「、」分隔，報表輸出時會自動變為「上下並列」。")
+
+with st.expander("📝 點此編輯【指揮官與幕僚】名單", expanded=True):
+    # 預設資料：姓名使用頓號分隔
     command_data = [
         {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導。"},
         {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長 何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
@@ -28,10 +31,10 @@ with st.expander("📝 點此編輯【指揮官與幕僚】名單", expanded=Fal
         {"職稱": "上級督導官", "代號": "駐區督察", "姓名": "孫三陽", "任務": "重點機動督導。"},
         {"職稱": "督導組", "代號": "隆安6", "姓名": "組長 黃長旗、督察員 黃中彥、警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律。"},
         {"職稱": "指導組", "代號": "隆安684", "姓名": "教官 郭文義", "任務": "指導各編組勤務執行及狀況處置。"},
-        {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "組長 楊孟竟 等人(詳見詳表)", "任務": "規劃勤務、督導、回報績效。"},
+        {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "組長 楊孟竟、警務員 盧冠仁、警務員 李峯甫、巡官 郭勝隆", "任務": "規劃勤務、督導、回報績效。"},
         {"職稱": "通訊組", "代號": "隆安", "姓名": "主任 蔡奇青、執勤官 李文章、執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜。"}
     ]
-    # 讓表格可以動態增減 (num_rows="dynamic")
+    
     df_command = st.data_editor(
         pd.DataFrame(command_data), 
         num_rows="dynamic", 
@@ -51,12 +54,12 @@ st.subheader("2. 執行勤務編組 (巡邏組)")
 st.caption("👇 直接在表格中修改人員或地點，下方會即時更新")
 
 patrol_data = [
-    {"編組": "第一巡邏組", "無線電": "隆安54", "單位": "聖亭所", "服勤人員": "巡佐傅錫城, 警員曾建凱", "任務分工": "於大昌路一段周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
-    {"編組": "第二巡邏組", "無線電": "隆安62", "單位": "龍潭所", "服勤人員": "副所長全楚文, 警員龔品璇", "任務分工": "於大昌路二段周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
-    {"編組": "第三巡邏組", "無線電": "隆安72", "單位": "中興所", "服勤人員": "副所長薛德祥, 警員冷柔萱", "任務分工": "於中興路周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
-    {"編組": "第四巡邏組", "無線電": "隆安83", "單位": "石門所", "服勤人員": "巡佐林偉政, 警員盧瑾瑤", "任務分工": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
-    {"編組": "第五巡邏組", "無線電": "隆安33", "單位": "三和所/高平所", "服勤人員": "警員唐銘聰, 警員張湃柏", "任務分工": "於大昌路一、二段、北龍路及中興路周邊機動巡查。", "雨備": "轄區治安要點巡邏。"},
-    {"編組": "第六巡邏組", "無線電": "隆安994", "單位": "龍潭交通分隊", "服勤人員": "小隊長林振生, 警員吳沛軒", "任務分工": "於大昌路一、二段、北龍路及中興路周邊機動巡查。", "雨備": "轄區治安要點巡邏。"}
+    {"編組": "第一巡邏組", "無線電": "隆安54", "單位": "聖亭所", "服勤人員": "巡佐傅錫城、警員曾建凱", "任務分工": "於大昌路一段周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
+    {"編組": "第二巡邏組", "無線電": "隆安62", "單位": "龍潭所", "服勤人員": "副所長全楚文、警員龔品璇", "任務分工": "於大昌路二段周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
+    {"編組": "第三巡邏組", "無線電": "隆安72", "單位": "中興所", "服勤人員": "副所長薛德祥、警員冷柔萱", "任務分工": "於中興路周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
+    {"編組": "第四巡邏組", "無線電": "隆安83", "單位": "石門所", "服勤人員": "巡佐林偉政、警員盧瑾瑤", "任務分工": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
+    {"編組": "第五巡邏組", "無線電": "隆安33", "單位": "三和所/高平所", "服勤人員": "警員唐銘聰、警員張湃柏", "任務分工": "於大昌路一、二段、北龍路及中興路周邊機動巡查。", "雨備": "轄區治安要點巡邏。"},
+    {"編組": "第六巡邏組", "無線電": "隆安994", "單位": "龍潭交通分隊", "服勤人員": "小隊長林振生、警員吳沛軒", "任務分工": "於大昌路一、二段、北龍路及中興路周邊機動巡查。", "雨備": "轄區治安要點巡邏。"}
 ]
 
 df_patrol = st.data_editor(
@@ -68,7 +71,6 @@ df_patrol = st.data_editor(
 
 # --- 輸出邏輯 (HTML 生成) ---
 def generate_html(unit, project, date, time, briefing, station, df_cmd, df_ptl):
-    # CSS 樣式：模擬公文格式 (標楷體, 黑色邊框)
     style = """
     <style>
         body { font-family: 'DFKai-SB', 'BiauKai', '標楷體', serif; color: #000; }
@@ -76,19 +78,14 @@ def generate_html(unit, project, date, time, briefing, station, df_cmd, df_ptl):
         h2 { text-align: center; margin-bottom: 5px; }
         .info { text-align: center; font-weight: bold; margin-bottom: 15px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { border: 1px solid black; padding: 8px; text-align: center; font-size: 14px; }
+        th, td { border: 1px solid black; padding: 8px; text-align: center; font-size: 14px; vertical-align: middle; }
         th { background-color: #f2f2f2; }
         .left-align { text-align: left; }
-        .section-title { margin-top: 10px; font-weight: bold; }
+        .name-col { white-space: nowrap; } /* 避免名字被過度擠壓 */
         .rain-plan { color: blue; font-size: 0.9em; display: block; margin-top: 4px; }
-        @media print {
-            body { -webkit-print-color-adjust: exact; }
-            .no-print { display: none; }
-        }
     </style>
     """
     
-    # 標題區
     html = f"""
     <html>
     <head>{style}</head>
@@ -110,11 +107,14 @@ def generate_html(unit, project, date, time, briefing, station, df_cmd, df_ptl):
             </tr>
     """
     for _, row in df_cmd.iterrows():
+        # 【關鍵修改】將頓號(、)、逗號(,) 取代為換行標籤 <br>
+        formatted_name = str(row['姓名']).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
+        
         html += f"""
             <tr>
                 <td><b>{row['職稱']}</b></td>
                 <td>{row['代號']}</td>
-                <td>{row['姓名']}</td>
+                <td style="line-height: 1.5;">{formatted_name}</td>
                 <td class="left-align">{row['任務']}</td>
             </tr>
         """
@@ -140,13 +140,16 @@ def generate_html(unit, project, date, time, briefing, station, df_cmd, df_ptl):
             </tr>
     """
     for _, row in df_ptl.iterrows():
+        # 巡邏組的人員也可能需要換行，這裡一併處理
+        formatted_ptl_name = str(row['服勤人員']).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
         rain_text = f"<span class='rain-plan'>*雨備：{row['雨備']}</span>" if row['雨備'] else ""
+        
         html += f"""
             <tr>
                 <td>{row['編組']}</td>
                 <td>{row['無線電']}</td>
                 <td>{row['單位']}</td>
-                <td>{row['服勤人員']}</td>
+                <td style="line-height: 1.5;">{formatted_ptl_name}</td>
                 <td class="left-align">
                     {row['任務分工']}
                     {rain_text}
@@ -170,19 +173,16 @@ col_preview, col_download = st.columns([3, 1])
 
 with col_preview:
     st.subheader("📄 即時預覽")
-    # 使用 iframe 顯示 HTML，確保樣式隔離
-    st.components.v1.html(html_content, height=600, scrolling=True)
+    st.components.v1.html(html_content, height=800, scrolling=True)
 
 with col_download:
     st.subheader("📥 輸出報表")
-    st.write("點擊下方按鈕下載完整表格，直接列印即可（格式已固定）。")
+    st.write("點擊下方按鈕下載完整表格。")
     
-    # 下載 HTML 檔案按鈕
     st.download_button(
         label="下載列印用報表 (.html)",
         data=html_content,
         file_name=f"勤務規劃表_{datetime.now().strftime('%Y%m%d')}.html",
         mime="text/html"
     )
-    
-    st.info("💡 提示：下載後打開檔案，按 Ctrl+P (列印)，格式會與預覽完全相同。")
+    st.info("💡 姓名欄位已設定自動換行。\n(編輯時用「、」分隔即可)")
