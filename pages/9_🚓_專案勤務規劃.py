@@ -12,6 +12,23 @@ st.caption("資料與 Google Sheets 即時連線，手機、電腦皆可編輯")
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
+# --- 預設範本資料 ---
+DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
+DEFAULT_TIME    = "115年2月26日19至23時"
+DEFAULT_PROJ    = "0226「取締改裝(噪音)車輛專案監、警、環聯合稽查勤務」"
+DEFAULT_BRIEF   = "19時30分於分局二樓會議室召開"
+DEFAULT_STATION = "時間：20時至23時\n地點：龍潭區大昌路一段277號"
+DEFAULT_CMD = pd.DataFrame([
+    {"職稱": "指揮官",   "代號": "隆安1", "姓名": "分局長 施宇峰",  "任務": "核定本勤務執行並重點機動督導。"},
+    {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長 何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"}
+])
+DEFAULT_PTL = pd.DataFrame([
+    {"編組": "第一巡邏組", "無線電": "隆安54", "單位": "聖亭所",
+     "服勤人員": "巡佐傅錫城、警員曾建凱",
+     "任務分工": "於大昌路一段周邊易有噪音車輛滋擾、聚集路段機動巡查。",
+     "雨備": "轄區治安要點巡邏。"}
+])
+
 # --- 2. 建立 gspread 連線 ---
 def get_client():
     creds_dict = dict(st.secrets["gcp_service_account"])
@@ -37,7 +54,6 @@ def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
         client = get_client()
         sh = client.open_by_key(SHEET_ID)
 
-        # 寫入「設定」分頁
         ws_set = sh.worksheet("設定")
         ws_set.clear()
         ws_set.update([["Key", "Value"],
@@ -47,13 +63,11 @@ def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
                        ["briefing_info",  briefing],
                        ["check_station",  station]])
 
-        # 寫入「指揮組」分頁
         ws_cmd = sh.worksheet("指揮組")
         ws_cmd.clear()
         df_cmd = df_cmd.fillna("")
         ws_cmd.update([df_cmd.columns.tolist()] + df_cmd.values.tolist())
 
-        # 寫入「巡邏組」分頁
         ws_ptl = sh.worksheet("巡邏組")
         ws_ptl.clear()
         df_ptl = df_ptl.fillna("")
@@ -70,43 +84,35 @@ df_set, df_cmd, df_ptl, error_msg = load_data()
 
 if error_msg:
     st.error(f"❌ 無法讀取 Google Sheets：\n{error_msg}")
-    st.warning("⚠️ 目前使用預設範本模式")
-    current_unit    = "桃園市政府警察局龍潭分局"
-    current_time    = "115年2月26日19至23時"
-    current_proj    = "0226「取締改裝(噪音)車輛專案監、警、環聯合稽查勤務」"
-    current_brief   = "19時30分於分局二樓會議室召開"
-    current_station = "時間：20時至23時\n地點：龍潭區大昌路一段277號"
-    df_command_edit = pd.DataFrame([
-        {"職稱": "指揮官",   "代號": "隆安1", "姓名": "分局長 施宇峰",  "任務": "核定本勤務執行並重點機動督導。"},
-        {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長 何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"}
-    ])
-    df_patrol_edit = pd.DataFrame([
-        {"編組": "第一巡邏組", "無線電": "隆安54", "單位": "聖亭所",
-         "服勤人員": "巡佐傅錫城、警員曾建凱",
-         "任務分工": "於大昌路一段周邊易有噪音車輛滋擾、聚集路段機動巡查。",
-         "雨備": "轄區治安要點巡邏。"}
-    ])
+    st.warning("⚠️ 目前使用預設範本模式，請修改後按「儲存並同步到雲端」。")
+    current_unit    = DEFAULT_UNIT
+    current_time    = DEFAULT_TIME
+    current_proj    = DEFAULT_PROJ
+    current_brief   = DEFAULT_BRIEF
+    current_station = DEFAULT_STATION
+    df_command_edit = DEFAULT_CMD.copy()
+    df_patrol_edit  = DEFAULT_PTL.copy()
 
 elif df_set is None or df_set.empty:
-    st.warning("⚠️ 連線成功，但設定分頁是空的，請填入資料後儲存。")
-    current_unit    = "桃園市政府警察局龍潭分局"
-    current_time    = "115年2月26日19至23時"
-    current_proj    = "0226「取締改裝(噪音)車輛專案監、警、環聯合稽查勤務」"
-    current_brief   = "19時30分於分局二樓會議室召開"
-    current_station = "時間：20時至23時\n地點：龍潭區大昌路一段277號"
-    df_command_edit = pd.DataFrame([{"職稱": "職稱", "代號": "代號", "姓名": "姓名", "任務": "任務"}])
-    df_patrol_edit  = pd.DataFrame([{"編組": "編組", "無線電": "無線電", "單位": "單位", "服勤人員": "人員", "任務分工": "任務", "雨備": "雨備"}])
+    st.info("💡 尚無雲端資料，已載入預設範本，請修改後按「儲存並同步到雲端」。")
+    current_unit    = DEFAULT_UNIT
+    current_time    = DEFAULT_TIME
+    current_proj    = DEFAULT_PROJ
+    current_brief   = DEFAULT_BRIEF
+    current_station = DEFAULT_STATION
+    df_command_edit = DEFAULT_CMD.copy()
+    df_patrol_edit  = DEFAULT_PTL.copy()
 
 else:
     try:
         settings_dict   = dict(zip(df_set.iloc[:, 0], df_set.iloc[:, 1]))
-        current_unit    = settings_dict.get("unit_name", "")
-        current_time    = settings_dict.get("plan_full_time", "")
-        current_proj    = settings_dict.get("project_name", "")
-        current_brief   = settings_dict.get("briefing_info", "")
-        current_station = settings_dict.get("check_station", "")
-        df_command_edit = df_cmd if not df_cmd.empty else pd.DataFrame([{"職稱": "職稱", "代號": "代號", "姓名": "姓名", "任務": "任務"}])
-        df_patrol_edit  = df_ptl if not df_ptl.empty else pd.DataFrame([{"編組": "編組", "無線電": "無線電", "單位": "單位", "服勤人員": "人員", "任務分工": "任務", "雨備": "雨備"}])
+        current_unit    = settings_dict.get("unit_name", DEFAULT_UNIT)
+        current_time    = settings_dict.get("plan_full_time", DEFAULT_TIME)
+        current_proj    = settings_dict.get("project_name", DEFAULT_PROJ)
+        current_brief   = settings_dict.get("briefing_info", DEFAULT_BRIEF)
+        current_station = settings_dict.get("check_station", DEFAULT_STATION)
+        df_command_edit = df_cmd if not df_cmd.empty else DEFAULT_CMD.copy()
+        df_patrol_edit  = df_ptl if not df_ptl.empty else DEFAULT_PTL.copy()
     except Exception as e:
         st.error(f"資料格式解析失敗：{e}")
         st.stop()
