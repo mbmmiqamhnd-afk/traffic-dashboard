@@ -17,16 +17,26 @@ DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年2月26日19至23時"
 DEFAULT_PROJ    = "0226「取締改裝(噪音)車輛專案監、警、環聯合稽查勤務」"
 DEFAULT_BRIEF   = "19時30分於分局二樓會議室召開"
-DEFAULT_STATION = "時間：20時至23時\n地點：龍潭區大昌路一段277號"
+DEFAULT_STATION = "環保局臨時檢驗站開設時間：20時至23時\n地點：桃園市龍潭區大昌路一段277號（龍潭區警政聯合辦公大樓）廣場"
+
 DEFAULT_CMD = pd.DataFrame([
-    {"職稱": "指揮官",   "代號": "隆安1", "姓名": "分局長 施宇峰",  "任務": "核定本勤務執行並重點機動督導。"},
-    {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長 何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"}
+    {"職稱": "指揮官",       "代號": "隆安1",   "姓名": "分局長 施宇峰",                                      "任務": "核定本勤務執行並重點機動督導。"},
+    {"職稱": "副指揮官",     "代號": "隆安2",   "姓名": "副分局長 何憶雯",                                    "任務": "襄助指揮官執行本勤務並重點機動督導。"},
+    {"職稱": "副指揮官",     "代號": "隆安3",   "姓名": "副分局長 蔡志明",                                    "任務": "襄助指揮官執行本勤務並重點機動督導。"},
+    {"職稱": "上級督導官",   "代號": "駐區督察", "姓名": "孫三陽",                                            "任務": "重點機動督導。"},
+    {"職稱": "督導組",       "代號": "隆安6",   "姓名": "督察組組長 黃長旗、督察組督察員 黃中彥、督察組警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律。"},
+    {"職稱": "指導組",       "代號": "隆安684", "姓名": "督察組教官 郭文義",                                  "任務": "指導各編組勤務執行及狀況處置。"},
+    {"職稱": "作業及督巡組", "代號": "隆安13",  "姓名": "交通組組長 楊孟竟、交通組警務員 盧冠仁、交通組警務員 李峯甫、交通組巡官 郭勝隆、交通組巡官 羅千金、交通組警員 吳享運、勤指中心警員 張庭溱（代理人：巡官陳鵬翔）、行政組警務佐 曾威仁、人事室警員 陳明祥", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
+    {"職稱": "通訊組",       "代號": "隆安",    "姓名": "主任 蔡奇青、執勤官 李文章、執勤員 黃文興",          "任務": "指揮、調度及通報本勤務事宜。"},
 ])
+
 DEFAULT_PTL = pd.DataFrame([
-    {"編組": "第一巡邏組", "無線電": "隆安54", "單位": "聖亭所",
-     "服勤人員": "巡佐傅錫城、警員曾建凱",
-     "任務分工": "於大昌路一段周邊易有噪音車輛滋擾、聚集路段機動巡查。",
-     "雨備": "轄區治安要點巡邏。"}
+    {"編組": "第一巡邏組", "無線電": "隆安54",  "單位": "聖亭所",     "服勤人員": "巡佐傅錫城、警員曾建凱",       "任務分工": "於大昌路一段周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。", "雨備": "轄區治安要點巡邏。"},
+    {"編組": "第二巡邏組", "無線電": "隆安62",  "單位": "龍潭所",     "服勤人員": "副所長全楚文、警員龔品璇",     "任務分工": "於大昌路二段周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。", "雨備": "轄區治安要點巡邏。"},
+    {"編組": "第三巡邏組", "無線電": "隆安72",  "單位": "中興所",     "服勤人員": "副所長薛德祥、警員冷柔萱",     "任務分工": "於中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",   "雨備": "轄區治安要點巡邏。"},
+    {"編組": "第四巡邏組", "無線電": "隆安83",  "單位": "石門所",     "服勤人員": "巡佐林偉政、警員盧瑾瑤",       "任務分工": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",   "雨備": "轄區治安要點巡邏。"},
+    {"編組": "第五巡邏組", "無線電": "隆安33",  "單位": "三和所、高平所", "服勤人員": "警員唐銘聰、警員張湃柏",   "任務分工": "於大昌路一、二段、北龍路及中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。", "雨備": "轄區治安要點巡邏。"},
+    {"編組": "第六巡邏組", "無線電": "隆安994", "單位": "龍潭交通分隊", "服勤人員": "小隊長林振生、警員吳沛軒",  "任務分工": "於大昌路一、二段、北龍路及中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。", "雨備": "轄區治安要點巡邏。"},
 ])
 
 # --- 2. 建立 gspread 連線 ---
@@ -106,11 +116,11 @@ elif df_set is None or df_set.empty:
 else:
     try:
         settings_dict   = dict(zip(df_set.iloc[:, 0], df_set.iloc[:, 1]))
-        current_unit    = settings_dict.get("unit_name", DEFAULT_UNIT)
+        current_unit    = settings_dict.get("unit_name",      DEFAULT_UNIT)
         current_time    = settings_dict.get("plan_full_time", DEFAULT_TIME)
-        current_proj    = settings_dict.get("project_name", DEFAULT_PROJ)
-        current_brief   = settings_dict.get("briefing_info", DEFAULT_BRIEF)
-        current_station = settings_dict.get("check_station", DEFAULT_STATION)
+        current_proj    = settings_dict.get("project_name",   DEFAULT_PROJ)
+        current_brief   = settings_dict.get("briefing_info",  DEFAULT_BRIEF)
+        current_station = settings_dict.get("check_station",  DEFAULT_STATION)
         df_command_edit = df_cmd if not df_cmd.empty else DEFAULT_CMD.copy()
         df_patrol_edit  = df_ptl if not df_ptl.empty else DEFAULT_PTL.copy()
     except Exception as e:
@@ -134,7 +144,7 @@ plan_time    = c1.text_input("勤務時間 (完整顯示文字)", value=current_
 project_name = c2.text_input("專案名稱", value=current_proj)
 
 st.subheader("2. 指揮與幕僚編組")
-st.caption("💡 姓名若有多人，請用「、」或「,」分隔，報表輸出時會自動變為「上下並列」。")
+st.caption("💡 姓名若有多人，請用「、」分隔，報表輸出時會自動變為「上下並列」。")
 with st.expander("編輯名單", expanded=True):
     edited_cmd = st.data_editor(df_command_edit, num_rows="dynamic", use_container_width=True)
 
