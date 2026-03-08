@@ -179,7 +179,9 @@ def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
         name = str(row.get('服勤人員', '')).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
         rain = row.get('雨備', '')
         rain_text = f"<span class='rain-plan'>*雨備：{rain}</span>" if rain and str(rain) != "nan" else ""
-        html += f"<tr><td>{row.get('編組','')}</td><td>{row.get('無線電','')}</td><td>{row.get('單位','')}</td><td style='line-height:1.4'>{name}</td><td class='left-align'>{row.get('任務分工','')}{rain_text}</td></tr>"
+        unit_cell = str(row.get('單位','')).replace("、","<br>").replace(",","<br>").replace("
+","<br>")
+        html += f"<tr><td>{row.get('編組','')}</td><td>{row.get('無線電','')}</td><td style='line-height:1.4'>{unit_cell}</td><td style='line-height:1.4'>{name}</td><td class='left-align'>{row.get('任務分工','')}{rain_text}</td></tr>"
     html += "</table></div></body></html>"
     return html
 
