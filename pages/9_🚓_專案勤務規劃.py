@@ -1,76 +1,116 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from streamlit_gsheets import GSheetsConnection
 
-# 設定頁面資訊
-st.set_page_config(page_title="專案勤務規劃", layout="wide")
+# --- 1. 設定頁面與連線 ---
+st.set_page_config(page_title="雲端勤務規劃", layout="wide")
+st.title("🚓 專案勤務規劃表 (雲端同步版)")
+st.caption("資料與 Google Sheets 即時連線，手機、電腦皆可編輯")
 
-st.title("🚓 專案勤務規劃表產生器")
-st.caption("即時編輯勤務名單，並輸出標準格式報表")
+# 建立連線
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- 1. 勤務基礎資訊 (移至主畫面，方便修改) ---
-st.subheader("1. 勤務基礎資訊")
-st.info("💡 在此設定報表抬頭、時間與專案名稱")
+# --- 2. 讀取與寫入函數 ---
 
-col1, col2 = st.columns(2)
-with col1:
-    unit_name = st.text_input("執行單位", value="桃園市政府警察局龍潭分局")
-    # 【修改重點】將日期與時間合併為單一欄位，讓您可以自由輸入 (例如：115年2月26日19至23時)
-    plan_full_time = st.text_input("勤務時間 (完整顯示文字)", value="115年2月26日19至23時")
-with col2:
-    project_name = st.text_input("專案名稱", value="0226「取締改裝(噪音)車輛專案監、警、環聯合稽查勤務」")
+def load_data():
+    """從 Google Sheets 讀取資料，若失敗則回傳空值"""
+    try:
+        # ttl=0 代表不快取，每次都抓最新的；使用 worksheet 指定分頁名稱
+        df_settings = conn.read(worksheet="設定", ttl=0)
+        df_command = conn.read(worksheet="指揮組", ttl=0)
+        df_patrol = conn.read(worksheet="巡邏組", ttl=0)
+        return df_settings, df_command, df_patrol
+    except Exception as e:
+        # 若發生錯誤 (例如還沒設定 secrets)，回傳 None
+        return None, None, None
 
-# --- 2. 指揮與幕僚編組 ---
-st.subheader("2. 指揮與幕僚編組")
-st.caption("💡 姓名若有多人，請用「、」或「,」分隔，報表輸出時會自動變為「上下並列」。")
+def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
+    """將資料寫回 Google Sheets"""
+    try:
+        # 準備要寫入「設定」分頁的資料
+        settings_data = [
+            {"Key": "unit_name", "Value": unit},
+            {"Key": "plan_full_time", "Value": time_str},
+            {"Key": "project_name", "Value": project},
+            {"Key": "briefing_info", "Value": briefing},
+            {"Key": "check_station", "Value": station}
+        ]
+        df_settings_new = pd.DataFrame(settings_data)
 
-with st.expander("📝 點此編輯【指揮官與幕僚】名單", expanded=True):
-    command_data = [
-        {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導。"},
-        {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長 何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-        {"職稱": "副指揮官", "代號": "隆安3", "姓名": "副分局長 蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-        {"職稱": "上級督導官", "代號": "駐區督察", "姓名": "孫三陽", "任務": "重點機動督導。"},
-        {"職稱": "督導組", "代號": "隆安6", "姓名": "組長 黃長旗、督察員 黃中彥、警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律。"},
-        {"職稱": "指導組", "代號": "隆安684", "姓名": "教官 郭文義", "任務": "指導各編組勤務執行及狀況處置。"},
-        {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "組長 楊孟竟、警務員 盧冠仁、警務員 李峯甫、巡官 郭勝隆", "任務": "規劃勤務、督導、回報績效。"},
-        {"職稱": "通訊組", "代號": "隆安", "姓名": "主任 蔡奇青、執勤官 李文章、執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜。"}
-    ]
+        # 寫入三個分頁
+        conn.update(worksheet="設定", data=df_settings_new)
+        conn.update(worksheet="指揮組", data=df_cmd)
+        conn.update(worksheet="巡邏組", data=df_ptl)
+        
+        st.success("✅ 雲端存檔成功！Google Sheets 已更新。")
+        st.cache_data.clear() # 清除快取
+    except Exception as e:
+        st.error(f"❌ 存檔失敗，請檢查網路或權限。錯誤訊息：{e}")
+
+# --- 3. 初始化資料邏輯 ---
+df_set, df_cmd, df_ptl = load_data()
+
+# 如果連線失敗或試算表是空的，使用預設值 (避免程式崩潰)
+if df_set is None or df_set.empty:
+    st.warning("⚠️ 尚未連接 Google Sheets 或讀取失敗，目前使用「本機預設值」。(請檢查 .streamlit/secrets.toml)")
+    current_unit = "桃園市政府警察局龍潭分局"
+    current_time = "115年2月26日19至23時"
+    current_proj = "0226「取締改裝(噪音)車輛專案」"
+    current_brief = "19時30分於分局二樓會議室召開"
+    current_station = "時間：20時至23時\n地點：龍潭區大昌路一段277號"
     
-    df_command = st.data_editor(
-        pd.DataFrame(command_data), 
-        num_rows="dynamic", 
-        use_container_width=True,
-        key="command_editor"
-    )
+    # 預設空表格
+    df_command_edit = pd.DataFrame([{"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長", "任務": "督導"}])
+    df_patrol_edit = pd.DataFrame([{"編組": "第一組", "無線電": "隆安54", "單位": "聖亭所", "服勤人員": "警員", "任務分工": "巡邏", "雨備": "巡邏"}])
+else:
+    # 解析設定檔 (將 Key-Value 轉回變數)
+    try:
+        # 確保欄位名稱正確，防止 CSV 標題錯誤
+        settings_dict = dict(zip(df_set.iloc[:, 0], df_set.iloc[:, 1]))
+        current_unit = settings_dict.get("unit_name", "")
+        current_time = settings_dict.get("plan_full_time", "")
+        current_proj = settings_dict.get("project_name", "")
+        current_brief = settings_dict.get("briefing_info", "")
+        current_station = settings_dict.get("check_station", "")
+        df_command_edit = df_cmd
+        df_patrol_edit = df_ptl
+    except:
+        st.error("試算表格式有誤，請確認「設定」分頁有 Key 與 Value 兩欄。")
+        st.stop()
 
-# --- 3. 勤務細節 (勤教與檢驗站) ---
-col3, col4 = st.columns(2)
-with col3:
-    briefing_info = st.text_area("📢 勤前教育", value="19時30分於分局二樓會議室召開", height=100)
-with col4:
-    check_station = st.text_area("🚧 環保局臨時檢驗站", value="時間：20時至23時\n地點：桃園市龍潭區大昌路一段277號（龍潭區警政聯合辦公大樓）廣場", height=100)
+# --- 4. 介面編輯區 ---
 
-# --- 4. 巡邏編組 ---
-st.subheader("3. 執行勤務編組 (巡邏組)")
-st.caption("👇 直接在表格中修改人員或地點，下方會即時更新")
+# 側邊欄：儲存按鈕
+with st.sidebar:
+    st.header("💾 雲端操作")
+    st.info("修改完後請按下方按鈕，資料才會同步到 Google Sheets。")
+    save_btn = st.button("儲存並同步到雲端", type="primary")
 
-patrol_data = [
-    {"編組": "第一巡邏組", "無線電": "隆安54", "單位": "聖亭所", "服勤人員": "巡佐傅錫城、警員曾建凱", "任務分工": "於大昌路一段周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
-    {"編組": "第二巡邏組", "無線電": "隆安62", "單位": "龍潭所", "服勤人員": "副所長全楚文、警員龔品璇", "任務分工": "於大昌路二段周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
-    {"編組": "第三巡邏組", "無線電": "隆安72", "單位": "中興所", "服勤人員": "副所長薛德祥、警員冷柔萱", "任務分工": "於中興路周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
-    {"編組": "第四巡邏組", "無線電": "隆安83", "單位": "石門所", "服勤人員": "巡佐林偉政、警員盧瑾瑤", "任務分工": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查。", "雨備": "轄區治安要點巡邏。"},
-    {"編組": "第五巡邏組", "無線電": "隆安33", "單位": "三和所/高平所", "服勤人員": "警員唐銘聰、警員張湃柏", "任務分工": "於大昌路一、二段、北龍路及中興路周邊機動巡查。", "雨備": "轄區治安要點巡邏。"},
-    {"編組": "第六巡邏組", "無線電": "隆安994", "單位": "龍潭交通分隊", "服勤人員": "小隊長林振生、警員吳沛軒", "任務分工": "於大昌路一、二段、北龍路及中興路周邊機動巡查。", "雨備": "轄區治安要點巡邏。"}
-]
+# 主畫面輸入
+st.subheader("1. 勤務基礎資訊")
+c1, c2 = st.columns(2)
+unit_name = c1.text_input("執行單位", value=current_unit)
+plan_time = c1.text_input("勤務時間", value=current_time)
+project_name = c2.text_input("專案名稱", value=current_proj)
 
-df_patrol = st.data_editor(
-    pd.DataFrame(patrol_data), 
-    num_rows="dynamic", 
-    use_container_width=True,
-    key="patrol_editor"
-)
+st.subheader("2. 指揮與幕僚編組")
+with st.expander("編輯名單 (支援多人姓名用「、」分隔)", expanded=True):
+    edited_cmd = st.data_editor(df_command_edit, num_rows="dynamic", use_container_width=True)
 
-# --- 輸出邏輯 (HTML 生成) ---
+c3, c4 = st.columns(2)
+brief_info = c3.text_area("勤前教育", value=current_brief, height=80)
+check_st = c4.text_area("檢驗站", value=current_station, height=80)
+
+st.subheader("3. 執行勤務編組")
+edited_ptl = st.data_editor(df_patrol_edit, num_rows="dynamic", use_container_width=True)
+
+# 執行儲存
+if save_btn:
+    save_data(unit_name, plan_time, project_name, brief_info, check_st, edited_cmd, edited_ptl)
+    st.rerun() # 重新整理頁面
+
+# --- 5. 輸出 HTML 報表 (保持原本漂亮的格式) ---
 def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     style = """
     <style>
@@ -87,100 +127,43 @@ def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     """
     
     html = f"""
-    <html>
-    <head>{style}</head>
-    <body>
-    <div class="container">
+    <html><head>{style}</head><body><div class="container">
         <h2>{unit}執行{project}規劃表</h2>
         <div class="info">勤務時間：{time_str}</div>
-    """
-    
-    # 第一個表格：任務編組
-    html += """
         <table>
             <tr><th colspan="4">任　務　編　組</th></tr>
-            <tr>
-                <th width="15%">職稱</th>
-                <th width="10%">代號</th>
-                <th width="25%">姓名</th>
-                <th width="50%">任務</th>
-            </tr>
+            <tr><th width="15%">職稱</th><th width="10%">代號</th><th width="25%">姓名</th><th width="50%">任務</th></tr>
     """
     for _, row in df_cmd.iterrows():
-        # 處理多姓名換行
-        formatted_name = str(row['姓名']).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
-        html += f"""
-            <tr>
-                <td><b>{row['職稱']}</b></td>
-                <td>{row['代號']}</td>
-                <td style="line-height: 1.4;">{formatted_name}</td>
-                <td class="left-align">{row['任務']}</td>
-            </tr>
-        """
-    html += "</table>"
+        formatted_name = str(row.get('姓名', '')).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
+        html += f"""<tr><td><b>{row.get('職稱','')}</b></td><td>{row.get('代號','')}</td>
+                    <td style="line-height: 1.4;">{formatted_name}</td><td class="left-align">{row.get('任務','')}</td></tr>"""
     
-    # 勤前教育與檢驗站
-    html += f"""
+    html += f"""</table>
         <div class="left-align" style="margin-bottom: 20px; line-height: 1.6;">
             <div><b>📢 勤前教育：</b>{briefing}</div>
             <div style="white-space: pre-wrap;"><b>🚧 {station}</b></div>
         </div>
-    """
-    
-    # 第二個表格：巡邏編組
-    html += """
         <table>
-            <tr>
-                <th width="12%">編組</th>
-                <th width="10%">代號</th>
-                <th width="15%">單位</th>
-                <th width="20%">服勤人員</th>
-                <th width="43%">任務分工 / 雨備方案</th>
-            </tr>
+            <tr><th width="12%">編組</th><th width="10%">代號</th><th width="15%">單位</th><th width="20%">服勤人員</th><th width="43%">任務分工 / 雨備方案</th></tr>
     """
     for _, row in df_ptl.iterrows():
-        formatted_ptl_name = str(row['服勤人員']).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
-        rain_text = f"<span class='rain-plan'>*雨備：{row['雨備']}</span>" if row['雨備'] else ""
-        
-        html += f"""
-            <tr>
-                <td>{row['編組']}</td>
-                <td>{row['無線電']}</td>
-                <td>{row['單位']}</td>
-                <td style="line-height: 1.4;">{formatted_ptl_name}</td>
-                <td class="left-align">
-                    {row['任務分工']}
-                    {rain_text}
-                </td>
-            </tr>
-        """
-    html += """
-        </table>
-    </div>
-    </body>
-    </html>
-    """
+        formatted_ptl_name = str(row.get('服勤人員','')).replace("、", "<br>").replace(",", "<br>").replace("\n", "<br>")
+        rain = row.get('雨備', '')
+        rain_text = f"<span class='rain-plan'>*雨備：{rain}</span>" if rain and str(rain) != "nan" else ""
+        html += f"""<tr><td>{row.get('編組','')}</td><td>{row.get('無線電','')}</td><td>{row.get('單位','')}</td>
+                    <td style="line-height: 1.4;">{formatted_ptl_name}</td><td class="left-align">{row.get('任務分工','')}{rain_text}</td></tr>"""
+    
+    html += "</table></div></body></html>"
     return html
 
-# 產生 HTML
-html_content = generate_html(unit_name, project_name, plan_full_time, briefing_info, check_station, df_command, df_patrol)
+html_out = generate_html(unit_name, project_name, plan_time, brief_info, check_st, edited_cmd, edited_ptl)
 
-# --- 預覽與下載區 ---
 st.markdown("---")
-col_preview, col_download = st.columns([3, 1])
-
-with col_preview:
-    st.subheader("📄 即時預覽")
-    st.components.v1.html(html_content, height=800, scrolling=True)
-
-with col_download:
-    st.subheader("📥 輸出報表")
-    st.write("點擊下方按鈕下載完整表格。")
-    
-    st.download_button(
-        label="下載列印用報表 (.html)",
-        data=html_content,
-        file_name=f"勤務規劃表_{datetime.now().strftime('%Y%m%d')}.html",
-        mime="text/html"
-    )
-    st.info("💡 姓名欄位若有多人，請用「、」分隔，報表會自動換行對齊。")
+col_view, col_dl = st.columns([3, 1])
+with col_view:
+    st.subheader("📄 預覽")
+    st.components.v1.html(html_out, height=600, scrolling=True)
+with col_dl:
+    st.subheader("📥 輸出")
+    st.download_button("下載報表 (.html)", html_out, f"勤務表_{datetime.now().strftime('%Y%m%d')}.html", "text/html")
