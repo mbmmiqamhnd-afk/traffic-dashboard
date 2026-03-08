@@ -1,3 +1,13 @@
+# -*- coding: utf-8 -*-
+import sys
+import io
+
+# 強制設定 UTF-8 編碼，避免中文字元引發 ASCII 錯誤
+if hasattr(sys.stdout, 'buffer') and sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if hasattr(sys.stderr, 'buffer') and sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -164,7 +174,7 @@ def generate_html(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     """
     
     html = f"""
-    <html><head>{style}</head><body><div class="container">
+    <html><head><meta charset="utf-8">{style}</head><body><div class="container">
         <h2>{unit}執行{project}規劃表</h2>
         <div class="info">勤務時間：{time_str}</div>
         <table>
@@ -218,8 +228,8 @@ with col_dl:
     st.subheader("📥 輸出")
     st.download_button(
         label="下載報表 (.html)",
-        data=html_out,
+        data=html_out.encode("utf-8"),   # 明確指定 UTF-8 編碼輸出
         file_name=f"勤務表_{datetime.now().strftime('%Y%m%d')}.html",
-        mime="text/html"
+        mime="text/html; charset=utf-8"
     )
     st.info("💡 下載後打開檔案，按 Ctrl+P (列印)，網頁會自動隱藏選單，只印出表格。")
