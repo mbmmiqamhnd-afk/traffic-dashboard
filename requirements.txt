@@ -10,4 +10,4 @@ reportlab
 pdf2image
 python-pptx
 matplotlib
-st-gsheets-connection
+streamlit-gsheets-connection
