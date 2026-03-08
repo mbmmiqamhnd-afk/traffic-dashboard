@@ -67,7 +67,6 @@ def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
         ws_set = sh.worksheet("設定")
         ws_set.clear()
         ws_set.update([["Key", "Value"],
-                       ["unit_name",      unit],
                        ["plan_full_time", time_str],
                        ["project_name",   project],
                        ["briefing_info",  briefing],
@@ -129,9 +128,9 @@ else:
 
 
 
+unit_name = "桃園市政府警察局龍潭分局"
 st.subheader("1. 勤務基礎資訊")
 c1, c2 = st.columns(2)
-unit_name    = c1.text_input("執行單位", value=current_unit)
 project_name = c1.text_input("專案名稱", value=current_proj)
 plan_time    = c2.text_input("勤務時間 (完整顯示文字)", value=current_time)
 
