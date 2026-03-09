@@ -10,24 +10,21 @@ from email.mime.base import MIMEBase
 from email import encoders
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
 
-
 # --- 1. 頁面設定 ---
-st.set_page_config(page_title="防制危險駕車勤務", layout="wide")
-st.title("🚔 防制危險駕車專案勤務規劃表")
-st.caption("資料與 Google Sheets 即時連線，手機、電腦皆可編輯")
+st.set_page_config(page_title="防制危險駕車勤務", layout="wide", page_icon="🚔")
 
+# --- 常數與設定 ---
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-
 UNIT = "桃園市政府警察局龍潭分局"
 
-# --- 預設範本 ---
+# --- 預設範本資料 ---
 DEFAULT_TIME        = "115年3月6日22時至翌日6時"
 DEFAULT_BRIEF       = "時間：各編組執行前\n地點：現地勤教"
 DEFAULT_COMMANDER   = "石門所副所長林榮裕"
@@ -42,13 +39,13 @@ DEFAULT_CMD = pd.DataFrame([
 ])
 
 DEFAULT_PATROL = pd.DataFrame([
-    {"勤務時段": "3月7日零時至4時",      "無線電": "隆安82",  "編組": "專責警力（石門所輪值）", "服勤人員": "00-02時：副所長林榮裕、警員王耀民\n02-04時：副所長林榮裕、警員陳欣妤", "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝（噪音）車輛（每2小時至責任區域內指定巡簽地點巡簽1次並守望10分鐘，將守望情形拍照上傳LINE「龍潭分局聯絡平臺」群組）"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安80",  "編組": "石門所線上巡邏組合警力兼任",     "服勤人員": "",  "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次），並加強查緝毒駕"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安90",  "編組": "高平所線上巡邏組合警力兼任",     "服勤人員": "",  "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
+    {"勤務時段": "3月7日零時至4時",       "無線電": "隆安82",  "編組": "專責警力（石門所輪值）", "服勤人員": "00-02時：副所長林榮裕、警員王耀民\n02-04時：副所長林榮裕、警員陳欣妤", "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝（噪音）車輛（每2小時至責任區域內指定巡簽地點巡簽1次並守望10分鐘，將守望情形拍照上傳LINE「龍潭分局聯絡平臺」群組）"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安80",  "編組": "石門所線上巡邏組合警力兼任",      "服勤人員": "",  "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次），並加強查緝毒駕"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安90",  "編組": "高平所線上巡邏組合警力兼任",      "服勤人員": "",  "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
     {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安990", "編組": "龍潭交通分隊線上巡邏組合警力兼任", "服勤人員": "",  "任務分工": "「區域聯防」勤務，於龍源路及溪州橋旁新建道路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安50",  "編組": "聖亭所線上巡邏組合警力兼任",     "服勤人員": "",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安60",  "編組": "龍潭所線上巡邏組合警力兼任",     "服勤人員": "",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安70",  "編組": "中興所線上巡邏組合警力兼任",     "服勤人員": "",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安50",  "編組": "聖亭所線上巡邏組合警力兼任",      "服勤人員": "",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安60",  "編組": "龍潭所線上巡邏組合警力兼任",      "服勤人員": "",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安70",  "編組": "中興所線上巡邏組合警力兼任",      "服勤人員": "",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
 ])
 
 CHECKIN_POINTS = """1. 中油高原交流道站（龍源路2-20號）
@@ -64,143 +61,50 @@ NOTES = """一、攔檢、盤查車輛時，應隨時注意自身安全及執勤
 （二）違反刑法185條公共危險罪（以他法致生往來危險者）。
 （三）違反社會秩序維護法第72條妨害安寧者，同法第64條聚眾不解散。"""
 
-# --- 字型 & PDF & 寄信函數 ---
-def _get_font():
-    fname = "kaiu"
-    if fname not in pdfmetrics.getRegisteredFontNames():
-        for p in ["kaiu.ttf", "./kaiu.ttf"]:
-            if os.path.exists(p):
-                pdfmetrics.registerFont(TTFont(fname, p))
-                return fname
-        return "Helvetica"
-    return fname
-
-def _parse_html_to_pdf(html_content, page_title):
-    import re as _re
-    font = _get_font()
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-        leftMargin=12*mm, rightMargin=12*mm,
-        topMargin=12*mm, bottomMargin=12*mm)
-    W = A4[0] - 24*mm
-    title_s = ParagraphStyle("t",   fontName=font, fontSize=12, alignment=1, spaceAfter=2, leading=16)
-    info_s  = ParagraphStyle("inf", fontName=font, fontSize=10, alignment=2, spaceAfter=4)
-    cell_s  = ParagraphStyle("c",   fontName=font, fontSize=8,  leading=12)
-    note_s  = ParagraphStyle("n",   fontName=font, fontSize=9,  leading=14, spaceAfter=4)
-
-    def strip_tags(txt):
-        txt = _re.sub(r'<br\s*/?>', '\n', str(txt))
-        txt = _re.sub(r'<[^>]+>', '', txt).strip()
-        return txt
-
-    def cell(txt):
-        return Paragraph(strip_tags(txt).replace('\n', '<br/>'), cell_s)
-
-    body = _re.sub(r'<head[^>]*>.*?</head>', '', html_content, flags=_re.DOTALL|_re.IGNORECASE)
-    body_match = _re.search(r'<body[^>]*>(.*?)</body>', body, _re.DOTALL|_re.IGNORECASE)
-    body = body_match.group(1) if body_match else body
-
-    story = []
-
-    h2 = _re.search(r'<h2[^>]*>(.*?)</h2>', body, _re.DOTALL|_re.IGNORECASE)
-    if h2:
-        story.append(Paragraph(strip_tags(h2.group(1)), title_s))
-        story.append(Spacer(1, 1*mm))
-
-    info = _re.search(r"<div class='info'>(.*?)</div>", body, _re.DOTALL|_re.IGNORECASE)
-    if info:
-        story.append(Paragraph(strip_tags(info.group(1)), info_s))
-        story.append(Spacer(1, 2*mm))
-
-    tables = _re.findall(r'<table[^>]*>(.*?)</table>', body, _re.DOTALL|_re.IGNORECASE)
-    for idx, tbl_html in enumerate(tables):
-        rows_raw = _re.findall(r'<tr[^>]*>(.*?)</tr>', tbl_html, _re.DOTALL|_re.IGNORECASE)
-        data = []
-        for row_html in rows_raw:
-            cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', row_html, _re.DOTALL|_re.IGNORECASE)
-            if cells:
-                data.append([cell(c) for c in cells])
-        if not data:
-            continue
-        col_n = max(len(r) for r in data)
-        t = Table(data, colWidths=[W/col_n]*col_n, repeatRows=1)
-        t.setStyle(TableStyle([
-            ('FONTNAME',      (0,0),(-1,-1), font),
-            ('FONTSIZE',      (0,0),(-1,-1), 8),
-            ('GRID',          (0,0),(-1,-1), 0.5, colors.black),
-            ('VALIGN',        (0,0),(-1,-1), 'MIDDLE'),
-            ('BACKGROUND',    (0,0),(-1, 0), colors.HexColor('#f2f2f2')),
-            ('TOPPADDING',    (0,0),(-1,-1), 3),
-            ('BOTTOMPADDING', (0,0),(-1,-1), 3),
-        ]))
-        story.append(t)
-        story.append(Spacer(1, 3*mm))
-        if idx == 0:
-            note_div = _re.search(
-                r"<div class='left-align'[^>]*>(.*?)</div>\s*</div>",
-                body, _re.DOTALL|_re.IGNORECASE)
-            if note_div:
-                note_text = strip_tags(note_div.group(1)).replace('\n', '<br/>')
-                story.append(Paragraph(note_text, note_s))
-                story.append(Spacer(1, 3*mm))
-
-    doc.build(story)
-    return buf.getvalue()
-
-def send_report_email(html_content, subject):
-    import urllib.parse as _ul
-    try:
-        sender   = st.secrets["email"]["user"]
-        password = st.secrets["email"]["password"]
-        receiver = sender
-        pdf_bytes = _parse_html_to_pdf(html_content, subject)
-        msg = MIMEMultipart()
-        msg["From"]    = sender
-        msg["To"]      = receiver
-        msg["Subject"] = subject
-        msg.attach(MIMEText("請見附件 PDF 報表。", "plain", "utf-8"))
-        part = MIMEBase("application", "pdf")
-        part.set_payload(pdf_bytes)
-        encoders.encode_base64(part)
-        encoded_name = _ul.quote(f"{subject}.pdf", safe='')
-        part.add_header(
-            "Content-Disposition",
-            f"attachment; filename=\"report.pdf\"; filename*=UTF-8''{encoded_name}"
-        )
-        msg.attach(part)
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender, password)
-            server.sendmail(sender, receiver, msg.as_string())
-        return True, None
-    except Exception as e:
-        return False, str(e)
-
-
-
-
-# --- 2. gspread 連線 ---
+# --- 2. 建立 gspread 連線 (Cache Resource) ---
+@st.cache_resource
 def get_client():
+    if "gcp_service_account" not in st.secrets:
+        return None
     creds_dict = dict(st.secrets["gcp_service_account"])
     creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
-# --- 3. 讀取 ---
+# --- 3. 讀取函數 (Cache Data) ---
+@st.cache_data(ttl=60)
 def load_data():
     try:
         client = get_client()
+        if client is None:
+            return None, None, None, "未設定 Secrets (離線模式)"
+        
         sh = client.open_by_key(SHEET_ID)
-        df_settings = pd.DataFrame(sh.worksheet("危駕_設定").get_all_records())
-        df_cmd      = pd.DataFrame(sh.worksheet("危駕_指揮組").get_all_records())
-        df_patrol   = pd.DataFrame(sh.worksheet("危駕_警力佈署").get_all_records())
+        # 一次取得所有 worksheet 減少 API 呼叫
+        ws_list = sh.worksheets()
+        
+        ws_set = next((w for w in ws_list if w.title == "危駕_設定"), None)
+        ws_cmd = next((w for w in ws_list if w.title == "危駕_指揮組"), None)
+        ws_ptl = next((w for w in ws_list if w.title == "危駕_警力佈署"), None)
+
+        if not all([ws_set, ws_cmd, ws_ptl]):
+            return None, None, None, "缺工作表 (需有: 危駕_設定, 危駕_指揮組, 危駕_警力佈署)"
+
+        df_settings = pd.DataFrame(ws_set.get_all_records())
+        df_cmd      = pd.DataFrame(ws_cmd.get_all_records())
+        df_patrol   = pd.DataFrame(ws_ptl.get_all_records())
         return df_settings, df_cmd, df_patrol, None
     except Exception as e:
         return None, None, None, str(e)
 
-# --- 4. 寫入 ---
+# --- 4. 寫入函數 ---
 def save_data(time_str, briefing, commander, df_cmd, df_patrol):
     try:
         client = get_client()
+        if client is None:
+            st.warning("⚠️ 離線模式無法存檔至雲端，僅能下載 PDF。")
+            return False
+
         sh = client.open_by_key(SHEET_ID)
 
         ws_set = sh.worksheet("危駕_設定")
@@ -219,20 +123,212 @@ def save_data(time_str, briefing, commander, df_cmd, df_patrol):
         ws_ptl.clear()
         df_patrol = df_patrol.fillna("")
         ws_ptl.update([df_patrol.columns.tolist()] + df_patrol.values.tolist())
-
+        
+        # 清除快取，確保下次讀取是新的
+        load_data.clear()
         st.toast("✅ 雲端存檔成功！", icon="☁️")
         return True
     except Exception as e:
         st.error(f"❌ 存檔失敗：{e}")
         return False
 
-# --- 5. 初始化 ---
+# --- 5. PDF 生成函數 (使用 ReportLab 直接繪製) ---
+def _get_font():
+    fname = "kaiu"
+    if fname in pdfmetrics.getRegisteredFontNames():
+        return fname
+    font_paths = ["kaiu.ttf", "./kaiu.ttf", "font/kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]
+    font_path = None
+    for p in font_paths:
+        if os.path.exists(p):
+            font_path = p
+            break   
+    if font_path:
+        try:
+            pdfmetrics.registerFont(TTFont(fname, font_path))
+            return fname
+        except Exception:
+            pass
+    return "Helvetica"
+
+def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
+    """
+    直接根據資料生成 PDF，確保格式完美
+    """
+    font = _get_font()
+    buf = io.BytesIO()
+    
+    # 邊距設定
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=15*mm, rightMargin=15*mm,
+        topMargin=15*mm, bottomMargin=15*mm,
+        title=f"{UNIT}執行「防制危險駕車專案勤務」規劃表")
+        
+    page_width = A4[0] - 30*mm
+    story = []
+    
+    # --- 樣式定義 ---
+    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, spaceAfter=6)
+    style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=12)
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=10, leading=13, alignment=1) # 置中
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=10, leading=13, alignment=0) # 靠左
+    style_section = ParagraphStyle('Section', fontName=font, fontSize=11, leading=16, spaceAfter=4)
+    style_note = ParagraphStyle('Note', fontName=font, fontSize=10, leading=14, spaceAfter=2)
+    style_table_header = ParagraphStyle('TableHeader', fontName=font, fontSize=14, alignment=1, leading=18)
+
+    # 1. 標題與時間
+    story.append(Paragraph(f"{UNIT}執行「防制危險駕車專案勤務」規劃表", style_title))
+    story.append(Paragraph(f"勤務時間：{time_str}", style_info))
+    
+    def clean_text(txt):
+        return str(txt).replace("\n", "<br/>").replace("、", "<br/>")
+
+    # ====================
+    # 2. 任務編組表格
+    # ====================
+    # 欄寬: 職稱15%, 代號10%, 姓名25%, 任務50%
+    col_widths_cmd = [page_width * 0.15, page_width * 0.10, page_width * 0.25, page_width * 0.50]
+    headers_cmd = ["職稱", "代號", "姓名", "任務"]
+    
+    data_cmd = []
+    # Row 0: 標題列 (合併)
+    data_cmd.append([Paragraph("<b>任　務　編　組</b>", style_table_header), '', '', ''])
+    # Row 1: 欄位名
+    data_cmd.append([Paragraph(f"<b>{h}</b>", style_cell) for h in headers_cmd])
+    
+    for _, row in df_cmd.iterrows():
+        job = Paragraph(f"<b>{row.get('職稱','')}</b>", style_cell)
+        code = Paragraph(str(row.get('代號','')), style_cell)
+        name = Paragraph(clean_text(row.get('姓名','')), style_cell)
+        task = Paragraph(str(row.get('任務','')), style_cell_left)
+        data_cmd.append([job, code, name, task])
+
+    t1 = Table(data_cmd, colWidths=col_widths_cmd, repeatRows=2)
+    t1.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), font),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        # 合併第一列
+        ('SPAN', (0,0), (-1,0)),
+        ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#f2f2f2')),
+        ('ALIGN', (0,0), (-1,0), 'CENTER'),
+        # Header列背景
+        ('BACKGROUND', (0,1), (-1, 1), colors.HexColor('#f2f2f2')),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(t1)
+    story.append(Spacer(1, 6*mm))
+
+    # ====================
+    # 3. 勤前教育 & 指揮官資訊
+    # ====================
+    brief_clean = briefing.replace("\n", "<br/>")
+    story.append(Paragraph(f"<b>📢 勤前教育：</b><br/>{brief_clean}", style_section))
+    story.append(Spacer(1, 3*mm))
+    story.append(Paragraph(f"<b>警力佈署</b>　交通快打指揮官：{commander}", style_section))
+    story.append(Spacer(1, 1*mm))
+
+    # ====================
+    # 4. 警力佈署表格
+    # ====================
+    # 欄寬: 時段15%, 代號10%, 編組18%, 人員20%, 任務37%
+    col_widths_ptl = [page_width * 0.15, page_width * 0.10, page_width * 0.18, page_width * 0.20, page_width * 0.37]
+    headers_ptl = ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]
+    
+    data_ptl = []
+    data_ptl.append([Paragraph(f"<b>{h}</b>", style_cell) for h in headers_ptl])
+    
+    for _, row in df_patrol.iterrows():
+        time_p = Paragraph(clean_text(row.get('勤務時段','')), style_cell)
+        code = Paragraph(str(row.get('無線電','')), style_cell)
+        group = Paragraph(clean_text(row.get('編組','')), style_cell)
+        ppl = Paragraph(clean_text(row.get('服勤人員','')), style_cell)
+        task = Paragraph(str(row.get('任務分工','')), style_cell_left)
+        data_ptl.append([time_p, code, group, ppl, task])
+
+    t2 = Table(data_ptl, colWidths=col_widths_ptl, repeatRows=1)
+    t2.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), font),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#f2f2f2')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(t2)
+    story.append(Spacer(1, 6*mm))
+
+    # ====================
+    # 5. 巡簽地點 & 備註
+    # ====================
+    story.append(Paragraph("<b>巡簽地點：</b>", style_section))
+    check_pts = CHECKIN_POINTS.replace("\n", "<br/>")
+    story.append(Paragraph(check_pts, style_note))
+    story.append(Spacer(1, 4*mm))
+    
+    story.append(Paragraph("<b>備註：</b>", style_section))
+    notes_clean = NOTES.replace("\n", "<br/>")
+    story.append(Paragraph(notes_clean, style_note))
+
+    try:
+        doc.build(story)
+        return buf.getvalue()
+    except Exception as e:
+        print(f"PDF Build Error: {e}")
+        return None
+
+def send_report_email(html_content, subject, time_str, briefing, commander, df_cmd, df_patrol):
+    import urllib.parse as _ul
+    try:
+        sender   = st.secrets["email"]["user"]
+        password = st.secrets["email"]["password"]
+        receiver = sender
+        
+        # 使用新的 PDF 生成器
+        pdf_bytes = generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol)
+        if pdf_bytes is None:
+            return False, "PDF 生成失敗 (請檢查 kaiu.ttf 字型)"
+
+        msg = MIMEMultipart()
+        msg["From"]    = sender
+        msg["To"]      = receiver
+        msg["Subject"] = subject
+        msg.attach(MIMEText("請見附件 PDF 報表。\n\n本郵件由雲端勤務系統自動發送。", "plain", "utf-8"))
+        
+        part = MIMEBase("application", "pdf")
+        part.set_payload(pdf_bytes)
+        encoders.encode_base64(part)
+        encoded_name = _ul.quote(f"{subject}.pdf", safe='')
+        part.add_header(
+            "Content-Disposition",
+            f"attachment; filename=\"report.pdf\"; filename*=UTF-8''{encoded_name}"
+        )
+        msg.attach(part)
+        
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, password)
+            server.sendmail(sender, receiver, msg.as_string())
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+# --- 6. 主程式邏輯 ---
+
+# 讀取資料
 df_set, df_cmd, df_ptl, error_msg = load_data()
 
-if error_msg or df_set is None or df_set.empty:
-    if error_msg:
-        st.error(f"❌ 無法讀取 Google Sheets：\n{error_msg}")
-    st.info("💡 已載入預設範本，請修改後按「下載報表」自動儲存。")
+# 初始化變數
+if error_msg:
+    st.error(f"❌ Google Sheets 讀取失敗：{error_msg}")
+    st.warning("⚠️ 啟用離線範本模式。")
+    current_time      = DEFAULT_TIME
+    current_brief     = DEFAULT_BRIEF
+    current_commander = DEFAULT_COMMANDER
+    df_cmd_edit       = DEFAULT_CMD.copy()
+    df_patrol_edit    = DEFAULT_PATROL.copy()
+elif df_set is None:
+    st.info("💡 資料庫無資料，載入預設範本。")
     current_time      = DEFAULT_TIME
     current_brief     = DEFAULT_BRIEF
     current_commander = DEFAULT_COMMANDER
@@ -250,21 +346,24 @@ else:
         st.error(f"資料格式解析失敗：{e}")
         st.stop()
 
-# --- 6. 介面 ---
+# 介面顯示
+st.title("🚔 防制危險駕車專案勤務規劃表")
+st.caption("資料與 Google Sheets 即時連線，手機、電腦皆可編輯")
+
 st.subheader("1. 基礎資訊")
 c1, c2 = st.columns(2)
 plan_time  = c1.text_input("勤務時間", value=current_time)
 brief_info = c2.text_area("📢 勤前教育", value=current_brief, height=80)
 
 st.subheader("2. 任務編組")
-st.caption("💡 姓名若有多人，請用「、」分隔。")
 with st.expander("編輯名單", expanded=True):
     edited_cmd = st.data_editor(
         df_cmd_edit,
         num_rows="dynamic",
         use_container_width=True,
-        column_config={"任務": None}
+        column_config={"任務": None} # 介面上隱藏長任務，保持簡潔
     )
+    # 確保資料完整性
     if "任務" not in edited_cmd.columns:
         edited_cmd["任務"] = df_cmd_edit["任務"]
 
@@ -278,8 +377,8 @@ st.text(CHECKIN_POINTS)
 st.subheader("5. 備註（固定）")
 st.text(NOTES)
 
-# --- 7. 產生 HTML ---
-def generate_html(time_str, briefing, commander, df_cmd, df_patrol):
+# HTML 預覽產生器 (僅供網頁瀏覽，不影響 PDF)
+def generate_html_preview():
     style = """
     <style>
         body { font-family: 'DFKai-SB', 'BiauKai', '標楷體', serif; color: #000; font-size: 14px; }
@@ -292,44 +391,36 @@ def generate_html(time_str, briefing, commander, df_cmd, df_patrol):
         .left-align { text-align: left; }
         .section { margin-bottom: 10px; line-height: 1.8; }
         .notes { white-space: pre-wrap; font-size: 13px; line-height: 1.8; }
-        @media print { .no-print { display: none; } body { -webkit-print-color-adjust: exact; } }
     </style>
     """
     html = f"<html><head><meta charset='utf-8'>{style}</head><body><div class='container'>"
     html += f"<h2>{UNIT}執行「防制危險駕車專案勤務」規劃表</h2>"
-    html += f"<div class='info'>勤務時間：{time_str}</div>"
+    html += f"<div class='info'>勤務時間：{plan_time}</div>"
 
-    # 任務編組
     html += "<table><tr><th colspan='4'>任　務　編　組</th></tr>"
     html += "<tr><th width='15%'>職稱</th><th width='10%'>代號</th><th width='25%'>姓名</th><th width='50%'>任務</th></tr>"
-    for _, row in df_cmd.iterrows():
+    for _, row in edited_cmd.iterrows():
         name = str(row.get('姓名', '')).replace("、", "<br>").replace(",", "<br>")
         html += f"<tr><td><b>{row.get('職稱','')}</b></td><td>{row.get('代號','')}</td><td style='line-height:1.4'>{name}</td><td class='left-align'>{row.get('任務','')}</td></tr>"
     html += "</table>"
 
-    # 勤前教育
-    html += f"<div class='section'><b>📢 勤前教育：</b><span style='white-space:pre-wrap'>{briefing}</span></div>"
-
-    # 警力佈署
+    html += f"<div class='section'><b>📢 勤前教育：</b><span style='white-space:pre-wrap'>{brief_info}</span></div>"
     html += f"<div class='section'><b>警力佈署</b>　交通快打指揮官：{commander}</div>"
+    
     html += "<table><tr><th width='15%'>勤務時段</th><th width='10%'>代號</th><th width='18%'>編組</th><th width='20%'>服勤人員</th><th width='37%'>任務分工</th></tr>"
-    for _, row in df_patrol.iterrows():
+    for _, row in edited_patrol.iterrows():
         personnel = str(row.get('服勤人員', '')).replace("、", "<br>").replace("\n", "<br>")
         html += f"<tr><td>{row.get('勤務時段','')}</td><td>{row.get('無線電','')}</td><td>{row.get('編組','')}</td><td style='line-height:1.4'>{personnel}</td><td class='left-align'>{row.get('任務分工','')}</td></tr>"
     html += "</table>"
 
-    # 巡簽地點
     html += f"<div class='section'><b>巡簽地點</b><br><span style='white-space:pre-wrap'>{CHECKIN_POINTS}</span></div>"
-
-    # 備註
     html += f"<div class='section'><b>備註</b><br><span class='notes'>{NOTES}</span></div>"
-
     html += "</div></body></html>"
     return html
 
-html_out = generate_html(plan_time, brief_info, commander, edited_cmd, edited_patrol)
+html_out = generate_html_preview()
 
-# --- 8. 輸出 ---
+# 輸出區域
 st.markdown("---")
 col_view, col_dl = st.columns([3, 1])
 with col_view:
@@ -344,11 +435,15 @@ with col_dl:
         mime="text/html; charset=utf-8",
         type="primary"
     ):
-        save_data(plan_time, brief_info, commander, edited_cmd, edited_patrol)
-        subject = f"防制危險駕車勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
-        ok, err = send_report_email(html_out, subject)
-        if ok:
-            st.toast("📧 報表已寄出至信箱！", icon="✉️")
-        else:
-            st.error(f"❌ 寄信失敗：{err}")
-    st.info("💡 下載後打開檔案，按 Ctrl+P 列印。")
+        # 1. 存檔
+        save_success = save_data(plan_time, brief_info, commander, edited_cmd, edited_patrol)
+        
+        # 2. 寄信 (使用 PDF 生成器)
+        if save_success:
+            subject = f"防制危險駕車勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
+            ok, err = send_report_email(html_out, subject, plan_time, brief_info, commander, edited_cmd, edited_patrol)
+            if ok:
+                st.toast("📧 報表已寄出至信箱！", icon="✉️")
+            else:
+                st.error(f"❌ 寄信失敗：{err}")
+    st.info("💡 提示：請確保專案目錄下有 `kaiu.ttf`，否則 PDF 中文會顯示異常。")
