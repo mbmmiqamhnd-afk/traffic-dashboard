@@ -3,18 +3,11 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import smtplib, io, os
+import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.units import mm
 
 
 # --- 1. 頁面設定 ---
@@ -70,96 +63,15 @@ def get_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
-# --- 字型 & PDF & 寄信函數 ---
-def _get_font():
-    fname = "kaiu"
-    if fname not in pdfmetrics.getRegisteredFontNames():
-        for p in ["kaiu.ttf", "./kaiu.ttf"]:
-            if os.path.exists(p):
-                pdfmetrics.registerFont(TTFont(fname, p))
-                return fname
-        return "Helvetica"
-    return fname
-
-def _parse_html_to_pdf(html_content, page_title):
-    import re as _re
-    font = _get_font()
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-        leftMargin=12*mm, rightMargin=12*mm,
-        topMargin=12*mm, bottomMargin=12*mm)
-    W = A4[0] - 24*mm
-    title_s = ParagraphStyle("t",   fontName=font, fontSize=12, alignment=1, spaceAfter=2, leading=16)
-    info_s  = ParagraphStyle("inf", fontName=font, fontSize=10, alignment=2, spaceAfter=4)
-    cell_s  = ParagraphStyle("c",   fontName=font, fontSize=8,  leading=12)
-    note_s  = ParagraphStyle("n",   fontName=font, fontSize=9,  leading=14, spaceAfter=4)
-
-    def strip_tags(txt):
-        txt = _re.sub(r'<br\s*/?>', '\n', str(txt))
-        txt = _re.sub(r'<[^>]+>', '', txt).strip()
-        return txt
-
-    def cell(txt):
-        return Paragraph(strip_tags(txt).replace('\n', '<br/>'), cell_s)
-
-    body = _re.sub(r'<head[^>]*>.*?</head>', '', html_content, flags=_re.DOTALL|_re.IGNORECASE)
-    body_match = _re.search(r'<body[^>]*>(.*?)</body>', body, _re.DOTALL|_re.IGNORECASE)
-    body = body_match.group(1) if body_match else body
-
-    story = []
-
-    h2 = _re.search(r'<h2[^>]*>(.*?)</h2>', body, _re.DOTALL|_re.IGNORECASE)
-    if h2:
-        story.append(Paragraph(strip_tags(h2.group(1)), title_s))
-        story.append(Spacer(1, 1*mm))
-
-    info = _re.search(r"<div class='info'>(.*?)</div>", body, _re.DOTALL|_re.IGNORECASE)
-    if info:
-        story.append(Paragraph(strip_tags(info.group(1)), info_s))
-        story.append(Spacer(1, 2*mm))
-
-    tables = _re.findall(r'<table[^>]*>(.*?)</table>', body, _re.DOTALL|_re.IGNORECASE)
-    for idx, tbl_html in enumerate(tables):
-        rows_raw = _re.findall(r'<tr[^>]*>(.*?)</tr>', tbl_html, _re.DOTALL|_re.IGNORECASE)
-        data = []
-        for row_html in rows_raw:
-            cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', row_html, _re.DOTALL|_re.IGNORECASE)
-            if cells:
-                data.append([cell(c) for c in cells])
-        if not data:
-            continue
-        col_n = max(len(r) for r in data)
-        t = Table(data, colWidths=[W/col_n]*col_n, repeatRows=1)
-        t.setStyle(TableStyle([
-            ('FONTNAME',      (0,0),(-1,-1), font),
-            ('FONTSIZE',      (0,0),(-1,-1), 8),
-            ('GRID',          (0,0),(-1,-1), 0.5, colors.black),
-            ('VALIGN',        (0,0),(-1,-1), 'MIDDLE'),
-            ('BACKGROUND',    (0,0),(-1, 0), colors.HexColor('#f2f2f2')),
-            ('TOPPADDING',    (0,0),(-1,-1), 3),
-            ('BOTTOMPADDING', (0,0),(-1,-1), 3),
-        ]))
-        story.append(t)
-        story.append(Spacer(1, 3*mm))
-        if idx == 0:
-            note_div = _re.search(
-                r"<div class='left-align'[^>]*>(.*?)</div>\s*</div>",
-                body, _re.DOTALL|_re.IGNORECASE)
-            if note_div:
-                note_text = strip_tags(note_div.group(1)).replace('\n', '<br/>')
-                story.append(Paragraph(note_text, note_s))
-                story.append(Spacer(1, 3*mm))
-
-    doc.build(story)
-    return buf.getvalue()
-
+# --- 寄信函數 ---
 def send_report_email(html_content, subject):
     import urllib.parse as _ul
     try:
+        from weasyprint import HTML as _WHTML
         sender   = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
         receiver = sender
-        pdf_bytes = _parse_html_to_pdf(html_content, subject)
+        pdf_bytes = _WHTML(string=html_content).write_pdf()
         msg = MIMEMultipart()
         msg["From"]    = sender
         msg["To"]      = receiver
@@ -180,6 +92,8 @@ def send_report_email(html_content, subject):
         return True, None
     except Exception as e:
         return False, str(e)
+
+
 
 
 
