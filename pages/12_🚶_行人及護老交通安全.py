@@ -192,10 +192,20 @@ st.text(NOTES)
 
 # --- 7. 產生 HTML ---
 def generate_html(month, df_cmd, df_schedule):
+    import os as _os, base64 as _b64
+    _kaiu = '/mount/src/traffic-dashboard/kaiu.ttf'
+    if _os.path.exists(_kaiu):
+        with open(_kaiu, 'rb') as _fh:
+            _b64str = _b64.b64encode(_fh.read()).decode()
+        _font_face = "@font-face { font-family: 'BiauKai'; src: url('data:font/truetype;base64," + _b64str + "'); }"
+        _font_css = "body { font-family: 'BiauKai', serif;"
+    else:
+        _font_face = ""
+        _font_css = "body { font-family: serif;"
     style = """
-
     <style>
-        body { font-family: 'Noto Serif CJK TC', 'Noto Sans CJK TC', serif; color: #000; font-size: 14px; }
+        """ + _font_face + """
+        """ + _font_css + """ color: #000; font-size: 14px; }
         .container { width: 100%; max-width: 800px; margin: 0 auto; padding: 20px; }
         h2 { text-align: left; margin-bottom: 5px; letter-spacing: 2px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
