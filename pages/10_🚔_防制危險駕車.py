@@ -38,15 +38,15 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "通訊組",   "代號": "隆安",    "姓名": "主任 蔡奇青、執勤官 李文章、執勤員 黃文興", "任務": "監看群聚告警訊息、指揮、調度及通報本勤務事宜。"},
 ])
 
-# 修改重點：將原本空白的服勤人員欄位，預設填入「線上巡邏警力兼任」
+# --- 修正重點：編組欄位簡化，兼任文字移至服勤人員 ---
 DEFAULT_PATROL = pd.DataFrame([
     {"勤務時段": "3月7日零時至4時",       "無線電": "隆安82",  "編組": "專責警力（石門所輪值）", "服勤人員": "00-02時：副所長林榮裕、警員王耀民\n02-04時：副所長林榮裕、警員陳欣妤", "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝（噪音）車輛（每2小時至責任區域內指定巡簽地點巡簽1次並守望10分鐘，將守望情形拍照上傳LINE「龍潭分局聯絡平臺」群組）"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安80",  "編組": "石門所線上巡邏組合警力兼任",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次），並加強查緝毒駕"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安90",  "編組": "高平所線上巡邏組合警力兼任",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安990", "編組": "龍潭交通分隊線上巡邏組合警力兼任", "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於龍源路及溪州橋旁新建道路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安50",  "編組": "聖亭所線上巡邏組合警力兼任",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安60",  "編組": "龍潭所線上巡邏組合警力兼任",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安70",  "編組": "中興所線上巡邏組合警力兼任",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安80",  "編組": "石門所",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次），並加強查緝毒駕"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安90",  "編組": "高平所",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安990", "編組": "龍潭交通分隊", "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於龍源路及溪州橋旁新建道路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安50",  "編組": "聖亭所",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安60",  "編組": "龍潭所",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安70",  "編組": "中興所",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
 ])
 
 CHECKIN_POINTS = """1. 中油高原交流道站（龍源路2-20號）
@@ -62,7 +62,7 @@ NOTES = """一、攔檢、盤查車輛時，應隨時注意自身安全及執勤
 （二）違反刑法185條公共危險罪（以他法致生往來危險者）。
 （三）違反社會秩序維護法第72條妨害安寧者，同法第64條聚眾不解散。"""
 
-# --- 2. 建立 gspread 連線 (Cache Resource) ---
+# --- 2. 建立 gspread 連線 ---
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets:
@@ -72,7 +72,7 @@ def get_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
-# --- 3. 讀取函數 (Cache Data) ---
+# --- 3. 讀取函數 ---
 @st.cache_data(ttl=60)
 def load_data():
     try:
@@ -131,7 +131,7 @@ def save_data(time_str, briefing, commander, df_cmd, df_patrol):
         st.error(f"❌ 存檔失敗：{e}")
         return False
 
-# --- 5. PDF 生成函數 (含表格修正) ---
+# --- 5. PDF 生成函數 ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames():
@@ -166,8 +166,8 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
     # --- 樣式定義 ---
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, spaceAfter=6)
     style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=12)
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=10, leading=13, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=10, leading=13, alignment=0)
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=10, leading=13, alignment=1) # 置中
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=10, leading=13, alignment=0) # 靠左
     style_section = ParagraphStyle('Section', fontName=font, fontSize=11, leading=16, spaceAfter=4)
     style_note = ParagraphStyle('Note', fontName=font, fontSize=10, leading=14, spaceAfter=2)
     style_table_header = ParagraphStyle('TableHeader', fontName=font, fontSize=14, alignment=1, leading=18)
