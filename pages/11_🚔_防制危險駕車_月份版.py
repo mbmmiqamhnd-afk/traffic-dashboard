@@ -230,12 +230,13 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
     # ====================
     # 3. 勤務表 (日期、單位、分工)
     # ====================
+    # 修改重點：將標題改為「警力佈署」
     col_widths_sch = [page_width * 0.20, page_width * 0.20, page_width * 0.60]
     headers_sch = ["日期（22時至翌日6時）", "單位", "分工"]
     
     data_sch = []
-    # Row 0: 標題列
-    data_sch.append([Paragraph("<b>執行勤務日期、單位及分工</b>", style_table_header), '', ''])
+    # Row 0: 標題列 (改為 警力佈署)
+    data_sch.append([Paragraph("<b>警　力　佈　署</b>", style_table_header), '', ''])
     # Row 1: 欄位名
     data_sch.append([Paragraph(f"<b>{h}</b>", style_cell) for h in headers_sch])
     
@@ -359,7 +360,8 @@ with st.expander("編輯名單", expanded=True):
     if "任務" not in edited_cmd.columns:
         edited_cmd["任務"] = df_cmd_edit["任務"]
 
-st.subheader("3. 執行勤務日期、單位及分工")
+# 修改重點：介面標題改為「警力佈署」
+st.subheader("3. 警力佈署")
 edited_schedule = st.data_editor(df_schedule_edit, num_rows="dynamic", use_container_width=True)
 
 st.subheader("4. 巡簽地點（固定）")
@@ -394,9 +396,9 @@ def generate_html_preview():
         html += f"<tr><td><b>{row.get('職稱','')}</b></td><td>{row.get('代號','')}</td><td style='line-height:1.4'>{name}</td><td class='left-align'>{row.get('任務','')}</td></tr>"
     html += "</table>"
 
-    # 勤務表
+    # 勤務表 (標題改為 警力佈署)
     html += "<table>"
-    html += "<tr><th colspan='3'>執行勤務日期、單位及分工</th></tr>"
+    html += "<tr><th colspan='3'>警　力　佈　署</th></tr>"
     html += "<tr><th width='20%'>日期（22時至翌日6時）</th><th width='20%'>單位</th><th width='60%'>分工</th></tr>"
     for _, row in edited_schedule.iterrows():
         html += f"<tr><td>{row.get('日期（22時至翌日6時）','')}</td><td>{row.get('單位','')}</td><td class='left-align'>{row.get('分工','')}</td></tr>"
