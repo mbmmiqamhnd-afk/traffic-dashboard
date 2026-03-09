@@ -99,7 +99,6 @@ def load_data():
         sh = client.open_by_key(SHEET_ID)
         ws_list = sh.worksheets()
         
-        # 抓取工作表 (注意工作表名稱是否與Google Sheets一致)
         ws_set = next((w for w in ws_list if w.title == "危駕月_設定"), None)
         ws_cmd = next((w for w in ws_list if w.title == "危駕月_指揮組"), None)
         ws_sch = next((w for w in ws_list if w.title == "危駕月_勤務表"), None)
@@ -138,7 +137,6 @@ def save_data(month, df_cmd, df_schedule):
         df_schedule = df_schedule.fillna("")
         ws_sch.update([df_schedule.columns.tolist()] + df_schedule.values.tolist())
 
-        # 清除快取
         load_data.clear()
         st.toast("✅ 雲端存檔成功！", icon="☁️")
         return True
@@ -146,7 +144,7 @@ def save_data(month, df_cmd, df_schedule):
         st.error(f"❌ 存檔失敗：{e}")
         return False
 
-# --- 5. PDF 生成函數 (ReportLab) ---
+# --- 5. PDF 生成函數 (含自動合併日期欄位) ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames():
@@ -177,7 +175,6 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
     page_width = A4[0] - 30*mm
     story = []
     
-    # --- 樣式定義 ---
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, spaceAfter=10)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=10, leading=13, alignment=1) # 置中
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=10, leading=13, alignment=0) # 靠左
@@ -198,9 +195,7 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
     headers_cmd = ["職稱", "代號", "姓名", "任務"]
     
     data_cmd = []
-    # Row 0: 標題列
     data_cmd.append([Paragraph("<b>任　務　編　組</b>", style_table_header), '', '', ''])
-    # Row 1: 欄位名
     data_cmd.append([Paragraph(f"<b>{h}</b>", style_cell) for h in headers_cmd])
     
     for _, row in df_cmd.iterrows():
@@ -215,11 +210,9 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
         ('FONTNAME', (0,0), (-1,-1), font),
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        # Row 0
         ('SPAN', (0,0), (-1,0)),
         ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#f2f2f2')),
         ('ALIGN', (0,0), (-1,0), 'CENTER'),
-        # Row 1
         ('BACKGROUND', (0,1), (-1, 1), colors.HexColor('#f2f2f2')),
         ('TOPPADDING', (0,0), (-1,-1), 4),
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
@@ -228,14 +221,13 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
     story.append(Spacer(1, 6*mm))
 
     # ====================
-    # 3. 勤務表 (日期、單位、分工)
+    # 3. 勤務表 (日期、單位、分工) - 含自動合併功能
     # ====================
-    # 修改重點：將標題改為「警力佈署」
     col_widths_sch = [page_width * 0.20, page_width * 0.20, page_width * 0.60]
     headers_sch = ["日期（22時至翌日6時）", "單位", "分工"]
     
     data_sch = []
-    # Row 0: 標題列 (改為 警力佈署)
+    # Row 0: 標題列
     data_sch.append([Paragraph("<b>警　力　佈　署</b>", style_table_header), '', ''])
     # Row 1: 欄位名
     data_sch.append([Paragraph(f"<b>{h}</b>", style_cell) for h in headers_sch])
@@ -246,21 +238,47 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
         task_p = Paragraph(str(row.get('分工','')), style_cell_left)
         data_sch.append([date_p, unit_p, task_p])
 
-    # repeatRows=2: 換頁時標題與欄位名重複
     t2 = Table(data_sch, colWidths=col_widths_sch, repeatRows=2)
-    t2.setStyle(TableStyle([
+    
+    # 基礎樣式
+    table_styles = [
         ('FONTNAME', (0,0), (-1,-1), font),
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        # Row 0
         ('SPAN', (0,0), (-1,0)),
         ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#f2f2f2')),
         ('ALIGN', (0,0), (-1,0), 'CENTER'),
-        # Row 1
         ('BACKGROUND', (0,1), (-1, 1), colors.HexColor('#f2f2f2')),
         ('TOPPADDING', (0,0), (-1,-1), 4),
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-    ]))
+    ]
+
+    # --- 自動計算日期欄位合併 (PDF SPAN) ---
+    # 邏輯：找出所有非空白日期的索引位置，然後將其與後面的空白列合併
+    date_col = '日期（22時至翌日6時）'
+    
+    # 找出所有有資料的列索引 (index)
+    non_empty_indices = [i for i, val in enumerate(df_schedule[date_col]) if str(val).strip() != ""]
+    # 補上最後一個邊界
+    non_empty_indices.append(len(df_schedule))
+    
+    header_offset = 2 # 因為表格前兩列是標題和欄位名稱
+    
+    for k in range(len(non_empty_indices) - 1):
+        start_row = non_empty_indices[k]
+        end_row = non_empty_indices[k+1] - 1
+        
+        # 如果這個區間大於 0，表示需要合併
+        if end_row > start_row:
+            # ReportLab 的座標是 (col, row)，這裡 col=0 是日期欄
+            # 加上 header_offset 因為 data_sch 前兩列是 Headers
+            span_cmd = ('SPAN', (0, start_row + header_offset), (0, end_row + header_offset))
+            table_styles.append(span_cmd)
+            # 確保合併後垂直置中
+            valign_cmd = ('VALIGN', (0, start_row + header_offset), (0, end_row + header_offset), 'MIDDLE')
+            table_styles.append(valign_cmd)
+
+    t2.setStyle(TableStyle(table_styles))
     story.append(t2)
     story.append(Spacer(1, 6*mm))
 
@@ -360,7 +378,6 @@ with st.expander("編輯名單", expanded=True):
     if "任務" not in edited_cmd.columns:
         edited_cmd["任務"] = df_cmd_edit["任務"]
 
-# 修改重點：介面標題改為「警力佈署」
 st.subheader("3. 警力佈署")
 edited_schedule = st.data_editor(df_schedule_edit, num_rows="dynamic", use_container_width=True)
 
@@ -370,7 +387,7 @@ st.text(CHECKIN_POINTS)
 st.subheader("5. 備註（固定）")
 st.text(NOTES)
 
-# HTML 預覽產生器 (同步 PDF 樣式)
+# HTML 預覽產生器 (同步 PDF 樣式 + HTML rowspan)
 def generate_html_preview():
     style = """
     <style>
@@ -396,12 +413,51 @@ def generate_html_preview():
         html += f"<tr><td><b>{row.get('職稱','')}</b></td><td>{row.get('代號','')}</td><td style='line-height:1.4'>{name}</td><td class='left-align'>{row.get('任務','')}</td></tr>"
     html += "</table>"
 
-    # 勤務表 (標題改為 警力佈署)
+    # 警力佈署 (含日期合併)
     html += "<table>"
     html += "<tr><th colspan='3'>警　力　佈　署</th></tr>"
     html += "<tr><th width='20%'>日期（22時至翌日6時）</th><th width='20%'>單位</th><th width='60%'>分工</th></tr>"
-    for _, row in edited_schedule.iterrows():
-        html += f"<tr><td>{row.get('日期（22時至翌日6時）','')}</td><td>{row.get('單位','')}</td><td class='left-align'>{row.get('分工','')}</td></tr>"
+    
+    col_date = '日期（22時至翌日6時）'
+    total_rows = len(edited_schedule)
+    
+    # 建立合併資訊 (HTML rowspan)
+    row_spans = {} # {row_index: span_count}
+    skip_rows = set()
+    
+    i = 0
+    while i < total_rows:
+        date_val = str(edited_schedule.iloc[i][col_date]).strip()
+        if date_val != "":
+            # 計算接下來有多少空白
+            span = 1
+            for j in range(i + 1, total_rows):
+                if str(edited_schedule.iloc[j][col_date]).strip() == "":
+                    span += 1
+                else:
+                    break
+            row_spans[i] = span
+            for k in range(1, span):
+                skip_rows.add(i + k)
+            i += span
+        else:
+            i += 1
+
+    for idx, row in edited_schedule.iterrows():
+        html += "<tr>"
+        
+        # 處理日期欄位 (合併邏輯)
+        if idx in row_spans:
+            rowspan = row_spans[idx]
+            html += f"<td rowspan='{rowspan}'>{row.get(col_date,'')}</td>"
+        elif idx in skip_rows:
+            pass # 被合併掉了，不輸出 td
+        else:
+            # 理論上不會跑到這，除非資料邏輯有誤，保險起見印出單格
+            html += f"<td>{row.get(col_date,'')}</td>"
+            
+        html += f"<td>{row.get('單位','')}</td><td class='left-align'>{row.get('分工','')}</td></tr>"
+    
     html += "</table>"
 
     html += f"<div class='section'><b>巡簽地點</b><br><span style='white-space:pre-wrap'>{CHECKIN_POINTS}</span></div>"
