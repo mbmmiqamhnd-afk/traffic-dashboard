@@ -83,7 +83,7 @@ def send_report_email(html_content, subject):
                 _font_path = _os.path.normpath(_p)
                 break
         _base_url = ('file://' + _os.path.dirname(_font_path)) if _font_path else '.'
-        pdf_bytes = _WHTML(string=html_content).write_pdf()
+        pdf_bytes = _WHTML(string=html_content, base_url='file:///').write_pdf()
         msg = MIMEMultipart()
         msg["From"]    = sender
         msg["To"]      = receiver
@@ -192,12 +192,10 @@ st.text(NOTES)
 
 # --- 7. 產生 HTML ---
 def generate_html(month, df_cmd, df_schedule):
-    import os as _os, base64 as _b64
+    import os as _os
     _kaiu = '/mount/src/traffic-dashboard/kaiu.ttf'
     if _os.path.exists(_kaiu):
-        with open(_kaiu, 'rb') as _fh:
-            _b64str = _b64.b64encode(_fh.read()).decode()
-        _font_face = "@font-face { font-family: 'BiauKai'; src: url('data:font/truetype;base64," + _b64str + "'); }"
+        _font_face = "@font-face { font-family: 'BiauKai'; src: url('file://" + _kaiu + "') format('truetype'); }"
         _font_css = "body { font-family: 'BiauKai', serif;"
     else:
         _font_face = ""
