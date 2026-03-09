@@ -3,6 +3,11 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 # --- 1. 頁面設定 ---
 st.set_page_config(page_title="雲端勤務規劃", layout="wide")
@@ -38,6 +43,29 @@ DEFAULT_PTL = pd.DataFrame([
     {"編組": "第五巡邏組", "無線電": "隆安33",  "單位": "三和所、高平所","服勤人員": "警員唐銘聰、警員張湃柏",     "任務分工": "於大昌路一、二段、北龍路及中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
     {"編組": "第六巡邏組", "無線電": "隆安994", "單位": "龍潭交通分隊", "服勤人員": "小隊長林振生、警員吳沛軒",   "任務分工": "於大昌路一、二段、北龍路及中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
 ])
+
+# --- 寄信函數 ---
+def send_report_email(html_content, subject):
+    try:
+        sender   = st.secrets["email"]["user"]
+        password = st.secrets["email"]["password"]
+        receiver = sender
+        msg = MIMEMultipart()
+        msg["From"] = sender
+        msg["To"]   = receiver
+        msg["Subject"] = subject
+        msg.attach(MIMEText("請見附件報表。", "plain", "utf-8"))
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(html_content.encode("utf-8"))
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f'attachment; filename="{subject}.html"')
+        msg.attach(part)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, password)
+            server.sendmail(sender, receiver, msg.as_string())
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 # --- 2. 建立 gspread 連線 ---
 def get_client():
@@ -208,4 +236,10 @@ with col_dl:
         type="primary"
     ):
         save_data(unit_name, plan_time, project_name, brief_info, check_st, edited_cmd, edited_ptl)
+        subject = f"噪音車勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
+        ok, err = send_report_email(html_out, subject)
+        if ok:
+            st.toast("📧 報表已寄出至信箱！", icon="✉️")
+        else:
+            st.error(f"❌ 寄信失敗：{err}")
     st.info("💡 下載後打開檔案，按 Ctrl+P 列印，網頁會自動隱藏選單，只印出表格。")
