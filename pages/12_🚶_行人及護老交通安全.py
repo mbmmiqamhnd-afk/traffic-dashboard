@@ -136,6 +136,7 @@ def _parse_html_to_pdf(html_content, page_title):
     return buf.getvalue()
 
 def send_report_email(html_content, subject):
+    import urllib.parse as _ul
     try:
         sender   = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
@@ -149,7 +150,12 @@ def send_report_email(html_content, subject):
         part = MIMEBase("application", "pdf")
         part.set_payload(pdf_bytes)
         encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f'attachment; filename="{subject}.pdf"')
+        # RFC5987 編碼，確保中文檔名 + .pdf 副檔名正確
+        encoded_name = _ul.quote(f"{subject}.pdf", safe='')
+        part.add_header(
+            "Content-Disposition",
+            f"attachment; filename=\"report.pdf\"; filename*=UTF-8''{encoded_name}"
+        )
         msg.attach(part)
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, password)
@@ -157,6 +163,7 @@ def send_report_email(html_content, subject):
         return True, None
     except Exception as e:
         return False, str(e)
+
 
 
 # --- 3. 讀取 ---
