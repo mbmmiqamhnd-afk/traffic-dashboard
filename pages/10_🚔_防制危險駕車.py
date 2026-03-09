@@ -3,11 +3,19 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import smtplib
+import smtplib, io, os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.units import mm
+
 
 # --- 1. 頁面設定 ---
 st.set_page_config(page_title="防制危險駕車勤務", layout="wide")
@@ -56,21 +64,89 @@ NOTES = """一、攔檢、盤查車輛時，應隨時注意自身安全及執勤
 （二）違反刑法185條公共危險罪（以他法致生往來危險者）。
 （三）違反社會秩序維護法第72條妨害安寧者，同法第64條聚眾不解散。"""
 
-# --- 寄信函數 ---
+# --- 字型 & PDF & 寄信函數 ---
+def _get_font():
+    fname = "kaiu"
+    if fname not in pdfmetrics.getRegisteredFontNames():
+        for p in ["kaiu.ttf", "./kaiu.ttf"]:
+            if os.path.exists(p):
+                pdfmetrics.registerFont(TTFont(fname, p))
+                return fname
+        return "Helvetica"
+    return fname
+
+def _html_table_to_pdf(html_content, page_title):
+    """把 HTML 報表轉成 PDF bytes（解析 <tr><td> 重排）"""
+    import re as _re
+    font = _get_font()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=12*mm, rightMargin=12*mm,
+        topMargin=12*mm, bottomMargin=12*mm)
+    W = A4[0] - 24*mm
+
+    title_s  = ParagraphStyle("t",  fontName=font, fontSize=13, alignment=1, spaceAfter=4)
+    cell_s   = ParagraphStyle("c",  fontName=font, fontSize=9,  leading=13)
+    small_s  = ParagraphStyle("sm", fontName=font, fontSize=8,  leading=11)
+
+    def p(txt, style=None):
+        txt = _re.sub(r'<br\s*/?>', '\n', str(txt))
+        txt = _re.sub(r'<[^>]+>', '', txt).strip()
+        return Paragraph(txt.replace('\n','<br/>'), style or cell_s)
+
+    story = [Paragraph(page_title, title_s), Spacer(1, 3*mm)]
+
+    # 解析所有 <table>
+    tables_raw = _re.findall(r'<table[^>]*>(.*?)</table>', html_content, _re.DOTALL|_re.IGNORECASE)
+    for tbl_html in tables_raw:
+        rows_raw = _re.findall(r'<tr[^>]*>(.*?)</tr>', tbl_html, _re.DOTALL|_re.IGNORECASE)
+        data = []
+        for row_html in rows_raw:
+            cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', row_html, _re.DOTALL|_re.IGNORECASE)
+            if cells:
+                data.append([p(c) for c in cells])
+        if not data:
+            continue
+        col_n = max(len(r) for r in data)
+        col_w = [W / col_n] * col_n
+        t = Table(data, colWidths=col_w, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('FONTNAME',    (0,0),(-1,-1), font),
+            ('FONTSIZE',    (0,0),(-1,-1), 9),
+            ('GRID',        (0,0),(-1,-1), 0.5, colors.black),
+            ('VALIGN',      (0,0),(-1,-1), 'MIDDLE'),
+            ('BACKGROUND',  (0,0),(-1, 0), colors.HexColor('#f2f2f2')),
+            ('TOPPADDING',  (0,0),(-1,-1), 3),
+            ('BOTTOMPADDING',(0,0),(-1,-1), 3),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 3*mm))
+
+    # 備註（<table> 外的文字）
+    plain = _re.sub(r'<table[^>]*>.*?</table>', '', html_content, flags=_re.DOTALL|_re.IGNORECASE)
+    plain = _re.sub(r'<br\s*/?>', '\n', plain)
+    plain = _re.sub(r'<[^>]+>', '', plain).strip()
+    if plain:
+        story.append(Paragraph(plain.replace('\n','<br/>'), small_s))
+
+    doc.build(story)
+    return buf.getvalue()
+
 def send_report_email(html_content, subject):
     try:
         sender   = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
         receiver = sender
+        pdf_bytes = _html_table_to_pdf(html_content, subject)
         msg = MIMEMultipart()
-        msg["From"] = sender
-        msg["To"]   = receiver
+        msg["From"]    = sender
+        msg["To"]      = receiver
         msg["Subject"] = subject
-        msg.attach(MIMEText("請見附件報表。", "plain", "utf-8"))
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(html_content.encode("utf-8"))
+        msg.attach(MIMEText("請見附件 PDF 報表。", "plain", "utf-8"))
+        part = MIMEBase("application", "pdf")
+        part.set_payload(pdf_bytes)
         encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f'attachment; filename="{subject}.html"')
+        part.add_header("Content-Disposition", f'attachment; filename="{subject}.pdf"')
         msg.attach(part)
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, password)
