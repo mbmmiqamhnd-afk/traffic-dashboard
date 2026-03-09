@@ -3,18 +3,11 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import smtplib, io, os
+import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.units import mm
 
 
 # --- 1. 頁面設定 ---
@@ -62,109 +55,94 @@ DEFAULT_SCHEDULE = pd.DataFrame([
 
 NOTES = "※ 加強取締砂石（大型貨）車超載、車速、酒醉駕車、闖紅燈、無照駕車、爭道行駛、違反禁行路線、變更車斗、未使用專用車箱及未裝設行車紀錄器（行車視野輔助器）等違規，以共同消弭不法行為，保障用路人生命財產安全。"
 
-# --- 字型 & PDF & 寄信函數 ---
+# --- 寄信函數 ---
 def _get_font():
     fname = "kaiu"
-    if fname not in pdfmetrics.getRegisteredFontNames():
-        for p in ["kaiu.ttf", "./kaiu.ttf"]:
-            if os.path.exists(p):
+    if fname in pdfmetrics.getRegisteredFontNames():
+        return fname
+    for p in ['/mount/src/traffic-dashboard/kaiu.ttf', 'kaiu.ttf', './kaiu.ttf']:
+        if os.path.exists(p):
+            try:
                 pdfmetrics.registerFont(TTFont(fname, p))
                 return fname
-        return "Helvetica"
-    return fname
+            except Exception:
+                pass
+    return "Helvetica"
 
-def _parse_html_to_pdf(html_content, page_title):
-    import re as _re
+def generate_pdf(month, briefing, df_cmd, df_schedule):
     font = _get_font()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
-        leftMargin=12*mm, rightMargin=12*mm,
-        topMargin=12*mm, bottomMargin=12*mm)
-    W = A4[0] - 24*mm
-    title_s = ParagraphStyle("t",   fontName=font, fontSize=12, alignment=1, spaceAfter=2, leading=16)
-    info_s  = ParagraphStyle("inf", fontName=font, fontSize=10, alignment=2, spaceAfter=4)
-    cell_s  = ParagraphStyle("c",   fontName=font, fontSize=8,  leading=12)
-    note_s  = ParagraphStyle("n",   fontName=font, fontSize=9,  leading=14, spaceAfter=4)
-
-    def strip_tags(txt):
-        txt = _re.sub(r'<br\s*/?>', '\n', str(txt))
-        txt = _re.sub(r'<[^>]+>', '', txt).strip()
-        return txt
-
-    def cell(txt):
-        return Paragraph(strip_tags(txt).replace('\n', '<br/>'), cell_s)
-
-    body = _re.sub(r'<head[^>]*>.*?</head>', '', html_content, flags=_re.DOTALL|_re.IGNORECASE)
-    body_match = _re.search(r'<body[^>]*>(.*?)</body>', body, _re.DOTALL|_re.IGNORECASE)
-    body = body_match.group(1) if body_match else body
-
+        leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    W = A4[0] - 30*mm
     story = []
+    s_title = ParagraphStyle("t", fontName=font, fontSize=13, alignment=1, spaceAfter=2, leading=18)
+    s_cell  = ParagraphStyle("c", fontName=font, fontSize=9,  leading=13, alignment=1)
+    s_left  = ParagraphStyle("l", fontName=font, fontSize=9,  leading=13, alignment=0)
+    s_note  = ParagraphStyle("n", fontName=font, fontSize=9,  leading=14)
 
-    h2 = _re.search(r'<h2[^>]*>(.*?)</h2>', body, _re.DOTALL|_re.IGNORECASE)
-    if h2:
-        story.append(Paragraph(strip_tags(h2.group(1)), title_s))
-        story.append(Spacer(1, 1*mm))
+    def c(txt, style=None):
+        txt = str(txt).replace("\n","<br/>").replace("、","<br/>").replace(",","<br/>")
+        return Paragraph(txt, style or s_cell)
 
-    info = _re.search(r"<div class='info'>(.*?)</div>", body, _re.DOTALL|_re.IGNORECASE)
-    if info:
-        story.append(Paragraph(strip_tags(info.group(1)), info_s))
-        story.append(Spacer(1, 2*mm))
+    story.append(Paragraph(f"{UNIT}執行{month}「取締砂石（大型貨）車重點違規」專案勤務規劃表", s_title))
+    story.append(Spacer(1, 2*mm))
 
-    tables = _re.findall(r'<table[^>]*>(.*?)</table>', body, _re.DOTALL|_re.IGNORECASE)
-    for idx, tbl_html in enumerate(tables):
-        rows_raw = _re.findall(r'<tr[^>]*>(.*?)</tr>', tbl_html, _re.DOTALL|_re.IGNORECASE)
-        data = []
-        for row_html in rows_raw:
-            cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', row_html, _re.DOTALL|_re.IGNORECASE)
-            if cells:
-                data.append([cell(c) for c in cells])
-        if not data:
-            continue
-        col_n = max(len(r) for r in data)
-        t = Table(data, colWidths=[W/col_n]*col_n, repeatRows=1)
-        t.setStyle(TableStyle([
-            ('FONTNAME',      (0,0),(-1,-1), font),
-            ('FONTSIZE',      (0,0),(-1,-1), 8),
-            ('GRID',          (0,0),(-1,-1), 0.5, colors.black),
-            ('VALIGN',        (0,0),(-1,-1), 'MIDDLE'),
-            ('BACKGROUND',    (0,0),(-1, 0), colors.HexColor('#f2f2f2')),
-            ('TOPPADDING',    (0,0),(-1,-1), 3),
-            ('BOTTOMPADDING', (0,0),(-1,-1), 3),
-        ]))
-        story.append(t)
-        story.append(Spacer(1, 3*mm))
-        if idx == 0:
-            note_div = _re.search(
-                r"<div class='left-align'[^>]*>(.*?)</div>\s*</div>",
-                body, _re.DOTALL|_re.IGNORECASE)
-            if note_div:
-                note_text = strip_tags(note_div.group(1)).replace('\n', '<br/>')
-                story.append(Paragraph(note_text, note_s))
-                story.append(Spacer(1, 3*mm))
+    cw1 = [W*0.15, W*0.10, W*0.25, W*0.50]
+    data1 = [[Paragraph("<b>任　務　編　組</b>", s_title),'','','']]
+    data1.append([c("<b>職稱</b>"),c("<b>代號</b>"),c("<b>姓名</b>"),c("<b>任務</b>")])
+    for _, row in df_cmd.iterrows():
+        data1.append([c(f"<b>{row.get('職稱','')}</b>"),c(row.get('代號','')),
+                      c(row.get('姓名','')),c(row.get('任務',''),s_left)])
+    t1 = Table(data1, colWidths=cw1, repeatRows=2)
+    t1.setStyle(TableStyle([
+        ('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),('SPAN',(0,0),(-1,0)),
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
+        ('BACKGROUND',(0,1),(-1,1),colors.HexColor('#f2f2f2')),
+        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
+    ]))
+    story.append(t1)
+    story.append(Spacer(1, 3*mm))
+    story.append(Paragraph(f"<b>📢 勤前教育：</b>{briefing}", s_note))
+    story.append(Spacer(1, 2*mm))
 
+    cw2 = [W*0.25, W*0.20, W*0.10, W*0.45]
+    data2 = [[Paragraph("<b>警　力　佈　署</b>", s_title),'','','']]
+    data2.append([c("<b>日期</b>"),c("<b>執行單位</b>"),c("<b>執行人數</b>"),c("<b>執行路段</b>")])
+    for _, row in df_schedule.iterrows():
+        data2.append([c(row.get('日期','')),c(row.get('執行單位','')),
+                      c(row.get('執行人數','')),c(row.get('執行路段',''),s_left)])
+    t2 = Table(data2, colWidths=cw2, repeatRows=2)
+    t2.setStyle(TableStyle([
+        ('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),('SPAN',(0,0),(-1,0)),
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
+        ('BACKGROUND',(0,1),(-1,1),colors.HexColor('#f2f2f2')),
+        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
+    ]))
+    story.append(t2)
+    story.append(Spacer(1, 3*mm))
+    story.append(Paragraph(f"<b>備註：</b>{NOTES}", s_note))
     doc.build(story)
     return buf.getvalue()
 
-def send_report_email(html_content, subject):
+def send_report_email(html_content, subject, month, briefing, df_cmd, df_schedule):
     import urllib.parse as _ul
     try:
         sender   = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
         receiver = sender
-        pdf_bytes = _parse_html_to_pdf(html_content, subject)
+        pdf_bytes = generate_pdf(month, briefing, df_cmd, df_schedule)
         msg = MIMEMultipart()
-        msg["From"]    = sender
-        msg["To"]      = receiver
-        msg["Subject"] = subject
+        msg["From"]=sender; msg["To"]=receiver; msg["Subject"]=subject
         msg.attach(MIMEText("請見附件 PDF 報表。", "plain", "utf-8"))
         part = MIMEBase("application", "pdf")
         part.set_payload(pdf_bytes)
         encoders.encode_base64(part)
         encoded_name = _ul.quote(f"{subject}.pdf", safe='')
-        part.add_header(
-            "Content-Disposition",
-            f"attachment; filename=\"report.pdf\"; filename*=UTF-8''{encoded_name}"
-        )
+        part.add_header("Content-Disposition",
+            f"attachment; filename=\"report.pdf\"; filename*=UTF-8\'\'{encoded_name}")
         msg.attach(part)
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, password)
@@ -172,6 +150,8 @@ def send_report_email(html_content, subject):
         return True, None
     except Exception as e:
         return False, str(e)
+
+
 
 
 
@@ -269,9 +249,18 @@ st.text(NOTES)
 
 # --- 7. 產生 HTML ---
 def generate_html(month, briefing, df_cmd, df_schedule):
+    import os as _os
+    _kaiu = '/mount/src/traffic-dashboard/kaiu.ttf'
+    if _os.path.exists(_kaiu):
+        _font_face = "@font-face { font-family: 'BiauKai'; src: url('file://" + _kaiu + "') format('truetype'); }"
+        _font_css = "body { font-family: 'BiauKai', serif;"
+    else:
+        _font_face = ""
+        _font_css = "body { font-family: serif;"
     style = """
     <style>
-        body { font-family: 'DFKai-SB', 'BiauKai', '標楷體', serif; color: #000; font-size: 14px; }
+        """ + _font_face + """
+        """ + _font_css + """ color: #000; font-size: 14px; }
         .container { width: 100%; max-width: 800px; margin: 0 auto; padding: 20px; }
         h2 { text-align: left; margin-bottom: 5px; letter-spacing: 2px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
@@ -329,7 +318,7 @@ with col_dl:
     ):
         save_data(current_month, brief_info, edited_cmd, edited_schedule)
         subject = f"取締砂石車勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
-        ok, err = send_report_email(html_out, subject)
+        ok, err = send_report_email(html_out, subject, current_month, brief_info, edited_cmd, edited_schedule)
         if ok:
             st.toast("📧 報表已寄出至信箱！", icon="✉️")
         else:
