@@ -11,3 +11,4 @@ pdf2image
 python-pptx
 matplotlib
 google-auth
+weasyprint
