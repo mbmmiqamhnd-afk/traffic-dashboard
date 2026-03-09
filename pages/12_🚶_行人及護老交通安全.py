@@ -4,11 +4,21 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import smtplib
+import os
+import io
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 
+# --- 新增：ReportLab 相關引用 (PDF 生成核心) ---
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 # --- 1. 頁面設定 ---
 st.set_page_config(page_title="行人及護老交通安全", layout="wide")
@@ -23,7 +33,7 @@ UNIT = "桃園市政府警察局龍潭分局"
 DEFAULT_MONTH = "115年3月份"
 
 DEFAULT_CMD = pd.DataFrame([
-    {"職稱": "指揮官",       "代號": "隆安1",    "姓名": "分局長 施宇峰",                                       "任務": "核定本勤務執行並重點機動督導。"},
+    {"職稱": "指揮官",       "代號": "隆安1",    "姓名": "分局長 施宇峰",                                        "任務": "核定本勤務執行並重點機動督導。"},
     {"職稱": "副指揮官",     "代號": "隆安2",    "姓名": "副分局長 何憶雯",                                     "任務": "襄助指揮官執行本勤務並重點機動督導。"},
     {"職稱": "副指揮官",     "代號": "隆安3",    "姓名": "副分局長 蔡志明",                                     "任務": "襄助指揮官執行本勤務並重點機動督導。"},
     {"職稱": "上級督導官",   "代號": "駐區督察", "姓名": "孫三陽",                                              "任務": "重點機動督導。"},
@@ -36,12 +46,12 @@ DEFAULT_CMD = pd.DataFrame([
 DEFAULT_SCHEDULE = pd.DataFrame([
     {"日期（6時至10時、16時至20時）": "3月2～6、9～13、16～20日、23～27及30～31日（3月之上班日）", "單位": "聖亭派出所",   "路段": "中豐路、聖亭路段\n校園周邊道路或轄區行人易肇事路口"},
     {"日期（6時至10時、16時至20時）": "", "單位": "龍潭派出所",   "路段": "中豐路、中正路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "中興派出所",   "路段": "中興路、福龍路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "石門派出所",   "路段": "中正、文化路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "高平派出所",   "路段": "中豐、中原路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "三和派出所",   "路段": "龍新路、楊銅路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "警備隊",       "路段": "校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "龍潭交通分隊", "路段": "校園周邊道路或轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "中興派出所",   "路段": "中興路、福龍路段\n校園周邊道路 or 轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "石門派出所",   "路段": "中正、文化路段\n校園周邊道路 or 轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "高平派出所",   "路段": "中豐、中原路段\n校園周邊道路 or 轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "三和派出所",   "路段": "龍新路、楊銅路段\n校園周邊道路 or 轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "警備隊",       "路段": "校園周邊道路 or 轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "龍潭交通分隊", "路段": "校園周邊道路 or 轄區行人易肇事路口"},
 ])
 
 NOTES = """壹、警察局規劃3月份「行人及護老交通安全專案勤務」期程：
@@ -63,41 +73,115 @@ def get_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
+# --- PDF 字型與生成函式 ---
+def _get_font():
+    fname = "kaiu"
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # 搜尋字型檔的路徑清單
+    paths = [
+        os.path.join(current_dir, 'kaiu.ttf'),
+        'kaiu.ttf',
+        '/mount/src/traffic-dashboard/kaiu.ttf'
+    ]
+    for p in paths:
+        if os.path.exists(p):
+            try:
+                pdfmetrics.registerFont(TTFont(fname, p))
+                return fname
+            except:
+                continue
+    return "Helvetica"
+
+def generate_pdf(month, df_cmd, df_schedule):
+    font = _get_font()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    W = A4[0] - 30*mm
+    story = []
+    
+    s_title = ParagraphStyle("t", fontName=font, fontSize=13, alignment=1, spaceAfter=2, leading=18)
+    s_cell  = ParagraphStyle("c", fontName=font, fontSize=9,  leading=13, alignment=1)
+    s_left  = ParagraphStyle("l", fontName=font, fontSize=9,  leading=13, alignment=0)
+    s_note  = ParagraphStyle("n", fontName=font, fontSize=9,  leading=14)
+
+    def c(txt, style=None):
+        txt = str(txt).replace("\n","<br/>").replace("、","<br/>").replace(",","<br/>")
+        return Paragraph(txt, style or s_cell)
+
+    story.append(Paragraph(f"{UNIT} {month} 執行「行人及護老交通安全」專案勤務規劃表", s_title))
+    story.append(Spacer(1, 2*mm))
+
+    # 任務編組表格
+    cw1 = [W*0.15, W*0.10, W*0.25, W*0.50]
+    data1 = [[Paragraph("<b>任　務　編　組</b>", s_title),'','','']]
+    data1.append([c("<b>職稱</b>"),c("<b>代號</b>"),c("<b>姓名</b>"),c("<b>任務</b>")])
+    for _, row in df_cmd.iterrows():
+        data1.append([c(f"<b>{row.get('職稱','')}</b>"),c(row.get('代號','')),
+                      c(row.get('姓名','')),c(row.get('任務',''),s_left)])
+    
+    t1 = Table(data1, colWidths=cw1, repeatRows=2)
+    t1.setStyle(TableStyle([
+        ('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),('SPAN',(0,0),(-1,0)),
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
+        ('BACKGROUND',(0,1),(-1,1),colors.HexColor('#f2f2f2')),
+        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
+    ]))
+    story.append(t1)
+    story.append(Spacer(1, 3*mm))
+
+    # 警力佈署表格
+    col_date = '日期（6時至10時、16時至20時）'
+    cw2 = [W*0.25, W*0.20, W*0.55]
+    data2 = [[Paragraph("<b>警　力　佈　署</b>", s_title),'','']]
+    data2.append([c("<b>執行勤務日期（6時至10時、16時至20時）</b>"),c("<b>單位</b>"),c("<b>路段</b>")])
+    for _, row in df_schedule.iterrows():
+        data2.append([c(row.get(col_date,'')),c(row.get('單位','')),
+                      c(row.get('路段',''),s_left)])
+    
+    t2 = Table(data2, colWidths=cw2, repeatRows=2)
+    t2.setStyle(TableStyle([
+        ('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),('SPAN',(0,0),(-1,0)),
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
+        ('BACKGROUND',(0,1),(-1,1),colors.HexColor('#f2f2f2')),
+        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
+    ]))
+    story.append(t2)
+    story.append(Spacer(1, 3*mm))
+    story.append(Paragraph(f"<b>備註</b><br/>{NOTES.replace(chr(10),'<br/>')}", s_note))
+    
+    doc.build(story)
+    return buf.getvalue()
+
 # --- 寄信函數 ---
-def send_report_email(html_content, subject):
+def send_report_email(html_content, subject, month, df_cmd, df_schedule):
     import urllib.parse as _ul
     try:
-        from weasyprint import HTML as _WHTML
-        import os as _os
         sender   = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
         receiver = sender
-        # 找 kaiu.ttf 絕對路徑
-        _font_path = None
-        for _p in [
-            _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'kaiu.ttf'),
-            _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'kaiu.ttf'),
-            '/mount/src/traffic-dashboard/kaiu.ttf',
-        ]:
-            if _os.path.exists(_os.path.normpath(_p)):
-                _font_path = _os.path.normpath(_p)
-                break
-        _base_url = ('file://' + _os.path.dirname(_font_path)) if _font_path else '.'
-        pdf_bytes = _WHTML(string=html_content, base_url='file:///').write_pdf()
+        
+        pdf_bytes = generate_pdf(month, df_cmd, df_schedule)
+        
         msg = MIMEMultipart()
-        msg["From"]    = sender
-        msg["To"]      = receiver
+        msg["From"] = sender
+        msg["To"] = receiver
         msg["Subject"] = subject
-        msg.attach(MIMEText("請見附件 PDF 報表。", "plain", "utf-8"))
+        
+        msg.attach(MIMEText("您好，附件為自動生成的「行人及護老交通安全」專案勤務規劃表 PDF 檔案。", "plain", "utf-8"))
+        
         part = MIMEBase("application", "pdf")
         part.set_payload(pdf_bytes)
         encoders.encode_base64(part)
+        
+        # 處理中文檔名編碼
         encoded_name = _ul.quote(f"{subject}.pdf", safe='')
-        part.add_header(
-            "Content-Disposition",
-            f"attachment; filename=\"report.pdf\"; filename*=UTF-8''{encoded_name}"
-        )
+        part.add_header("Content-Disposition",
+            f"attachment; filename=\"report.pdf\"; filename*=UTF-8''{encoded_name}")
         msg.attach(part)
+        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, password)
             server.sendmail(sender, receiver, msg.as_string())
@@ -105,12 +189,7 @@ def send_report_email(html_content, subject):
     except Exception as e:
         return False, str(e)
 
-
-
-
-
-
-# --- 3. 讀取 ---
+# --- 3. 讀取資料 ---
 def load_data():
     try:
         client = get_client()
@@ -122,7 +201,7 @@ def load_data():
     except Exception as e:
         return None, None, None, str(e)
 
-# --- 4. 寫入 ---
+# --- 4. 寫入資料 ---
 def save_data(month, df_cmd, df_schedule):
     try:
         client = get_client()
@@ -148,7 +227,7 @@ def save_data(month, df_cmd, df_schedule):
         st.error(f"❌ 存檔失敗：{e}")
         return False
 
-# --- 5. 初始化 ---
+# --- 5. 初始化與資料處理 ---
 df_set, df_cmd, df_sch, error_msg = load_data()
 
 if error_msg or df_set is None or df_set.empty:
@@ -168,7 +247,7 @@ else:
         st.error(f"資料格式解析失敗：{e}")
         st.stop()
 
-# --- 6. 介面 ---
+# --- 6. 介面呈現 ---
 st.subheader("1. 基礎資訊")
 current_month = st.text_input("月份", value=current_month)
 
@@ -179,90 +258,89 @@ with st.expander("編輯名單", expanded=True):
         df_cmd_edit,
         num_rows="dynamic",
         use_container_width=True,
-        column_config={"任務": None}
+        column_config={"任務": None} # 暫時隱藏任務欄位，待編輯後補回，避免表格過寬
     )
+    # 確保任務內容不會遺失
     if "任務" not in edited_cmd.columns:
         edited_cmd["任務"] = df_cmd_edit["任務"]
 
 st.subheader("3. 執行勤務日期、單位及路段")
 edited_schedule = st.data_editor(df_schedule_edit, num_rows="dynamic", use_container_width=True)
 
-st.subheader("4. 備註（固定）")
+st.subheader("4. 備註（固定內容）")
 st.text(NOTES)
 
-# --- 7. 產生 HTML ---
+# --- 7. 生成 HTML 預覽 ---
 def generate_html(month, df_cmd, df_schedule):
-    import os as _os
-    _kaiu = '/mount/src/traffic-dashboard/kaiu.ttf'
-    if _os.path.exists(_kaiu):
-        _font_face = "@font-face { font-family: 'BiauKai'; src: url('file://" + _kaiu + "') format('truetype'); }"
-        _font_css = "body { font-family: 'BiauKai', serif;"
-    else:
-        _font_face = ""
-        _font_css = "body { font-family: serif;"
     style = """
     <style>
-        """ + _font_face + """
-        """ + _font_css + """ color: #000; font-size: 14px; }
-        .container { width: 100%; max-width: 800px; margin: 0 auto; padding: 20px; }
-        h2 { text-align: left; margin-bottom: 5px; letter-spacing: 2px; }
+        body { font-family: "Microsoft JhengHei", sans-serif; color: #000; font-size: 14px; }
+        .container { width: 100%; max-width: 850px; margin: 0 auto; padding: 20px; }
+        h2 { text-align: center; margin-bottom: 20px; letter-spacing: 1px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-        th, td { border: 1px solid black; padding: 5px; text-align: center; font-size: 14px; vertical-align: middle; }
-        th { background-color: #f2f2f2; }
+        th, td { border: 1px solid black; padding: 8px; text-align: center; font-size: 14px; vertical-align: middle; }
+        th { background-color: #f2f2f2; font-weight: bold; }
         .left-align { text-align: left; }
-        .section { margin-bottom: 10px; line-height: 1.8; }
-        .notes { white-space: pre-wrap; font-size: 13px; line-height: 1.8; }
-        @media print { .no-print { display: none; } body { -webkit-print-color-adjust: exact; } }
+        .notes { white-space: pre-wrap; font-size: 13px; line-height: 1.6; border-top: 1px solid #ccc; padding-top: 10px; }
     </style>
     """
     html = f"<html><head><meta charset='utf-8'>{style}</head><body><div class='container'>"
-    html += f"<h2>{UNIT}{month}執行「行人及護老交通安全」專案勤務規劃表</h2>"
+    html += f"<h2>{UNIT} {month} 執行「行人及護老交通安全」專案勤務規劃表</h2>"
 
     # 任務編組
     html += "<table><tr><th colspan='4'>任　務　編　組</th></tr>"
     html += "<tr><th width='15%'>職稱</th><th width='10%'>代號</th><th width='25%'>姓名</th><th width='50%'>任務</th></tr>"
     for _, row in df_cmd.iterrows():
         name = str(row.get('姓名', '')).replace("、", "<br>").replace(",", "<br>")
-        html += f"<tr><td><b>{row.get('職稱','')}</b></td><td>{row.get('代號','')}</td><td style='line-height:1.4'>{name}</td><td class='left-align'>{row.get('任務','')}</td></tr>"
+        html += f"<tr><td><b>{row.get('職稱','')}</b></td><td>{row.get('代號','')}</td><td>{name}</td><td class='left-align'>{row.get('任務','')}</td></tr>"
     html += "</table>"
 
-    # 執行勤務表
-    html += "<table>"
-    html += "<tr><th colspan='3' style='background-color:#f2f2f2;text-align:center;'>警　力　佈　署</th></tr>"
-    html += "<tr><th width='25%'>執行勤務日期（6時至10時、16時至20時）</th><th width='20%'>單位</th><th width='55%'>路段</th></tr>"
+    # 警力佈署
+    html += "<table><tr><th colspan='3'>警　力　佈　署</th></tr>"
+    html += "<tr><th width='30%'>日期（時段）</th><th width='20%'>單位</th><th width='50%'>路段</th></tr>"
     for _, row in df_schedule.iterrows():
         road = str(row.get('路段', '')).replace("\n", "<br>")
         html += f"<tr><td>{row.get('日期（6時至10時、16時至20時）','')}</td><td>{row.get('單位','')}</td><td class='left-align'>{road}</td></tr>"
     html += "</table>"
 
     # 備註
-    html += f"<div class='section'><b>備註</b><br><span class='notes'>{NOTES}</span></div>"
-
+    html += f"<div class='notes'><b>備註：</b><br>{NOTES}</div>"
     html += "</div></body></html>"
     return html
 
 html_out = generate_html(current_month, edited_cmd, edited_schedule)
 
-# --- 8. 輸出 ---
+# --- 8. 輸出按鈕與預覽 ---
 st.markdown("---")
 col_view, col_dl = st.columns([3, 1])
+
 with col_view:
-    st.subheader("📄 即時預覽")
+    st.subheader("📄 即時預覽 (HTML 版本)")
     st.components.v1.html(html_out, height=800, scrolling=True)
+
 with col_dl:
-    st.subheader("📥 輸出")
+    st.subheader("📥 操作面板")
+    
+    if st.button("同步至 Google Sheets ☁️"):
+        save_data(current_month, edited_cmd, edited_schedule)
+    
     if st.download_button(
-        label="下載報表並同步雲端 💾",
+        label="下載 HTML 報表 💾",
         data=html_out.encode("utf-8"),
         file_name=f"護老勤務表_{datetime.now().strftime('%Y%m%d')}.html",
         mime="text/html; charset=utf-8",
-        type="primary"
     ):
         save_data(current_month, edited_cmd, edited_schedule)
+
+    if st.button("寄送 PDF 報表至信箱 📧"):
+        # 寄信前先存檔
+        save_data(current_month, edited_cmd, edited_schedule)
         subject = f"護老交通安全勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
-        ok, err = send_report_email(html_out, subject)
-        if ok:
-            st.toast("📧 報表已寄出至信箱！", icon="✉️")
-        else:
-            st.error(f"❌ 寄信失敗：{err}")
-    st.info("💡 下載後打開檔案，按 Ctrl+P 列印。")
+        with st.spinner("正在生成 PDF 並寄送中..."):
+            ok, err = send_report_email(html_out, subject, current_month, edited_cmd, edited_schedule)
+            if ok:
+                st.success("📧 報表已寄出！請檢查您的 Gmail。")
+            else:
+                st.error(f"❌ 寄信失敗：{err}")
+
+    st.info("💡 下載 HTML 後使用 Chrome 開啟並按 Ctrl+P，可另存為最完美的列印格式。")
