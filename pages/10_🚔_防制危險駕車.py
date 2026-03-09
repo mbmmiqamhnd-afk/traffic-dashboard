@@ -38,14 +38,15 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "通訊組",   "代號": "隆安",    "姓名": "主任 蔡奇青、執勤官 李文章、執勤員 黃文興", "任務": "監看群聚告警訊息、指揮、調度及通報本勤務事宜。"},
 ])
 
+# 修改重點：將原本空白的服勤人員欄位，預設填入「線上巡邏警力兼任」
 DEFAULT_PATROL = pd.DataFrame([
     {"勤務時段": "3月7日零時至4時",       "無線電": "隆安82",  "編組": "專責警力（石門所輪值）", "服勤人員": "00-02時：副所長林榮裕、警員王耀民\n02-04時：副所長林榮裕、警員陳欣妤", "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝（噪音）車輛（每2小時至責任區域內指定巡簽地點巡簽1次並守望10分鐘，將守望情形拍照上傳LINE「龍潭分局聯絡平臺」群組）"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安80",  "編組": "石門所線上巡邏組合警力兼任",      "服勤人員": "",  "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次），並加強查緝毒駕"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安90",  "編組": "高平所線上巡邏組合警力兼任",      "服勤人員": "",  "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安990", "編組": "龍潭交通分隊線上巡邏組合警力兼任", "服勤人員": "",  "任務分工": "「區域聯防」勤務，於龍源路及溪州橋旁新建道路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安50",  "編組": "聖亭所線上巡邏組合警力兼任",      "服勤人員": "",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安60",  "編組": "龍潭所線上巡邏組合警力兼任",      "服勤人員": "",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
-    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安70",  "編組": "中興所線上巡邏組合警力兼任",      "服勤人員": "",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安80",  "編組": "石門所線上巡邏組合警力兼任",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次），並加強查緝毒駕"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安90",  "編組": "高平所線上巡邏組合警力兼任",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安990", "編組": "龍潭交通分隊線上巡邏組合警力兼任", "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於龍源路及溪州橋旁新建道路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安50",  "編組": "聖亭所線上巡邏組合警力兼任",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安60",  "編組": "龍潭所線上巡邏組合警力兼任",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "3月6日22時至翌日6時", "無線電": "隆安70",  "編組": "中興所線上巡邏組合警力兼任",      "服勤人員": "線上巡邏警力兼任",  "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
 ])
 
 CHECKIN_POINTS = """1. 中油高原交流道站（龍源路2-20號）
@@ -130,7 +131,7 @@ def save_data(time_str, briefing, commander, df_cmd, df_patrol):
         st.error(f"❌ 存檔失敗：{e}")
         return False
 
-# --- 5. PDF 生成函數 (完整表格樣式修正版) ---
+# --- 5. PDF 生成函數 (含表格修正) ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames():
@@ -150,9 +151,6 @@ def _get_font():
     return "Helvetica"
 
 def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
-    """
-    修正版：警力佈署表格新增「第一列標題(灰底)」與「第二列指揮官(白底)」
-    """
     font = _get_font()
     buf = io.BytesIO()
     
@@ -168,8 +166,8 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
     # --- 樣式定義 ---
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, spaceAfter=6)
     style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=12)
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=10, leading=13, alignment=1) # 置中
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=10, leading=13, alignment=0) # 靠左
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=10, leading=13, alignment=1)
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=10, leading=13, alignment=0)
     style_section = ParagraphStyle('Section', fontName=font, fontSize=11, leading=16, spaceAfter=4)
     style_note = ParagraphStyle('Note', fontName=font, fontSize=10, leading=14, spaceAfter=2)
     style_table_header = ParagraphStyle('TableHeader', fontName=font, fontSize=14, alignment=1, leading=18)
@@ -188,7 +186,7 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
     headers_cmd = ["職稱", "代號", "姓名", "任務"]
     
     data_cmd = []
-    # Row 0: 標題列 (合併)
+    # Row 0: 標題列
     data_cmd.append([Paragraph("<b>任　務　編　組</b>", style_table_header), '', '', ''])
     # Row 1: 欄位名
     data_cmd.append([Paragraph(f"<b>{h}</b>", style_cell) for h in headers_cmd])
@@ -205,11 +203,11 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
         ('FONTNAME', (0,0), (-1,-1), font),
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        # Row 0: 標題
+        # Row 0
         ('SPAN', (0,0), (-1,0)),
         ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#f2f2f2')),
         ('ALIGN', (0,0), (-1,0), 'CENTER'),
-        # Row 1: 欄位名
+        # Row 1
         ('BACKGROUND', (0,1), (-1, 1), colors.HexColor('#f2f2f2')),
         ('TOPPADDING', (0,0), (-1,-1), 4),
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
@@ -250,7 +248,7 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
         task = Paragraph(str(row.get('任務分工','')), style_cell_left)
         data_ptl.append([time_p, code, group, ppl, task])
 
-    # repeatRows=3: 換頁時重複前三列 (標題、指揮官、欄位名)
+    # repeatRows=3: 標題、指揮官、欄位名 重複
     t2 = Table(data_ptl, colWidths=col_widths_ptl, repeatRows=3)
     
     t2.setStyle(TableStyle([
@@ -258,12 +256,12 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         
-        # Row 0: 警力佈署 (灰底, 置中)
+        # Row 0: 警力佈署 (灰底)
         ('SPAN', (0,0), (-1,0)),
         ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#f2f2f2')),
         ('ALIGN', (0,0), (-1,0), 'CENTER'),
         
-        # Row 1: 指揮官 (白底, 靠左)
+        # Row 1: 指揮官 (白底)
         ('SPAN', (0,1), (-1,1)),
         ('BACKGROUND', (0,1), (-1, 1), colors.white),
         ('ALIGN', (0,1), (-1,1), 'LEFT'),
