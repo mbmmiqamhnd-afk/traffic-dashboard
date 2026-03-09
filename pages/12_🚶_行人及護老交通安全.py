@@ -82,7 +82,6 @@ def load_data():
         sh = client.open_by_key(SHEET_ID)
         ws_list = sh.worksheets()
         
-        # 根據 Sheet 名稱抓取
         ws_set = next((w for w in ws_list if w.title == "護老_設定"), None)
         ws_cmd = next((w for w in ws_list if w.title == "護老_指揮組"), None)
         ws_sch = next((w for w in ws_list if w.title == "護老_勤務表"), None)
@@ -128,7 +127,7 @@ def save_data(month, df_cmd, df_schedule):
         st.error(f"❌ 存檔失敗：{e}")
         return False
 
-# --- 5. PDF 生成函數 (ReportLab 直接繪製 + 儲存格合併) ---
+# --- 5. PDF 生成函數 (ReportLab) ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames():
@@ -207,16 +206,18 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
     ]))
     story.append(t1)
-    story.append(Spacer(1, 6*mm))
+    
+    # 修正重點：設定為 5mm，約等於一行空白高度
+    story.append(Spacer(1, 5*mm))
 
     # ====================
-    # 3. 勤務表 (日期、單位、路段) - 自動合併日期
+    # 3. 勤務表 (警力佈署) - 自動合併日期
     # ====================
     col_widths_sch = [page_width * 0.25, page_width * 0.20, page_width * 0.55]
     headers_sch = ["日期（6時至10時、16時至20時）", "單位", "路段"]
     
     data_sch = []
-    # Row 0: 標題列 (修正：改為「警力佈署」)
+    # Row 0: 標題列 (警力佈署)
     data_sch.append([Paragraph("<b>警　力　佈　署</b>", style_table_header), '', ''])
     # Row 1: 欄位名
     data_sch.append([Paragraph(f"<b>{h}</b>", style_cell) for h in headers_sch])
@@ -224,7 +225,7 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
     for _, row in df_schedule.iterrows():
         date_val = clean_text(row.get('日期（6時至10時、16時至20時）',''))
         unit_val = clean_text(row.get('單位',''))
-        road_val = str(row.get('路段','')).replace("\n", "<br/>") # 支援換行
+        road_val = str(row.get('路段','')).replace("\n", "<br/>") 
         
         date_p = Paragraph(date_val, style_cell)
         unit_p = Paragraph(unit_val, style_cell)
@@ -246,24 +247,18 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
     ]
 
-    # --- 自動計算日期欄位合併 (PDF SPAN) ---
+    # --- 自動計算日期欄位合併 ---
     date_col = '日期（6時至10時、16時至20時）'
-    
-    # 找出所有非空白日期的索引
     non_empty_indices = [i for i, val in enumerate(df_schedule[date_col]) if str(val).strip() != ""]
-    non_empty_indices.append(len(df_schedule)) # 邊界
-    
-    header_offset = 2 # 前兩列是 Headers
+    non_empty_indices.append(len(df_schedule)) 
+    header_offset = 2 
     
     for k in range(len(non_empty_indices) - 1):
         start_row = non_empty_indices[k]
         end_row = non_empty_indices[k+1] - 1
-        
         if end_row > start_row:
-            # 合併日期欄 (col 0)
             span_cmd = ('SPAN', (0, start_row + header_offset), (0, end_row + header_offset))
             table_styles.append(span_cmd)
-            # 垂直置中
             valign_cmd = ('VALIGN', (0, start_row + header_offset), (0, end_row + header_offset), 'MIDDLE')
             table_styles.append(valign_cmd)
 
@@ -362,14 +357,13 @@ with st.expander("編輯名單", expanded=True):
     if "任務" not in edited_cmd.columns:
         edited_cmd["任務"] = df_cmd_edit["任務"]
 
-# 修改重點：標題改為 3. 警力佈署
 st.subheader("3. 警力佈署")
 edited_schedule = st.data_editor(df_schedule_edit, num_rows="dynamic", use_container_width=True)
 
 st.subheader("4. 備註（固定）")
 st.text(NOTES)
 
-# HTML 預覽產生器 (同步 PDF 樣式 + 儲存格合併)
+# HTML 預覽產生器
 def generate_html_preview():
     style = """
     <style>
@@ -395,7 +389,7 @@ def generate_html_preview():
         html += f"<tr><td><b>{row.get('職稱','')}</b></td><td>{row.get('代號','')}</td><td style='line-height:1.4'>{name}</td><td class='left-align'>{row.get('任務','')}</td></tr>"
     html += "</table>"
 
-    # 勤務表 (含 HTML rowspan，標題改為 警力佈署)
+    # 勤務表 (警力佈署)
     html += "<table>"
     html += "<tr><th colspan='3'>警　力　佈　署</th></tr>"
     html += "<tr><th width='25%'>日期（6時至10時、16時至20時）</th><th width='20%'>單位</th><th width='55%'>路段</th></tr>"
