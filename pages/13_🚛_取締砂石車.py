@@ -73,8 +73,7 @@ def _get_font():
         return "Helvetica"
     return fname
 
-def _html_table_to_pdf(html_content, page_title):
-    """把 HTML 報表轉成 PDF bytes（解析 <tr><td> 重排）"""
+def _parse_html_to_pdf(html_content, page_title):
     import re as _re
     font = _get_font()
     buf = io.BytesIO()
@@ -82,45 +81,43 @@ def _html_table_to_pdf(html_content, page_title):
         leftMargin=12*mm, rightMargin=12*mm,
         topMargin=12*mm, bottomMargin=12*mm)
     W = A4[0] - 24*mm
+    title_s = ParagraphStyle("t",  fontName=font, fontSize=13, alignment=1, spaceAfter=4)
+    cell_s  = ParagraphStyle("c",  fontName=font, fontSize=9,  leading=13)
+    small_s = ParagraphStyle("sm", fontName=font, fontSize=8,  leading=11)
 
-    title_s  = ParagraphStyle("t",  fontName=font, fontSize=13, alignment=1, spaceAfter=4)
-    cell_s   = ParagraphStyle("c",  fontName=font, fontSize=9,  leading=13)
-    small_s  = ParagraphStyle("sm", fontName=font, fontSize=8,  leading=11)
-
-    def p(txt, style=None):
+    def clean(txt):
         txt = _re.sub(r'<br\s*/?>', '\n', str(txt))
         txt = _re.sub(r'<[^>]+>', '', txt).strip()
-        return Paragraph(txt.replace('\n','<br/>'), style or cell_s)
+        return txt.replace('\n', '<br/>')
+
+    def cell(txt):
+        return Paragraph(clean(txt), cell_s)
 
     story = [Paragraph(page_title, title_s), Spacer(1, 3*mm)]
 
-    # 解析所有 <table>
-    tables_raw = _re.findall(r'<table[^>]*>(.*?)</table>', html_content, _re.DOTALL|_re.IGNORECASE)
-    for tbl_html in tables_raw:
+    for tbl_html in _re.findall(r'<table[^>]*>(.*?)</table>', html_content, _re.DOTALL|_re.IGNORECASE):
         rows_raw = _re.findall(r'<tr[^>]*>(.*?)</tr>', tbl_html, _re.DOTALL|_re.IGNORECASE)
         data = []
         for row_html in rows_raw:
             cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', row_html, _re.DOTALL|_re.IGNORECASE)
             if cells:
-                data.append([p(c) for c in cells])
+                data.append([cell(c) for c in cells])
         if not data:
             continue
         col_n = max(len(r) for r in data)
-        col_w = [W / col_n] * col_n
-        t = Table(data, colWidths=col_w, repeatRows=1)
+        t = Table(data, colWidths=[W/col_n]*col_n, repeatRows=1)
         t.setStyle(TableStyle([
-            ('FONTNAME',    (0,0),(-1,-1), font),
-            ('FONTSIZE',    (0,0),(-1,-1), 9),
-            ('GRID',        (0,0),(-1,-1), 0.5, colors.black),
-            ('VALIGN',      (0,0),(-1,-1), 'MIDDLE'),
-            ('BACKGROUND',  (0,0),(-1, 0), colors.HexColor('#f2f2f2')),
-            ('TOPPADDING',  (0,0),(-1,-1), 3),
-            ('BOTTOMPADDING',(0,0),(-1,-1), 3),
+            ('FONTNAME',      (0,0),(-1,-1), font),
+            ('FONTSIZE',      (0,0),(-1,-1), 9),
+            ('GRID',          (0,0),(-1,-1), 0.5, colors.black),
+            ('VALIGN',        (0,0),(-1,-1), 'MIDDLE'),
+            ('BACKGROUND',    (0,0),(-1, 0), colors.HexColor('#f2f2f2')),
+            ('TOPPADDING',    (0,0),(-1,-1), 3),
+            ('BOTTOMPADDING', (0,0),(-1,-1), 3),
         ]))
         story.append(t)
         story.append(Spacer(1, 3*mm))
 
-    # 備註（<table> 外的文字）
     plain = _re.sub(r'<table[^>]*>.*?</table>', '', html_content, flags=_re.DOTALL|_re.IGNORECASE)
     plain = _re.sub(r'<br\s*/?>', '\n', plain)
     plain = _re.sub(r'<[^>]+>', '', plain).strip()
@@ -135,7 +132,7 @@ def send_report_email(html_content, subject):
         sender   = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
         receiver = sender
-        pdf_bytes = _html_table_to_pdf(html_content, subject)
+        pdf_bytes = _parse_html_to_pdf(html_content, subject)
         msg = MIMEMultipart()
         msg["From"]    = sender
         msg["To"]      = receiver
@@ -152,6 +149,7 @@ def send_report_email(html_content, subject):
         return True, None
     except Exception as e:
         return False, str(e)
+
 
 # --- 2. gspread 連線 ---
 def get_client():
