@@ -83,21 +83,37 @@ def _parse_html_to_pdf(html_content, page_title):
         leftMargin=12*mm, rightMargin=12*mm,
         topMargin=12*mm, bottomMargin=12*mm)
     W = A4[0] - 24*mm
-    title_s = ParagraphStyle("t",  fontName=font, fontSize=13, alignment=1, spaceAfter=4)
-    cell_s  = ParagraphStyle("c",  fontName=font, fontSize=9,  leading=13)
-    small_s = ParagraphStyle("sm", fontName=font, fontSize=8,  leading=11)
+    title_s = ParagraphStyle("t",   fontName=font, fontSize=12, alignment=1, spaceAfter=2, leading=16)
+    info_s  = ParagraphStyle("inf", fontName=font, fontSize=10, alignment=2, spaceAfter=4)
+    cell_s  = ParagraphStyle("c",   fontName=font, fontSize=8,  leading=12)
+    note_s  = ParagraphStyle("n",   fontName=font, fontSize=9,  leading=14, spaceAfter=4)
 
-    def clean(txt):
+    def strip_tags(txt):
         txt = _re.sub(r'<br\s*/?>', '\n', str(txt))
         txt = _re.sub(r'<[^>]+>', '', txt).strip()
-        return txt.replace('\n', '<br/>')
+        return txt
 
     def cell(txt):
-        return Paragraph(clean(txt), cell_s)
+        return Paragraph(strip_tags(txt).replace('\n', '<br/>'), cell_s)
 
-    story = [Paragraph(page_title, title_s), Spacer(1, 3*mm)]
+    body = _re.sub(r'<head[^>]*>.*?</head>', '', html_content, flags=_re.DOTALL|_re.IGNORECASE)
+    body_match = _re.search(r'<body[^>]*>(.*?)</body>', body, _re.DOTALL|_re.IGNORECASE)
+    body = body_match.group(1) if body_match else body
 
-    for tbl_html in _re.findall(r'<table[^>]*>(.*?)</table>', html_content, _re.DOTALL|_re.IGNORECASE):
+    story = []
+
+    h2 = _re.search(r'<h2[^>]*>(.*?)</h2>', body, _re.DOTALL|_re.IGNORECASE)
+    if h2:
+        story.append(Paragraph(strip_tags(h2.group(1)), title_s))
+        story.append(Spacer(1, 1*mm))
+
+    info = _re.search(r"<div class='info'>(.*?)</div>", body, _re.DOTALL|_re.IGNORECASE)
+    if info:
+        story.append(Paragraph(strip_tags(info.group(1)), info_s))
+        story.append(Spacer(1, 2*mm))
+
+    tables = _re.findall(r'<table[^>]*>(.*?)</table>', body, _re.DOTALL|_re.IGNORECASE)
+    for idx, tbl_html in enumerate(tables):
         rows_raw = _re.findall(r'<tr[^>]*>(.*?)</tr>', tbl_html, _re.DOTALL|_re.IGNORECASE)
         data = []
         for row_html in rows_raw:
@@ -110,7 +126,7 @@ def _parse_html_to_pdf(html_content, page_title):
         t = Table(data, colWidths=[W/col_n]*col_n, repeatRows=1)
         t.setStyle(TableStyle([
             ('FONTNAME',      (0,0),(-1,-1), font),
-            ('FONTSIZE',      (0,0),(-1,-1), 9),
+            ('FONTSIZE',      (0,0),(-1,-1), 8),
             ('GRID',          (0,0),(-1,-1), 0.5, colors.black),
             ('VALIGN',        (0,0),(-1,-1), 'MIDDLE'),
             ('BACKGROUND',    (0,0),(-1, 0), colors.HexColor('#f2f2f2')),
@@ -119,12 +135,14 @@ def _parse_html_to_pdf(html_content, page_title):
         ]))
         story.append(t)
         story.append(Spacer(1, 3*mm))
-
-    plain = _re.sub(r'<table[^>]*>.*?</table>', '', html_content, flags=_re.DOTALL|_re.IGNORECASE)
-    plain = _re.sub(r'<br\s*/?>', '\n', plain)
-    plain = _re.sub(r'<[^>]+>', '', plain).strip()
-    if plain:
-        story.append(Paragraph(plain.replace('\n','<br/>'), small_s))
+        if idx == 0:
+            note_div = _re.search(
+                r"<div class='left-align'[^>]*>(.*?)</div>\s*</div>",
+                body, _re.DOTALL|_re.IGNORECASE)
+            if note_div:
+                note_text = strip_tags(note_div.group(1)).replace('\n', '<br/>')
+                story.append(Paragraph(note_text, note_s))
+                story.append(Spacer(1, 3*mm))
 
     doc.build(story)
     return buf.getvalue()
@@ -144,7 +162,6 @@ def send_report_email(html_content, subject):
         part = MIMEBase("application", "pdf")
         part.set_payload(pdf_bytes)
         encoders.encode_base64(part)
-        # RFC5987 編碼，確保中文檔名 + .pdf 副檔名正確
         encoded_name = _ul.quote(f"{subject}.pdf", safe='')
         part.add_header(
             "Content-Disposition",
@@ -157,6 +174,7 @@ def send_report_email(html_content, subject):
         return True, None
     except Exception as e:
         return False, str(e)
+
 
 
 
