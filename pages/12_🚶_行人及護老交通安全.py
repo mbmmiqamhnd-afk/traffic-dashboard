@@ -83,7 +83,7 @@ def send_report_email(html_content, subject):
                 _font_path = _os.path.normpath(_p)
                 break
         _base_url = ('file://' + _os.path.dirname(_font_path)) if _font_path else '.'
-        pdf_bytes = _WHTML(string=html_content, base_url=_base_url).write_pdf()
+        pdf_bytes = _WHTML(string=html_content).write_pdf()
         msg = MIMEMultipart()
         msg["From"]    = sender
         msg["To"]      = receiver
@@ -192,9 +192,22 @@ st.text(NOTES)
 
 # --- 7. 產生 HTML ---
 def generate_html(month, df_cmd, df_schedule):
-    style = """
+    # 嵌入標楷體字型
+    import base64 as _b64, os as _os
+    _font_b64 = ""
+    for _fp in [
+        _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'kaiu.ttf'),
+        _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'kaiu.ttf'),
+        '/mount/src/traffic-dashboard/kaiu.ttf',
+    ]:
+        if _os.path.exists(_fp):
+            with open(_fp, 'rb') as _f:
+                _font_b64 = _b64.b64encode(_f.read()).decode()
+            break
+    _font_face = f"@font-face {{ font-family: 'BiauKai'; src: url('data:font/truetype;base64,{_font_b64}'); }}" if _font_b64 else ""
+    style = """""" + _font_face + """
+
     <style>
-        @font-face { font-family: 'BiauKai'; src: url('kaiu.ttf'); }
         body { font-family: 'BiauKai', 'DFKai-SB', '標楷體', serif; color: #000; font-size: 14px; }
         .container { width: 100%; max-width: 800px; margin: 0 auto; padding: 20px; }
         h2 { text-align: left; margin-bottom: 5px; letter-spacing: 2px; }
