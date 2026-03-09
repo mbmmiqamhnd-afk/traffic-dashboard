@@ -292,8 +292,9 @@ def generate_html(month, df_cmd, df_schedule):
     html += "</table>"
 
     # 執行勤務表
-    html += "<div class='section'><b>執行勤務日期、單位及路段</b></div>"
-    html += "<table><tr><th width='25%'>日期（6時至10時、16時至20時）</th><th width='20%'>單位</th><th width='55%'>路段</th></tr>"
+    html += "<table>"
+    html += "<tr><th colspan='3' style='background-color:#f2f2f2;text-align:center;'>警　力　佈　署</th></tr>"
+    html += "<tr><th width='25%'>執行勤務日期（6時至10時、16時至20時）</th><th width='20%'>單位</th><th width='55%'>路段</th></tr>"
     for _, row in df_schedule.iterrows():
         road = str(row.get('路段', '')).replace("\n", "<br>")
         html += f"<tr><td>{row.get('日期（6時至10時、16時至20時）','')}</td><td>{row.get('單位','')}</td><td class='left-align'>{road}</td></tr>"
