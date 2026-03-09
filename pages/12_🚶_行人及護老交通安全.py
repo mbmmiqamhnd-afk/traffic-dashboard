@@ -68,10 +68,22 @@ def send_report_email(html_content, subject):
     import urllib.parse as _ul
     try:
         from weasyprint import HTML as _WHTML
+        import os as _os
         sender   = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
         receiver = sender
-        pdf_bytes = _WHTML(string=html_content, base_url='.').write_pdf()
+        # 找 kaiu.ttf 絕對路徑
+        _font_path = None
+        for _p in [
+            _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'kaiu.ttf'),
+            _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'kaiu.ttf'),
+            '/mount/src/traffic-dashboard/kaiu.ttf',
+        ]:
+            if _os.path.exists(_os.path.normpath(_p)):
+                _font_path = _os.path.normpath(_p)
+                break
+        _base_url = ('file://' + _os.path.dirname(_font_path)) if _font_path else '.'
+        pdf_bytes = _WHTML(string=html_content, base_url=_base_url).write_pdf()
         msg = MIMEMultipart()
         msg["From"]    = sender
         msg["To"]      = receiver
