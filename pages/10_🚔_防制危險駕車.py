@@ -10,7 +10,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -80,7 +80,6 @@ def load_data():
             return None, None, None, "未設定 Secrets (離線模式)"
         
         sh = client.open_by_key(SHEET_ID)
-        # 一次取得所有 worksheet 減少 API 呼叫
         ws_list = sh.worksheets()
         
         ws_set = next((w for w in ws_list if w.title == "危駕_設定"), None)
@@ -124,7 +123,6 @@ def save_data(time_str, briefing, commander, df_cmd, df_patrol):
         df_patrol = df_patrol.fillna("")
         ws_ptl.update([df_patrol.columns.tolist()] + df_patrol.values.tolist())
         
-        # 清除快取，確保下次讀取是新的
         load_data.clear()
         st.toast("✅ 雲端存檔成功！", icon="☁️")
         return True
@@ -132,7 +130,7 @@ def save_data(time_str, briefing, commander, df_cmd, df_patrol):
         st.error(f"❌ 存檔失敗：{e}")
         return False
 
-# --- 5. PDF 生成函數 (使用 ReportLab 直接繪製) ---
+# --- 5. PDF 生成函數 (完整表格樣式修正版) ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames():
@@ -153,7 +151,7 @@ def _get_font():
 
 def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
     """
-    直接根據資料生成 PDF，確保格式完美
+    修正版：警力佈署表格新增「第一列標題(灰底)」與「第二列指揮官(白底)」
     """
     font = _get_font()
     buf = io.BytesIO()
@@ -186,7 +184,6 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
     # ====================
     # 2. 任務編組表格
     # ====================
-    # 欄寬: 職稱15%, 代號10%, 姓名25%, 任務50%
     col_widths_cmd = [page_width * 0.15, page_width * 0.10, page_width * 0.25, page_width * 0.50]
     headers_cmd = ["職稱", "代號", "姓名", "任務"]
     
@@ -208,11 +205,11 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
         ('FONTNAME', (0,0), (-1,-1), font),
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        # 合併第一列
+        # Row 0: 標題
         ('SPAN', (0,0), (-1,0)),
         ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#f2f2f2')),
         ('ALIGN', (0,0), (-1,0), 'CENTER'),
-        # Header列背景
+        # Row 1: 欄位名
         ('BACKGROUND', (0,1), (-1, 1), colors.HexColor('#f2f2f2')),
         ('TOPPADDING', (0,0), (-1,-1), 4),
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
@@ -221,22 +218,28 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
     story.append(Spacer(1, 6*mm))
 
     # ====================
-    # 3. 勤前教育 & 指揮官資訊
+    # 3. 勤前教育
     # ====================
     brief_clean = briefing.replace("\n", "<br/>")
     story.append(Paragraph(f"<b>📢 勤前教育：</b><br/>{brief_clean}", style_section))
-    story.append(Spacer(1, 3*mm))
-    story.append(Paragraph(f"<b>警力佈署</b>　交通快打指揮官：{commander}", style_section))
-    story.append(Spacer(1, 1*mm))
+    story.append(Spacer(1, 4*mm))
 
     # ====================
-    # 4. 警力佈署表格
+    # 4. 警力佈署表格 (指揮官整併入表格)
     # ====================
-    # 欄寬: 時段15%, 代號10%, 編組18%, 人員20%, 任務37%
     col_widths_ptl = [page_width * 0.15, page_width * 0.10, page_width * 0.18, page_width * 0.20, page_width * 0.37]
     headers_ptl = ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]
     
     data_ptl = []
+    
+    # [Row 0] 警力佈署 (灰底, 跨欄)
+    data_ptl.append([Paragraph("<b>警　力　佈　署</b>", style_table_header), '', '', '', ''])
+    
+    # [Row 1] 指揮官 (白底, 跨欄)
+    cmd_text = f"<b>交通快打指揮官：</b>{commander}"
+    data_ptl.append([Paragraph(cmd_text, style_cell_left), '', '', '', ''])
+    
+    # [Row 2] 欄位名稱 (灰底)
     data_ptl.append([Paragraph(f"<b>{h}</b>", style_cell) for h in headers_ptl])
     
     for _, row in df_patrol.iterrows():
@@ -247,12 +250,28 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
         task = Paragraph(str(row.get('任務分工','')), style_cell_left)
         data_ptl.append([time_p, code, group, ppl, task])
 
-    t2 = Table(data_ptl, colWidths=col_widths_ptl, repeatRows=1)
+    # repeatRows=3: 換頁時重複前三列 (標題、指揮官、欄位名)
+    t2 = Table(data_ptl, colWidths=col_widths_ptl, repeatRows=3)
+    
     t2.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,-1), font),
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#f2f2f2')),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        
+        # Row 0: 警力佈署 (灰底, 置中)
+        ('SPAN', (0,0), (-1,0)),
+        ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#f2f2f2')),
+        ('ALIGN', (0,0), (-1,0), 'CENTER'),
+        
+        # Row 1: 指揮官 (白底, 靠左)
+        ('SPAN', (0,1), (-1,1)),
+        ('BACKGROUND', (0,1), (-1, 1), colors.white),
+        ('ALIGN', (0,1), (-1,1), 'LEFT'),
+        ('LEFTPADDING', (0,1), (-1,1), 6),
+        
+        # Row 2: 欄位名 (灰底)
+        ('BACKGROUND', (0,2), (-1, 2), colors.HexColor('#f2f2f2')),
+        
         ('TOPPADDING', (0,0), (-1,-1), 4),
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
     ]))
@@ -285,7 +304,6 @@ def send_report_email(html_content, subject, time_str, briefing, commander, df_c
         password = st.secrets["email"]["password"]
         receiver = sender
         
-        # 使用新的 PDF 生成器
         pdf_bytes = generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol)
         if pdf_bytes is None:
             return False, "PDF 生成失敗 (請檢查 kaiu.ttf 字型)"
@@ -315,10 +333,8 @@ def send_report_email(html_content, subject, time_str, briefing, commander, df_c
 
 # --- 6. 主程式邏輯 ---
 
-# 讀取資料
 df_set, df_cmd, df_ptl, error_msg = load_data()
 
-# 初始化變數
 if error_msg:
     st.error(f"❌ Google Sheets 讀取失敗：{error_msg}")
     st.warning("⚠️ 啟用離線範本模式。")
@@ -361,9 +377,8 @@ with st.expander("編輯名單", expanded=True):
         df_cmd_edit,
         num_rows="dynamic",
         use_container_width=True,
-        column_config={"任務": None} # 介面上隱藏長任務，保持簡潔
+        column_config={"任務": None}
     )
-    # 確保資料完整性
     if "任務" not in edited_cmd.columns:
         edited_cmd["任務"] = df_cmd_edit["任務"]
 
@@ -377,7 +392,7 @@ st.text(CHECKIN_POINTS)
 st.subheader("5. 備註（固定）")
 st.text(NOTES)
 
-# HTML 預覽產生器 (僅供網頁瀏覽，不影響 PDF)
+# HTML 預覽產生器 (同步 PDF 樣式)
 def generate_html_preview():
     style = """
     <style>
@@ -391,12 +406,14 @@ def generate_html_preview():
         .left-align { text-align: left; }
         .section { margin-bottom: 10px; line-height: 1.8; }
         .notes { white-space: pre-wrap; font-size: 13px; line-height: 1.8; }
+        .cmd-row { background-color: white; text-align: left; padding-left: 10px; }
     </style>
     """
     html = f"<html><head><meta charset='utf-8'>{style}</head><body><div class='container'>"
     html += f"<h2>{UNIT}執行「防制危險駕車專案勤務」規劃表</h2>"
     html += f"<div class='info'>勤務時間：{plan_time}</div>"
 
+    # 任務編組表格
     html += "<table><tr><th colspan='4'>任　務　編　組</th></tr>"
     html += "<tr><th width='15%'>職稱</th><th width='10%'>代號</th><th width='25%'>姓名</th><th width='50%'>任務</th></tr>"
     for _, row in edited_cmd.iterrows():
@@ -405,9 +422,12 @@ def generate_html_preview():
     html += "</table>"
 
     html += f"<div class='section'><b>📢 勤前教育：</b><span style='white-space:pre-wrap'>{brief_info}</span></div>"
-    html += f"<div class='section'><b>警力佈署</b>　交通快打指揮官：{commander}</div>"
     
-    html += "<table><tr><th width='15%'>勤務時段</th><th width='10%'>代號</th><th width='18%'>編組</th><th width='20%'>服勤人員</th><th width='37%'>任務分工</th></tr>"
+    # 警力佈署表格 (含指揮官列)
+    html += "<table>"
+    html += "<tr><th colspan='5'>警　力　佈　署</th></tr>"
+    html += f"<tr><td colspan='5' class='cmd-row'><b>交通快打指揮官：</b>{commander}</td></tr>"
+    html += "<tr><th width='15%'>勤務時段</th><th width='10%'>代號</th><th width='18%'>編組</th><th width='20%'>服勤人員</th><th width='37%'>任務分工</th></tr>"
     for _, row in edited_patrol.iterrows():
         personnel = str(row.get('服勤人員', '')).replace("、", "<br>").replace("\n", "<br>")
         html += f"<tr><td>{row.get('勤務時段','')}</td><td>{row.get('無線電','')}</td><td>{row.get('編組','')}</td><td style='line-height:1.4'>{personnel}</td><td class='left-align'>{row.get('任務分工','')}</td></tr>"
@@ -435,10 +455,7 @@ with col_dl:
         mime="text/html; charset=utf-8",
         type="primary"
     ):
-        # 1. 存檔
         save_success = save_data(plan_time, brief_info, commander, edited_cmd, edited_patrol)
-        
-        # 2. 寄信 (使用 PDF 生成器)
         if save_success:
             subject = f"防制危險駕車勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
             ok, err = send_report_email(html_out, subject, plan_time, brief_info, commander, edited_cmd, edited_patrol)
