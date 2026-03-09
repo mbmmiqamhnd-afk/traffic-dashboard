@@ -71,7 +71,7 @@ def send_report_email(html_content, subject):
         sender   = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
         receiver = sender
-        pdf_bytes = _WHTML(string=html_content).write_pdf()
+        pdf_bytes = _WHTML(string=html_content, base_url='.').write_pdf()
         msg = MIMEMultipart()
         msg["From"]    = sender
         msg["To"]      = receiver
@@ -182,7 +182,8 @@ st.text(NOTES)
 def generate_html(month, df_cmd, df_schedule):
     style = """
     <style>
-        body { font-family: 'DFKai-SB', 'BiauKai', '標楷體', serif; color: #000; font-size: 14px; }
+        @font-face { font-family: 'BiauKai'; src: url('kaiu.ttf'); }
+        body { font-family: 'BiauKai', 'DFKai-SB', '標楷體', serif; color: #000; font-size: 14px; }
         .container { width: 100%; max-width: 800px; margin: 0 auto; padding: 20px; }
         h2 { text-align: left; margin-bottom: 5px; letter-spacing: 2px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
