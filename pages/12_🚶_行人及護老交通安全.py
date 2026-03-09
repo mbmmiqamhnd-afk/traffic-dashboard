@@ -127,7 +127,7 @@ def save_data(month, df_cmd, df_schedule):
         st.error(f"❌ 存檔失敗：{e}")
         return False
 
-# --- 5. PDF 生成函數 (ReportLab) ---
+# --- 5. PDF 生成函數 (ReportLab 直接繪製 + 儲存格合併 + 標題同步) ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames():
@@ -158,7 +158,7 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
     page_width = A4[0] - 30*mm
     story = []
     
-    # --- 樣式 ---
+    # --- 樣式定義 ---
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, spaceAfter=10)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=10, leading=13, alignment=1) # 置中
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=10, leading=13, alignment=0) # 靠左
@@ -207,17 +207,17 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
     ]))
     story.append(t1)
     
-    # 修正重點：設定為 5mm，約等於一行空白高度
+    # 插入間距 (約一行高度)
     story.append(Spacer(1, 5*mm))
 
     # ====================
-    # 3. 勤務表 (警力佈署) - 自動合併日期
+    # 3. 勤務表 (標題：警力佈署) - 自動合併日期
     # ====================
     col_widths_sch = [page_width * 0.25, page_width * 0.20, page_width * 0.55]
     headers_sch = ["日期（6時至10時、16時至20時）", "單位", "路段"]
     
     data_sch = []
-    # Row 0: 標題列 (警力佈署)
+    # Row 0: 標題列 (改為 警力佈署)
     data_sch.append([Paragraph("<b>警　力　佈　署</b>", style_table_header), '', ''])
     # Row 1: 欄位名
     data_sch.append([Paragraph(f"<b>{h}</b>", style_cell) for h in headers_sch])
@@ -247,18 +247,24 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
     ]
 
-    # --- 自動計算日期欄位合併 ---
+    # --- 自動計算日期欄位合併 (PDF SPAN) ---
     date_col = '日期（6時至10時、16時至20時）'
+    
+    # 找出所有非空白日期的索引
     non_empty_indices = [i for i, val in enumerate(df_schedule[date_col]) if str(val).strip() != ""]
     non_empty_indices.append(len(df_schedule)) 
-    header_offset = 2 
+    
+    header_offset = 2 # 前兩列是 Headers
     
     for k in range(len(non_empty_indices) - 1):
         start_row = non_empty_indices[k]
         end_row = non_empty_indices[k+1] - 1
+        
         if end_row > start_row:
+            # 合併日期欄 (col 0)
             span_cmd = ('SPAN', (0, start_row + header_offset), (0, end_row + header_offset))
             table_styles.append(span_cmd)
+            # 垂直置中
             valign_cmd = ('VALIGN', (0, start_row + header_offset), (0, end_row + header_offset), 'MIDDLE')
             table_styles.append(valign_cmd)
 
@@ -287,6 +293,7 @@ def send_report_email(html_content, subject, month, df_cmd, df_schedule):
         password = st.secrets["email"]["password"]
         receiver = sender
         
+        # 關鍵：呼叫更新後的 PDF 生成器
         pdf_bytes = generate_pdf_from_data(month, df_cmd, df_schedule)
         if pdf_bytes is None:
             return False, "PDF 生成失敗 (請檢查 kaiu.ttf 字型)"
@@ -363,7 +370,7 @@ edited_schedule = st.data_editor(df_schedule_edit, num_rows="dynamic", use_conta
 st.subheader("4. 備註（固定）")
 st.text(NOTES)
 
-# HTML 預覽產生器
+# HTML 預覽產生器 (同步 PDF 樣式)
 def generate_html_preview():
     style = """
     <style>
@@ -397,7 +404,7 @@ def generate_html_preview():
     col_date = '日期（6時至10時、16時至20時）'
     total_rows = len(edited_schedule)
     
-    # 建立合併邏輯
+    # 建立合併邏輯 (HTML rowspan)
     row_spans = {} 
     skip_rows = set()
     
