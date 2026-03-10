@@ -137,12 +137,13 @@ def generate_pdf(month, df_cmd, df_schedule):
     W = A4[0] - 24*mm
     story = []
 
-    # 字體大小設定 (標題、表頭16，內文、備註14)
+    # 字體大小設定 (標題、表頭16，內文14，備註12)
     s_title  = ParagraphStyle("t",  fontName=font, fontSize=16, alignment=1, spaceAfter=8, leading=22)
     s_th     = ParagraphStyle("th", fontName=font, fontSize=16, alignment=1, leading=22)
     s_cell   = ParagraphStyle("c",  fontName=font, fontSize=14, leading=18, alignment=1)
     s_left   = ParagraphStyle("l",  fontName=font, fontSize=14, leading=18, alignment=0)
-    s_note   = ParagraphStyle("n",  fontName=font, fontSize=14, leading=20, spaceAfter=4)
+    # 將備註字體設定為 12，行高適度縮小為 16
+    s_note   = ParagraphStyle("n",  fontName=font, fontSize=12, leading=16, spaceAfter=4)
     
     def c(txt, style=s_cell):
         return Paragraph(str(txt).replace("\n","<br/>"), style)
@@ -207,7 +208,7 @@ def generate_pdf(month, df_cmd, df_schedule):
     story.append(KeepTogether([t2]))
     story.append(Spacer(1, 6*mm))
 
-    # 備註
+    # 備註 (字體12pt)
     story.append(Paragraph(f"<b>備註：</b><br/>{NOTES.replace(chr(10),'<br/>')}", s_note))
 
     doc.build(story)
@@ -265,10 +266,11 @@ ed_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
 st.subheader("4. 備註（固定）")
 st.text(NOTES)
 
-# --- 8. HTML 安全產生器 (表頭16pt、內文14pt) ---
+# --- 8. HTML 安全產生器 (表頭16pt、內文14pt、備註12pt) ---
 def get_html():
     parts = []
-    parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:14pt;margin:15px 0;line-height:1.6;}</style>")
+    # CSS 中將 .note 的 font-size 設定為 12pt
+    parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:12pt;margin:15px 0;line-height:1.6;}</style>")
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}{c_month}執行「行人及護老交通安全」專案勤務規劃表</b></h2><br>")
     
     # 任務編組
@@ -314,6 +316,7 @@ def get_html():
         parts.append(f"<td>{str(row.get('單位','')).replace(chr(10), '<br>')}</td><td style='text-align:left'>{str(row.get('路段','')).replace(chr(10), '<br>')}</td></tr>")
         
     parts.append("</table>")
+    # 備註將套用上面的 .note 樣式 (12pt)
     parts.append(f"<div class='note'><b>備註：</b><br>{NOTES.replace(chr(10), '<br>')}</div>")
     parts.append("</body></html>")
     return "".join(parts)
