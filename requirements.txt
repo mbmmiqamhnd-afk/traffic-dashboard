@@ -1,14 +1,24 @@
-gspread-formatting
+# --- 基礎與網頁框架 ---
 streamlit
+
+# --- 數據分析與處理 ---
 pandas
+numpy
 openpyxl
 xlsxwriter
+
+# --- Google Sheets 連線 ---
 gspread
-numpy
+gspread-formatting
+google-auth
+
+# --- PDF 讀取與生成 (WeasyPrint / ReportLab) ---
 pypdf
 reportlab
+weasyprint
+matplotlib
+
+# --- PDF 轉 PPT 核心 ---
 pdf2image
 python-pptx
-matplotlib
-google-auth
-weasyprint
+Pillow
