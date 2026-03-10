@@ -28,7 +28,7 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
 
-# 💡 固定備註內容 (分列一、二)
+# 💡 固定備註內容
 CORRECT_NOTES = (
     "一、執行前由各單位帶班人員在駐地實施勤前教育。<br/>"
     "二、加強取締砂石（大型貨）車超載、車速、酒醉駕車、闖紅燈、無照駕車、爭道行駛、"
@@ -58,11 +58,9 @@ def load_data():
         df_cmd = pd.DataFrame(ws_cmd.get_all_records())
         df_sch = pd.DataFrame(ws_sch.get_all_records())
         
-        # 🛡️ 強制清理邏輯
+        # 🛡️ 攔截舊文字
         sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
         briefing = str(sd.get("briefing", "")).strip()
-        
-        # 如果包含舊文字，徹底清空
         if any(x in briefing for x in ["時間：", "地點：", "各單位執行前", "勤前教育："]):
             briefing = ""
             
@@ -78,7 +76,6 @@ def save_data(month, briefing, df_cmd, df_schedule):
         ws_set = sh.worksheet("砂石_設定")
         ws_set.clear()
         ws_set.update([["Key", "Value"], ["month", month], ["briefing", briefing]])
-        
         for ws_name, df in [("砂石_指揮組", df_cmd), ("砂石_勤務表", df_schedule)]:
             ws = sh.worksheet(ws_name)
             ws.clear()
@@ -114,7 +111,7 @@ def generate_pdf(month, briefing, df_cmd, df_schedule):
     def c(txt, style=s_cell): return Paragraph(str(txt).replace("\n","<br/>"), style)
     story.append(Paragraph(f"<b>{UNIT}執行{month}「取締砂石（大型貨）車重點違規」專案勤務規劃表</b>", s_title))
     
-    # 指揮編組
+    # 任務編組
     cw1 = [W*0.15, W*0.12, W*0.28, W*0.45]
     data1 = [[Paragraph("<b>任　務　編　組</b>", s_th), '', '', ''], [Paragraph(f"<b>{h}</b>", s_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, row in df_cmd.iterrows():
@@ -122,21 +119,30 @@ def generate_pdf(month, briefing, df_cmd, df_schedule):
     t1 = Table(data1, colWidths=cw1, repeatRows=2); t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]))
     story.append(t1); story.append(Spacer(1, 4*mm))
     
-    # 💡 只有當 briefing 有內容時才顯示「勤前教育」區塊
     if briefing.strip():
         story.append(Paragraph(f"<b>📢 勤前教育：</b><br/>{briefing.replace(chr(10), '<br/>')}", s_section))
         story.append(Spacer(1, 4*mm))
     
-    # 警力佈署
+    # 警力佈署 (含日期合併邏輯)
     col_date = '勤務日期'
     cw2 = [W*0.28, W*0.16, W*0.12, W*0.44]
     data2 = [[Paragraph("<b>警　力　佈　署</b>", s_th), '', '', ''], [Paragraph(f"<b>{h}</b>", s_th) for h in ["勤務日期", "執行單位", "執行人數", "執行路段"]]]
+    
     for _, row in df_schedule.iterrows():
         data2.append([c(row.get(col_date, '')), c(row.get('執行單位','')), c(row.get('執行人數','')), c(row.get('執行路段', ''), s_left)])
-    t2 = Table(data2, colWidths=cw2, repeatRows=2); t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]))
-    story.append(KeepTogether([t2])); story.append(Spacer(1, 6*mm))
+
+    t_style = [('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]
     
-    # 備註
+    # 💡 PDF 日期合併算法
+    non_empty_idxs = [i for i, v in enumerate(df_schedule[col_date]) if str(v).strip() != ""]
+    non_empty_idxs.append(len(df_schedule))
+    for k in range(len(non_empty_idxs)-1):
+        s, e = non_empty_idxs[k], non_empty_idxs[k+1]-1
+        if e > s:
+            t_style.append(('SPAN', (0, s+2), (0, e+2)))
+            
+    t2 = Table(data2, colWidths=cw2, repeatRows=2); t2.setStyle(TableStyle(t_style))
+    story.append(KeepTogether([t2])); story.append(Spacer(1, 6*mm))
     story.append(Paragraph(f"<b>備註：</b><br/>{CORRECT_NOTES}", s_note))
     doc.build(story); return buf.getvalue()
 
@@ -155,7 +161,7 @@ def send_report_email(subject, month, briefing, df_cmd, df_schedule):
         return True, None
     except Exception as e: return False, str(e)
 
-# --- 5. 介面邏輯 ---
+# --- 5. 介面 ---
 df_set, df_cmd_raw, df_sch_raw, filtered_brief, err = load_data()
 
 cur_month = "115年3月份"
@@ -164,24 +170,22 @@ if not err and df_set is not None:
     cur_month = sd.get("month", cur_month)
     df_c, df_s = df_cmd_raw, df_sch_raw
     if "日期" in df_s.columns: df_s.rename(columns={"日期": "勤務日期"}, inplace=True)
-    df_s["執行人數"] = df_s["執行人數"].astype(str).replace("", "2至4人").replace("nan", "2至4人")
 else:
-    df_c, df_s = pd.DataFrame([{"職稱": "指揮官", "代號": "隆安1", "姓名": "施宇峰", "任務": "核定"}]), pd.DataFrame()
+    df_c, df_s = pd.DataFrame([{"職稱": "指揮官", "姓名": "施宇峰"}]), pd.DataFrame()
 
 st.subheader("1. 基礎資訊")
 c1, c2 = st.columns(2)
 month_val = c1.text_input("月份", value=cur_month)
-# 這裡輸入內容後，預覽區才會出現勤前教育
-brief_info = c2.text_area("📢 勤前教育內容 (若留空則隱藏標題)", value=filtered_brief, height=80)
+brief_info = c2.text_area("📢 勤前教育內容 (留空隱藏)", value=filtered_brief, height=80)
 
 st.subheader("2. 任務編組")
 ed_cmd = st.data_editor(df_c, num_rows="dynamic", use_container_width=True)
-st.subheader("3. 警力佈署")
+st.subheader("3. 警力佈署 (第一欄相同日期請留白即可自動合併)")
 ed_sch = st.data_editor(df_s, num_rows="dynamic", use_container_width=True)
 
-# --- 6. HTML 預覽 ---
+# --- 6. HTML 預覽 (含日期合併) ---
 def get_html():
-    parts = ["<style>body{font-family:'標楷體';padding:10px;} th{border:1px solid black;padding:5px;background-color:#f2f2f2;} td{border:1px solid black;padding:5px;} .note{font-size:12pt;margin-top:10px;} table{width:100%;border-collapse:collapse;}</style>"]
+    parts = ["<style>body{font-family:'標楷體';padding:10px;} th{border:1px solid black;padding:5px;background-color:#f2f2f2;} td{border:1px solid black;padding:5px;text-align:center;} .note{font-size:12pt;margin-top:10px;text-align:left;} table{width:100%;border-collapse:collapse;}</style>"]
     parts.append(f"<h2 style='text-align:center;'>{UNIT}執行{month_val}「取締砂石（大型貨）車重點違規」專案勤務規劃表</h2>")
     
     # 任務編組
@@ -190,27 +194,44 @@ def get_html():
         parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     parts.append("</table>")
     
-    # 💡 只有當有輸入文字時，HTML 預覽才顯示勤前教育
     if brief_info.strip():
         parts.append(f"<p><b>📢 勤前教育：</b><br>{brief_info.replace(chr(10), '<br>')}</p>")
     
-    # 警力佈署
+    # 警力佈署 - HTML 合併邏輯
     parts.append("<table><tr><th colspan='4'>警 力 佈 署</th></tr><tr><th>勤務日期</th><th>執行單位</th><th>執行人數</th><th>執行路段</th></tr>")
-    for _, row in ed_sch.iterrows():
-        parts.append(f"<tr><td>{str(row.get('勤務日期','')).replace(chr(10),'<br>')}</td><td>{row.get('執行單位','')}</td><td>{row.get('執行人數','')}</td><td style='text-align:left'>{row.get('執行路段','')}</td></tr>")
-    parts.append("</table>")
     
-    # 備註區
+    total_rows = len(ed_sch)
+    row_idx = 0
+    while row_idx < total_rows:
+        date_val = str(ed_sch.iloc[row_idx].get('勤務日期','')).strip()
+        # 計算需要合併幾列
+        span = 1
+        if date_val != "":
+            for next_idx in range(row_idx + 1, total_rows):
+                if str(ed_sch.iloc[next_idx].get('勤務日期','')).strip() == "":
+                    span += 1
+                else:
+                    break
+        
+        for i in range(span):
+            curr_row = ed_sch.iloc[row_idx + i]
+            parts.append("<tr>")
+            if i == 0:
+                parts.append(f"<td rowspan='{span}'>{date_val.replace(chr(10),'<br>')}</td>")
+            parts.append(f"<td>{curr_row.get('執行單位','')}</td>")
+            parts.append(f"<td>{curr_row.get('執行人數','')}</td>")
+            parts.append(f"<td style='text-align:left'>{curr_row.get('執行路段','')}</td>")
+            parts.append("</tr>")
+        row_idx += span
+
+    parts.append("</table>")
     parts.append(f"<div class='note'><b>備註：</b><br>{CORRECT_NOTES}</div>")
     return "".join(parts)
 
 st.markdown("---")
-st.components.v1.html(get_html(), height=600, scrolling=True)
+st.components.v1.html(get_html(), height=700, scrolling=True)
 
 if st.button("💾 同步雲端、寄信並下載 PDF", type="primary"):
-    if save_data(month_val, brief_info, ed_cmd, ed_sch):
-        subject = f"取締砂石車專案勤務表_{datetime.now().strftime('%m%d')}"
-        ok, mail_err = send_report_email(subject, month_val, brief_info, ed_cmd, ed_sch)
-        if ok: st.success("📧 雲端已更新，PDF 已寄至信箱！")
-        else: st.error(f"❌ 雲端已更新，但寄信失敗：{mail_err}")
-        st.download_button("📥 下載 PDF", data=generate_pdf(month_val, brief_info, ed_cmd, ed_sch), file_name=f"{subject}.pdf")
+    save_data(month_val, brief_info, ed_cmd, ed_sch)
+    pdf_data = generate_pdf(month_val, brief_info, ed_cmd, ed_sch)
+    st.download_button("📥 下載 PDF", data=pdf_data, file_name=f"砂石車勤務表_{datetime.now().strftime('%m%d')}.pdf")
