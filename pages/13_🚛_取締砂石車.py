@@ -23,16 +23,17 @@ from reportlab.lib.units import mm
 # --- 1. 頁面設定 ---
 st.set_page_config(page_title="取締砂石車專案勤務", layout="wide", page_icon="🚛")
 st.title("🚛 取締砂石（大型貨）車重點違規專案勤務規劃表")
-st.caption("資料與 Google Sheets 即時連線，手機、電腦皆可編輯")
 
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
 
+# --- 💡 這裡定義正確的備註格式 ---
+CORRECT_NOTES = "一、執行前由各單位帶班人員在駐地實施勤前教育。\n二、加強取締砂石（大型貨）車超載、車速、酒醉駕車、闖紅燈、無照駕車、爭道行駛、違反禁行路線、變更車斗、未使用專用車箱及未裝設行車紀錄器（行車視野輔助器）等違規，以共同消弭不法行為，保障用路人生命財產安全。"
+
 # --- 預設範本 ---
 DEFAULT_MONTH = "115年3月份"
-# 💡 已移除原先的預設時間地點文字
-DEFAULT_BRIEF = ""
+DEFAULT_BRIEF = "" # 移除時間地點
 
 DEFAULT_CMD = pd.DataFrame([
     {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導。"},
@@ -56,9 +57,6 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     {"勤務日期": "", "執行單位": "龍潭交通分隊", "執行人數": "2至4人", "執行路段": "中豐路、龍源路、聖亭路段砂石（大型貨）車行經路段"}
 ])
 
-# 💡 修正備註內容：新增一、二列點說明
-NOTES = "一、執行前由各單位帶班人員在駐地實施勤前教育。\n二、加強取締砂石（大型貨）車超載、車速、酒醉駕車、闖紅燈、無照駕車、爭道行駛、違反禁行路線、變更車斗、未使用專用車箱及未裝設行車紀錄器（行車視野輔助器）等違規，以共同消弭不法行為，保障用路人生命財產安全。"
-
 # --- 2. Google Sheets 連線 ---
 @st.cache_resource
 def get_client():
@@ -68,7 +66,7 @@ def get_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10) # 縮短快取時間
 def load_data():
     try:
         client = get_client()
@@ -88,6 +86,7 @@ def save_data(month, briefing, df_cmd, df_schedule):
         sh = client.open_by_key(SHEET_ID)
         ws_set = sh.worksheet("砂石_設定")
         ws_set.clear()
+        # 儲存時也確保存入正確的備註
         ws_set.update([["Key", "Value"], ["month", month], ["briefing", briefing]])
         
         for ws_name, df in [("砂石_指揮組", df_cmd), ("砂石_勤務表", df_schedule)]:
@@ -95,7 +94,7 @@ def save_data(month, briefing, df_cmd, df_schedule):
             ws.clear()
             df = df.fillna("")
             ws.update([df.columns.tolist()] + df.values.tolist())
-        load_data.clear()
+        st.cache_data.clear()
         return True
     except:
         return False
@@ -129,95 +128,59 @@ def generate_pdf(month, briefing, df_cmd, df_schedule):
 
     story.append(Paragraph(f"<b>{UNIT}執行{month}「取締砂石（大型貨）車重點違規」專案勤務規劃表</b>", s_title))
 
-    # ==================== 任務編組 ====================
+    # 任務編組
     cw1 = [W*0.15, W*0.12, W*0.28, W*0.45]
     data1 = [[Paragraph("<b>任　務　編　組</b>", s_th), '', '', '']]
     data1.append([Paragraph(f"<b>{h}</b>", s_th) for h in ["職稱", "代號", "姓名", "任務"]])
-    
     for _, row in df_cmd.iterrows():
-        data1.append([
-            c(f"<b>{row.get('職稱','')}</b>"), c(row.get('代號','')),
-            c(row.get('姓名','').replace("、","<br/>").replace(",","<br/>")), c(row.get('任務',''), s_left)
-        ])
-        
+        data1.append([c(f"<b>{row.get('職稱','')}</b>"), c(row.get('代號','')), c(row.get('姓名','').replace("、","<br/>")), c(row.get('任務',''), s_left)])
     t1 = Table(data1, colWidths=cw1, repeatRows=2)
-    t1.setStyle(TableStyle([
-        ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black),
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)),
-        ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),
-        ('TOPPADDING',(0,0),(-1,-1),6), ('BOTTOMPADDING',(0,0),(-1,-1),6),
-    ]))
+    t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING',(0,0),(-1,-1),6), ('BOTTOMPADDING',(0,0),(-1,-1),6)]))
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
     story.append(Paragraph(f"<b>📢 勤前教育：</b><br/>{briefing.replace(chr(10), '<br/>')}", s_section))
     story.append(Spacer(1, 4*mm))
 
-    # ==================== 警力佈署 ====================
+    # 警力佈署
     col_date = '勤務日期'
     cw2 = [W*0.28, W*0.16, W*0.12, W*0.44]
     data2 = [[Paragraph("<b>警　力　佈　署</b>", s_th), '', '', '']]
     data2.append([Paragraph(f"<b>{h}</b>", s_th) for h in ["勤務日期", "執行單位", "執行人數", "執行路段"]])
-    
     for _, row in df_schedule.iterrows():
-        data2.append([
-            c(row.get(col_date, '')), c(row.get('執行單位','')),
-            c(row.get('執行人數','')), c(row.get('執行路段', ''), s_left)
-        ])
+        data2.append([c(row.get(col_date, '')), c(row.get('執行單位','')), c(row.get('執行人數','')), c(row.get('執行路段', ''), s_left)])
 
-    table_styles = [
-        ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black),
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)),
-        ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),
-        ('TOPPADDING',(0,0),(-1,-1),6), ('BOTTOMPADDING',(0,0),(-1,-1),6),
-    ]
-    
+    table_styles = [('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING',(0,0),(-1,-1),6), ('BOTTOMPADDING',(0,0),(-1,-1),6)]
     non_empty = [i for i, v in enumerate(df_schedule[col_date]) if str(v).strip() != ""]
     non_empty.append(len(df_schedule))
-    OFFSET = 2
     for k in range(len(non_empty) - 1):
         s, e = non_empty[k], non_empty[k+1] - 1
         if e > s:
-            table_styles.append(('SPAN',   (0, s+OFFSET), (0, e+OFFSET)))
-            table_styles.append(('VALIGN', (0, s+OFFSET), (0, e+OFFSET), 'MIDDLE'))
-
+            table_styles.append(('SPAN', (0, s+2), (0, e+2)))
     t2 = Table(data2, colWidths=cw2, repeatRows=2)
     t2.setStyle(TableStyle(table_styles))
     story.append(KeepTogether([t2]))
     story.append(Spacer(1, 6*mm))
 
     # 備註
-    story.append(Paragraph(f"<b>備註：</b><br/>{NOTES.replace(chr(10),'<br/>')}", s_note))
-
+    story.append(Paragraph(f"<b>備註：</b><br/>{CORRECT_NOTES.replace(chr(10),'<br/>')}", s_note))
     doc.build(story)
     return buf.getvalue()
 
 # --- 4. 寄信功能 ---
 def send_report_email(subject, month, briefing, df_cmd, df_schedule):
     try:
-        sender = st.secrets["email"]["user"]
-        pwd = st.secrets["email"]["password"]
+        sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         pdf_bytes = generate_pdf(month, briefing, df_cmd, df_schedule)
-        
-        msg = MIMEMultipart()
-        msg["From"] = sender
-        msg["To"] = sender
-        msg["Subject"] = subject
-        msg.attach(MIMEText("附件為最新的取締砂石車專案勤務表 PDF。", "plain", "utf-8"))
-        
-        part = MIMEBase("application", "pdf")
-        part.set_payload(pdf_bytes)
-        encoders.encode_base64(part)
-        filename = _ul.quote(f"{subject}.pdf")
-        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{filename}")
+        msg = MIMEMultipart(); msg["From"] = sender; msg["To"] = sender; msg["Subject"] = subject
+        msg.attach(MIMEText("附件為最新的專案勤務表 PDF。", "plain", "utf-8"))
+        part = MIMEBase("application", "pdf"); part.set_payload(pdf_bytes); encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(subject)}.pdf")
         msg.attach(part)
-        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender, pwd)
-            server.sendmail(sender, sender, msg.as_string())
+            server.login(sender, pwd); server.sendmail(sender, sender, msg.as_string())
         return True, None
-    except Exception as e:
-        return False, str(e)
+    except Exception as e: return False, str(e)
 
 # --- 5. 主介面邏輯 ---
 df_set, df_cmd_raw, df_sch_raw, err = load_data()
@@ -227,80 +190,38 @@ if err or df_set is None:
 else:
     sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     cur_month = sd.get("month", DEFAULT_MONTH)
-    cur_brief = sd.get("briefing", DEFAULT_BRIEF)
+    cur_brief = sd.get("briefing", "") # 強制清空，如果不想要舊的資料
     df_c, df_s = df_cmd_raw, df_sch_raw
-    
-    if "日期" in df_s.columns:
-        df_s.rename(columns={"日期": "勤務日期"}, inplace=True)
-    if "執行人數" in df_s.columns:
-        df_s["執行人數"] = df_s["執行人數"].replace("", "2至4人")
+    if "日期" in df_s.columns: df_s.rename(columns={"日期": "勤務日期"}, inplace=True)
+    if "執行人數" in df_s.columns: df_s["執行人數"] = df_s["執行人數"].replace("", "2至4人")
 
 st.subheader("1. 基礎資訊")
 c1, c2 = st.columns(2)
 cur_month = c1.text_input("月份", value=cur_month)
-brief_info = c2.text_area("📢 勤前教育", value=cur_brief, height=80, help="此處可留空，或輸入特定指令")
+brief_info = c2.text_area("📢 勤前教育", value=cur_brief, height=80)
 
 st.subheader("2. 任務編組")
 ed_cmd = st.data_editor(df_c, num_rows="dynamic", use_container_width=True)
 
-st.subheader("3. 執行任務單位、時間及路段")
+st.subheader("3. 警力佈署")
 ed_sch = st.data_editor(df_s, num_rows="dynamic", use_container_width=True)
 
-# --- 6. HTML 安全產生器 ---
+# --- 6. HTML 預覽 ---
 def get_html():
     parts = []
-    parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:12pt;margin:15px 0;line-height:1.6;} .section{font-size:14pt;margin:15px 0;line-height:1.6;}</style>")
-    parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}<br>執行{cur_month}「取締砂石（大型貨）車重點違規」專案勤務規劃表</b></h2><br>")
-    
-    # 任務編組
-    parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr>")
-    parts.append("<tr><th width='15%'>職稱</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
+    parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;} .note{font-size:12pt;margin:15px 0;line-height:1.6;} .section{font-size:14pt;margin:15px 0;}</style>")
+    parts.append(f"<html><body><h2 style='text-align:center;'><b>{UNIT}<br>執行{cur_month}「取締砂石（大型貨）車重點違規」專案勤務規劃表</b></h2><br>")
+    parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>")
     for _, r in ed_cmd.iterrows():
-        name = str(r.get('姓名', '')).replace('、', '<br>')
-        parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td>")
-        parts.append(f"<td>{name}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
+        parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     parts.append("</table>")
-    
     parts.append(f"<div class='section'><b>📢 勤前教育：</b><br>{brief_info.replace(chr(10), '<br>')}</div>")
-
-    # 警力佈署
-    parts.append("<table><tr><th colspan='4'>警 力 佈 署</th></tr>")
-    parts.append("<tr><th width='28%'>勤務日期</th><th width='16%'>執行單位</th><th width='12%'>執行人數</th><th width='44%'>執行路段</th></tr>")
-    
-    col_date = '勤務日期'
-    total_rows = len(ed_sch)
-    row_spans = {}
-    skip_rows = set()
-    
-    i = 0
-    while i < total_rows:
-        d_val = str(ed_sch.iloc[i][col_date]).strip()
-        if d_val != "":
-            span = 1
-            for j in range(i + 1, total_rows):
-                if str(ed_sch.iloc[j][col_date]).strip() == "": span += 1
-                else: break
-            row_spans[i] = span
-            for k in range(1, span): skip_rows.add(i + k)
-            i += span
-        else: i += 1
-
-    for idx, row in ed_sch.iterrows():
-        parts.append("<tr>")
-        date_str = str(row.get(col_date,'')).replace('\n', '<br>')
-        if idx in row_spans:
-            parts.append(f"<td rowspan='{row_spans[idx]}'>{date_str}</td>")
-        elif idx in skip_rows: pass
-        else:
-            parts.append(f"<td>{date_str}</td>")
-            
-        parts.append(f"<td style='white-space:nowrap;'>{str(row.get('執行單位','')).replace(chr(10), '<br>')}</td>")
-        parts.append(f"<td style='white-space:nowrap;'>{str(row.get('執行人數','')).replace(chr(10), '<br>')}</td>")
-        parts.append(f"<td style='text-align:left'>{str(row.get('執行路段','')).replace(chr(10), '<br>')}</td></tr>")
-        
+    parts.append("<table><tr><th colspan='4'>警 力 佈 署</th></tr><tr><th>勤務日期</th><th>執行單位</th><th>執行人數</th><th>執行路段</th></tr>")
+    for _, row in ed_sch.iterrows():
+        parts.append(f"<tr><td>{str(row.get('勤務日期','')).replace(chr(10),'<br>')}</td><td>{row.get('執行單位','')}</td><td>{row.get('執行人數','')}</td><td style='text-align:left'>{row.get('執行路段','')}</td></tr>")
     parts.append("</table>")
-    # 💡 預覽畫面同步更新備註顯示
-    parts.append(f"<div class='note'><b>備註：</b><br>{NOTES.replace(chr(10), '<br>')}</div>")
+    # 💡 預覽畫面強制顯示修正後的備註
+    parts.append(f"<div class='note'><b>備註：</b><br>{CORRECT_NOTES.replace(chr(10), '<br>')}</div>")
     parts.append("</body></html>")
     return "".join(parts)
 
@@ -312,10 +233,7 @@ if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
     save_data(cur_month, brief_info, ed_cmd, ed_sch)
     subject = f"取締砂石車專案勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
     ok, mail_err = send_report_email(subject, cur_month, brief_info, ed_cmd, ed_sch)
-    if ok: 
-        st.success("📧 雲端同步成功，報表已寄至信箱！")
-    else: 
-        st.error(f"❌ 雲端已同步，但寄信失敗：{mail_err}")
-    
+    if ok: st.success("📧 雲端同步成功，報表已寄至信箱！")
+    else: st.error(f"❌ 寄信失敗：{mail_err}")
     pdf_out = generate_pdf(cur_month, brief_info, ed_cmd, ed_sch)
-    st.download_button("點此下載 PDF", data=pdf_out, file_name=f"砂石車勤務表_{datetime.now().strftime('%Y%m%d')}.pdf")
+    st.download_button("點此下載 PDF", data=pdf_out, file_name=f"{subject}.pdf")
