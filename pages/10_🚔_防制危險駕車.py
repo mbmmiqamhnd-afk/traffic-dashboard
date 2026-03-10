@@ -29,7 +29,6 @@ UNIT = "桃園市政府警察局龍潭分局"
 
 # --- 預設範本資料 ---
 DEFAULT_TIME = "115年3月6日22時至翌日6時"
-DEFAULT_BRIEF = "時間：各編組執行前\n地點：現地勤教"
 DEFAULT_COMMANDER = "石門所副所長林榮裕"
 
 DEFAULT_CMD = pd.DataFrame([
@@ -110,7 +109,7 @@ def load_data():
     except Exception as e:
         return None, None, None, str(e)
 
-def save_data(time_str, briefing, commander, df_cmd, df_patrol):
+def save_data(time_str, commander, df_cmd, df_patrol):
     try:
         client = get_client()
         if client is None:
@@ -118,7 +117,7 @@ def save_data(time_str, briefing, commander, df_cmd, df_patrol):
         sh = client.open_by_key(SHEET_ID)
         ws_set = sh.worksheet("危駕_設定")
         ws_set.clear()
-        ws_set.update([["Key", "Value"], ["plan_time", time_str], ["briefing", briefing], ["commander", commander]])
+        ws_set.update([["Key", "Value"], ["plan_time", time_str], ["commander", commander]])
         
         for ws_name, df in [("危駕_指揮組", df_cmd), ("危駕_警力佈署", df_patrol)]:
             ws = sh.worksheet(ws_name)
@@ -141,7 +140,7 @@ def _get_font():
             return fname
     return "Helvetica"
 
-def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
+def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     font = _get_font()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
@@ -182,9 +181,6 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    story.append(Paragraph(f"<b>📢 勤前教育：</b><br/>{briefing.replace(chr(10), '<br/>')}", style_section))
-    story.append(Spacer(1, 4*mm))
-
     data_ptl = [
         [Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''],
         [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_left), '', '', '', ''],
@@ -223,11 +219,11 @@ def generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol):
     return buf.getvalue()
 
 # --- 4. 寄信功能 ---
-def send_report_email(time_str, briefing, commander, df_cmd, df_patrol):
+def send_report_email(time_str, commander, df_cmd, df_patrol):
     try:
         sender = st.secrets["email"]["user"]
         pwd = st.secrets["email"]["password"]
-        pdf_bytes = generate_pdf_from_data(time_str, briefing, commander, df_cmd, df_patrol)
+        pdf_bytes = generate_pdf_from_data(time_str, commander, df_cmd, df_patrol)
         
         msg = MIMEMultipart()
         msg["From"] = sender
@@ -252,33 +248,31 @@ def send_report_email(time_str, briefing, commander, df_cmd, df_patrol):
 # --- 5. 主介面邏輯 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
-    t, b, cmdr = DEFAULT_TIME, DEFAULT_BRIEF, DEFAULT_COMMANDER
+    t, cmdr = DEFAULT_TIME, DEFAULT_COMMANDER
     ed_cmd, ed_ptl = DEFAULT_CMD.copy(), DEFAULT_PATROL.copy()
 else:
     sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     t = sd.get("plan_time", DEFAULT_TIME)
-    b = sd.get("briefing", DEFAULT_BRIEF)
     cmdr = sd.get("commander", DEFAULT_COMMANDER)
     ed_cmd, ed_ptl = df_cmd, df_ptl
 
 st.title("🚔 防制危險駕車專案勤務規劃表")
-c1, c2 = st.columns(2)
-p_time = c1.text_input("勤務時間", t)
-b_info = c2.text_area("📢 勤前教育", b, height=80)
 
-st.subheader("1. 任務編組")
+st.subheader("1. 基礎資訊")
+p_time = st.text_input("勤務時間", t)
+
+st.subheader("2. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 
-st.subheader("2. 警力佈署")
+st.subheader("3. 警力佈署")
 cmdr_input = st.text_input("交通快打指揮官", cmdr)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 
-st.subheader("3. 巡簽地點與備註 (固定)")
+st.subheader("4. 巡簽地點與備註 (固定)")
 st.info("此區塊將直接附加於報表末端")
 
 # --- 重構：安全產生 HTML，避免單行過長 ---
 def get_html():
-    b_html = b_info.replace('\n', '<br>')
     chk_html = CHECKIN_POINTS.replace('\n', '<br>')
     note_html = NOTES.replace('\n', '<br>')
     
@@ -297,9 +291,7 @@ def get_html():
         parts.append(f"<td>{name}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     parts.append("</table>")
     
-    parts.append(f"<div class='note'><b>📢 勤前教育：</b><br>{b_html}</div>")
-    
-    # 警力佈署表格
+    # 警力佈署表格 (移除勤前教育，直接接續)
     parts.append("<table><tr><th colspan='5'>警 力 佈 署</th></tr>")
     parts.append(f"<tr><td colspan='5' class='cmd-row'><b>交通快打指揮官：</b>{cmdr_input}</td></tr>")
     parts.append("<tr><th width='28%'>勤務時段</th><th width='10%'>代號</th><th width='14%'>編組</th><th width='18%'>服勤人員</th><th width='30%'>任務分工</th></tr>")
@@ -307,7 +299,6 @@ def get_html():
     for _, r in res_ptl.iterrows():
         grp = str(r.get('編組', '')).replace('、', '<br>')
         ppl = str(r.get('服勤人員', '')).replace('\n', '<br>')
-        # 把這行拆成多行，防止被截斷
         parts.append("<tr>")
         parts.append(f"<td style='white-space:nowrap;'>{r.get('勤務時段','')}</td>")
         parts.append(f"<td style='white-space:nowrap;'>{r.get('無線電','')}</td>")
@@ -327,12 +318,12 @@ st.subheader("📄 預覽與輸出")
 st.components.v1.html(get_html(), height=600, scrolling=True)
 
 if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
-    save_data(p_time, b_info, cmdr_input, res_cmd, res_ptl)
-    ok, mail_err = send_report_email(p_time, b_info, cmdr_input, res_cmd, res_ptl)
+    save_data(p_time, cmdr_input, res_cmd, res_ptl)
+    ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl)
     if ok:
         st.success("📧 雲端同步成功，報表已寄至信箱！")
     else:
         st.error(f"❌ 雲端已同步，但寄信失敗：{mail_err}")
     
-    pdf_out = generate_pdf_from_data(p_time, b_info, cmdr_input, res_cmd, res_ptl)
+    pdf_out = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
     st.download_button("點此下載 PDF", data=pdf_out, file_name=f"防制危險駕車勤務_{datetime.now().strftime('%Y%m%d')}.pdf")
