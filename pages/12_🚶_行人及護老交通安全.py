@@ -127,7 +127,7 @@ def generate_pdf(month, df_cmd, df_schedule):
         ('TOPPADDING',(0,0),(-1,-1),4), ('BOTTOMPADDING',(0,0),(-1,-1),4),
     ]))
     story.append(t1)
-    story.append(Spacer(1, 4*mm))
+    story.append(Spacer(1, 6*mm))
 
     # 警力佈署（含日期欄自動合併）
     col_date = '日期（6時至10時、16時至20時）'
