@@ -229,6 +229,10 @@ else:
     cur_month = sd.get("month", DEFAULT_MONTH)
     cur_brief = sd.get("briefing", DEFAULT_BRIEF)
     df_c, df_s = df_cmd_raw, df_sch_raw
+    
+    # 💡 自動相容與修復舊版 Google Sheets 欄位名稱
+    if "日期" in df_s.columns:
+        df_s.rename(columns={"日期": "勤務日期"}, inplace=True)
 
 st.subheader("1. 基礎資訊")
 c1, c2 = st.columns(2)
