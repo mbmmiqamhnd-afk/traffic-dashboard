@@ -104,6 +104,7 @@ def generate_pdf(month, df_cmd, df_schedule):
     s_left   = ParagraphStyle("l",  fontName=font, fontSize=12, leading=15, alignment=0)
     s_note   = ParagraphStyle("n",  fontName=font, fontSize=12, leading=15)
     s_name   = ParagraphStyle("nm", fontName=font, fontSize=12, leading=15, alignment=1)
+    s_nowrap = ParagraphStyle("nw", fontName=font, fontSize=12, leading=15, alignment=1, wordWrap=None)
 
     def c(txt, style=None):
         txt = str(txt).replace("\n","<br/>")
@@ -117,11 +118,12 @@ def generate_pdf(month, df_cmd, df_schedule):
     story.append(Spacer(1, 2*mm))
 
     # 任務編組
-    cw1 = [W*0.12, W*0.13, W*0.27, W*0.48]
+    cw1 = [75, 55, 145, 263.6]
     data1 = [[Paragraph("<b>任　務　編　組</b>", s_header), '', '', '']]
     data1.append([c("<b>職稱</b>"), c("<b>代號</b>"), c("<b>姓名</b>"), c("<b>任務</b>")])
     for _, row in df_cmd.iterrows():
-        data1.append([c(f"<b>{row.get('職稱','')}</b>"), c(row.get('代號','')),
+        data1.append([Paragraph(f"<b>{row.get('職稱','')}</b>", s_nowrap),
+                      Paragraph(str(row.get('代號','')), s_nowrap),
                       c_name(row.get('姓名','')), c(row.get('任務',''), s_left)])
     t1 = Table(data1, colWidths=cw1, repeatRows=2)
     t1.setStyle(TableStyle([
@@ -135,13 +137,14 @@ def generate_pdf(month, df_cmd, df_schedule):
 
     # 警力佈署（含日期欄自動合併）
     col_date = '日期（6時至10時、16時至20時）'
-    cw2 = [W*0.25, W*0.20, W*0.55]
+    cw2 = [183.6, 75, 280]
     data2 = [[Paragraph("<b>警　力　佈　署</b>", s_header), '', '']]
     data2.append([c("<b>執行勤務日期（6時至10時、16時至20時）</b>"), c("<b>單位</b>"), c("<b>路段</b>")])
     for _, row in df_schedule.iterrows():
         road = str(row.get('路段', '')).replace("\n","<br/>")
-        data2.append([c(row.get(col_date, '')), c(row.get('單位', '')),
-                      Paragraph(road, s_left)])
+        data2.append([c(row.get(col_date, '')),
+                      Paragraph(str(row.get('單位','')), s_nowrap),
+                      Paragraph(road, s_nowrap)])
 
     table_styles = [
         ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black),
@@ -284,13 +287,25 @@ with st.expander("編輯名單", expanded=True):
         df_cmd_edit,
         num_rows="dynamic",
         use_container_width=True,
-        column_config={"任務": None}
+        column_config={
+            "任務": None,
+            "職稱": st.column_config.TextColumn("職稱", disabled=True),
+            "代號": st.column_config.TextColumn("代號", disabled=True),
+        }
     )
     if "任務" not in edited_cmd.columns:
         edited_cmd["任務"] = df_cmd_edit["任務"]
 
 st.subheader("3. 執行勤務日期、單位及路段")
-edited_schedule = st.data_editor(df_schedule_edit, num_rows="dynamic", use_container_width=True)
+edited_schedule = st.data_editor(
+    df_schedule_edit,
+    num_rows="dynamic",
+    use_container_width=True,
+    column_config={
+        "單位": st.column_config.TextColumn("單位", disabled=True),
+        "路段": st.column_config.TextColumn("路段", disabled=True),
+    }
+)
 
 st.subheader("4. 備註（固定）")
 st.text(NOTES)
