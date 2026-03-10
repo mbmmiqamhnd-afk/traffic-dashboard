@@ -100,10 +100,10 @@ def generate_pdf(month, df_cmd, df_schedule):
 
     s_title  = ParagraphStyle("t",  fontName=font, fontSize=12, alignment=1, spaceAfter=1, leading=15)
     s_header = ParagraphStyle("th", fontName=font, fontSize=10, alignment=1, leading=12)
-    s_cell   = ParagraphStyle("c",  fontName=font, fontSize=8,  leading=10, alignment=1)
-    s_left   = ParagraphStyle("l",  fontName=font, fontSize=8,  leading=10, alignment=0)
-    s_note   = ParagraphStyle("n",  fontName=font, fontSize=8,  leading=11)
-    s_name   = ParagraphStyle("nm", fontName=font, fontSize=8,  leading=10, alignment=1)
+    s_cell   = ParagraphStyle("c",  fontName=font, fontSize=12, leading=15, alignment=1)
+    s_left   = ParagraphStyle("l",  fontName=font, fontSize=12, leading=15, alignment=0)
+    s_note   = ParagraphStyle("n",  fontName=font, fontSize=12, leading=15)
+    s_name   = ParagraphStyle("nm", fontName=font, fontSize=12, leading=15, alignment=1)
 
     def c(txt, style=None):
         txt = str(txt).replace("\n","<br/>")
