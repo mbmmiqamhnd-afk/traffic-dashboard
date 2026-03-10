@@ -93,9 +93,9 @@ def generate_pdf(month, df_cmd, df_schedule):
     font = _get_font()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
-        leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm,
+        leftMargin=10*mm, rightMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm,
         title=f"{UNIT}{month}行人及護老交通安全專案勤務規劃表")
-    W = A4[0] - 30*mm
+    W = A4[0] - 20*mm
     story = []
 
     s_title  = ParagraphStyle("t",  fontName=font, fontSize=12, alignment=1, spaceAfter=1, leading=15)
@@ -117,7 +117,7 @@ def generate_pdf(month, df_cmd, df_schedule):
     story.append(Spacer(1, 2*mm))
 
     # 任務編組
-    cw1 = [W*0.15, W*0.10, W*0.25, W*0.50]
+    cw1 = [W*0.13, W*0.09, W*0.28, W*0.50]
     data1 = [[Paragraph("<b>任　務　編　組</b>", s_header), '', '', '']]
     data1.append([c("<b>職稱</b>"), c("<b>代號</b>"), c("<b>姓名</b>"), c("<b>任務</b>")])
     for _, row in df_cmd.iterrows():
