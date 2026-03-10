@@ -30,7 +30,7 @@ UNIT = "桃園市政府警察局龍潭分局"
 
 # 💡 固定備註內容 (分列一、二)
 CORRECT_NOTES = (
-    "一、執行前由各單位帶班人員在駐地實施勤前教育。\n"
+    "一、執行前由各單位帶班人員在駐地實施勤前教育。<br/>"
     "二、加強取締砂石（大型貨）車超載、車速、酒醉駕車、闖紅燈、無照駕車、爭道行駛、"
     "違反禁行路線、變更車斗、未使用專用車箱及未裝設行車紀錄器（行車視野輔助器）等違規，"
     "以共同消弭不法行為，保障用路人生命財產安全。"
@@ -48,7 +48,7 @@ def get_client():
 def load_data():
     try:
         client = get_client()
-        if client is None: return None, None, None, "離線模式"
+        if client is None: return None, None, None, "", "離線模式"
         sh = client.open_by_key(SHEET_ID)
         ws_set = sh.worksheet("砂石_設定")
         ws_cmd = sh.worksheet("砂石_指揮組")
@@ -58,12 +58,12 @@ def load_data():
         df_cmd = pd.DataFrame(ws_cmd.get_all_records())
         df_sch = pd.DataFrame(ws_sch.get_all_records())
         
-        # 🛡️ 物理性攔截：在資料進入 UI 之前強制清理
+        # 🛡️ 強制清理邏輯
         sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
-        briefing = str(sd.get("briefing", ""))
+        briefing = str(sd.get("briefing", "")).strip()
         
-        # 只要包含舊文字，強制清空為空字串
-        if "時間：" in briefing or "地點：" in briefing or "各單位執行前" in briefing:
+        # 如果包含舊文字，徹底清空
+        if any(x in briefing for x in ["時間：", "地點：", "各單位執行前", "勤前教育："]):
             briefing = ""
             
         return df_set, df_cmd, df_sch, briefing, None
@@ -120,8 +120,12 @@ def generate_pdf(month, briefing, df_cmd, df_schedule):
     for _, row in df_cmd.iterrows():
         data1.append([c(f"<b>{row.get('職稱','')}</b>"), c(row.get('代號','')), c(row.get('姓名','').replace("、","<br/>")), c(row.get('任務',''), s_left)])
     t1 = Table(data1, colWidths=cw1, repeatRows=2); t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]))
-    story.append(t1); story.append(Spacer(1, 6*mm))
-    story.append(Paragraph(f"<b>📢 勤前教育：</b><br/>{briefing.replace(chr(10), '<br/>')}", s_section)); story.append(Spacer(1, 4*mm))
+    story.append(t1); story.append(Spacer(1, 4*mm))
+    
+    # 💡 只有當 briefing 有內容時才顯示「勤前教育」區塊
+    if briefing.strip():
+        story.append(Paragraph(f"<b>📢 勤前教育：</b><br/>{briefing.replace(chr(10), '<br/>')}", s_section))
+        story.append(Spacer(1, 4*mm))
     
     # 警力佈署
     col_date = '勤務日期'
@@ -132,7 +136,8 @@ def generate_pdf(month, briefing, df_cmd, df_schedule):
     t2 = Table(data2, colWidths=cw2, repeatRows=2); t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]))
     story.append(KeepTogether([t2])); story.append(Spacer(1, 6*mm))
     
-    story.append(Paragraph(f"<b>備註：</b><br/>{CORRECT_NOTES.replace(chr(10),'<br/>')}", s_note))
+    # 備註
+    story.append(Paragraph(f"<b>備註：</b><br/>{CORRECT_NOTES}", s_note))
     doc.build(story); return buf.getvalue()
 
 # --- 4. 寄信 ---
@@ -150,10 +155,9 @@ def send_report_email(subject, month, briefing, df_cmd, df_schedule):
         return True, None
     except Exception as e: return False, str(e)
 
-# --- 5. 介面 ---
+# --- 5. 介面邏輯 ---
 df_set, df_cmd_raw, df_sch_raw, filtered_brief, err = load_data()
 
-# 初始化
 cur_month = "115年3月份"
 if not err and df_set is not None:
     sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
@@ -167,8 +171,8 @@ else:
 st.subheader("1. 基礎資訊")
 c1, c2 = st.columns(2)
 month_val = c1.text_input("月份", value=cur_month)
-# 💡 這裡直接使用 filtered_brief，舊文字在這裡就被擋掉了
-brief_info = c2.text_area("📢 勤前教育", value=filtered_brief, height=80)
+# 這裡輸入內容後，預覽區才會出現勤前教育
+brief_info = c2.text_area("📢 勤前教育內容 (若留空則隱藏標題)", value=filtered_brief, height=80)
 
 st.subheader("2. 任務編組")
 ed_cmd = st.data_editor(df_c, num_rows="dynamic", use_container_width=True)
@@ -179,16 +183,25 @@ ed_sch = st.data_editor(df_s, num_rows="dynamic", use_container_width=True)
 def get_html():
     parts = ["<style>body{font-family:'標楷體';padding:10px;} th{border:1px solid black;padding:5px;background-color:#f2f2f2;} td{border:1px solid black;padding:5px;} .note{font-size:12pt;margin-top:10px;} table{width:100%;border-collapse:collapse;}</style>"]
     parts.append(f"<h2 style='text-align:center;'>{UNIT}執行{month_val}「取締砂石（大型貨）車重點違規」專案勤務規劃表</h2>")
+    
+    # 任務編組
     parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>")
     for _, r in ed_cmd.iterrows():
         parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     parts.append("</table>")
-    parts.append(f"<p><b>📢 勤前教育：</b><br>{brief_info.replace(chr(10), '<br>')}</p>")
+    
+    # 💡 只有當有輸入文字時，HTML 預覽才顯示勤前教育
+    if brief_info.strip():
+        parts.append(f"<p><b>📢 勤前教育：</b><br>{brief_info.replace(chr(10), '<br>')}</p>")
+    
+    # 警力佈署
     parts.append("<table><tr><th colspan='4'>警 力 佈 署</th></tr><tr><th>勤務日期</th><th>執行單位</th><th>執行人數</th><th>執行路段</th></tr>")
     for _, row in ed_sch.iterrows():
         parts.append(f"<tr><td>{str(row.get('勤務日期','')).replace(chr(10),'<br>')}</td><td>{row.get('執行單位','')}</td><td>{row.get('執行人數','')}</td><td style='text-align:left'>{row.get('執行路段','')}</td></tr>")
     parts.append("</table>")
-    parts.append(f"<div class='note'><b>備註：</b><br>{CORRECT_NOTES.replace(chr(10), '<br>')}</div>")
+    
+    # 備註區
+    parts.append(f"<div class='note'><b>備註：</b><br>{CORRECT_NOTES}</div>")
     return "".join(parts)
 
 st.markdown("---")
