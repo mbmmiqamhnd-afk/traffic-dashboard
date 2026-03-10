@@ -28,34 +28,13 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
 
-# --- 💡 這裡定義正確的備註格式 ---
-CORRECT_NOTES = "一、執行前由各單位帶班人員在駐地實施勤前教育。\n二、加強取締砂石（大型貨）車超載、車速、酒醉駕車、闖紅燈、無照駕車、爭道行駛、違反禁行路線、變更車斗、未使用專用車箱及未裝設行車紀錄器（行車視野輔助器）等違規，以共同消弭不法行為，保障用路人生命財產安全。"
-
-# --- 預設範本 ---
-DEFAULT_MONTH = "115年3月份"
-DEFAULT_BRIEF = "" # 移除時間地點
-
-DEFAULT_CMD = pd.DataFrame([
-    {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導。"},
-    {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長 何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-    {"職稱": "副指揮官", "代號": "隆安3", "姓名": "副分局長 蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-    {"職稱": "上級督導官", "代號": "建興", "姓名": "駐區督察 孫三陽", "任務": "重點機動督導。"},
-    {"職稱": "督導組", "代號": "隆安6", "姓名": "督察組組長 黃長旗、督察組督察員 黃中彥、督察組警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律。"},
-    {"職稱": "指導組", "代號": "隆安684", "姓名": "督察組教官 郭文義", "任務": "指導各編組勤務執行及狀況處置。"},
-    {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "交通組組長 楊孟竟、交通組警務員 盧冠仁、交通組警務員 李峯甫、交通組巡官 郭勝隆、交通組巡官 羅千金、交通組警員 吳享運、保安民防組巡官 陳鵬翔（代理人：警員張庭溱）、人事室警員 陳明祥、行政組警務佐 曾威仁", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
-    {"職稱": "通訊組", "代號": "隆安", "姓名": "主任 蔡奇青、執勤官 李文章、執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜。"}
-])
-
-DEFAULT_SCHEDULE = pd.DataFrame([
-    {"勤務日期": "115年3月13日（星期五）00時至24時", "執行單位": "聖亭派出所", "執行人數": "2至4人", "執行路段": "中豐路、聖亭路段等砂石（大型貨）車行經路段"},
-    {"勤務日期": "", "執行單位": "龍潭派出所", "執行人數": "2至4人", "執行路段": "大昌路、中豐路段砂石（大型貨）車行經路段"},
-    {"勤務日期": "", "執行單位": "中興派出所", "執行人數": "2至4人", "執行路段": "中興路、福龍路及龍平路段砂石（大型貨）車行經路段"},
-    {"勤務日期": "", "執行單位": "石門派出所", "執行人數": "2至4人", "執行路段": "中正路、龍源路及民族路段砂石（大型貨）車行經路段"},
-    {"勤務日期": "", "執行單位": "高平派出所", "執行人數": "2至4人", "執行路段": "中豐路、龍源路段砂石（大型貨）車行經路段"},
-    {"勤務日期": "", "執行單位": "三和派出所", "執行人數": "2至4人", "執行路段": "楊銅路、龍新路段砂石（大型貨）車行經路段"},
-    {"勤務日期": "", "執行單位": "警備隊", "執行人數": "2至4人", "執行路段": "中豐路、龍源路、聖亭路段砂石（大型貨）車行經路段"},
-    {"勤務日期": "", "執行單位": "龍潭交通分隊", "執行人數": "2至4人", "執行路段": "中豐路、龍源路、聖亭路段砂石（大型貨）車行經路段"}
-])
+# 💡 強制設定備註內容 (分列一、二)
+CORRECT_NOTES = (
+    "一、執行前由各單位帶班人員在駐地實施勤前教育。\n"
+    "二、加強取締砂石（大型貨）車超載、車速、酒醉駕車、闖紅燈、無照駕車、爭道行駛、"
+    "違反禁行路線、變更車斗、未使用專用車箱及未裝設行車紀錄器（行車視野輔助器）等違規，"
+    "以共同消弭不法行為，保障用路人生命財產安全。"
+)
 
 # --- 2. Google Sheets 連線 ---
 @st.cache_resource
@@ -66,7 +45,7 @@ def get_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=10) # 縮短快取時間
+@st.cache_data(ttl=5)
 def load_data():
     try:
         client = get_client()
@@ -86,7 +65,7 @@ def save_data(month, briefing, df_cmd, df_schedule):
         sh = client.open_by_key(SHEET_ID)
         ws_set = sh.worksheet("砂石_設定")
         ws_set.clear()
-        # 儲存時也確保存入正確的備註
+        # 存入雲端時強制清空或更新
         ws_set.update([["Key", "Value"], ["month", month], ["briefing", briefing]])
         
         for ws_name, df in [("砂石_指揮組", df_cmd), ("砂石_勤務表", df_schedule)]:
@@ -142,7 +121,7 @@ def generate_pdf(month, briefing, df_cmd, df_schedule):
     story.append(Paragraph(f"<b>📢 勤前教育：</b><br/>{briefing.replace(chr(10), '<br/>')}", s_section))
     story.append(Spacer(1, 4*mm))
 
-    # 警力佈署
+    # 警力佈署 (日期合併處理)
     col_date = '勤務日期'
     cw2 = [W*0.28, W*0.16, W*0.12, W*0.44]
     data2 = [[Paragraph("<b>警　力　佈　署</b>", s_th), '', '', '']]
@@ -151,18 +130,22 @@ def generate_pdf(month, briefing, df_cmd, df_schedule):
         data2.append([c(row.get(col_date, '')), c(row.get('執行單位','')), c(row.get('執行人數','')), c(row.get('執行路段', ''), s_left)])
 
     table_styles = [('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING',(0,0),(-1,-1),6), ('BOTTOMPADDING',(0,0),(-1,-1),6)]
-    non_empty = [i for i, v in enumerate(df_schedule[col_date]) if str(v).strip() != ""]
+    
+    # 日期欄位自動合併
+    non_empty = [idx for idx, val in enumerate(df_schedule[col_date]) if str(val).strip() != ""]
     non_empty.append(len(df_schedule))
     for k in range(len(non_empty) - 1):
-        s, e = non_empty[k], non_empty[k+1] - 1
-        if e > s:
-            table_styles.append(('SPAN', (0, s+2), (0, e+2)))
+        start, end = non_empty[k], non_empty[k+1] - 1
+        if end > start:
+            table_styles.append(('SPAN', (0, start + 2), (0, end + 2)))
+            table_styles.append(('VALIGN', (0, start + 2), (0, end + 2), 'MIDDLE'))
+
     t2 = Table(data2, colWidths=cw2, repeatRows=2)
     t2.setStyle(TableStyle(table_styles))
     story.append(KeepTogether([t2]))
     story.append(Spacer(1, 6*mm))
 
-    # 備註
+    # 備註 (強制使用新格式)
     story.append(Paragraph(f"<b>備註：</b><br/>{CORRECT_NOTES.replace(chr(10),'<br/>')}", s_note))
     doc.build(story)
     return buf.getvalue()
@@ -182,23 +165,36 @@ def send_report_email(subject, month, briefing, df_cmd, df_schedule):
         return True, None
     except Exception as e: return False, str(e)
 
-# --- 5. 主介面邏輯 ---
+# --- 5. 主介面與資料處理 ---
 df_set, df_cmd_raw, df_sch_raw, err = load_data()
-if err or df_set is None:
-    cur_month, cur_brief = DEFAULT_MONTH, DEFAULT_BRIEF
-    df_c, df_s = DEFAULT_CMD.copy(), DEFAULT_SCHEDULE.copy()
-else:
+
+# 💡 初始化資料：不論雲端內容，強制清空「時間地點」並確保備註正確
+cur_month = "115年3月份"
+cur_brief = "" # 這裡強制設為空
+
+if not err and df_set is not None:
     sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
-    cur_month = sd.get("month", DEFAULT_MONTH)
-    cur_brief = sd.get("briefing", "") # 強制清空，如果不想要舊的資料
+    cur_month = sd.get("month", cur_month)
+    # 如果雲端有舊資料且包含「時間：」，則強制改回空字串
+    cloud_brief = str(sd.get("briefing", ""))
+    if "時間：" in cloud_brief or "地點：" in cloud_brief:
+        cur_brief = ""
+    else:
+        cur_brief = cloud_brief
+
     df_c, df_s = df_cmd_raw, df_sch_raw
     if "日期" in df_s.columns: df_s.rename(columns={"日期": "勤務日期"}, inplace=True)
     if "執行人數" in df_s.columns: df_s["執行人數"] = df_s["執行人數"].replace("", "2至4人")
+else:
+    # 離線或讀取失敗時的預設值
+    df_c = pd.DataFrame([{"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導。"}]) # 僅範例
+    df_s = pd.DataFrame([{"勤務日期": "115年3月13日", "執行單位": "聖亭派出所", "執行人數": "2至4人", "執行路段": "中豐路"}]) # 僅範例
 
 st.subheader("1. 基礎資訊")
 c1, c2 = st.columns(2)
 cur_month = c1.text_input("月份", value=cur_month)
-brief_info = c2.text_area("📢 勤前教育", value=cur_brief, height=80)
+# 顯示在編輯器裡的「勤前教育」
+brief_info = c2.text_area("📢 勤前教育", value=cur_brief, height=80, help="原本的時間地點文字已被強制移除，若需要請自行輸入新內容")
 
 st.subheader("2. 任務編組")
 ed_cmd = st.data_editor(df_c, num_rows="dynamic", use_container_width=True)
@@ -209,18 +205,24 @@ ed_sch = st.data_editor(df_s, num_rows="dynamic", use_container_width=True)
 # --- 6. HTML 預覽 ---
 def get_html():
     parts = []
-    parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;} .note{font-size:12pt;margin:15px 0;line-height:1.6;} .section{font-size:14pt;margin:15px 0;}</style>")
+    parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;} .note{font-size:12pt;margin:15px 0;line-height:1.6;text-align:left;} .section{font-size:14pt;margin:15px 0;text-align:left;}</style>")
     parts.append(f"<html><body><h2 style='text-align:center;'><b>{UNIT}<br>執行{cur_month}「取締砂石（大型貨）車重點違規」專案勤務規劃表</b></h2><br>")
+    
+    # 任務編組
     parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>")
     for _, r in ed_cmd.iterrows():
         parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     parts.append("</table>")
+    
     parts.append(f"<div class='section'><b>📢 勤前教育：</b><br>{brief_info.replace(chr(10), '<br>')}</div>")
+    
+    # 警力佈署
     parts.append("<table><tr><th colspan='4'>警 力 佈 署</th></tr><tr><th>勤務日期</th><th>執行單位</th><th>執行人數</th><th>執行路段</th></tr>")
     for _, row in ed_sch.iterrows():
         parts.append(f"<tr><td>{str(row.get('勤務日期','')).replace(chr(10),'<br>')}</td><td>{row.get('執行單位','')}</td><td>{row.get('執行人數','')}</td><td style='text-align:left'>{row.get('執行路段','')}</td></tr>")
     parts.append("</table>")
-    # 💡 預覽畫面強制顯示修正後的備註
+    
+    # 💡 強制 HTML 預覽顯示正確備註
     parts.append(f"<div class='note'><b>備註：</b><br>{CORRECT_NOTES.replace(chr(10), '<br>')}</div>")
     parts.append("</body></html>")
     return "".join(parts)
@@ -230,6 +232,7 @@ st.subheader("📄 預覽與輸出")
 st.components.v1.html(get_html(), height=700, scrolling=True)
 
 if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
+    # 儲存時，雲端就會被刷成乾淨的版本
     save_data(cur_month, brief_info, ed_cmd, ed_sch)
     subject = f"取締砂石車專案勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
     ok, mail_err = send_report_email(subject, cur_month, brief_info, ed_cmd, ed_sch)
