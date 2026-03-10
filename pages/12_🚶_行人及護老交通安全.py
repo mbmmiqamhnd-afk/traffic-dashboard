@@ -117,7 +117,7 @@ def generate_pdf(month, df_cmd, df_schedule):
     story.append(Spacer(1, 2*mm))
 
     # 任務編組
-    cw1 = [W*0.13, W*0.09, W*0.28, W*0.50]
+    cw1 = [W*0.12, W*0.11, W*0.28, W*0.49]
     data1 = [[Paragraph("<b>任　務　編　組</b>", s_header), '', '', '']]
     data1.append([c("<b>職稱</b>"), c("<b>代號</b>"), c("<b>姓名</b>"), c("<b>任務</b>")])
     for _, row in df_cmd.iterrows():
