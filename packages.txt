@@ -1,6 +1,13 @@
+# --- 核心 PDF 渲染引擎 (解決 Unable to get page count 報錯) ---
+poppler-utils
+libpoppler-cpp-dev
+
+# --- 你原本提供的依賴 (用於文字排版與圖片緩存) ---
 libpango-1.0-0
 libpangoft2-1.0-0
 libgdk-pixbuf-2.0-0
 libffi-dev
 shared-mime-info
+
+# --- 中文字體支援 (確保轉檔後中文不變方塊) ---
 fonts-noto-cjk
