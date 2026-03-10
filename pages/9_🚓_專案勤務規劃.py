@@ -112,7 +112,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
-    # 中間文字字體調整為 14
     style_note = ParagraphStyle('Note', fontName=font, fontSize=14, leading=20, spaceAfter=5)
     style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
 
@@ -121,7 +120,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     
     def clean(t): return str(t).replace("\n", "<br/>").replace("、", "<br/>")
 
-    # 表格 1
+    # 表格 1：指揮組
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -139,15 +138,31 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story.append(Paragraph(f"<b>🚧 檢驗站資訊：</b><br/>{station.replace(chr(10), '<br/>')}", style_note))
     story.append(Spacer(1, 6*mm))
 
-    # 表格 2
+    # 表格 2：巡邏組 (修改前兩欄為純文字以避免換行)
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_ptl.iterrows():
         task = f"{r.get('任務分工','')}<br/><font color='blue' size='11'>*雨備方案：轄區治安要點巡邏。</font>"
-        data_ptl.append([Paragraph(str(r.get('編組','')), style_cell), Paragraph(str(r.get('無線電','')), style_cell),
-                         Paragraph(clean(r.get('單位','')), style_cell), Paragraph(clean(r.get('服勤人員','')), style_cell), Paragraph(task, style_cell_left)])
+        # 第1, 2欄直接放入字串 (String) 強制不換行，第3, 4, 5欄放入 Paragraph 允許換行
+        data_ptl.append([
+            str(r.get('編組','')), 
+            str(r.get('無線電','')),
+            Paragraph(clean(r.get('單位','')), style_cell), 
+            Paragraph(clean(r.get('服勤人員','')), style_cell), 
+            Paragraph(task, style_cell_left)
+        ])
     
-    t2 = Table(data_ptl, colWidths=[page_width*0.12, page_width*0.10, page_width*0.14, page_width*0.20, page_width*0.44])
-    t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+    # 微調欄寬比例，給前兩欄更多空間
+    t2 = Table(data_ptl, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
+    
+    # 增加 FONTSIZE 與 ALIGN 設定來對應前兩欄的純文字
+    t2.setStyle(TableStyle([
+        ('FONTNAME',(0,0),(-1,-1),font),
+        ('FONTSIZE',(0,0),(-1,-1),14),           # 給純文字加上 14 號字
+        ('ALIGN',(0,1),(1,-1),'CENTER'),         # 讓前兩欄的純文字置中對齊
+        ('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE')
+    ]))
     story.append(t2)
     
     doc.build(story)
@@ -202,16 +217,18 @@ s_info = c4.text_area("🚧 檢驗站資訊", s, height=100)
 st.subheader("2. 巡邏編組")
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 
-# HTML 預覽 (字體 14pt)
+# --- HTML 預覽 (加入 white-space:nowrap 防止換行) ---
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:20px;} th,td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;} .note{font-size:14pt;margin:15px 0;line-height:1.6;}</style>"
     html = f"<html>{style}<body><h2 style='text-align:center'>{u}<br>{p_name}</h2><div style='text-align:right'><b>時間：{p_time}</b></div><br><table><tr><th colspan='4'>任 務 編 組</th></tr>"
     for _, r in res_cmd.iterrows():
         html += f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>"
     html += f"</table><div class='note'><b>📢 勤前教育：</b>{b_info}<br><b>🚧 檢驗站資訊：</b>{s_info.replace(chr(10),'<br>')}</div>"
-    html += "<table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
+    html += "<table><tr><th width='15%'>編組</th><th width='12%'>代號</th><th width='13%'>單位</th><th width='20%'>人員</th><th width='40%'>任務</th></tr>"
+    
     for _, r in res_ptl.iterrows():
-        html += f"<tr><td>{r.get('編組','')}</td><td>{r.get('無線電','')}</td><td>{str(r.get('單位','')).replace('、','<br>')}</td><td>{str(r.get('服勤人員','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務分工','')}</td></tr>"
+        # 在這裡的 <td> 加入 style='white-space: nowrap;' 強制不換行
+        html += f"<tr><td style='white-space: nowrap;'>{r.get('編組','')}</td><td style='white-space: nowrap;'>{r.get('無線電','')}</td><td>{str(r.get('單位','')).replace('、','<br>')}</td><td>{str(r.get('服勤人員','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務分工','')}</td></tr>"
     return html + "</table></body></html>"
 
 st.markdown("---")
