@@ -184,15 +184,15 @@ def generate_pdf_from_data(month, df_cmd, df_schedule):
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["日期（22時至翌日6時）", "單位", "分工"]]]
     
     for _, r in df_schedule.iterrows():
-        # 日期欄位改用 Paragraph 允許換行，不再強制不換行
+        # 日期欄位改用 Paragraph 允許換行
         data_sch.append([
             Paragraph(clean(r.get('日期（22時至翌日6時）','')), style_cell), 
             Paragraph(clean(r.get('單位','')), style_cell), 
             Paragraph(str(r.get('分工','')), style_cell_left)
         ])
 
-    # 調整欄寬 (日期給 28%)
-    t2 = Table(data_sch, colWidths=[page_width*0.28, page_width*0.18, page_width*0.54], repeatRows=2)
+    # 💡調整欄寬：第一欄(22%)、第二欄(22%)、第三欄(56%) 讓交通分隊不換行
+    t2 = Table(data_sch, colWidths=[page_width*0.22, page_width*0.22, page_width*0.56], repeatRows=2)
     
     table_styles = [
         ('FONTNAME',(0,0),(-1,-1),font),
@@ -280,7 +280,7 @@ res_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
 st.subheader("4. 巡簽地點與備註 (固定)")
 st.info("此區塊將直接附加於報表末端")
 
-# --- HTML 預覽產生器 (分離的字串組合，表頭16pt、內文14pt) ---
+# --- HTML 預覽產生器 ---
 def get_html():
     chk_html = CHECKIN_POINTS.replace('\n', '<br>')
     note_html = NOTES.replace('\n', '<br>')
@@ -300,9 +300,9 @@ def get_html():
         parts.append(f"<td>{name}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     parts.append("</table>")
     
-    # 警力佈署表格 (含合併運算邏輯，並移除 nowrap 限制)
+    # 警力佈署表格 (💡與 PDF 同步調整寬度：22%, 22%, 56%)
     parts.append("<table><tr><th colspan='3'>警 力 佈 署</th></tr>")
-    parts.append("<tr><th width='28%'>日期（22時至翌日6時）</th><th width='18%'>單位</th><th width='54%'>分工</th></tr>")
+    parts.append("<tr><th width='22%'>日期（22時至翌日6時）</th><th width='22%'>單位</th><th width='56%'>分工</th></tr>")
     
     col_date = '日期（22時至翌日6時）'
     total_rows = len(res_sch)
