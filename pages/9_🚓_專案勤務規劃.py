@@ -337,11 +337,12 @@ with col_dl:
         mime="text/html; charset=utf-8",
         type="primary"
     ):
-        save_data(unit_name, plan_time, project_name, brief_info, check_st, edited_cmd, edited_ptl)
-        subject = f"噪音車勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
-        ok, err = send_report_email(html_out, subject, unit_name, project_name, plan_time, brief_info, check_st, edited_cmd, edited_ptl)
-        if ok:
-            st.toast("📧 報表已寄出至信箱！", icon="✉️")
-        else:
-            st.error(f"❌ 寄信失敗：{err}")
+        save_success = save_data(unit_name, plan_time, project_name, brief_info, check_st, edited_cmd, edited_ptl)
+        if save_success:
+            subject = f"噪音車勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
+            ok, err = send_report_email(html_out, subject, unit_name, project_name, plan_time, brief_info, check_st, edited_cmd, edited_ptl)
+            if ok:
+                st.toast("📧 報表已寄出至信箱！", icon="✉️")
+            else:
+                st.error(f"❌ 寄信失敗：{err}")
     st.info("💡 下載後打開檔案，按 Ctrl+P 列印，網頁會自動隱藏選單，只印出表格。")
