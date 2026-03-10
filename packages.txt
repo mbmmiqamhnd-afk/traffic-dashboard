@@ -1,11 +1,6 @@
-# --- PDF 核心轉檔引擎 (解決 Unable to get page count) ---
 poppler-utils
 libpoppler-cpp-dev
-
-# --- 中文字體支援 (解決中文變方塊問題) ---
 fonts-noto-cjk
-
-# --- 繪圖與排版依賴 (你原本提供的內容) ---
 libpango-1.0-0
 libpangoft2-1.0-0
 libgdk-pixbuf-2.0-0
