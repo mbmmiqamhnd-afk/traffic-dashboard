@@ -31,7 +31,8 @@ UNIT = "桃園市政府警察局龍潭分局"
 
 # --- 預設範本 ---
 DEFAULT_MONTH = "115年3月份"
-DEFAULT_BRIEF = "時間：各單位執行前\n地點：現地勤教"
+# 💡 已移除原先的預設時間地點文字
+DEFAULT_BRIEF = ""
 
 DEFAULT_CMD = pd.DataFrame([
     {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導。"},
@@ -44,7 +45,6 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "通訊組", "代號": "隆安", "姓名": "主任 蔡奇青、執勤官 李文章、執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜。"}
 ])
 
-# 💡 修正：將預設資料的執行人數補齊
 DEFAULT_SCHEDULE = pd.DataFrame([
     {"勤務日期": "115年3月13日（星期五）00時至24時", "執行單位": "聖亭派出所", "執行人數": "2至4人", "執行路段": "中豐路、聖亭路段等砂石（大型貨）車行經路段"},
     {"勤務日期": "", "執行單位": "龍潭派出所", "執行人數": "2至4人", "執行路段": "大昌路、中豐路段砂石（大型貨）車行經路段"},
@@ -56,7 +56,8 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     {"勤務日期": "", "執行單位": "龍潭交通分隊", "執行人數": "2至4人", "執行路段": "中豐路、龍源路、聖亭路段砂石（大型貨）車行經路段"}
 ])
 
-NOTES = "※ 加強取締砂石（大型貨）車超載、車速、酒醉駕車、闖紅燈、無照駕車、爭道行駛、違反禁行路線、變更車斗、未使用專用車箱及未裝設行車紀錄器（行車視野輔助器）等違規，以共同消弭不法行為，保障用路人生命財產安全。"
+# 💡 修正備註內容：新增一、二列點說明
+NOTES = "一、執行前由各單位帶班人員在駐地實施勤前教育。\n二、加強取締砂石（大型貨）車超載、車速、酒醉駕車、闖紅燈、無照駕車、爭道行駛、違反禁行路線、變更車斗、未使用專用車箱及未裝設行車紀錄器（行車視野輔助器）等違規，以共同消弭不法行為，保障用路人生命財產安全。"
 
 # --- 2. Google Sheets 連線 ---
 @st.cache_resource
@@ -116,7 +117,6 @@ def generate_pdf(month, briefing, df_cmd, df_schedule):
     W = A4[0] - 24*mm
     story = []
 
-    # 字體大小設定 (標題、表頭16，內文14，備註12)
     s_title  = ParagraphStyle("t",  fontName=font, fontSize=16, alignment=1, spaceAfter=8, leading=22)
     s_th     = ParagraphStyle("th", fontName=font, fontSize=16, alignment=1, leading=22)
     s_cell   = ParagraphStyle("c",  fontName=font, fontSize=14, leading=18, alignment=1)
@@ -172,7 +172,6 @@ def generate_pdf(month, briefing, df_cmd, df_schedule):
         ('TOPPADDING',(0,0),(-1,-1),6), ('BOTTOMPADDING',(0,0),(-1,-1),6),
     ]
     
-    # 自動合併日期欄
     non_empty = [i for i, v in enumerate(df_schedule[col_date]) if str(v).strip() != ""]
     non_empty.append(len(df_schedule))
     OFFSET = 2
@@ -187,7 +186,7 @@ def generate_pdf(month, briefing, df_cmd, df_schedule):
     story.append(KeepTogether([t2]))
     story.append(Spacer(1, 6*mm))
 
-    # 備註 (字體12pt)
+    # 備註
     story.append(Paragraph(f"<b>備註：</b><br/>{NOTES.replace(chr(10),'<br/>')}", s_note))
 
     doc.build(story)
@@ -233,15 +232,13 @@ else:
     
     if "日期" in df_s.columns:
         df_s.rename(columns={"日期": "勤務日期"}, inplace=True)
-        
-    # 💡 修正：如果雲端讀取下來的「執行人數」是空白的，自動補上「2至4人」
     if "執行人數" in df_s.columns:
         df_s["執行人數"] = df_s["執行人數"].replace("", "2至4人")
 
 st.subheader("1. 基礎資訊")
 c1, c2 = st.columns(2)
 cur_month = c1.text_input("月份", value=cur_month)
-brief_info = c2.text_area("📢 勤前教育", value=cur_brief, height=80)
+brief_info = c2.text_area("📢 勤前教育", value=cur_brief, height=80, help="此處可留空，或輸入特定指令")
 
 st.subheader("2. 任務編組")
 ed_cmd = st.data_editor(df_c, num_rows="dynamic", use_container_width=True)
@@ -252,7 +249,6 @@ ed_sch = st.data_editor(df_s, num_rows="dynamic", use_container_width=True)
 # --- 6. HTML 安全產生器 ---
 def get_html():
     parts = []
-    # CSS: th 16pt, td 14pt, .note 12pt, .section 14pt
     parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:12pt;margin:15px 0;line-height:1.6;} .section{font-size:14pt;margin:15px 0;line-height:1.6;}</style>")
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}<br>執行{cur_month}「取締砂石（大型貨）車重點違規」專案勤務規劃表</b></h2><br>")
     
@@ -303,6 +299,7 @@ def get_html():
         parts.append(f"<td style='text-align:left'>{str(row.get('執行路段','')).replace(chr(10), '<br>')}</td></tr>")
         
     parts.append("</table>")
+    # 💡 預覽畫面同步更新備註顯示
     parts.append(f"<div class='note'><b>備註：</b><br>{NOTES.replace(chr(10), '<br>')}</div>")
     parts.append("</body></html>")
     return "".join(parts)
