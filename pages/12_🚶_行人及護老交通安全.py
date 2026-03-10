@@ -10,7 +10,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -98,18 +98,23 @@ def generate_pdf(month, df_cmd, df_schedule):
     W = A4[0] - 30*mm
     story = []
 
-    s_title  = ParagraphStyle("t",  fontName=font, fontSize=13, alignment=1, spaceAfter=2, leading=18)
-    s_header = ParagraphStyle("th", fontName=font, fontSize=11, alignment=1, leading=16)
-    s_cell   = ParagraphStyle("c",  fontName=font, fontSize=9,  leading=13, alignment=1)
-    s_left   = ParagraphStyle("l",  fontName=font, fontSize=9,  leading=13, alignment=0)
-    s_note   = ParagraphStyle("n",  fontName=font, fontSize=9,  leading=14)
+    s_title  = ParagraphStyle("t",  fontName=font, fontSize=12, alignment=1, spaceAfter=1, leading=15)
+    s_header = ParagraphStyle("th", fontName=font, fontSize=10, alignment=1, leading=12)
+    s_cell   = ParagraphStyle("c",  fontName=font, fontSize=8,  leading=10, alignment=1)
+    s_left   = ParagraphStyle("l",  fontName=font, fontSize=8,  leading=10, alignment=0)
+    s_note   = ParagraphStyle("n",  fontName=font, fontSize=8,  leading=11)
+    s_name   = ParagraphStyle("nm", fontName=font, fontSize=8,  leading=10, alignment=1)
 
     def c(txt, style=None):
-        txt = str(txt).replace("\n","<br/>").replace("、","<br/>")
+        txt = str(txt).replace("\n","<br/>")
         return Paragraph(txt, style or s_cell)
 
+    def c_name(txt):
+        txt = str(txt).replace("、","<br/>").replace(",","<br/>").replace("\n","<br/>")
+        return Paragraph(txt, s_name)
+
     story.append(Paragraph(f"{UNIT}{month}執行「行人及護老交通安全」專案勤務規劃表", s_title))
-    story.append(Spacer(1, 3*mm))
+    story.append(Spacer(1, 2*mm))
 
     # 任務編組
     cw1 = [W*0.15, W*0.10, W*0.25, W*0.50]
@@ -117,17 +122,16 @@ def generate_pdf(month, df_cmd, df_schedule):
     data1.append([c("<b>職稱</b>"), c("<b>代號</b>"), c("<b>姓名</b>"), c("<b>任務</b>")])
     for _, row in df_cmd.iterrows():
         data1.append([c(f"<b>{row.get('職稱','')}</b>"), c(row.get('代號','')),
-                      c(row.get('姓名','')), c(row.get('任務',''), s_left)])
+                      c_name(row.get('姓名','')), c(row.get('任務',''), s_left)])
     t1 = Table(data1, colWidths=cw1, repeatRows=2)
     t1.setStyle(TableStyle([
         ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black),
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)),
         ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
         ('BACKGROUND',(0,1),(-1,1),colors.HexColor('#f2f2f2')),
-        ('TOPPADDING',(0,0),(-1,-1),4), ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ('TOPPADDING',(0,0),(-1,-1),2), ('BOTTOMPADDING',(0,0),(-1,-1),2),
     ]))
     story.append(t1)
-    story.append(Spacer(1, 6*mm))
 
     # 警力佈署（含日期欄自動合併）
     col_date = '日期（6時至10時、16時至20時）'
@@ -135,15 +139,16 @@ def generate_pdf(month, df_cmd, df_schedule):
     data2 = [[Paragraph("<b>警　力　佈　署</b>", s_header), '', '']]
     data2.append([c("<b>執行勤務日期（6時至10時、16時至20時）</b>"), c("<b>單位</b>"), c("<b>路段</b>")])
     for _, row in df_schedule.iterrows():
+        road = str(row.get('路段', '')).replace("\n","<br/>")
         data2.append([c(row.get(col_date, '')), c(row.get('單位', '')),
-                      c(row.get('路段', ''), s_left)])
+                      Paragraph(road, s_left)])
 
     table_styles = [
         ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black),
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)),
         ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
         ('BACKGROUND',(0,1),(-1,1),colors.HexColor('#f2f2f2')),
-        ('TOPPADDING',(0,0),(-1,-1),4), ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ('TOPPADDING',(0,0),(-1,-1),2), ('BOTTOMPADDING',(0,0),(-1,-1),2),
     ]
     # 自動合併日期欄
     non_empty = [i for i, v in enumerate(df_schedule[col_date]) if str(v).strip() != ""]
@@ -157,8 +162,8 @@ def generate_pdf(month, df_cmd, df_schedule):
 
     t2 = Table(data2, colWidths=cw2, repeatRows=2)
     t2.setStyle(TableStyle(table_styles))
-    story.append(t2)
-    story.append(Spacer(1, 4*mm))
+    # 用 KeepTogether 把間距和表格綁在一起，跨頁時間距不會被吃掉
+    story.append(KeepTogether([Spacer(1, 6*mm), t2]))
 
     # 備註
     story.append(Paragraph(f"<b>備註</b><br/>{NOTES.replace(chr(10),'<br/>')}", s_note))
