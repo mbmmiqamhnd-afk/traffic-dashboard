@@ -81,7 +81,6 @@ CHECKIN_POINTS = """1. 中油高原交流道站（龍源路2-20號）
 4. 旭日路三坑自然生態公園停車場
 5. 旭日路與大溪區交界處"""
 
-# --- 更新備註內容 ---
 NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 二、攔檢、盤查車輛時，應隨時注意自身安全及執勤態度。
 三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
@@ -149,22 +148,28 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     page_width = A4[0] - 24*mm
     story = []
     
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8)
+    # 樣式定義：將標題與表頭改為 16pt，內文維持 14pt
+    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
     style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
+    
+    style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22)
+    style_col_header = ParagraphStyle('ColHeader', fontName=font, fontSize=16, leading=20, alignment=1)
+    
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
+    
     style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4)
     style_note = ParagraphStyle('Note', fontName=font, fontSize=14, leading=20, spaceAfter=5)
-    style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22)
 
-    story.append(Paragraph(f"{UNIT}執行「防制危險駕車專案勤務」規劃表", style_title))
+    story.append(Paragraph(f"<b>{UNIT}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
     def clean(txt):
         return str(txt).replace("\n", "<br/>").replace("、", "<br/>")
 
+    # ==================== 表格 1：任務編組 ====================
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
-                [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
+                [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
         data_cmd.append([
             Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell), 
@@ -183,10 +188,11 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
+    # ==================== 表格 2：警力佈署 ====================
     data_ptl = [
         [Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''],
         [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_left), '', '', '', ''],
-        [Paragraph(f"<b>{h}</b>", style_cell) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]
+        [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]
     ]
     
     for _, r in df_patrol.iterrows():
@@ -273,14 +279,15 @@ res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 st.subheader("4. 巡簽地點與備註 (固定)")
 st.info("此區塊將直接附加於報表末端")
 
-# --- HTML 預覽 ---
+# --- HTML 預覽 (更新 CSS 使 th 字體為 16pt，td 為 14pt) ---
 def get_html():
     chk_html = CHECKIN_POINTS.replace('\n', '<br>')
     note_html = NOTES.replace('\n', '<br>')
     
     parts = []
-    parts.append("<style>body{font-family:'標楷體';padding:20px;} th,td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:14pt;margin:15px 0;line-height:1.6;} .cmd-row{text-align:left;background-color:white;}</style>")
-    parts.append(f"<html><body><h2 style='text-align:center'>{UNIT}<br>執行「防制危險駕車專案勤務」規劃表</h2>")
+    # 在此將 th (表頭) 獨立設定為 font-size: 16pt，td (內文) 為 14pt
+    parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:14pt;margin:15px 0;line-height:1.6;} .cmd-row{text-align:left;background-color:white;}</style>")
+    parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}<br>執行「防制危險駕車專案勤務」規劃表</b></h2>")
     parts.append(f"<div style='text-align:right'><b>時間：{p_time}</b></div><br>")
     
     # 任務編組表格
@@ -293,7 +300,7 @@ def get_html():
         parts.append(f"<td>{name}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     parts.append("</table>")
     
-    # 警力佈署表格 (移除勤前教育，直接接續)
+    # 警力佈署表格 
     parts.append("<table><tr><th colspan='5'>警 力 佈 署</th></tr>")
     parts.append(f"<tr><td colspan='5' class='cmd-row'><b>交通快打指揮官：</b>{cmdr_input}</td></tr>")
     parts.append("<tr><th width='28%'>勤務時段</th><th width='10%'>代號</th><th width='14%'>編組</th><th width='18%'>服勤人員</th><th width='30%'>任務分工</th></tr>")
