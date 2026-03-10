@@ -228,78 +228,102 @@ if f1 and f2:
         # 👑 網頁介面
         # ==========================================
         st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(統計期間：{date_range_str})]")
-        st.markdown("*(提示：各別項目達成率 **最後兩名** 的儲存格已標示為紅色)*")
+        st.markdown("*(提示：各別項目達成率 **最後兩名** 的儲存格已自動標示為紅色)*")
         st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
         # ==========================================
-        # 2. 雲端同步功能
+        # 2. 自動雲端同步功能
         # ==========================================
-        if st.button("🚀 同步數據與顏色至雲端試算表", use_container_width=True):
-            with st.spinner("同步數據與格式中，請稍候..."):
+        with st.spinner("🚀 正在自動同步數據與格式至雲端試算表..."):
+            try:
+                gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+                sh = gc.open_by_url(GOOGLE_SHEET_URL)
+                
                 try:
-                    gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
-                    sh = gc.open_by_url(GOOGLE_SHEET_URL)
-                    
-                    try:
-                        ws = sh.worksheet(PROJECT_NAME)
-                    except:
-                        ws = sh.add_worksheet(title=PROJECT_NAME, rows=50, cols=20)
-                    
-                    title_text = f"{PROJECT_NAME} (統計期間：{date_range_str})"
-                    
-                    h1 = [title_text] + [""] * 18
-                    h2 = [""] + [c for c in CATS for _ in range(3)]
-                    h3 = ["單位"] + ["取締件數", "目標值", "達成率"] * 6
-                    
-                    # 更新數值 (會正確寫入 '-' 到雲端)
-                    ws.update(values=[h1, h2, h3] + df_final.values.tolist())
-                    
-                    requests = []
-                    
-                    # Google Sheets 第一列：動態文字雙色上色 (藍色專案 + 紅色日期)
-                    requests.append({
-                        "updateCells": {
-                            "range": {
-                                "sheetId": ws.id,
-                                "startRowIndex": 0,
-                                "endRowIndex": 1,
-                                "startColumnIndex": 0,
-                                "endColumnIndex": 1
-                            },
-                            "rows": [{
-                                "values": [{
-                                    "userEnteredValue": {"stringValue": title_text},
-                                    "textFormatRuns": [
-                                        {
-                                            "startIndex": 0,
-                                            "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}} # 藍色
-                                        },
-                                        {
-                                            "startIndex": len(PROJECT_NAME),
-                                            "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}} # 紅色
-                                        }
-                                    ]
-                                }]
-                            }],
-                            "fields": "userEnteredValue,textFormatRuns"
-                        }
-                    })
+                    ws = sh.worksheet(PROJECT_NAME)
+                except:
+                    ws = sh.add_worksheet(title=PROJECT_NAME, rows=50, cols=20)
+                
+                title_text = f"{PROJECT_NAME} (統計期間：{date_range_str})"
+                
+                h1 = [title_text] + [""] * 18
+                h2 = [""] + [c for c in CATS for _ in range(3)]
+                h3 = ["單位"] + ["取締件數", "目標值", "達成率"] * 6
+                
+                # 更新數值 (會正確寫入 '-' 到雲端)
+                ws.update(values=[h1, h2, h3] + df_final.values.tolist())
+                
+                requests = []
+                
+                # Google Sheets 第一列：動態文字雙色上色 (藍色專案 + 紅色日期)
+                requests.append({
+                    "updateCells": {
+                        "range": {
+                            "sheetId": ws.id,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 1
+                        },
+                        "rows": [{
+                            "values": [{
+                                "userEnteredValue": {"stringValue": title_text},
+                                "textFormatRuns": [
+                                    {
+                                        "startIndex": 0,
+                                        "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}} # 藍色
+                                    },
+                                    {
+                                        "startIndex": len(PROJECT_NAME),
+                                        "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}} # 紅色
+                                    }
+                                ]
+                            }]
+                        }],
+                        "fields": "userEnteredValue,textFormatRuns"
+                    }
+                })
 
-                    # 將整張數據表的字體全部初始化為黑色字體 (防呆機制)
+                # 將整張數據表的字體全部初始化為黑色字體 (防呆機制)
+                requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws.id,
+                            "startRowIndex": 3,
+                            "endRowIndex": 3 + len(df_final),
+                            "startColumnIndex": 0,
+                            "endColumnIndex": len(df_final.columns)
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "textFormat": {
+                                    "foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0},
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat.textFormat(foregroundColor,bold)"
+                    }
+                })
+
+                # 將『各項達成率最後兩名』標記為紅色粗體
+                for r, c in red_cells_coords:
+                    sheet_row_idx = r + 3  # 表頭佔了 0,1,2 行
+                    sheet_col_idx = c
                     requests.append({
                         "repeatCell": {
                             "range": {
                                 "sheetId": ws.id,
-                                "startRowIndex": 3,
-                                "endRowIndex": 3 + len(df_final),
-                                "startColumnIndex": 0,
-                                "endColumnIndex": len(df_final.columns)
+                                "startRowIndex": sheet_row_idx,
+                                "endRowIndex": sheet_row_idx + 1,
+                                "startColumnIndex": sheet_col_idx,
+                                "endColumnIndex": sheet_col_idx + 1
                             },
                             "cell": {
                                 "userEnteredFormat": {
                                     "textFormat": {
-                                        "foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0},
-                                        "bold": False
+                                        "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0},
+                                        "bold": True
                                     }
                                 }
                             },
@@ -307,36 +331,11 @@ if f1 and f2:
                         }
                     })
 
-                    # 將『各項達成率最後兩名』標記為紅色粗體
-                    for r, c in red_cells_coords:
-                        sheet_row_idx = r + 3  # 表頭佔了 0,1,2 行
-                        sheet_col_idx = c
-                        requests.append({
-                            "repeatCell": {
-                                "range": {
-                                    "sheetId": ws.id,
-                                    "startRowIndex": sheet_row_idx,
-                                    "endRowIndex": sheet_row_idx + 1,
-                                    "startColumnIndex": sheet_col_idx,
-                                    "endColumnIndex": sheet_col_idx + 1
-                                },
-                                "cell": {
-                                    "userEnteredFormat": {
-                                        "textFormat": {
-                                            "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0},
-                                            "bold": True
-                                        }
-                                    }
-                                },
-                                "fields": "userEnteredFormat.textFormat(foregroundColor,bold)"
-                            }
-                        })
-
-                    sh.batch_update({"requests": requests})
-                    st.success("✅ 數據與各項倒數兩名的紅色已成功同步！")
-                    st.balloons()
-                except Exception as e:
-                    st.error(f"雲端連線或格式化失敗：{e}")
+                sh.batch_update({"requests": requests})
+                st.success("✅ 數據與各項倒數兩名的紅色已全自動同步至雲端！")
+                st.balloons()
+            except Exception as e:
+                st.error(f"雲端連線或格式化失敗：{e}")
 
     except Exception as e:
         st.error(f"處理檔案時發生錯誤：{e}")
