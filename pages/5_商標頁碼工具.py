@@ -186,6 +186,7 @@ def process_image(uploaded_img_file, f_path):
 
 st.write("請上傳檔案進行處理 (支援多檔上傳)")
 
+# 這裡已經設定支援 pdf 與圖片了！
 uploaded_files = st.file_uploader(
     "選擇 PDF 或 圖片檔案", 
     type=["pdf", "png", "jpg", "jpeg"],
