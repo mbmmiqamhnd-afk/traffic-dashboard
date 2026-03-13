@@ -71,7 +71,7 @@ DEFAULT_PATROL = pd.DataFrame([
         "服勤人員": "線上巡邏警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"
     },
     {
-        "勤務時段": "3月6日\n22時至翌日6時", "無線電": "隆安70", "編組": "中兴所", 
+        "勤務時段": "3月6日\n22時至翌日6時", "無線電": "隆安70", "編組": "中興所", 
         "服勤人員": "線上巡邏警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"
     }
 ])
@@ -246,8 +246,9 @@ def send_report_email(time_str, commander, df_cmd, df_patrol, file_date_str):
         msg = MIMEMultipart()
         msg["From"] = sender
         msg["To"] = sender
-        msg["Subject"] = f"防制危險駕車勤務表_{file_date_str}"
-        msg.attach(MIMEText("附件為最新的防制危險駕車勤務表 PDF。", "plain", "utf-8"))
+        # 更新信件主旨
+        msg["Subject"] = f"防制危險駕車勤務規劃表_{file_date_str}"
+        msg.attach(MIMEText("附件為最新的防制危險駕車勤務規劃表 PDF。", "plain", "utf-8"))
         
         part = MIMEBase("application", "pdf")
         part.set_payload(pdf_bytes)
@@ -320,7 +321,7 @@ if match:
             pass 
 # =========================================================
 
-# 強制套用自動排版引擎 (先整理好換行格式)
+# 強制套用自動排版引擎
 if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 
@@ -335,20 +336,17 @@ st.subheader("3. 警力佈署")
 cmdr_input = st.text_input("交通快打指揮官", cmdr)
 
 if len(ed_ptl) > 0:
-    # 抓出單位名稱(例如：高平所)與職稱姓名(例如：所長某某某)
     m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))(.*)', cmdr_input)
     if m_unit:
         unit_name = m_unit.group(1)
         title_name = m_unit.group(2).strip()
         
-        # 1. 更新編組名稱
         first_group = str(ed_ptl.loc[0, '編組'])
         if re.search(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', first_group):
             ed_ptl.loc[0, '編組'] = re.sub(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', unit_name, first_group, count=1)
         else:
             ed_ptl.loc[0, '編組'] = f"專責警力（{unit_name}輪值）"
             
-        # 2. 智能防覆蓋代號推算機制
         unit_base_map = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
         base_code = ""
         for k, v in unit_base_map.items():
@@ -366,23 +364,17 @@ if len(ed_ptl) > 0:
                 else:
                     ed_ptl.loc[0, '無線電'] = base_code + "2"
 
-        # 3. 智能人員佈署引擎 (將主官名字填入時段下方第一列，並保留手動輸入的其他警員)
         if title_name:
             current_personnel = str(ed_ptl.loc[0, '服勤人員'])
-            # 只有當目前名單「沒有」這個名字時才進行替換更新
             if title_name not in current_personnel:
                 lines = current_personnel.split('\n')
                 for i in range(len(lines)):
-                    # 尋找時段標記 (例如 "00-02時：")
                     if re.search(r'\d{2}-\d{2}時', lines[i]):
-                        # 確保下一行存在，且下一行不是另一個時段標記
                         if i + 1 < len(lines) and not re.search(r'\d{2}-\d{2}時', lines[i+1]):
                             lines[i+1] = title_name
-                # 組裝回去
                 ed_ptl.loc[0, '服勤人員'] = '\n'.join(lines)
 # =========================================================
 
-# 渲染表格：如果使用者在表格內手動修改了警員或代號，Streamlit會因為上面的「防覆蓋設計」而自動記住手動內容！
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 res_ptl = res_ptl.fillna("")
 res_ptl = res_ptl[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
@@ -448,4 +440,5 @@ if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
         st.error(f"❌ 雲端已同步，但寄信失敗：{mail_err}")
     
     pdf_out = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
-    st.download_button("點此下載 PDF", data=pdf_out, file_name=f"防制危險駕車勤務_{file_date_str}.pdf")
+    # 更新下載按鈕的檔案名稱
+    st.download_button("點此下載 PDF", data=pdf_out, file_name=f"防制危險駕車勤務規劃表_{file_date_str}.pdf")
