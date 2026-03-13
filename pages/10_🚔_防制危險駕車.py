@@ -161,7 +161,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4)
     style_note = ParagraphStyle('Note', fontName=font, fontSize=14, leading=20, spaceAfter=5)
     
-    # 專門為「備註」設計的懸排縮排樣式：首行凸出，其餘行縮排28pt (對齊2個全形中文字)
     style_note_indent = ParagraphStyle(
         'NoteIndent', fontName=font, fontSize=14, leading=20, spaceAfter=5,
         leftIndent=28, firstLineIndent=-28
@@ -186,7 +185,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             Paragraph(clean(r.get('任務','')), style_cell_left)
         ])
     
-    # 職稱15%, 代號15%, 姓名25%, 任務45%                      
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45], repeatRows=2)
     t1.setStyle(TableStyle([
         ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), 
@@ -213,7 +211,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             Paragraph(clean(r.get('任務分工','')), style_cell_left)
         ])
 
-    # 勤務時段20%, 代號10%, 編組15%, 服勤人員25%, 任務分工30%
     t2 = Table(data_ptl, colWidths=[page_width*0.20, page_width*0.10, page_width*0.15, page_width*0.25, page_width*0.30], repeatRows=3)
     t2.setStyle(TableStyle([
         ('FONTNAME',(0,0),(-1,-1),font), ('FONTSIZE',(0,0),(-1,-1),14),
@@ -232,7 +229,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(Spacer(1, 4*mm))
     story.append(Paragraph("<b>📝 備註：</b>", style_section))
     
-    # 針對備註的每一行單獨渲染，並套用懸排縮排樣式
     for line in NOTES.split('\n'):
         if line.strip():
             story.append(Paragraph(line.strip(), style_note_indent))
@@ -324,7 +320,7 @@ if match:
             pass 
 # =========================================================
 
-# 強制套用自動排版引擎 (保留冒號並換行)
+# 強制套用自動排版引擎
 if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 
@@ -335,20 +331,50 @@ res_cmd = res_cmd[~(res_cmd == "").all(axis=1)].reset_index(drop=True)
 
 st.subheader("3. 警力佈署")
 
-# ====== 魔法連動：第一筆的「編組輪值單位」，自動跟隨「指揮官」單位變動 ======
+# ====== 魔法連動：第一筆的「編組單位」與「無線電代號」自動跟隨指揮官變動 ======
 cmdr_input = st.text_input("交通快打指揮官", cmdr)
 
 if len(ed_ptl) > 0:
     m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
     if m_unit:
         unit_name = m_unit.group(1)
+        
+        # 1. 更新編組名稱
         first_group = str(ed_ptl.loc[0, '編組'])
         if re.search(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', first_group):
             ed_ptl.loc[0, '編組'] = re.sub(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', unit_name, first_group, count=1)
         else:
             ed_ptl.loc[0, '編組'] = f"專責警力（{unit_name}輪值）"
+            
+        # 2. 智能防覆蓋代號推算機制
+        unit_base_map = {
+            "石門": "隆安8",
+            "高平": "隆安9",
+            "聖亭": "隆安5",
+            "龍潭": "隆安6",
+            "中興": "隆安7",
+            "分隊": "隆安99"
+        }
+        
+        base_code = ""
+        for k, v in unit_base_map.items():
+            if k in unit_name:
+                base_code = v
+                break
+                
+        if base_code:
+            current_radio = str(ed_ptl.loc[0, '無線電']).strip()
+            # 【關鍵】如果目前的代號不是該單位的字首，才進行覆蓋 (避免洗掉使用者手動輸入的尾數)
+            if not current_radio.startswith(base_code):
+                if "副" in cmdr_input or "小隊長" in cmdr_input:
+                    ed_ptl.loc[0, '無線電'] = base_code + "2"
+                elif "所長" in cmdr_input or "分隊長" in cmdr_input or "組長" in cmdr_input:
+                    ed_ptl.loc[0, '無線電'] = base_code + "1"
+                else:
+                    ed_ptl.loc[0, '無線電'] = base_code + "2"
 # =========================================================
 
+# 渲染表格，使用者仍可在此手動微調尾數 (如改為隆安53、隆安994)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 res_ptl = res_ptl.fillna("")
 res_ptl = res_ptl[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
@@ -360,7 +386,6 @@ st.info("此區塊將直接附加於報表末端")
 def get_html():
     chk_html = CHECKIN_POINTS.replace('\n', '<br>')
     
-    # 針對備註的 HTML 生成，加入懸排縮排 CSS 以達網頁預覽也能完美對齊
     note_html_parts = []
     for line in NOTES.split('\n'):
         if line.strip():
