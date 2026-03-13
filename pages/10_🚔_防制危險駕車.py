@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
+from datetime import datetime, timedelta
 import smtplib
 import io
 import os
@@ -43,7 +43,7 @@ DEFAULT_CMD = pd.DataFrame([
 
 DEFAULT_PATROL = pd.DataFrame([
     {
-        "勤務時段": "零時至4時", "無線電": "隆安82", "編組": "專責警力（石門所輪值）", 
+        "勤務時段": "3月7日\n零時至4時", "無線電": "隆安82", "編組": "專責警力（石門所輪值）", 
         "服勤人員": "00-02時：\n小隊長蔡安龍\n警員王進富\n02-04時：\n小隊長蔡安龍\n警員簡偉翔", 
         "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝（噪音）車輛"
     },
@@ -199,7 +199,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     
     for _, r in df_patrol.iterrows():
         data_ptl.append([
-            Paragraph(clean(r.get('勤務時段','')), style_cell), # 確保PDF支援勤務時段的換行
+            Paragraph(clean(r.get('勤務時段','')), style_cell), 
             clean(r.get('無線電','')), 
             Paragraph(clean(r.get('編組','')).replace("、", "<br/>"), style_cell), 
             Paragraph(clean(r.get('服勤人員','')), style_cell), 
@@ -285,13 +285,33 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 st.subheader("1. 基礎資訊")
 p_time = st.text_input("勤務時間", t)
 
-# ====== 魔法連動：自動過濾掉「XXX年」，並自動在「日」之後換行 ======
-if len(ed_ptl) > 1:
-    # 去除前綴年份 (例如：115年)
-    p_time_no_year = re.sub(r'^\d+年', '', p_time)
-    # 利用正則抓出數字結尾的「日」(如 6日)，並在後方補上換行符號 (\n)，且能避開「翌日」
-    p_time_split = re.sub(r'(\d+日)\s*', r'\1\n', p_time_no_year)
-    ed_ptl.loc[1:, '勤務時段'] = p_time_split
+# ====== 魔法連動：自動過濾掉「XXX年」，並自動計算「次日」與排版 ======
+# 運用正規表達式抓出標頭內的 年(選填)、月、日
+match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
+if match:
+    # 處理第二筆（含）以後的連動（拿掉年，並換行）
+    if len(ed_ptl) > 1:
+        p_time_no_year = re.sub(r'^\d+年', '', p_time)
+        p_time_split = re.sub(r'(\d+日)\s*', r'\1\n', p_time_no_year)
+        ed_ptl.loc[1:, '勤務時段'] = p_time_split
+
+    # 處理第一筆的「次日」計算與連動
+    if len(ed_ptl) > 0:
+        try:
+            y_str = match.group(1)
+            m = int(match.group(2))
+            d = int(match.group(3))
+            # 換算為西元年以利 datetime 計算（若無填寫年份則預設為今年）
+            y = int(y_str) + 1911 if y_str else datetime.now().year
+            
+            dt_current = datetime(y, m, d)
+            dt_next = dt_current + timedelta(days=1)
+            next_day_str = f"{dt_next.month}月{dt_next.day}日"
+            
+            # 將推算出來的次日覆蓋第一筆的時間，並垂直並列
+            ed_ptl.loc[0, '勤務時段'] = f"{next_day_str}\n零時至4時"
+        except ValueError:
+            pass # 若輸入不合法的日期 (如2月30日) 則先跳過次日推算
 # =========================================================
 
 # 強制套用自動排版引擎 (保留冒號並換行)
@@ -335,7 +355,6 @@ def get_html():
     parts.append("<tr><th width='28%'>勤務時段</th><th width='10%'>代號</th><th width='14%'>編組</th><th width='18%'>服勤人員</th><th width='30%'>任務分工</th></tr>")
     
     for _, r in res_ptl.iterrows():
-        # 確保勤務時段也能在網頁預覽中被轉換為換行 <br>
         duty_time = str(r.get('勤務時段', '')).replace('\n', '<br>')
         grp = str(r.get('編組', '')).replace('、', '<br>')
         ppl = str(r.get('服勤人員', '')).replace('\n', '<br>')
