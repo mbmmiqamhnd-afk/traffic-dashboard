@@ -212,41 +212,4 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), 
         ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
         ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,1),(-1,1),colors.white), 
-        ('LEFTPADDING',(0,1),(-1,1),6), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2')),
-        ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)
-    ]))
-    story.append(t2)
-    story.append(Spacer(1, 6*mm))
-
-    story.append(Paragraph("<b>📍 巡簽地點：</b>", style_section))
-    story.append(Paragraph(CHECKIN_POINTS.replace("\n", "<br/>"), style_note))
-    story.append(Spacer(1, 4*mm))
-    story.append(Paragraph("<b>📝 備註：</b>", style_section))
-    story.append(Paragraph(NOTES.replace("\n", "<br/>"), style_note))
-
-    doc.build(story)
-    return buf.getvalue()
-
-# --- 4. 寄信功能 ---
-def send_report_email(time_str, commander, df_cmd, df_patrol):
-    try:
-        sender = st.secrets["email"]["user"]
-        pwd = st.secrets["email"]["password"]
-        pdf_bytes = generate_pdf_from_data(time_str, commander, df_cmd, df_patrol)
-        
-        msg = MIMEMultipart()
-        msg["From"] = sender
-        msg["To"] = sender
-        msg["Subject"] = f"防制危險駕車勤務表_{datetime.now().strftime('%m%d')}"
-        msg.attach(MIMEText("附件為最新的防制危險駕車勤務表 PDF。", "plain", "utf-8"))
-        
-        part = MIMEBase("application", "pdf")
-        part.set_payload(pdf_bytes)
-        encoders.encode_base64(part)
-        filename = _ul.quote(f"{msg['Subject']}.pdf")
-        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{filename}")
-        msg.attach(part)
-        
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender, pwd)
-            server.sendmail(sender, sender, msg.
+        ('LEFTPADDING',(0,
