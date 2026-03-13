@@ -7,7 +7,7 @@ import smtplib
 import io
 import os
 import urllib.parse as _ul
-import re  # 引入正規表達式引擎，用於自動排版
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -167,7 +167,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     def clean(txt):
         if pd.isna(txt) or str(txt).strip() in ["None", "nan", ""]: 
             return ""
-        # 移除原先遇到頓號就換行的設定，保護「任務分工」不要被亂切
         return str(txt).replace("\n", "<br/>")
 
     # ==================== 表格 1：任務編組 ====================
@@ -177,7 +176,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
         data_cmd.append([
             Paragraph(f"<b>{clean(r.get('職稱',''))}</b>", style_cell), 
             Paragraph(clean(r.get('代號','')), style_cell),
-            # 針對姓名與編組保留頓號換行功能
             Paragraph(clean(r.get('姓名','')).replace("、", "<br/>"), style_cell), 
             Paragraph(clean(r.get('任務','')), style_cell_left)
         ])
@@ -258,6 +256,19 @@ def send_report_email(time_str, commander, df_cmd, df_patrol):
     except Exception as e:
         return False, str(e)
 
+# ====== 魔法排版引擎：強制處理從雲端抓下來的混亂格式 ======
+def auto_format_personnel(val):
+    if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
+        return ""
+    s = str(val)
+    s = s.replace('：', '：\n').replace(':', ':\n')
+    s = s.replace('、', '\n')
+    s = re.sub(r'[ \t]+(?=\d{2}-\d{2})', '\n', s)
+    s = re.sub(r'[ \t]*\n[ \t]*', '\n', s)
+    s = re.sub(r'\n+', '\n', s)
+    return s.strip()
+# =========================================================
+
 # --- 5. 主介面邏輯 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
@@ -269,31 +280,19 @@ else:
     cmdr = sd.get("commander", DEFAULT_COMMANDER)
     ed_cmd, ed_ptl = df_cmd, df_ptl
 
-# ====== 魔法排版引擎：強制處理從雲端抓下來的混亂格式 ======
-def auto_format_personnel(val):
-    if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
-        return ""
-    s = str(val)
-    # 遇到全/半形冒號皆在後方強制換行，並保留冒號
-    s = s.replace('：', '：\n').replace(':', ':\n')
-    # 遇到頓號直接替換為換行
-    s = s.replace('、', '\n')
-    # 處理名字與下一個時段間的空白 (例如: "警員王進富 02-04時") -> 強制換行
-    s = re.sub(r'[ \t]+(?=\d{2}-\d{2})', '\n', s)
-    # 清除多餘的空白與重複換行，確保排版乾淨
-    s = re.sub(r'[ \t]*\n[ \t]*', '\n', s)
-    s = re.sub(r'\n+', '\n', s)
-    return s.strip()
-
-# 在表格顯示前，強制套用自動排版引擎
-if '服勤人員' in ed_ptl.columns:
-    ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
-# =========================================================
-
 st.title("🚔 防制危險駕車專案勤務規劃表")
 
 st.subheader("1. 基礎資訊")
 p_time = st.text_input("勤務時間", t)
+
+# ====== 魔法連動：將表頭時間自動填入第二筆以下的勤務時段 ======
+if len(ed_ptl) > 1:
+    ed_ptl.loc[1:, '勤務時段'] = p_time
+# =========================================================
+
+# 強制套用自動排版引擎 (保留冒號並換行)
+if '服勤人員' in ed_ptl.columns:
+    ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 
 st.subheader("2. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
@@ -333,7 +332,6 @@ def get_html():
     
     for _, r in res_ptl.iterrows():
         grp = str(r.get('編組', '')).replace('、', '<br>')
-        # 這裡會直接吃到底層剛剛排版好且換行過的資料
         ppl = str(r.get('服勤人員', '')).replace('\n', '<br>')
         parts.append("<tr>")
         parts.append(f"<td style='white-space:nowrap;'>{r.get('勤務時段','')}</td>")
