@@ -44,7 +44,7 @@ DEFAULT_CMD = pd.DataFrame([
 DEFAULT_PATROL = pd.DataFrame([
     {
         "勤務時段": "3月7日\n零時至4時", "無線電": "隆安82", "編組": "專責警力（石門所輪值）", 
-        "服勤人員": "00-02時：\n小隊長蔡安龍\n警員王進富\n02-04時：\n小隊長蔡安龍\n警員簡偉翔", 
+        "服勤人員": "00-02時：\n副所長林榮裕\n警員王進富\n02-04時：\n副所長林榮裕\n警員簡偉翔", 
         "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝（噪音）車輛"
     },
     {
@@ -71,7 +71,7 @@ DEFAULT_PATROL = pd.DataFrame([
         "服勤人員": "線上巡邏警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"
     },
     {
-        "勤務時段": "3月6日\n22時至翌日6時", "無線電": "隆安70", "編組": "中興所", 
+        "勤務時段": "3月6日\n22時至翌日6時", "無線電": "隆安70", "編組": "中兴所", 
         "服勤人員": "線上巡邏警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"
     }
 ])
@@ -320,7 +320,7 @@ if match:
             pass 
 # =========================================================
 
-# 強制套用自動排版引擎
+# 強制套用自動排版引擎 (先整理好換行格式)
 if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 
@@ -331,13 +331,15 @@ res_cmd = res_cmd[~(res_cmd == "").all(axis=1)].reset_index(drop=True)
 
 st.subheader("3. 警力佈署")
 
-# ====== 魔法連動：第一筆的「編組單位」與「無線電代號」自動跟隨指揮官變動 ======
+# ====== 魔法連動：單位、代號與服勤人員姓名同步 ======
 cmdr_input = st.text_input("交通快打指揮官", cmdr)
 
 if len(ed_ptl) > 0:
-    m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
+    # 抓出單位名稱(例如：高平所)與職稱姓名(例如：所長某某某)
+    m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))(.*)', cmdr_input)
     if m_unit:
         unit_name = m_unit.group(1)
+        title_name = m_unit.group(2).strip()
         
         # 1. 更新編組名稱
         first_group = str(ed_ptl.loc[0, '編組'])
@@ -347,15 +349,7 @@ if len(ed_ptl) > 0:
             ed_ptl.loc[0, '編組'] = f"專責警力（{unit_name}輪值）"
             
         # 2. 智能防覆蓋代號推算機制
-        unit_base_map = {
-            "石門": "隆安8",
-            "高平": "隆安9",
-            "聖亭": "隆安5",
-            "龍潭": "隆安6",
-            "中興": "隆安7",
-            "分隊": "隆安99"
-        }
-        
+        unit_base_map = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
         base_code = ""
         for k, v in unit_base_map.items():
             if k in unit_name:
@@ -364,7 +358,6 @@ if len(ed_ptl) > 0:
                 
         if base_code:
             current_radio = str(ed_ptl.loc[0, '無線電']).strip()
-            # 【關鍵】如果目前的代號不是該單位的字首，才進行覆蓋 (避免洗掉使用者手動輸入的尾數)
             if not current_radio.startswith(base_code):
                 if "副" in cmdr_input or "小隊長" in cmdr_input:
                     ed_ptl.loc[0, '無線電'] = base_code + "2"
@@ -372,13 +365,27 @@ if len(ed_ptl) > 0:
                     ed_ptl.loc[0, '無線電'] = base_code + "1"
                 else:
                     ed_ptl.loc[0, '無線電'] = base_code + "2"
+
+        # 3. 智能人員佈署引擎 (將主官名字填入時段下方第一列，並保留手動輸入的其他警員)
+        if title_name:
+            current_personnel = str(ed_ptl.loc[0, '服勤人員'])
+            # 只有當目前名單「沒有」這個名字時才進行替換更新
+            if title_name not in current_personnel:
+                lines = current_personnel.split('\n')
+                for i in range(len(lines)):
+                    # 尋找時段標記 (例如 "00-02時：")
+                    if re.search(r'\d{2}-\d{2}時', lines[i]):
+                        # 確保下一行存在，且下一行不是另一個時段標記
+                        if i + 1 < len(lines) and not re.search(r'\d{2}-\d{2}時', lines[i+1]):
+                            lines[i+1] = title_name
+                # 組裝回去
+                ed_ptl.loc[0, '服勤人員'] = '\n'.join(lines)
 # =========================================================
 
-# 渲染表格，使用者仍可在此手動微調尾數 (如改為隆安53、隆安994)
+# 渲染表格：如果使用者在表格內手動修改了警員或代號，Streamlit會因為上面的「防覆蓋設計」而自動記住手動內容！
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 res_ptl = res_ptl.fillna("")
 res_ptl = res_ptl[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
-
 
 st.subheader("4. 巡簽地點與備註 (固定)")
 st.info("此區塊將直接附加於報表末端")
