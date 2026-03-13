@@ -212,4 +212,129 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), 
         ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
         ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,1),(-1,1),colors.white), 
-        ('LEFTPADDING',(0,
+        ('LEFTPADDING',(0,1),(-1,1),6), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2')),
+        ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)
+    ]))
+    story.append(t2)
+    story.append(Spacer(1, 6*mm))
+
+    story.append(Paragraph("<b>📍 巡簽地點：</b>", style_section))
+    story.append(Paragraph(CHECKIN_POINTS.replace("\n", "<br/>"), style_note))
+    story.append(Spacer(1, 4*mm))
+    story.append(Paragraph("<b>📝 備註：</b>", style_section))
+    story.append(Paragraph(NOTES.replace("\n", "<br/>"), style_note))
+
+    doc.build(story)
+    return buf.getvalue()
+
+# --- 4. 寄信功能 ---
+def send_report_email(time_str, commander, df_cmd, df_patrol):
+    try:
+        sender = st.secrets["email"]["user"]
+        pwd = st.secrets["email"]["password"]
+        pdf_bytes = generate_pdf_from_data(time_str, commander, df_cmd, df_patrol)
+        
+        msg = MIMEMultipart()
+        msg["From"] = sender
+        msg["To"] = sender
+        msg["Subject"] = f"防制危險駕車勤務表_{datetime.now().strftime('%m%d')}"
+        msg.attach(MIMEText("附件為最新的防制危險駕車勤務表 PDF。", "plain", "utf-8"))
+        
+        part = MIMEBase("application", "pdf")
+        part.set_payload(pdf_bytes)
+        encoders.encode_base64(part)
+        filename = _ul.quote(f"{msg['Subject']}.pdf")
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{filename}")
+        msg.attach(part)
+        
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, pwd)
+            server.sendmail(sender, sender, msg.as_string())
+            server.quit()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+# --- 5. 主介面邏輯 ---
+df_set, df_cmd, df_ptl, err = load_data()
+if err or df_set is None:
+    t, cmdr = DEFAULT_TIME, DEFAULT_COMMANDER
+    ed_cmd, ed_ptl = DEFAULT_CMD.copy(), DEFAULT_PATROL.copy()
+else:
+    sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
+    t = sd.get("plan_time", DEFAULT_TIME)
+    cmdr = sd.get("commander", DEFAULT_COMMANDER)
+    ed_cmd, ed_ptl = df_cmd, df_ptl
+
+st.title("🚔 防制危險駕車專案勤務規劃表")
+
+st.subheader("1. 基礎資訊")
+p_time = st.text_input("勤務時間", t)
+
+st.subheader("2. 任務編組")
+res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
+res_cmd = res_cmd.fillna("")
+res_cmd = res_cmd[~(res_cmd == "").all(axis=1)].reset_index(drop=True)
+
+st.subheader("3. 警力佈署")
+cmdr_input = st.text_input("交通快打指揮官", cmdr)
+res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
+res_ptl = res_ptl.fillna("")
+res_ptl = res_ptl[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
+
+st.subheader("4. 巡簽地點與備註 (固定)")
+st.info("此區塊將直接附加於報表末端")
+
+def get_html():
+    chk_html = CHECKIN_POINTS.replace('\n', '<br>')
+    note_html = NOTES.replace('\n', '<br>')
+    
+    parts = []
+    parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:14pt;margin:15px 0;line-height:1.6;} .cmd-row{text-align:left;background-color:white;}</style>")
+    parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}<br>執行「防制危險駕車專案勤務」規劃表</b></h2>")
+    parts.append(f"<div style='text-align:right'><b>時間：{p_time}</b></div><br>")
+    
+    parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr>")
+    parts.append("<tr><th width='15%'>職 construct</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
+    
+    for _, r in res_cmd.iterrows():
+        name = str(r.get('姓名', '')).replace('、', '<br>')
+        parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td>")
+        parts.append(f"<td>{name}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
+    parts.append("</table>")
+    
+    parts.append("<table><tr><th colspan='5'>警 力 佈 署</th></tr>")
+    parts.append(f"<tr><td colspan='5' class='cmd-row'><b>交通快打指揮官：</b>{cmdr_input}</td></tr>")
+    parts.append("<tr><th width='28%'>勤務時段</th><th width='10%'>代號</th><th width='14%'>編組</th><th width='18%'>服勤人員</th><th width='30%'>任務分工</th></tr>")
+    
+    for _, r in res_ptl.iterrows():
+        grp = str(r.get('編組', '')).replace('、', '<br>')
+        ppl = str(r.get('服勤人員', '')).replace('\n', '<br>')
+        parts.append("<tr>")
+        parts.append(f"<td style='white-space:nowrap;'>{r.get('勤務時段','')}</td>")
+        parts.append(f"<td style='white-space:nowrap;'>{r.get('無線電','')}</td>")
+        parts.append(f"<td>{grp}</td><td>{ppl}</td>")
+        parts.append(f"<td style='text-align:left'>{r.get('任務分工','')}</td>")
+        parts.append("</tr>")
+        
+    parts.append("</table>")
+    parts.append(f"<div class='note'><b>📍 巡簽地點：</b><br>{chk_html}</div>")
+    parts.append(f"<div class='note'><b>📝 備註：</b><br>{note_html}</div>")
+    parts.append("</body></html>")
+    
+    return "".join(parts)
+
+st.markdown("---")
+st.subheader("📄 預覽與輸出")
+st.components.v1.html(get_html(), height=600, scrolling=True)
+
+if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
+    save_data(p_time, cmdr_input, res_cmd, res_ptl)
+    ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl)
+    if ok:
+        st.success("📧 雲端同步成功，報表已寄至信箱！")
+    else:
+        st.error(f"❌ 雲端已同步，但寄信失敗：{mail_err}")
+    
+    pdf_out = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
+    st.download_button("點此下載 PDF", data=pdf_out, file_name=f"防制危險駕車勤務_{datetime.now().strftime('%Y%m%d')}.pdf")
