@@ -238,7 +238,6 @@ def send_report_email(time_str, commander, df_cmd, df_patrol, file_date_str):
         msg = MIMEMultipart()
         msg["From"] = sender
         msg["To"] = sender
-        # 信件主旨改為擷取出的日期 (例如: 1150306)
         msg["Subject"] = f"防制危險駕車勤務表_{file_date_str}"
         msg.attach(MIMEText("附件為最新的防制危險駕車勤務表 PDF。", "plain", "utf-8"))
         
@@ -286,40 +285,32 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 st.subheader("1. 基礎資訊")
 p_time = st.text_input("勤務時間", t)
 
-# 預設檔名使用當天日期 (作為找不到日期時的最後防線)
+# 預設檔名使用當天日期 (防呆)
 file_date_str = datetime.now().strftime('%Y%m%d')
 
 # ====== 魔法連動與檔名擷取 ======
-# 運用正規表達式抓出標頭內的 年(選填)、月、日
 match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
 if match:
-    # --- 1. 產生檔案用的日期字串 (例：1150306) ---
     y_str = match.group(1)
     m = int(match.group(2))
     d = int(match.group(3))
-    # 若沒有填年份，自動推算當年的民國年
     y_out = y_str if y_str else str(datetime.now().year - 1911)
     file_date_str = f"{y_out}{m:02d}{d:02d}"
 
-    # --- 2. 處理第二筆（含）以後的連動（拿掉年，並換行） ---
     if len(ed_ptl) > 1:
         p_time_no_year = re.sub(r'^\d+年', '', p_time)
         p_time_split = re.sub(r'(\d+日)\s*', r'\1\n', p_time_no_year)
         ed_ptl.loc[1:, '勤務時段'] = p_time_split
 
-    # --- 3. 處理第一筆的「次日」計算與連動 ---
     if len(ed_ptl) > 0:
         try:
-            # 換算為西元年以利 datetime 計算次日
             y_calc = int(y_out) + 1911
             dt_current = datetime(y_calc, m, d)
             dt_next = dt_current + timedelta(days=1)
             next_day_str = f"{dt_next.month}月{dt_next.day}日"
-            
-            # 將推算出來的次日覆蓋第一筆的時間，並垂直並列
             ed_ptl.loc[0, '勤務時段'] = f"{next_day_str}\n零時至4時"
         except ValueError:
-            pass # 若輸入不合法的日期則跳過次日推算
+            pass 
 # =========================================================
 
 # 強制套用自動排版引擎 (保留冒號並換行)
@@ -332,10 +323,27 @@ res_cmd = res_cmd.fillna("")
 res_cmd = res_cmd[~(res_cmd == "").all(axis=1)].reset_index(drop=True)
 
 st.subheader("3. 警力佈署")
-cmdr_input = st.text_input("交通快打指揮官", cmdr)
+# 將資料表提早渲染，以利後續「即時抓取最新編輯內容」來同步單位名稱
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 res_ptl = res_ptl.fillna("")
 res_ptl = res_ptl[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
+
+# ====== 魔法連動：指揮官單位自動跟隨第一筆編組 ======
+if len(res_ptl) > 0:
+    first_group = str(res_ptl.loc[0, '編組'])
+    # 抓取第一筆編組中的「XX所」、「XX分隊」或「XX分局」
+    m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', first_group)
+    if m_unit:
+        unit_name = m_unit.group(1)
+        # 若原指揮官字串中已有單位名稱，則替換；若無則直接冠在最前面
+        if re.search(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', cmdr):
+            cmdr = re.sub(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', unit_name, cmdr, count=1)
+        else:
+            cmdr = f"{unit_name}{cmdr}"
+
+# 指揮官輸入框移至表格下方，以便達到即時同步的互動效果
+cmdr_input = st.text_input("交通快打指揮官", cmdr)
+# =========================================================
 
 st.subheader("4. 巡簽地點與備註 (固定)")
 st.info("此區塊將直接附加於報表末端")
@@ -393,5 +401,4 @@ if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
         st.error(f"❌ 雲端已同步，但寄信失敗：{mail_err}")
     
     pdf_out = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
-    # 下載按鈕的檔名也一併更新為擷取的日期 (例: 防制危險駕車勤務_1150306.pdf)
     st.download_button("點此下載 PDF", data=pdf_out, file_name=f"防制危險駕車勤務_{file_date_str}.pdf")
