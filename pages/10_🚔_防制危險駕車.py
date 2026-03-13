@@ -40,10 +40,11 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "通訊組", "代號": "隆安", "姓名": "主任 蔡奇青、執勤官 李文章、執勤員 黃文興", "任務": "監看群聚告警訊息、指揮、調度及通報本勤務事宜。"}
 ])
 
+# 已將冒號保留，且遇到冒號與頓號皆換行
 DEFAULT_PATROL = pd.DataFrame([
     {
         "勤務時段": "零時至4時", "無線電": "隆安82", "編組": "專責警力（石門所輪值）", 
-        "服勤人員": "00-02時：副所長林榮裕、警員王耀民\n02-04時：副所長林榮裕、警員陳欣妤", 
+        "服勤人員": "00-02時：\n小隊長蔡安龍\n警員王進富\n02-04時：\n小隊長蔡安龍\n警員簡偉翔", 
         "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝（噪音）車輛"
     },
     {
@@ -295,7 +296,7 @@ def get_html():
     parts.append(f"<div style='text-align:right'><b>時間：{p_time}</b></div><br>")
     
     parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr>")
-    parts.append("<tr><th width='15%'>職 construct</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
+    parts.append("<tr><th width='15%'>職稱</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
     
     for _, r in res_cmd.iterrows():
         name = str(r.get('姓名', '')).replace('、', '<br>')
