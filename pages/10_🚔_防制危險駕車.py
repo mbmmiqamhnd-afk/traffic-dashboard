@@ -229,7 +229,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     return buf.getvalue()
 
 # --- 4. 寄信功能 ---
-def send_report_email(time_str, commander, df_cmd, df_patrol):
+def send_report_email(time_str, commander, df_cmd, df_patrol, file_date_str):
     try:
         sender = st.secrets["email"]["user"]
         pwd = st.secrets["email"]["password"]
@@ -238,7 +238,8 @@ def send_report_email(time_str, commander, df_cmd, df_patrol):
         msg = MIMEMultipart()
         msg["From"] = sender
         msg["To"] = sender
-        msg["Subject"] = f"防制危險駕車勤務表_{datetime.now().strftime('%m%d')}"
+        # 信件主旨改為擷取出的日期 (例如: 1150306)
+        msg["Subject"] = f"防制危險駕車勤務表_{file_date_str}"
         msg.attach(MIMEText("附件為最新的防制危險駕車勤務表 PDF。", "plain", "utf-8"))
         
         part = MIMEBase("application", "pdf")
@@ -285,33 +286,40 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 st.subheader("1. 基礎資訊")
 p_time = st.text_input("勤務時間", t)
 
-# ====== 魔法連動：自動過濾掉「XXX年」，並自動計算「次日」與排版 ======
+# 預設檔名使用當天日期 (作為找不到日期時的最後防線)
+file_date_str = datetime.now().strftime('%Y%m%d')
+
+# ====== 魔法連動與檔名擷取 ======
 # 運用正規表達式抓出標頭內的 年(選填)、月、日
 match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
 if match:
-    # 處理第二筆（含）以後的連動（拿掉年，並換行）
+    # --- 1. 產生檔案用的日期字串 (例：1150306) ---
+    y_str = match.group(1)
+    m = int(match.group(2))
+    d = int(match.group(3))
+    # 若沒有填年份，自動推算當年的民國年
+    y_out = y_str if y_str else str(datetime.now().year - 1911)
+    file_date_str = f"{y_out}{m:02d}{d:02d}"
+
+    # --- 2. 處理第二筆（含）以後的連動（拿掉年，並換行） ---
     if len(ed_ptl) > 1:
         p_time_no_year = re.sub(r'^\d+年', '', p_time)
         p_time_split = re.sub(r'(\d+日)\s*', r'\1\n', p_time_no_year)
         ed_ptl.loc[1:, '勤務時段'] = p_time_split
 
-    # 處理第一筆的「次日」計算與連動
+    # --- 3. 處理第一筆的「次日」計算與連動 ---
     if len(ed_ptl) > 0:
         try:
-            y_str = match.group(1)
-            m = int(match.group(2))
-            d = int(match.group(3))
-            # 換算為西元年以利 datetime 計算（若無填寫年份則預設為今年）
-            y = int(y_str) + 1911 if y_str else datetime.now().year
-            
-            dt_current = datetime(y, m, d)
+            # 換算為西元年以利 datetime 計算次日
+            y_calc = int(y_out) + 1911
+            dt_current = datetime(y_calc, m, d)
             dt_next = dt_current + timedelta(days=1)
             next_day_str = f"{dt_next.month}月{dt_next.day}日"
             
             # 將推算出來的次日覆蓋第一筆的時間，並垂直並列
             ed_ptl.loc[0, '勤務時段'] = f"{next_day_str}\n零時至4時"
         except ValueError:
-            pass # 若輸入不合法的日期 (如2月30日) 則先跳過次日推算
+            pass # 若輸入不合法的日期則跳過次日推算
 # =========================================================
 
 # 強制套用自動排版引擎 (保留冒號並換行)
@@ -378,11 +386,12 @@ st.components.v1.html(get_html(), height=600, scrolling=True)
 
 if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
     save_data(p_time, cmdr_input, res_cmd, res_ptl)
-    ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl)
+    ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl, file_date_str)
     if ok:
         st.success("📧 雲端同步成功，排版後的報表已寄至信箱！")
     else:
         st.error(f"❌ 雲端已同步，但寄信失敗：{mail_err}")
     
     pdf_out = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
-    st.download_button("點此下載 PDF", data=pdf_out, file_name=f"防制危險駕車勤務_{datetime.now().strftime('%Y%m%d')}.pdf")
+    # 下載按鈕的檔名也一併更新為擷取的日期 (例: 防制危險駕車勤務_1150306.pdf)
+    st.download_button("點此下載 PDF", data=pdf_out, file_name=f"防制危險駕車勤務_{file_date_str}.pdf")
