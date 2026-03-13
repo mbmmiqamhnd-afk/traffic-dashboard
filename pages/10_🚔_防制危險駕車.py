@@ -190,7 +190,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # ==================== 表格 2：警力佈署 ====================
+    # ==================== 表格 2：警力佈署 (已調整欄寬) ====================
     data_ptl = [
         [Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''],
         [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_left), '', '', '', ''],
@@ -206,7 +206,8 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             Paragraph(clean(r.get('任務分工','')), style_cell_left)
         ])
 
-    t2 = Table(data_ptl, colWidths=[page_width*0.28, page_width*0.10, page_width*0.14, page_width*0.18, page_width*0.30], repeatRows=3)
+    # 調整此處欄寬：勤務時段20%, 代號10%, 編組15%, 服勤人員25%, 任務分工30%
+    t2 = Table(data_ptl, colWidths=[page_width*0.20, page_width*0.10, page_width*0.15, page_width*0.25, page_width*0.30], repeatRows=3)
     t2.setStyle(TableStyle([
         ('FONTNAME',(0,0),(-1,-1),font), ('FONTSIZE',(0,0),(-1,-1),14),
         ('ALIGN',(0,3),(1,-1),'CENTER'), ('GRID',(0,0),(-1,-1),0.5,colors.black),
@@ -352,6 +353,7 @@ def get_html():
     note_html = NOTES.replace('\n', '<br>')
     
     parts = []
+    # 調整 HTML 預覽的欄寬：勤務時段20%, 代號10%, 編組15%, 服勤人員25%, 任務分工30%
     parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:14pt;margin:15px 0;line-height:1.6;} .cmd-row{text-align:left;background-color:white;}</style>")
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}<br>執行「防制危險駕車專案勤務」規劃表</b></h2>")
     parts.append(f"<div style='text-align:right'><b>時間：{p_time}</b></div><br>")
@@ -367,7 +369,7 @@ def get_html():
     
     parts.append("<table><tr><th colspan='5'>警 力 佈 署</th></tr>")
     parts.append(f"<tr><td colspan='5' class='cmd-row'><b>交通快打指揮官：</b>{cmdr_input}</td></tr>")
-    parts.append("<tr><th width='28%'>勤務時段</th><th width='10%'>代號</th><th width='14%'>編組</th><th width='18%'>服勤人員</th><th width='30%'>任務分工</th></tr>")
+    parts.append("<tr><th width='20%'>勤務時段</th><th width='10%'>代號</th><th width='15%'>編組</th><th width='25%'>服勤人員</th><th width='30%'>任務分工</th></tr>")
     
     for _, r in res_ptl.iterrows():
         duty_time = str(r.get('勤務時段', '')).replace('\n', '<br>')
