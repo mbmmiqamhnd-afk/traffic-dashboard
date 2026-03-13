@@ -160,6 +160,12 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     
     style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4)
     style_note = ParagraphStyle('Note', fontName=font, fontSize=14, leading=20, spaceAfter=5)
+    
+    # 專門為「備註」設計的懸排縮排樣式：首行凸出，其餘行縮排28pt (對齊2個全形中文字)
+    style_note_indent = ParagraphStyle(
+        'NoteIndent', fontName=font, fontSize=14, leading=20, spaceAfter=5,
+        leftIndent=28, firstLineIndent=-28
+    )
 
     story.append(Paragraph(f"<b>{UNIT}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
@@ -180,7 +186,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             Paragraph(clean(r.get('任務','')), style_cell_left)
         ])
     
-    # 調整此處欄寬：職稱15%, 代號15%, 姓名25%, 任務45%                      
+    # 職稱15%, 代號15%, 姓名25%, 任務45%                      
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45], repeatRows=2)
     t1.setStyle(TableStyle([
         ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), 
@@ -207,7 +213,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             Paragraph(clean(r.get('任務分工','')), style_cell_left)
         ])
 
-    # 調整此處欄寬：勤務時段20%, 代號10%, 編組15%, 服勤人員25%, 任務分工30%
+    # 勤務時段20%, 代號10%, 編組15%, 服勤人員25%, 任務分工30%
     t2 = Table(data_ptl, colWidths=[page_width*0.20, page_width*0.10, page_width*0.15, page_width*0.25, page_width*0.30], repeatRows=3)
     t2.setStyle(TableStyle([
         ('FONTNAME',(0,0),(-1,-1),font), ('FONTSIZE',(0,0),(-1,-1),14),
@@ -225,7 +231,11 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(Paragraph(CHECKIN_POINTS.replace("\n", "<br/>"), style_note))
     story.append(Spacer(1, 4*mm))
     story.append(Paragraph("<b>📝 備註：</b>", style_section))
-    story.append(Paragraph(NOTES.replace("\n", "<br/>"), style_note))
+    
+    # 針對備註的每一行單獨渲染，並套用懸排縮排樣式
+    for line in NOTES.split('\n'):
+        if line.strip():
+            story.append(Paragraph(line.strip(), style_note_indent))
 
     doc.build(story)
     return buf.getvalue()
@@ -329,12 +339,10 @@ st.subheader("3. 警力佈署")
 cmdr_input = st.text_input("交通快打指揮官", cmdr)
 
 if len(ed_ptl) > 0:
-    # 從指揮官字串中抓出單位名稱 (例如：石門所、中興所)
     m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
     if m_unit:
         unit_name = m_unit.group(1)
         first_group = str(ed_ptl.loc[0, '編組'])
-        # 將抓出的單位名稱替換到原本的編組字串中
         if re.search(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', first_group):
             ed_ptl.loc[0, '編組'] = re.sub(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', unit_name, first_group, count=1)
         else:
@@ -351,10 +359,15 @@ st.info("此區塊將直接附加於報表末端")
 
 def get_html():
     chk_html = CHECKIN_POINTS.replace('\n', '<br>')
-    note_html = NOTES.replace('\n', '<br>')
+    
+    # 針對備註的 HTML 生成，加入懸排縮排 CSS 以達網頁預覽也能完美對齊
+    note_html_parts = []
+    for line in NOTES.split('\n'):
+        if line.strip():
+            note_html_parts.append(f"<div style='padding-left: 2em; text-indent: -2em; margin: 0;'>{line.strip()}</div>")
+    note_html = "".join(note_html_parts)
     
     parts = []
-    # 調整 HTML 預覽的欄寬：職稱15%, 代號15%, 姓名25%, 任務45% 
     parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:14pt;margin:15px 0;line-height:1.6;} .cmd-row{text-align:left;background-color:white;}</style>")
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}<br>執行「防制危險駕車專案勤務」規劃表</b></h2>")
     parts.append(f"<div style='text-align:right'><b>時間：{p_time}</b></div><br>")
