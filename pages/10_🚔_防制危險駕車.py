@@ -179,8 +179,9 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             Paragraph(clean(r.get('姓名','')).replace("、", "<br/>"), style_cell), 
             Paragraph(clean(r.get('任務','')), style_cell_left)
         ])
-                          
-    t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.12, page_width*0.28, page_width*0.45], repeatRows=2)
+    
+    # 調整此處欄寬：職稱15%, 代號15%, 姓名25%, 任務45%                      
+    t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45], repeatRows=2)
     t1.setStyle(TableStyle([
         ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), 
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), 
@@ -190,7 +191,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # ==================== 表格 2：警力佈署 (已調整欄寬) ====================
+    # ==================== 表格 2：警力佈署 ====================
     data_ptl = [
         [Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''],
         [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_left), '', '', '', ''],
@@ -353,13 +354,13 @@ def get_html():
     note_html = NOTES.replace('\n', '<br>')
     
     parts = []
-    # 調整 HTML 預覽的欄寬：勤務時段20%, 代號10%, 編組15%, 服勤人員25%, 任務分工30%
+    # 調整 HTML 預覽的欄寬：職稱15%, 代號15%, 姓名25%, 任務45% 
     parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:14pt;margin:15px 0;line-height:1.6;} .cmd-row{text-align:left;background-color:white;}</style>")
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}<br>執行「防制危險駕車專案勤務」規劃表</b></h2>")
     parts.append(f"<div style='text-align:right'><b>時間：{p_time}</b></div><br>")
     
     parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr>")
-    parts.append("<tr><th width='15%'>職稱</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
+    parts.append("<tr><th width='15%'>職稱</th><th width='15%'>代號</th><th width='25%'>姓名</th><th width='45%'>任務</th></tr>")
     
     for _, r in res_cmd.iterrows():
         name = str(r.get('姓名', '')).replace('、', '<br>')
