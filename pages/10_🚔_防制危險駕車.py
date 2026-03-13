@@ -285,7 +285,6 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 st.subheader("1. 基礎資訊")
 p_time = st.text_input("勤務時間", t)
 
-# 預設檔名使用當天日期 (防呆)
 file_date_str = datetime.now().strftime('%Y%m%d')
 
 # ====== 魔法連動與檔名擷取 ======
@@ -323,27 +322,27 @@ res_cmd = res_cmd.fillna("")
 res_cmd = res_cmd[~(res_cmd == "").all(axis=1)].reset_index(drop=True)
 
 st.subheader("3. 警力佈署")
-# 將資料表提早渲染，以利後續「即時抓取最新編輯內容」來同步單位名稱
+
+# ====== 魔法連動：第一筆的「編組輪值單位」，自動跟隨「指揮官」單位變動 ======
+cmdr_input = st.text_input("交通快打指揮官", cmdr)
+
+if len(ed_ptl) > 0:
+    # 從指揮官字串中抓出單位名稱 (例如：石門所、中興所)
+    m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
+    if m_unit:
+        unit_name = m_unit.group(1)
+        first_group = str(ed_ptl.loc[0, '編組'])
+        # 將抓出的單位名稱替換到原本的編組字串中
+        if re.search(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', first_group):
+            ed_ptl.loc[0, '編組'] = re.sub(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', unit_name, first_group, count=1)
+        else:
+            ed_ptl.loc[0, '編組'] = f"專責警力（{unit_name}輪值）"
+# =========================================================
+
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 res_ptl = res_ptl.fillna("")
 res_ptl = res_ptl[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
 
-# ====== 魔法連動：指揮官單位自動跟隨第一筆編組 ======
-if len(res_ptl) > 0:
-    first_group = str(res_ptl.loc[0, '編組'])
-    # 抓取第一筆編組中的「XX所」、「XX分隊」或「XX分局」
-    m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', first_group)
-    if m_unit:
-        unit_name = m_unit.group(1)
-        # 若原指揮官字串中已有單位名稱，則替換；若無則直接冠在最前面
-        if re.search(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', cmdr):
-            cmdr = re.sub(r'[\u4e00-\u9fa5]+(?:所|分隊|分局)', unit_name, cmdr, count=1)
-        else:
-            cmdr = f"{unit_name}{cmdr}"
-
-# 指揮官輸入框移至表格下方，以便達到即時同步的互動效果
-cmdr_input = st.text_input("交通快打指揮官", cmdr)
-# =========================================================
 
 st.subheader("4. 巡簽地點與備註 (固定)")
 st.info("此區塊將直接附加於報表末端")
