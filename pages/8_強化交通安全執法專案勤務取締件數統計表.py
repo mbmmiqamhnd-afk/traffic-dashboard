@@ -37,21 +37,26 @@ LAW_MAP = {
 
 def map_unit_name(raw_name):
     # 讓交通組與警備隊獨立對應
-    raw = str(raw_name)
+    raw = str(raw_name).strip()
     if '交通組' in raw: return '交通組'
     if '警備隊' in raw: return '警備隊'
     
-    u_map = {
-        '交通分隊': '交通分隊', '龍潭交通分隊': '交通分隊',
-        '聖亭': '聖亭所', '聖亭派出所': '聖亭所',
-        '龍潭': '龍潭所', '龍潭派出所': '龍潭所',
-        '中興': '中興所', '中興派出所': '中興所',
-        '石門': '石門所', '石門派出所': '石門所',
-        '高平': '高平所', '高平派出所': '高平所',
-        '三和': '三和所', '三和派出所': '三和所'
-    }
-    for key, val in u_map.items():
-        if key in raw: return val
+    if '聖亭' in raw: return '聖亭所'
+    if '中興' in raw: return '中興所'
+    if '石門' in raw: return '石門所'
+    if '高平' in raw: return '高平所'
+    if '三和' in raw: return '三和所'
+    if '龍潭派出所' in raw: return '龍潭所'
+    if raw == '龍潭': return '龍潭所'
+    
+    # 交通分隊處理：包含龍潭交通分隊，且主動排除楊梅、大溪等其他地區的交大分隊
+    if '交通分隊' in raw:
+        exclude_list = ['楊梅', '大溪', '平鎮', '中壢', '八德', '大園', '蘆竹', '龜山', '桃園交通']
+        for ex in exclude_list:
+            if ex in raw:
+                return None
+        return '交通分隊'
+        
     return None
 
 def get_counts(df, unit, categories_list):
@@ -72,10 +77,12 @@ st.title(f"📈 強化交通安全執法專案")
 
 col1, col2 = st.columns(2)
 f1 = col1.file_uploader("📂 1. 上傳『法條件數報表』\n(統計前5項)", type=["csv", "xlsx"], key="f_top5")
-f2 = col2.file_uploader("📂 2. 上傳『大型車輛違規績效統計表』\n(統計大型車)", type=["csv", "xlsx"], key="f_heavy")
+# 升級：允許上傳多個檔案合併！
+f2_list = col2.file_uploader("📂 2. 上傳『大型車違規表』\n(支援多檔合併：請同時選取分局+交大表)", type=["csv", "xlsx"], key="f_heavy", accept_multiple_files=True)
 
-if f1 and f2:
+if f1 and f2_list:
     try:
+        # --- 動態擷取「統計期間」 ---
         f1.seek(0)
         try:
             df1_head = pd.read_csv(f1, nrows=10, header=None) if f1.name.endswith('.csv') else pd.read_excel(f1, nrows=10, header=None)
@@ -106,6 +113,7 @@ if f1 and f2:
                             date_range_str = "-".join(clean_parts)
         f1.seek(0)
 
+        # --- 處理第一份報表 (法條件數報表) ---
         try:
             df1 = pd.read_csv(f1, skiprows=3) if f1.name.endswith('.csv') else pd.read_excel(f1, skiprows=3)
         except UnicodeDecodeError:
@@ -114,52 +122,64 @@ if f1 and f2:
             
         df1.columns = [str(c).strip() for c in df1.columns]
 
-        df2 = pd.read_csv(f2, header=None) if f2.name.endswith('.csv') else pd.read_excel(f2, header=None)
-        
-        header_idx_2 = None
-        for idx, row in df2.head(20).iterrows():
-            row_vals = [str(x).strip() for x in row.values]
-            if '單位' in row_vals and '舉發總數' in row_vals:
-                header_idx_2 = idx
-                break
+        # --- 處理第二份報表 (支援多檔案無縫合併) ---
+        df2_all_list = []
+        for f2 in f2_list:
+            f2.seek(0)
+            try:
+                df2 = pd.read_csv(f2, header=None) if f2.name.endswith('.csv') else pd.read_excel(f2, header=None)
+            except UnicodeDecodeError:
+                f2.seek(0)
+                df2 = pd.read_csv(f2, header=None, encoding='cp950') if f2.name.endswith('.csv') else pd.DataFrame()
+            
+            header_idx_2 = None
+            for idx, row in df2.head(20).iterrows():
+                row_vals = [str(x).strip() for x in row.values]
+                if '單位' in row_vals and '舉發總數' in row_vals:
+                    header_idx_2 = idx
+                    break
 
-        if header_idx_2 is None:
-            st.error("❌ 在第二份報表中找不到『單位』與『舉發總數』欄位，請確認上傳了正確的檔案！")
+            if header_idx_2 is not None:
+                cols = [str(c).strip() for c in df2.iloc[header_idx_2]]
+                seen = {}
+                new_cols = []
+                for c in cols:
+                    if c in seen:
+                        seen[c] += 1
+                        new_cols.append(f"{c}.{seen[c]}")
+                    else:
+                        seen[c] = 0
+                        new_cols.append(c)
+                
+                df2_clean = df2.iloc[header_idx_2+1:].reset_index(drop=True)
+                df2_clean.columns = new_cols
+                df2_all_list.append(df2_clean)
+        
+        if not df2_all_list:
+            st.error("❌ 在大型車報表中找不到『單位』與『舉發總數』欄位！")
             st.stop()
             
-        cols = [str(c).strip() for c in df2.iloc[header_idx_2]]
+        # 將多份大型車報表合併成一個大 DataFrame
+        df2_clean_combined = pd.concat(df2_all_list, ignore_index=True)
         
-        seen = {}
-        new_cols = []
-        for c in cols:
-            if c in seen:
-                seen[c] += 1
-                new_cols.append(f"{c}.{seen[c]}")
-            else:
-                seen[c] = 0
-                new_cols.append(c)
-                
-        df2_clean = df2.iloc[header_idx_2+1:].reset_index(drop=True)
-        df2_clean.columns = new_cols
-        
-        df2_clean['標準單位'] = df2_clean['單位'].apply(map_unit_name)
-        df2_clean['舉發總數'] = pd.to_numeric(df2_clean['舉發總數'], errors='coerce').fillna(0)
+        df2_clean_combined['標準單位'] = df2_clean_combined['單位'].apply(map_unit_name)
+        df2_clean_combined['舉發總數'] = pd.to_numeric(df2_clean_combined['舉發總數'], errors='coerce').fillna(0)
 
         # ====== 排除特定違規項目 ======
         for exclude_col in ['違反管制規定', '其他違規']:
-            if exclude_col in df2_clean.columns:
-                df2_clean[exclude_col] = pd.to_numeric(df2_clean[exclude_col], errors='coerce').fillna(0)
+            if exclude_col in df2_clean_combined.columns:
+                df2_clean_combined[exclude_col] = pd.to_numeric(df2_clean_combined[exclude_col], errors='coerce').fillna(0)
             else:
-                df2_clean[exclude_col] = 0
+                df2_clean_combined[exclude_col] = 0
                 
         # 調整後的大型車違規
-        df2_clean['調整後大型車違規'] = (df2_clean['舉發總數'] - df2_clean['違反管制規定'] - df2_clean['其他違規']).clip(lower=0)
+        df2_clean_combined['調整後大型車違規'] = (df2_clean_combined['舉發總數'] - df2_clean_combined['違反管制規定'] - df2_clean_combined['其他違規']).clip(lower=0)
 
         final_results = []
         for unit in TARGET_CONFIG.keys():
             data_1to5 = get_counts(df1, unit, CATS[:5])
             
-            unit_rows = df2_clean[df2_clean['標準單位'] == unit]
+            unit_rows = df2_clean_combined[df2_clean_combined['標準單位'] == unit]
             heavy_count = int(unit_rows['調整後大型車違規'].sum()) if not unit_rows.empty else 0
             
             all_c = {**data_1to5, CATS[5]: heavy_count}
