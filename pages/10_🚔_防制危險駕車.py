@@ -171,7 +171,8 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
         return s.replace('\n', '<br/>').replace('\\n', '<br/>')
 
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
-                [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
+                [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職ড়ান্ত```python
+稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
         data_cmd.append([
             Paragraph(f"<b>{clean(r.get('職稱',''))}</b>", style_cell), 
@@ -354,25 +355,24 @@ res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 res_ptl = res_ptl.fillna("")
 res_ptl = res_ptl[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
 
-# ====== 第二道防線：使用者編輯完畢後，再次排版並判斷【主官代號】 ======
+# ====== 第二道防線：使用者編輯完畢後，再次排版並判斷【第一筆的主官代號】 ======
 if '服勤人員' in res_ptl.columns:
     res_ptl['服勤人員'] = res_ptl['服勤人員'].apply(auto_format_personnel)
     
-    # 🚔 無線電代號自動判斷 (尾數 0 -> 1 或 2)
-    if '無線電' in res_ptl.columns:
-        for idx in res_ptl.index:
-            ppl_text = str(res_ptl.loc[idx, '服勤人員'])
-            rad_text = str(res_ptl.loc[idx, '無線電']).strip()
-            
-            # 如果出現真正的所長(不含副)或分隊長，將尾數 0 變 1
-            if re.search(r'(?<!副)所長|分隊長', ppl_text):
-                if rad_text.endswith('0'):
-                    res_ptl.loc[idx, '無線電'] = rad_text[:-1] + '1'
-            
-            # 如果出現副所長或小隊長，將尾數 0 變 2
-            elif re.search(r'副所長|小隊長', ppl_text):
-                if rad_text.endswith('0'):
-                    res_ptl.loc[idx, '無線電'] = rad_text[:-1] + '2'
+    # 🚔 僅針對「第一筆資料 (專責警力)」進行無線電代號判斷 (保持其他線上警網不受影響)
+    if '無線電' in res_ptl.columns and len(res_ptl) > 0:
+        ppl_text = str(res_ptl.loc[0, '服勤人員'])
+        rad_text = str(res_ptl.loc[0, '無線電']).strip()
+        
+        # 如果出現真正的所長(不含副)或分隊長，將尾數確保為 1
+        if re.search(r'(?<!副)所長|分隊長', ppl_text):
+            if rad_text.endswith('0') or rad_text.endswith('2'):
+                res_ptl.loc[0, '無線電'] = rad_text[:-1] + '1'
+        
+        # 如果出現副所長或小隊長，將尾數確保為 2
+        elif re.search(r'副所長|小隊長', ppl_text):
+            if rad_text.endswith('0') or rad_text.endswith('1'):
+                res_ptl.loc[0, '無線電'] = rad_text[:-1] + '2'
 # ====================================================================
 
 # ====== HTML 預覽引擎 (這才是你能確認換行的靈魂) ======
