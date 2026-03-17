@@ -28,7 +28,7 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
 
-# --- 預設資料模版 ---
+# --- 預設資料 (離線備援) ---
 DEFAULT_TIME = "115年3月6日22時至翌日6時"
 DEFAULT_COMMANDER = "石門所副所長林榮裕"
 
@@ -51,28 +51,19 @@ DEFAULT_PATROL = pd.DataFrame([
     }
 ])
 
-CHECKIN_POINTS = """1. 中油高原交流道站（龍源路2-20號）
-2. 萊爾富超商-龍潭石門山店（龍源路大平段262號）
-3. 7-11龍潭佳園門市（中正路三坑段776號）
-4. 旭日路三坑自然生態公園停車場
-5. 旭日路與大溪區交界處"""
-
-NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
-二、攔檢、盤查車輛時，應隨時注意自身安全及執勤態度。
-三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
-四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
-
-# --- 2. 排版引擎 ---
+# --- 2. 排版引擎：強制服勤人員垂直並列 ---
 def auto_format_personnel(val):
+    """處理服勤人員格式：時段與姓名垂直並列，並加粗時段"""
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
         return ""
     s = str(val).replace('：', ':').replace('、', '\n')
-    # 確保「時段」後換行，並在 HTML/PDF 中加粗
+    # 使用正規表達式：匹配「XX-XX時」，將後方的冒號或空格改為換行，並加粗時段
     s = re.sub(r'(\d{2}-\d{2}時)[:\s]*', r'<b>\1</b>\n', s)
+    # 清理重複換行與空白
     lines = [line.strip() for line in s.split('\n') if line.strip()]
     return '\n'.join(lines)
 
-# --- 3. 雲端讀取與儲存 ---
+# --- 3. 雲端讀取/儲存函數 ---
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets: return None
@@ -122,7 +113,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     page_width = A4[0] - 24*mm
     story = []
     
-    # 調整 leading (行距) 讓垂直並列更緊湊
+    # 調整 leading (行高) 讓垂直並列更緊湊 (原 18 改 16)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=16, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=16, alignment=0)
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
@@ -161,7 +152,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     doc.build(story)
     return buf.getvalue()
 
-# --- 5. 主介面與連動邏輯 ---
+# --- 5. 主程式與魔法連動邏輯 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
     t, cmdr = DEFAULT_TIME, DEFAULT_COMMANDER
@@ -172,29 +163,34 @@ else:
     ed_cmd, ed_ptl = df_cmd, df_ptl
 
 st.title("🚔 防制危險駕車專案勤務規劃表")
+
+# 基礎輸入
 p_time = st.text_input("勤務時間", t)
 cmdr_input = st.text_input("交通快打指揮官", cmdr)
 
-# ====== 核心連動：快打指揮官 -> 專責警力單位 & 垂直排版 ======
+# ====== 核心魔法連動：單位同步、代號連動、垂直排版 ======
 if len(ed_ptl) > 0:
+    # 辨識單位
     m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
     if m_unit:
         unit_name = m_unit.group(1)
+        # 職稱姓名 (扣除單位後的剩餘字串)
         title_name = cmdr_input.replace(unit_name, "").strip()
         
-        # 修正：避免重複出現「所」字
+        # 1. 同步編組：避免「所所」重複
         suffix_word = "輪值" if unit_name.endswith("所") or unit_name.endswith("分隊") else "所輪值"
         ed_ptl.loc[0, '編組'] = f"專責警力\n（{unit_name}{suffix_word}）"
         
-        # 無線電代號連動
+        # 2. 自動切換無線電代號
         unit_map = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
         for k, v in unit_map.items():
             if k in unit_name:
+                # 依職稱給予尾碼 (所長級1, 副座/小隊長2)
                 suffix = "1" if any(x in title_name for x in ["所長", "分隊長"]) else "2"
                 ed_ptl.loc[0, '無線電'] = v + suffix
                 break
         
-        # 服勤人員垂直同步
+        # 3. 第一列服勤人員：時段與姓名垂直連動
         current_ppl = str(ed_ptl.loc[0, '服勤人員'])
         time_slots = re.findall(r'(\d{2}-\d{2}時)', current_ppl)
         if time_slots and title_name:
@@ -203,18 +199,20 @@ if len(ed_ptl) > 0:
                 new_val += f"{ts}\n{title_name}\n"
             ed_ptl.loc[0, '服勤人員'] = new_val.strip()
 
-# 套用排版引擎
+# 強制對所有服勤人員欄位套用「垂直排版與加粗」
 if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 
-# 介面編輯器
+# --- 6. 介面編輯器 ---
 st.subheader("1. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
+
 st.subheader("2. 警力佈署")
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 
+# --- 7. 下載按鈕 ---
 if st.button("同步雲端並產生 PDF 💾", type="primary"):
     if save_data(p_time, cmdr_input, res_cmd, res_ptl):
         pdf_out = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
-        st.success("✅ 同步成功！")
+        st.success("✅ 雲端同步成功！")
         st.download_button("點此下載 PDF", data=pdf_out, file_name=f"勤務規劃表_{datetime.now().strftime('%m%d')}.pdf")
