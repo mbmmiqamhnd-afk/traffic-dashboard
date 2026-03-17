@@ -28,7 +28,7 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
 
-# --- 預設資料 (當雲端連線失敗時使用) ---
+# --- 預設資料模版 ---
 DEFAULT_TIME = "115年3月6日22時至翌日6時"
 DEFAULT_COMMANDER = "石門所副所長林榮裕"
 
@@ -62,18 +62,17 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
-# --- 2. 自動排版引擎 ---
+# --- 2. 排版引擎 ---
 def auto_format_personnel(val):
-    """處理服勤人員格式：時段與姓名垂直並列"""
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
         return ""
     s = str(val).replace('：', ':').replace('、', '\n')
-    # 將「XX-XX時」加粗並強迫換行
+    # 確保「時段」後換行，並在 HTML/PDF 中加粗
     s = re.sub(r'(\d{2}-\d{2}時)[:\s]*', r'<b>\1</b>\n', s)
     lines = [line.strip() for line in s.split('\n') if line.strip()]
     return '\n'.join(lines)
 
-# --- 3. 雲端讀取/儲存函數 (省略細節以保簡潔，保持您的原邏輯) ---
+# --- 3. 雲端讀取與儲存 ---
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets: return None
@@ -92,7 +91,77 @@ def load_data():
                 pd.DataFrame(sh.worksheet("危駕_警力佈署").get_all_records()), None)
     except: return None, None, None, "載入失敗"
 
-# --- 4. 主介面邏輯 ---
+def save_data(time_str, commander, df_cmd, df_patrol):
+    try:
+        client = get_client()
+        if not client: return False
+        sh = client.open_by_key(SHEET_ID)
+        sh.worksheet("危駕_設定").update([["Key", "Value"], ["plan_time", time_str], ["commander", commander]])
+        for ws_name, df in [("危駕_指揮組", df_cmd), ("危駕_警力佈署", df_patrol)]:
+            ws = sh.worksheet(ws_name)
+            ws.clear()
+            ws.update([df.columns.tolist()] + df.fillna("").values.tolist())
+        load_data.clear()
+        return True
+    except: return False
+
+# --- 4. PDF 生成引擎 ---
+def _get_font():
+    fname = "kaiu"
+    if fname in pdfmetrics.getRegisteredFontNames(): return fname
+    for p in ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]:
+        if os.path.exists(p):
+            pdfmetrics.registerFont(TTFont(fname, p))
+            return fname
+    return "Helvetica"
+
+def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
+    font = _get_font()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
+    page_width = A4[0] - 24*mm
+    story = []
+    
+    # 調整 leading (行距) 讓垂直並列更緊湊
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=16, alignment=1)
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=16, alignment=0)
+    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
+    style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
+    style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22)
+    style_col_header = ParagraphStyle('ColHeader', fontName=font, fontSize=16, leading=20, alignment=1)
+
+    story.append(Paragraph(f"<b>{UNIT}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
+    story.append(Paragraph(f"勤務時間：{time_str}", style_info))
+    
+    def clean(txt): return str(txt).replace("\n", "<br/>")
+
+    # 表格 1
+    data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
+                [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
+    for _, r in df_cmd.iterrows():
+        data_cmd.append([Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell), Paragraph(str(r.get('代號','')), style_cell),
+                         Paragraph(clean(r.get('姓名','')).replace("、", "<br/>"), style_cell), Paragraph(clean(r.get('任務','')), style_cell_left)])
+    t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45], repeatRows=2)
+    t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]))
+    story.append(t1); story.append(Spacer(1, 6*mm))
+
+    # 表格 2
+    data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''],
+                [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_left), '', '', '', ''],
+                [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
+    for _, r in df_patrol.iterrows():
+        data_ptl.append([Paragraph(clean(r.get('勤務時段','')), style_cell), clean(r.get('無線電','')),
+                         Paragraph(clean(r.get('編組','')).replace("、", "<br/>"), style_cell), 
+                         Paragraph(clean(r.get('服勤人員','')), style_cell), 
+                         Paragraph(clean(r.get('任務分工','')), style_cell_left)])
+    t2 = Table(data_ptl, colWidths=[page_width*0.20, page_width*0.10, page_width*0.15, page_width*0.25, page_width*0.30], repeatRows=3)
+    t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2'))]))
+    story.append(t2)
+
+    doc.build(story)
+    return buf.getvalue()
+
+# --- 5. 主介面與連動邏輯 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
     t, cmdr = DEFAULT_TIME, DEFAULT_COMMANDER
@@ -103,23 +172,21 @@ else:
     ed_cmd, ed_ptl = df_cmd, df_ptl
 
 st.title("🚔 防制危險駕車專案勤務規劃表")
-
-# 基礎輸入
 p_time = st.text_input("勤務時間", t)
 cmdr_input = st.text_input("交通快打指揮官", cmdr)
 
-# ====== 魔法連動核心：指揮官單位 = 專責警力單位 ======
+# ====== 核心連動：快打指揮官 -> 專責警力單位 & 垂直排版 ======
 if len(ed_ptl) > 0:
-    # 辨識單位 (XX所/分隊)
     m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
     if m_unit:
         unit_name = m_unit.group(1)
-        title_name = cmdr_input.replace(unit_name, "").strip() # 剩餘的人名職稱
+        title_name = cmdr_input.replace(unit_name, "").strip()
         
-        # 1. 同步編組名稱
-        ed_ptl.loc[0, '編組'] = f"專責警力\n（{unit_name}輪值）"
+        # 修正：避免重複出現「所」字
+        suffix_word = "輪值" if unit_name.endswith("所") or unit_name.endswith("分隊") else "所輪值"
+        ed_ptl.loc[0, '編組'] = f"專責警力\n（{unit_name}{suffix_word}）"
         
-        # 2. 自動切換無線電代號
+        # 無線電代號連動
         unit_map = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
         for k, v in unit_map.items():
             if k in unit_name:
@@ -127,7 +194,7 @@ if len(ed_ptl) > 0:
                 ed_ptl.loc[0, '無線電'] = v + suffix
                 break
         
-        # 3. 自動同步服勤人員 (垂直排版)
+        # 服勤人員垂直同步
         current_ppl = str(ed_ptl.loc[0, '服勤人員'])
         time_slots = re.findall(r'(\d{2}-\d{2}時)', current_ppl)
         if time_slots and title_name:
@@ -136,16 +203,18 @@ if len(ed_ptl) > 0:
                 new_val += f"{ts}\n{title_name}\n"
             ed_ptl.loc[0, '服勤人員'] = new_val.strip()
 
-# 套用自動排版引擎 (讓所有服勤人員欄位都垂直並列)
+# 套用排版引擎
 if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 
-# 顯示表格編輯器
+# 介面編輯器
 st.subheader("1. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
-
 st.subheader("2. 警力佈署")
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 
-# 下方為 PDF 生成與下載按鈕 (保持原邏輯)
-# ... (PDF 生成代碼與 st.download_button) ...
+if st.button("同步雲端並產生 PDF 💾", type="primary"):
+    if save_data(p_time, cmdr_input, res_cmd, res_ptl):
+        pdf_out = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
+        st.success("✅ 同步成功！")
+        st.download_button("點此下載 PDF", data=pdf_out, file_name=f"勤務規劃表_{datetime.now().strftime('%m%d')}.pdf")
