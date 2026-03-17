@@ -13,7 +13,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
@@ -124,8 +123,17 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
     
-    # 強制段落靠左對齊 (TA_LEFT)
-    style_note = ParagraphStyle('Note', fontName=font, fontSize=14, leading=20, spaceAfter=5, alignment=TA_LEFT)
+    # 📌 強制段落靠左對齊 (alignment=0 代表絕對靠左)，並設定縮排為 0 防止被推移
+    style_note = ParagraphStyle(
+        'Note', 
+        fontName=font, 
+        fontSize=14, 
+        leading=20, 
+        spaceAfter=5, 
+        alignment=0, 
+        leftIndent=0, 
+        firstLineIndent=0
+    )
     style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
 
     story.append(Paragraph(f"{unit}執行{project}規劃表", style_title))
@@ -144,10 +152,14 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                             ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t1)
     
+    # 📌 將傳進來的文字先用 strip() 去除頭尾可能存在的空白或換行符號
+    briefing_clean = str(briefing).strip()
+    station_clean = str(station).strip().replace('\n', '<br/>')
+
     # 中間靠左文字區塊
     story.append(Spacer(1, 6*mm))
-    story.append(Paragraph(f"<b>📢 勤前教育：</b>{briefing}", style_note))
-    story.append(Paragraph(f"<b>🚧 環保局臨時檢驗站開設：</b><br/>{station.replace(chr(10), '<br/>')}", style_note))
+    story.append(Paragraph(f"<b>📢 勤前教育：</b>{briefing_clean}", style_note))
+    story.append(Paragraph(f"<b>🚧 環保局臨時檢驗站開設：</b><br/>{station_clean}", style_note))
     story.append(Spacer(1, 6*mm))
 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
@@ -186,25 +198,18 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
     story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
     
-    # 3. 地點
-    loc = briefing if "於" not in briefing else briefing.split("於")[1]
+    # 3. 地點 (同樣加上 strip 防呆)
+    loc = str(briefing).strip() if "於" not in str(briefing) else str(briefing).strip().split("於")[1]
     story.append(Paragraph(f"地點：{loc}", style_top_info))
     story.append(Spacer(1, 3*mm))
 
     # 4. 核心表格
     table_data = []
-    
-    # 第一列：分局長 與 上級督導 (文字靠左)
     table_data.append([Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""])
-    
-    # 第二列：副分局長 (跨欄合併、文字靠左)
     table_data.append([Paragraph("副分局長：", style_cell_left), "", "", ""])
-
-    # 第三列：標題
     table_data.append([Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), 
                         Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)])
     
-    # 單位內容 (交通組與勤指互換位置)
     rows = [
         ("交通組", "中興派出所"),
         ("勤務指揮中心", "石門派出所"),
@@ -224,25 +229,22 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        # 特定列靠左對齊
         ('ALIGN', (0,0), (0,0), 'LEFT'),
         ('ALIGN', (2,0), (2,0), 'LEFT'),
         ('ALIGN', (0,1), (0,1), 'LEFT'),
-        # 合併欄位
         ('SPAN', (0,1), (3,1)), 
         ('BACKGROUND', (0,2), (0,2), colors.whitesmoke),
         ('BACKGROUND', (2,2), (2,2), colors.whitesmoke),
     ]))
     story.append(t)
 
-    # 5. 備註
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
 
     doc.build(story)
     return buf.getvalue()
 
-# --- 4. 寄信功能 (夾帶兩份 PDF) ---
+# --- 4. 寄信功能 ---
 def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     try:
         sender = st.secrets["email"]["user"]
@@ -253,7 +255,6 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
         msg["Subject"] = f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
         msg.attach(MIMEText("附件為最新的勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
         
-        # 附件 1: 規劃表
         pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl)
         part1 = MIMEBase("application", "pdf")
         part1.set_payload(pdf1)
@@ -261,7 +262,6 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote('規劃表.pdf')}")
         msg.attach(part1)
         
-        # 附件 2: 簽到表
         pdf2 = generate_attendance_pdf(unit, project, time_str, briefing)
         part2 = MIMEBase("application", "pdf")
         part2.set_payload(pdf2)
@@ -293,7 +293,6 @@ p_time = c2.text_input("勤務時間", t)
 st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 
-# 移除 st.columns(2) 讓兩個文字框獨立成列，強制靠左顯示
 b_info = st.text_area("📢 勤前教育", b, height=70)
 s_info = st.text_area("🚧 環保局臨時檢驗站開設", s, height=70)
 
@@ -306,8 +305,11 @@ def get_html():
     for _, r in res_cmd.iterrows():
         html += f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>"
     
-    # 預覽 HTML 區塊中也確保為 text-align: left 靠左對齊
-    html += f"</table><div class='note'><b>📢 勤前教育：</b>{b_info}<br><b>🚧 環保局臨時檢驗站開設：</b><br>{s_info.replace(chr(10),'<br>')}</div>"
+    # 📌 預覽 HTML 中同樣加上 strip() 清除多餘空白
+    b_html = str(b_info).strip()
+    s_html = str(s_info).strip().replace('\n', '<br>')
+    html += f"</table><div class='note'><b>📢 勤前教育：</b>{b_html}<br><b>🚧 環保局臨時檢驗站開設：</b><br>{s_html}</div>"
+    
     html += "<table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
     for _, r in res_ptl.iterrows():
         html += f"<tr><td style='white-space:nowrap;'>{r.get('編組','')}</td><td style='white-space:nowrap;'>{r.get('無線電','')}</td><td>{str(r.get('單位','')).replace('、','<br>')}</td><td>{str(r.get('服勤人員','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務分工','')}</td></tr>"
