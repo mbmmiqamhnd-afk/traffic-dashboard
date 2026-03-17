@@ -168,8 +168,10 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
 
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=12, leading=22, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=22, alignment=0) #
+    
+    # 📌 更新字型大小為 14，並適度調整行距 (leading) 避免文字過於擁擠
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1)
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0) 
     style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
 
     # 1. 標題
@@ -209,7 +211,9 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     for l, r in rows:
         table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
     
-    row_heights = [18*mm, 18*mm, 10*mm] + [20*mm] * len(rows)
+    # 📌 計算行高：第4列以下(含)增加 1/3，也就是原本的 20*mm * (4/3) ≈ 26.67*mm
+    data_row_height = 20 * mm * (4/3)
+    row_heights = [18*mm, 18*mm, 10*mm] + [data_row_height] * len(rows)
     
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=row_heights)
     t.setStyle(TableStyle([
