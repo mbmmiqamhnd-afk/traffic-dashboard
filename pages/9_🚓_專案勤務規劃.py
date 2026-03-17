@@ -38,17 +38,15 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "上級督導官", "代號": "駐區督察", "姓名": "孫三陽", "任務": "重點機動督導。"},
     {"職稱": "督導組", "代號": "隆安6", "姓名": "督察組組長 黃長旗、督察組督察員 黃中彥、督察組警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律。"},
     {"職稱": "指導組", "代號": "隆安684", "姓名": "督察組教官 郭文義", "任務": "指導各編組勤務執行及狀況處置。"},
-    {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "交通組組長 楊孟竟、交通組警務員 盧冠仁、交通組警務員 李峯甫、交通組巡官 郭勝隆、交通組巡官 羅千金、交通組警員 吳享運、勤指中心警員 張庭溱、行政組警務佐 曾威仁、人事室警員 陳明祥", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
+    {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "交通組組長 楊孟竟、交通組警務員 盧冠仁、交通組警務員 李峯甫", "任務": "規劃本勤務、重點機動督導及回報績效。"},
     {"職稱": "通訊組", "代號": "隆安", "姓名": "主任 蔡奇青、執勤官 李文章、執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜。"},
 ])
 
 DEFAULT_PTL = pd.DataFrame([
-    {"編組": "第一巡邏組", "無線電": "隆安54", "單位": "聖亭所", "服勤人員": "巡佐傅錫城、警員曾建凱", "任務分工": "於大昌路一段周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第二巡邏組", "無線電": "隆安62", "單位": "龍潭所", "服勤人員": "副所長全楚文、警員龔品璇", "任務分工": "於大昌路二段周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第三巡邏組", "無線電": "隆安72", "單位": "中興所", "服勤人員": "副所長薛德祥、警員冷柔萱", "任務分工": "於中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第四巡邏組", "無線電": "隆安83", "單位": "石門所", "服勤人員": "巡佐林偉政、警員盧瑾瑤", "任務分工": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第五巡邏組", "無線電": "隆安33", "單位": "三和所、高平所", "服勤人員": "警員唐銘聰、警員張湃柏", "任務分工": "於大昌路一、二段、北龍路及中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第六巡邏組", "無線電": "隆安994", "單位": "龍潭交通分隊", "服勤人員": "小隊長林振生、警員吳沛軒", "任務分工": "於大昌路一、二段、北龍路及中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第一巡邏組", "無線電": "隆安54", "單位": "聖亭所", "服勤人員": "巡佐傅錫城、警員曾建凱", "任務分工": "於大昌路一段周邊巡查。"},
+    {"編組": "第二巡邏組", "無線電": "隆安62", "單位": "龍潭所", "服勤人員": "副所長全楚文、警員龔品璇", "任務分工": "於大昌路二段周邊巡查。"},
+    {"編組": "第三巡邏組", "無線電": "隆安72", "單位": "中興所", "服勤人員": "副所長薛德祥、警員冷柔萱", "任務分工": "於中興路周邊巡查。"},
+    {"編組": "第四巡邏組", "無線電": "隆安83", "單位": "石門所", "服勤人員": "巡佐林偉政、警員盧瑾瑤", "任務分工": "於北龍路周邊巡查。"},
 ])
 
 # --- 2. 輔助函數 ---
@@ -149,7 +147,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_ptl.iterrows():
-        task = f"{r.get('任務分工','')}<br/><font color='blue' size='11'>*雨備方案：轄區治安要點巡邏。</font>"
+        task = f"{r.get('任務分工','')}<br/><font color='blue' size='11'>*雨備方案：各治安要點巡邏。</font>"
         data_ptl.append([str(r.get('編組','')), str(r.get('無線電','')), Paragraph(clean(r.get('單位','')), style_cell), 
                          Paragraph(clean(r.get('服勤人員','')), style_cell), Paragraph(task, style_cell_left)])
     
@@ -171,43 +169,36 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=12, leading=22, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=22, alignment=0)
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=22, alignment=0) #
     style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
 
-    # 1. 標題 (對應來源 1 [cite: 1])
+    # 1. 標題
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     
-    # 2. 時間 (對應來源 2 [cite: 1])
+    # 2. 自動計算時間
     meeting_range = parse_meeting_time(time_str)
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
     story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
     
-    # 3. 地點 (對應來源 5 [cite: 1])
+    # 3. 地點
     loc = briefing if "於" not in briefing else briefing.split("於")[1]
     story.append(Paragraph(f"地點：{loc}", style_top_info))
     story.append(Spacer(1, 3*mm))
 
-    # 4. 核心簽到表格 (對應來源 4 [cite: 1])
+    # 4. 核心表格
     table_data = []
     
-    # 第一列：分局長 | 上級督導 (文字靠左)
-    table_data.append([
-        Paragraph("分局長：", style_cell_left), "", 
-        Paragraph("上級督導：", style_cell_left), ""
-    ])
+    # 第一列：分局長 與 上級督導 (文字靠左)
+    table_data.append([Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""])
     
     # 第二列：副分局長 (跨欄合併、文字靠左)
-    table_data.append([
-        Paragraph("副分局長：", style_cell_left), "", "", ""
-    ])
+    table_data.append([Paragraph("副分局長：", style_cell_left), "", "", ""])
 
-    # 第三列：單位標題
-    table_data.append([
-        Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), 
-        Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)
-    ])
+    # 第三列：標題
+    table_data.append([Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), 
+                        Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)])
     
-    # 單位內容 (交通組與勤務指揮中心位置互換)
+    # 單位內容 (交通組與勤指互換位置)
     rows = [
         ("交通組", "中興派出所"),
         ("勤務指揮中心", "石門派出所"),
@@ -215,8 +206,8 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
         ("聖亭派出所", "三和派出所"),
         ("龍潭派出所", "龍潭交通分隊")
     ]
-    for left, right in rows:
-        table_data.append([Paragraph(left, style_cell), "", Paragraph(right, style_cell), ""])
+    for l, r in rows:
+        table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
     
     row_heights = [18*mm, 18*mm, 10*mm] + [20*mm] * len(rows)
     
@@ -226,48 +217,58 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        # 特定欄位靠左
+        # 特定列靠左對齊
         ('ALIGN', (0,0), (0,0), 'LEFT'),
         ('ALIGN', (2,0), (2,0), 'LEFT'),
         ('ALIGN', (0,1), (0,1), 'LEFT'),
-        # 合併格位
-        ('SPAN', (0,0), (0,0)), ('SPAN', (1,0), (1,0)), 
-        ('SPAN', (2,0), (2,0)), ('SPAN', (3,0), (3,0)),
+        # 合併欄位
         ('SPAN', (0,1), (3,1)), 
-        # 背景色
         ('BACKGROUND', (0,2), (0,2), colors.whitesmoke),
         ('BACKGROUND', (2,2), (2,2), colors.whitesmoke),
     ]))
     story.append(t)
 
-    # 5. 底部備註 (對應來源 7 [cite: 1])
+    # 5. 備註
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
 
     doc.build(story)
     return buf.getvalue()
 
-# --- 4. 寄信與主介面 ---
+# --- 4. 寄信功能 (夾帶兩份 PDF) ---
 def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     try:
         sender = st.secrets["email"]["user"]
         pwd = st.secrets["email"]["password"]
-        pdf_bytes = generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl)
+        
         msg = MIMEMultipart()
-        msg["From"], msg["To"], msg["Subject"] = sender, sender, f"勤務規劃表_{datetime.now().strftime('%m%d')}"
-        msg.attach(MIMEText("附件為最新的勤務規劃表 PDF。", "plain", "utf-8"))
-        part = MIMEBase("application", "pdf")
-        part.set_payload(pdf_bytes)
-        encoders.encode_base64(part)
-        filename = _ul.quote(f"{msg['Subject']}.pdf")
-        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{filename}")
-        msg.attach(part)
+        msg["From"], msg["To"] = sender, sender
+        msg["Subject"] = f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
+        msg.attach(MIMEText("附件為最新的勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
+        
+        # 附件 1: 規劃表
+        pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl)
+        part1 = MIMEBase("application", "pdf")
+        part1.set_payload(pdf1)
+        encoders.encode_base64(part1)
+        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote('規劃表.pdf')}")
+        msg.attach(part1)
+        
+        # 附件 2: 簽到表
+        pdf2 = generate_attendance_pdf(unit, project, time_str, briefing)
+        part2 = MIMEBase("application", "pdf")
+        part2.set_payload(pdf2)
+        encoders.encode_base64(part2)
+        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote('簽到表.pdf')}")
+        msg.attach(part2)
+        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
             server.sendmail(sender, sender, msg.as_string())
         return True, None
     except Exception as e: return False, str(e)
 
+# --- 5. 主介面 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
     u, t, p, b, s = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF, DEFAULT_STATION
@@ -293,7 +294,7 @@ st.subheader("2. 巡邏編組")
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 
 st.markdown("---")
-st.subheader("📄 報表下載")
+st.subheader("📄 報表下載與同步")
 col_dl1, col_dl2 = st.columns(2)
 
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
@@ -302,9 +303,9 @@ col_dl1.download_button("📝 下載 1.勤務規劃表", data=pdf_plan, file_nam
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
 col_dl2.download_button("🖋️ 下載 2.人員簽到表", data=pdf_attendance, file_name=f"簽到表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
 
-if st.button("💾 同步雲端並發送備份郵件", use_container_width=True):
-    with st.spinner("處理中..."):
+if st.button("💾 同步雲端並發送備份郵件 (含兩份 PDF)", use_container_width=True):
+    with st.spinner("同步中..."):
         save_data(u, p_time, p_name, b_info, s_info, res_cmd, res_ptl)
         ok, mail_err = send_report_email(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
-        if ok: st.success("✅ 同步完成！")
+        if ok: st.success("✅ 同步成功，規劃表與簽到表已寄至信箱！")
         else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {mail_err}")
