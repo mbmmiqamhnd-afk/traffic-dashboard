@@ -43,7 +43,7 @@ DEFAULT_CMD = pd.DataFrame([
 
 DEFAULT_PATROL = pd.DataFrame([
     {
-        "勤務時段": "3月7日\n零時至4時", "無線電": "隆安82", "編組": "專責警力（石門所輪值）", 
+        "勤務時段": "3月7日\n零時至4時", "無線電": "隆安82", "編組": "專責警力\n（石門所輪值）", 
         "服勤人員": "00-02時：\n副所長林榮裕\n02-04時：\n副所長林榮裕", 
         "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝（噪音）車輛"
     },
@@ -170,7 +170,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
         s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?：?)', r'<b>\1</b>', s)
         return s.replace('\n', '<br/>').replace('\\n', '<br/>')
 
-    # 修復了上一版出錯的地方，確保字串完整
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -307,12 +306,12 @@ cmdr_input = st.text_input("交通快打指揮官", cmdr)
 if len(ed_ptl) > 0:
     m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))(.*)', cmdr_input)
     if m_unit:
+        # unit_name 此時已經完整包含「所」字，例如「石門所」
         unit_name = m_unit.group(1)
         title_name = m_unit.group(2).strip()
         
-        # 同步編組 (避免重複所字)
-        suffix_word = "輪值" if unit_name.endswith("所") or unit_name.endswith("分隊") else "所輪值"
-        ed_ptl.loc[0, '編組'] = f"專責警力\n（{unit_name}{suffix_word}）"
+        # 🎯 精準修正：直接加上「輪值」即可，變成「石門所輪值」
+        ed_ptl.loc[0, '編組'] = f"專責警力\n（{unit_name}輪值）"
             
         unit_base_map = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
         base_code = ""
