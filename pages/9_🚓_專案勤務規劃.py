@@ -160,7 +160,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     doc.build(story)
     return buf.getvalue()
 
-# (B) 簽到表 (依照您的需求優化排版)
+# (B) 簽到表
 def generate_attendance_pdf(unit, project, time_str, briefing):
     font = _get_font()
     buf = io.BytesIO()
@@ -171,46 +171,46 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=12, leading=22, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=22, alignment=0) # 新增靠左樣式
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=22, alignment=0)
     style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
 
-    # 1. 標題
+    # 1. 標題 (對應來源 1 [cite: 1])
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     
-    # 2. 自動計算時間
+    # 2. 時間 (對應來源 2 [cite: 1])
     meeting_range = parse_meeting_time(time_str)
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
     story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
     
-    # 3. 地點
+    # 3. 地點 (對應來源 5 [cite: 1])
     loc = briefing if "於" not in briefing else briefing.split("於")[1]
     story.append(Paragraph(f"地點：{loc}", style_top_info))
     story.append(Spacer(1, 3*mm))
 
-    # 4. 核心簽到表格
+    # 4. 核心簽到表格 (對應來源 4 [cite: 1])
     table_data = []
     
-    # --- 第一列：分局長 (左) | 上級督導 (右) ---
+    # 第一列：分局長 | 上級督導 (文字靠左)
     table_data.append([
         Paragraph("分局長：", style_cell_left), "", 
         Paragraph("上級督導：", style_cell_left), ""
     ])
     
-    # --- 第二列：副分局長 (跨欄合併、文字靠左) ---
+    # 第二列：副分局長 (跨欄合併、文字靠左)
     table_data.append([
         Paragraph("副分局長：", style_cell_left), "", "", ""
     ])
 
-    # --- 第三列：單位格線標題 ---
+    # 第三列：單位標題
     table_data.append([
         Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), 
         Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)
     ])
     
-    # --- 單位內容 ---
+    # 單位內容 (交通組與勤務指揮中心位置互換)
     rows = [
-        ("勤務指揮中心", "中興派出所"),
-        ("交通組", "石門派出所"),
+        ("交通組", "中興派出所"),
+        ("勤務指揮中心", "石門派出所"),
         ("督察組", "高平派出所"),
         ("聖亭派出所", "三和派出所"),
         ("龍潭派出所", "龍潭交通分隊")
@@ -225,38 +225,29 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
         ('FONTNAME', (0,0), (-1,-1), font),
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        
-        # 預設全部置中
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        
-        # 針對「分局長」、「上級督導」與「副分局長」文字格靠左對齊
-        ('ALIGN', (0,0), (0,0), 'LEFT'), # 分局長文字
-        ('ALIGN', (2,0), (2,0), 'LEFT'), # 上級督導文字
-        ('ALIGN', (0,1), (0,1), 'LEFT'), # 副分局長文字
-        
-        # 合併第一列簽名格
+        # 特定欄位靠左
+        ('ALIGN', (0,0), (0,0), 'LEFT'),
+        ('ALIGN', (2,0), (2,0), 'LEFT'),
+        ('ALIGN', (0,1), (0,1), 'LEFT'),
+        # 合併格位
         ('SPAN', (0,0), (0,0)), ('SPAN', (1,0), (1,0)), 
         ('SPAN', (2,0), (2,0)), ('SPAN', (3,0), (3,0)),
-        
-        # 合併第二列：副分局長跨四欄
         ('SPAN', (0,1), (3,1)), 
-        
-        # 標題列背景
+        # 背景色
         ('BACKGROUND', (0,2), (0,2), colors.whitesmoke),
         ('BACKGROUND', (2,2), (2,2), colors.whitesmoke),
     ]))
     story.append(t)
 
-    # 5. 底部備註
+    # 5. 底部備註 (對應來源 7 [cite: 1])
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
 
     doc.build(story)
     return buf.getvalue()
 
-# --- 4. 寄信與主介面 (略，同前版內容) ---
-# ... 此處維持原本的主介面程式碼 ...
-
+# --- 4. 寄信與主介面 ---
 def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     try:
         sender = st.secrets["email"]["user"]
