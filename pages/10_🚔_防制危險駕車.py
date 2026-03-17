@@ -35,12 +35,15 @@ DEFAULT_COMMANDER = "石門所副所長林榮裕"
 DEFAULT_CMD = pd.DataFrame([
     {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導。"},
     {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長 何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-    {"職稱": "業務組", "代號": "隆安13", "姓名": "交通組警務員 葉佳媛", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報群聚飆車狀況。"}
+    {"職稱": "副指揮官", "代號": "隆安3", "姓名": "副分局長 蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
+    {"職稱": "業務組", "代號": "隆安13", "姓名": "交通組警務員 葉佳媛", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報群聚飆車狀況。"},
+    {"職稱": "督導組", "代號": "隆安681", "姓名": "督察組督察員 黃中彥", "任務": "督導各編組服儀裝備及勤務紀律。"},
+    {"職稱": "通訊組", "代號": "隆安", "姓名": "主任 蔡奇青、執勤官 李文章、執勤員 黃文興", "任務": "監看群聚告警訊息、指揮、調度及通報本勤務事宜。"}
 ])
 
 DEFAULT_PATROL = pd.DataFrame([
     {
-        "勤務時段": "3月7日\n零時至4時", "無線電": "隆安82", "編組": "專責警力\n（石門所輪值）", 
+        "勤務時段": "3月7日\n零時至4時", "無線電": "隆安82", "編組": "專責警力（石門所輪值）", 
         "服勤人員": "00-02時：\n副所長林榮裕\n02-04時：\n副所長林榮裕", 
         "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝（噪音）車輛"
     },
@@ -48,6 +51,16 @@ DEFAULT_PATROL = pd.DataFrame([
         "勤務時段": "3月6日\n22時至翌日6時", "無線電": "隆安80", "編組": "石門所", 
         "服勤人員": "線上巡邏警力兼任", 
         "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路巡邏（每1小時巡簽1次），並加強查緝毒駕"
+    },
+    {
+        "勤務時段": "3月6日\n22時至翌日6時", "無線電": "隆安90", "編組": "高平所", 
+        "服勤人員": "線上巡邏警力兼任", 
+        "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏（每1小時巡簽1次）"
+    },
+    {
+        "勤務時段": "3月6日\n22時至翌日6時", "無線電": "隆安990", "編組": "龍潭交通分隊", 
+        "服勤人員": "線上巡邏警力兼任", 
+        "任務分工": "「區域聯防」勤務，於龍源路及溪州橋旁新建道路巡邏（每1小時巡簽1次）"
     }
 ])
 
@@ -65,7 +78,8 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 # --- 2. 建立連線與讀取 ---
 @st.cache_resource
 def get_client():
-    if "gcp_service_account" not in st.secrets: return None
+    if "gcp_service_account" not in st.secrets:
+        return None
     creds_dict = dict(st.secrets["gcp_service_account"])
     creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
@@ -75,49 +89,55 @@ def get_client():
 def load_data():
     try:
         client = get_client()
-        if client is None: return None, None, None, "離線模式"
+        if client is None:
+            return None, None, None, "離線模式"
         sh = client.open_by_key(SHEET_ID)
-        return pd.DataFrame(sh.worksheet("危駕_設定").get_all_records()), pd.DataFrame(sh.worksheet("危駕_指揮組").get_all_records()), pd.DataFrame(sh.worksheet("危駕_警力佈署").get_all_records()), None
+        ws_set = sh.worksheet("危駕_設定")
+        ws_cmd = sh.worksheet("危駕_指揮組")
+        ws_ptl = sh.worksheet("危駕_警力佈署")
+        return pd.DataFrame(ws_set.get_all_records()), pd.DataFrame(ws_cmd.get_all_records()), pd.DataFrame(ws_ptl.get_all_records()), None
     except Exception as e:
         return None, None, None, str(e)
 
 def save_data(time_str, commander, df_cmd, df_patrol):
     try:
         client = get_client()
-        if client is None: return False
+        if client is None:
+            return False
         sh = client.open_by_key(SHEET_ID)
-        sh.worksheet("危駕_設定").update([["Key", "Value"], ["plan_time", time_str], ["commander", commander]])
+        ws_set = sh.worksheet("危駕_設定")
+        ws_set.clear()
+        ws_set.update([["Key", "Value"], ["plan_time", time_str], ["commander", commander]])
+        
         for ws_name, df in [("危駕_指揮組", df_cmd), ("危駕_警力佈署", df_patrol)]:
             ws = sh.worksheet(ws_name)
             ws.clear()
-            ws.update([df.columns.tolist()] + df.fillna("").values.tolist())
+            df = df.fillna("")
+            ws.update([df.columns.tolist()] + df.values.tolist())
         load_data.clear()
         return True
     except:
         return False
 
-# --- 3. 終極排版引擎 (雙向斷行過濾器) ---
+# ====== 還原你原本最完美的排版引擎 ======
 def auto_format_personnel(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
         return ""
-    
-    # 統一全形冒號並轉換雲端換行字元
-    s = str(val).replace('\\n', '\n').replace(':', '：').replace('、', '\n')
-    
-    # 核心 1：在所有「XX-XX時」前方強制加入換行 (確保第2個時段必定獨立成新行)
-    s = re.sub(r'(\d{2}-\d{2}時)', r'\n\1', s)
-    
-    # 核心 2：在所有「XX-XX時」後方強制補上「：」與換行 (確保人名被擠到下一行)
-    s = re.sub(r'(\d{2}-\d{2}時)[：\s]*', r'\1：\n', s)
-    
-    # 清理多餘的空白行 (例如字串最開頭產生的空行)
-    lines = [line.strip() for line in s.split('\n') if line.strip()]
-    return '\n'.join(lines)
+    s = str(val)
+    # 原汁原味保留你的處理邏輯
+    s = s.replace('：', '：\n').replace(':', ':\n')
+    s = s.replace('、', '\n')
+    s = re.sub(r'[ \t]+(?=\d{2}-\d{2})', '\n', s)
+    s = re.sub(r'[ \t]*\n[ \t]*', '\n', s)
+    s = re.sub(r'\n+', '\n', s)
+    return s.strip()
+# ==========================================
 
-# --- 4. PDF 生成 ---
+# --- 3. PDF 生成 ---
 def _get_font():
     fname = "kaiu"
-    if fname in pdfmetrics.getRegisteredFontNames(): return fname
+    if fname in pdfmetrics.getRegisteredFontNames():
+        return fname
     for p in ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]:
         if os.path.exists(p):
             pdfmetrics.registerFont(TTFont(fname, p))
@@ -136,12 +156,16 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22)
     style_col_header = ParagraphStyle('ColHeader', fontName=font, fontSize=16, leading=20, alignment=1)
     
+    # 行高微調讓垂直排列更好看
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=16, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=16, alignment=0)
     
     style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4)
     style_note = ParagraphStyle('Note', fontName=font, fontSize=14, leading=20, spaceAfter=5)
-    style_note_indent = ParagraphStyle('NoteIndent', fontName=font, fontSize=14, leading=20, spaceAfter=5, leftIndent=28, firstLineIndent=-28)
+    style_note_indent = ParagraphStyle(
+        'NoteIndent', fontName=font, fontSize=14, leading=20, spaceAfter=5,
+        leftIndent=28, firstLineIndent=-28
+    )
 
     story.append(Paragraph(f"<b>{UNIT}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
@@ -149,10 +173,8 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     def clean(txt):
         if pd.isna(txt) or str(txt).strip() in ["None", "nan", ""]: 
             return ""
-        s = str(txt)
-        # PDF 中把時段加粗
-        s = re.sub(r'(\d{2}-\d{2}時：?)', r'<b>\1</b>', s)
-        return s.replace('\n', '<br/>').replace('\\n', '<br/>')
+        # 你的原始清理邏輯，完美支援 PDF 換行
+        return str(txt).replace("\n", "<br/>")
 
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
@@ -183,7 +205,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     for _, r in df_patrol.iterrows():
         data_ptl.append([
             Paragraph(clean(r.get('勤務時段','')), style_cell), 
-            clean(r.get('無線電','')).replace("<b>", "").replace("</b>", ""), 
+            clean(r.get('無線電','')), 
             Paragraph(clean(r.get('編組','')).replace("、", "<br/>"), style_cell), 
             Paragraph(clean(r.get('服勤人員','')), style_cell), 
             Paragraph(clean(r.get('任務分工','')), style_cell_left)
@@ -214,6 +236,33 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     doc.build(story)
     return buf.getvalue()
 
+# --- 4. 寄信功能 (維持原樣) ---
+def send_report_email(time_str, commander, df_cmd, df_patrol, file_date_str):
+    try:
+        sender = st.secrets["email"]["user"]
+        pwd = st.secrets["email"]["password"]
+        pdf_bytes = generate_pdf_from_data(time_str, commander, df_cmd, df_patrol)
+        
+        msg = MIMEMultipart()
+        msg["From"] = sender
+        msg["To"] = sender
+        msg["Subject"] = f"防制危險駕車勤務規劃表_{file_date_str}"
+        msg.attach(MIMEText("附件為最新的防制危險駕車勤務規劃表 PDF。", "plain", "utf-8"))
+        
+        part = MIMEBase("application", "pdf")
+        part.set_payload(pdf_bytes)
+        encoders.encode_base64(part)
+        filename = _ul.quote(f"{msg['Subject']}.pdf")
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{filename}")
+        msg.attach(part)
+        
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, pwd)
+            server.sendmail(sender, sender, msg.as_string())
+            server.quit()
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 # --- 5. 主介面邏輯 ---
 df_set, df_cmd, df_ptl, err = load_data()
@@ -230,7 +279,6 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 
 st.subheader("1. 基礎資訊")
 p_time = st.text_input("勤務時間", t)
-cmdr_input = st.text_input("交通快打指揮官", cmdr)
 
 file_date_str = datetime.now().strftime('%Y%m%d')
 
@@ -238,7 +286,8 @@ file_date_str = datetime.now().strftime('%Y%m%d')
 match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
 if match:
     y_str = match.group(1)
-    m, d = int(match.group(2)), int(match.group(3))
+    m = int(match.group(2))
+    d = int(match.group(3))
     y_out = y_str if y_str else str(datetime.now().year - 1911)
     file_date_str = f"{y_out}{m:02d}{d:02d}"
 
@@ -257,13 +306,16 @@ if match:
         except ValueError:
             pass 
 
-# ====== 專責警力：單位、代號同步 ======
+# ====== 指揮官與專責警力連動 ======
+cmdr_input = st.text_input("交通快打指揮官", cmdr)
+
 if len(ed_ptl) > 0:
-    m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
+    m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))(.*)', cmdr_input)
     if m_unit:
         unit_name = m_unit.group(1)
-        title_name = cmdr_input.replace(unit_name, "").strip()
+        title_name = m_unit.group(2).strip()
         
+        # 同步編組 (避免重複所字)
         suffix_word = "輪值" if unit_name.endswith("所") or unit_name.endswith("分隊") else "所輪值"
         ed_ptl.loc[0, '編組'] = f"專責警力\n（{unit_name}{suffix_word}）"
             
@@ -273,39 +325,103 @@ if len(ed_ptl) > 0:
             if k in unit_name:
                 base_code = v
                 break
+                
         if base_code:
-            suffix = "1" if any(x in title_name for x in ["所長", "分隊長", "組長"]) else "2"
-            ed_ptl.loc[0, '無線電'] = base_code + suffix
+            current_radio = str(ed_ptl.loc[0, '無線電']).strip()
+            if not current_radio.startswith(base_code):
+                suffix = "1" if any(x in title_name for x in ["所長", "分隊長", "組長"]) else "2"
+                ed_ptl.loc[0, '無線電'] = base_code + suffix
 
-        # 自動生成第一筆資料的時段格式
-        current_personnel = str(ed_ptl.loc[0, '服勤人員']).replace('\\n', '\n')
-        time_slots = re.findall(r'(\d{2}-\d{2}時)', current_personnel)
-        if time_slots and title_name:
-            new_val = ""
-            for ts in time_slots:
-                new_val += f"{ts}：\n{title_name}\n"
-            ed_ptl.loc[0, '服勤人員'] = new_val.strip()
-
+        if title_name:
+            current_personnel = str(ed_ptl.loc[0, '服勤人員'])
+            lines = current_personnel.split('\n')
+            for i in range(len(lines)):
+                if re.search(r'\d{2}-\d{2}時', lines[i]):
+                    if i + 1 < len(lines) and not re.search(r'\d{2}-\d{2}時', lines[i+1]):
+                        lines[i+1] = title_name
+            ed_ptl.loc[0, '服勤人員'] = '\n'.join(lines)
 # =========================================================
-# 對「所有儲存格」全面套用垂直排版引擎，不管第幾個時段都會強制斷行
+
+# 強制套用你的自動排版引擎
 if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
-# =========================================================
 
-
-# 顯示介面編輯器
 st.subheader("2. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
-res_cmd = res_cmd.fillna("")[~(res_cmd == "").all(axis=1)].reset_index(drop=True)
+res_cmd = res_cmd.fillna("")
+res_cmd = res_cmd[~(res_cmd == "").all(axis=1)].reset_index(drop=True)
 
 st.subheader("3. 警力佈署")
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
-res_ptl = res_ptl.fillna("")[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
+res_ptl = res_ptl.fillna("")
+res_ptl = res_ptl[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
+
+# ====== 還原你的 HTML 預覽引擎 (這才是你能確認換行的靈魂) ======
+st.subheader("4. 巡簽地點與備註 (預覽)")
+st.info("此區塊將直接附加於報表末端")
+
+def get_html():
+    chk_html = CHECKIN_POINTS.replace('\n', '<br>')
+    
+    note_html_parts = []
+    for line in NOTES.split('\n'):
+        if line.strip():
+            note_html_parts.append(f"<div style='padding-left: 2em; text-indent: -2em; margin: 0;'>{line.strip()}</div>")
+    note_html = "".join(note_html_parts)
+    
+    parts = []
+    parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:14pt;margin:15px 0;line-height:1.6;} .cmd-row{text-align:left;background-color:white;}</style>")
+    parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}<br>執行「防制危險駕車專案勤務」規劃表</b></h2>")
+    parts.append(f"<div style='text-align:right'><b>時間：{p_time}</b></div><br>")
+    
+    parts.append("<table style='width:100%; border-collapse:collapse;'><tr><th colspan='4'>任 務 編 組</th></tr>")
+    parts.append("<tr><th width='15%'>職稱</th><th width='15%'>代號</th><th width='25%'>姓名</th><th width='45%'>任務</th></tr>")
+    
+    for _, r in res_cmd.iterrows():
+        name = str(r.get('姓名', '')).replace('、', '<br>')
+        parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td>")
+        parts.append(f"<td>{name}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
+    parts.append("</table><br>")
+    
+    parts.append("<table style='width:100%; border-collapse:collapse;'><tr><th colspan='5'>警 力 佈 署</th></tr>")
+    parts.append(f"<tr><td colspan='5' class='cmd-row'><b>交通快打指揮官：</b>{cmdr_input}</td></tr>")
+    parts.append("<tr><th width='20%'>勤務時段</th><th width='10%'>代號</th><th width='15%'>編組</th><th width='25%'>服勤人員</th><th width='30%'>任務分工</th></tr>")
+    
+    for _, r in res_ptl.iterrows():
+        duty_time = str(r.get('勤務時段', '')).replace('\n', '<br>')
+        grp = str(r.get('編組', '')).replace('、', '<br>').replace('\n', '<br>')
+        ppl = str(r.get('服勤人員', '')).replace('\n', '<br>')
+        parts.append("<tr>")
+        parts.append(f"<td style='white-space:nowrap;'>{duty_time}</td>")
+        parts.append(f"<td style='white-space:nowrap;'>{r.get('無線電','')}</td>")
+        parts.append(f"<td>{grp}</td><td>{ppl}</td>")
+        parts.append(f"<td style='text-align:left'>{r.get('任務分工','')}</td>")
+        parts.append("</tr>")
+        
+    parts.append("</table>")
+    parts.append(f"<div class='note'><b>📍 巡簽地點：</b><br>{chk_html}</div>")
+    parts.append(f"<div class='note'><b>📝 備註：</b><br>{note_html}</div>")
+    parts.append("</body></html>")
+    
+    return "".join(parts)
 
 st.markdown("---")
+st.subheader("📄 預覽與輸出")
+st.components.v1.html(get_html(), height=600, scrolling=True)
+# =========================================================
 
-if st.button("同步雲端並下載 PDF 💾", type="primary"):
+if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
     save_data(p_time, cmdr_input, res_cmd, res_ptl)
-    st.success("✅ 雲端同步成功！")
+    
+    # 加入你的寄信功能
+    try:
+        ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl, file_date_str)
+        if ok:
+            st.success("📧 雲端同步成功，排版後的報表已寄至信箱！")
+        else:
+            st.error(f"❌ 雲端已同步，但寄信失敗：{mail_err}")
+    except Exception as e:
+        st.warning("⚠️ 寄信功能設定有誤或未設定 secrets，但已儲存至雲端。")
+    
     pdf_out = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
-    st.download_button("點此下載排版後的 PDF", data=pdf_out, file_name=f"防制危險駕車勤務規劃表_{file_date_str}.pdf")
+    st.download_button("點此下載 PDF", data=pdf_out, file_name=f"防制危險駕車勤務規劃表_{file_date_str}.pdf")
