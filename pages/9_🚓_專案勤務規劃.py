@@ -142,7 +142,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story.append(t1)
     story.append(Spacer(1, 6*mm))
     story.append(Paragraph(f"<b>📢 勤前教育：</b>{briefing}", style_note))
-    story.append(Paragraph(f"<b>🚧 檢驗站資訊：</b><br/>{station.replace(chr(10), '<br/>')}", style_note))
+    story.append(Paragraph(f"<b>🚧 環保局臨時檢驗站開設：</b><br/>{station.replace(chr(10), '<br/>')}", style_note))
     story.append(Spacer(1, 6*mm))
 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
@@ -169,7 +169,6 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
     
-    # 📌 更新字型大小為 14，並適度調整行距 (leading) 避免文字過於擁擠
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0) 
     style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
@@ -211,7 +210,6 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     for l, r in rows:
         table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
     
-    # 📌 計算行高：第4列以下(含)增加 1/3，也就是原本的 20*mm * (4/3) ≈ 26.67*mm
     data_row_height = 20 * mm * (4/3)
     row_heights = [18*mm, 18*mm, 10*mm] + [data_row_height] * len(rows)
     
@@ -291,8 +289,8 @@ st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 
 c3, c4 = st.columns(2)
-b_info = c3.text_area("📢 勤前教育地點", b, height=70)
-s_info = c4.text_area("🚧 檢驗站資訊", s, height=70)
+b_info = c3.text_area("📢 勤前教育", b, height=70)
+s_info = c4.text_area("🚧 環保局臨時檢驗站開設", s, height=70)
 
 st.subheader("2. 巡邏編組")
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
