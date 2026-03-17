@@ -13,6 +13,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
@@ -123,8 +124,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
     
-    # 📌 強制中間文字段落靠左對齊 (alignment=0)
-    style_note = ParagraphStyle('Note', fontName=font, fontSize=14, leading=20, spaceAfter=5, alignment=0)
+    # 強制段落靠左對齊 (TA_LEFT)
+    style_note = ParagraphStyle('Note', fontName=font, fontSize=14, leading=20, spaceAfter=5, alignment=TA_LEFT)
     style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
 
     story.append(Paragraph(f"{unit}執行{project}規劃表", style_title))
@@ -143,7 +144,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                             ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t1)
     
-    # --- 中間文字區塊 (套用 style_note 強制靠左) ---
+    # 中間靠左文字區塊
     story.append(Spacer(1, 6*mm))
     story.append(Paragraph(f"<b>📢 勤前教育：</b>{briefing}", style_note))
     story.append(Paragraph(f"<b>🚧 環保局臨時檢驗站開設：</b><br/>{station.replace(chr(10), '<br/>')}", style_note))
@@ -292,19 +293,20 @@ p_time = c2.text_input("勤務時間", t)
 st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 
-c3, c4 = st.columns(2)
-b_info = c3.text_area("📢 勤前教育", b, height=70)
-s_info = c4.text_area("🚧 環保局臨時檢驗站開設", s, height=70)
+# 移除 st.columns(2) 讓兩個文字框獨立成列，強制靠左顯示
+b_info = st.text_area("📢 勤前教育", b, height=70)
+s_info = st.text_area("🚧 環保局臨時檢驗站開設", s, height=70)
 
 st.subheader("2. 巡邏編組")
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 
-# 📌 預覽 HTML 增加 text-align: left; 強制讓中間 class="note" 區塊文字靠左
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .note{font-size:12pt;margin:10px 0;line-height:1.4; text-align:left;}</style>"
     html = f"<html>{style}<body><h3 style='text-align:center'>{u}<br>{p_name}</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
     for _, r in res_cmd.iterrows():
         html += f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>"
+    
+    # 預覽 HTML 區塊中也確保為 text-align: left 靠左對齊
     html += f"</table><div class='note'><b>📢 勤前教育：</b>{b_info}<br><b>🚧 環保局臨時檢驗站開設：</b><br>{s_info.replace(chr(10),'<br>')}</div>"
     html += "<table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
     for _, r in res_ptl.iterrows():
