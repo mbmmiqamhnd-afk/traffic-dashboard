@@ -37,15 +37,15 @@ else:
     font_name = "Helvetica"
     st.warning("⚠️ 未偵測到中文字型 (kaiu.ttf)，文字將顯示為方塊。")
 
-# --- 核心修改：寬度調整至 120 ---
+# --- 核心修改：寬度微調至 124 ---
 def create_overlay(page_width, page_height, page_num, current_font):
     packet = io.BytesIO()
     c = canvas.Canvas(packet, pagesize=(page_width, page_height))
     
     text = f"交通組製 - 第 {page_num} 頁"
     
-    # --- 【修改點】寬度增加為 120，容納 14 號字 ---
-    box_width = 120
+    # --- 【修改點】寬度增加為 124，完美容納 14 號字 ---
+    box_width = 124
     box_height = 20
     
     # 貼齊右下角
