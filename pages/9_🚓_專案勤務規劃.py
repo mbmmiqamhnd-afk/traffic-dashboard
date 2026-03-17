@@ -26,7 +26,7 @@ SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/a
 
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年3月20日19至23時"
-DEFAULT_PROJ    = "0320「取締改裝(噪音)車輛專案監、警、環聯合稽查勤務」"
+DEFAULT_PROJ    = "0320「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
 DEFAULT_BRIEF   = "19時30分於分局二樓會議室召開"
 DEFAULT_STATION = "環保局臨時檢驗站開設時間：20時至23時\n地點：桃園市龍潭區大昌路一段277號（龍潭區警政聯合辦公大樓）廣場"
 
@@ -148,51 +148,67 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     doc.build(story)
     return buf.getvalue()
 
-# (B) 簽到表
-def generate_attendance_pdf(unit, project, time_str, briefing, df_cmd, df_ptl):
+# (B) 簽到表 (依照上傳 PDF 格式修改 )
+def generate_attendance_pdf(unit, project, time_str, briefing):
     font = _get_font()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
     page_width = A4[0] - 30*mm
     story = []
 
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=10)
-    style_info = ParagraphStyle('Info', fontName=font, fontSize=12, leading=18, alignment=0, spaceAfter=5)
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=25, alignment=1)
+    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
+    style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=12, leading=22, alignment=1)
+    style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
 
-    story.append(Paragraph(f"<b>{unit}</b>", style_title))
-    story.append(Paragraph(f"<b>{project} 勤前教育會議簽到表</b>", style_title))
-    story.append(Spacer(1, 5*mm))
-    story.append(Paragraph(f"時間：{time_str.split(' ')[0]} (詳如計畫)", style_info))
-    story.append(Paragraph(f"地點：{briefing.split('於')[1] if '於' in briefing else '分局會議室'}", style_info))
-    story.append(Spacer(1, 5*mm))
-
-    # 提取姓名邏輯
-    names = []
-    for n in df_cmd['姓名'].astype(str):
-        for sub_n in n.replace('、', ' ').replace(',', ' ').split():
-            if sub_n.strip() and len(sub_n.strip()) > 1: names.append(sub_n.strip())
-    for n in df_ptl['服勤人員'].astype(str):
-        for sub_n in n.replace('、', ' ').replace(',', ' ').split():
-            if sub_n.strip() and len(sub_n.strip()) > 1: names.append(sub_n.strip())
+    # 1. 標題 [cite: 1]
+    story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     
-    unique_names = sorted(list(set(names)))
-    table_data = [[Paragraph("編號", style_cell), Paragraph("職別姓名", style_cell), Paragraph("簽署", style_cell),
-                    Paragraph("編號", style_cell), Paragraph("職別姓名", style_cell), Paragraph("簽署", style_cell)]]
+    # 2. 時間與分局長欄位並排 [cite: 2, 3]
+    top_table_data = [
+        [Paragraph(f"時間：{time_str.split('時')[0]}時30分至20時00分", style_top_info), 
+         Paragraph("分局長：", style_top_info)]
+    ]
+    tt = Table(top_table_data, colWidths=[page_width*0.75, page_width*0.25])
+    tt.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    story.append(tt)
+    story.append(Spacer(1, 2*mm))
+
+    # 3. 核心簽到表格 [cite: 4]
+    # 固定單位格式
+    rows = [
+        ("勤務指揮中心", "中興派出所"),
+        ("交通組", "石門派出所"),
+        ("督察組", "高平派出所"),
+        ("聖亭派出所", "三和派出所"),
+        ("龍潭派出所", "龍潭交通分隊")
+    ]
     
-    half = (len(unique_names) + 1) // 2
-    for i in range(half):
-        row = [i+1, unique_names[i], ""]
-        if i + half < len(unique_names): row.extend([i+1+half, unique_names[i+half], ""])
-        else: row.extend(["", "", ""])
-        table_data.append(row)
-
-    while len(table_data) < 22: table_data.append(["", "", "", "", "", ""])
-
-    t = Table(table_data, colWidths=[page_width*0.08, page_width*0.25, page_width*0.17]*2, rowHeights=10*mm)
-    t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('FONTSIZE', (0,0), (-1,-1), 12), ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('BACKGROUND', (0,0), (2,0), colors.whitesmoke), ('BACKGROUND', (3,0), (5,0), colors.whitesmoke)]))
+    table_data = [[Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), 
+                    Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
+    
+    for left, right in rows:
+        # 增加行高以方便簽名
+        table_data.append([Paragraph(left, style_cell), "", Paragraph(right, style_cell), ""])
+    
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=20*mm)
+    t.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), font),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('BACKGROUND', (0,0), (0,0), colors.whitesmoke),
+        ('BACKGROUND', (2,0), (2,0), colors.whitesmoke),
+    ]))
     story.append(t)
+
+    # 4. 地點、上級督導與備註 [cite: 5, 6, 7]
+    story.append(Spacer(1, 5*mm))
+    story.append(Paragraph(f"地點：{briefing.split('於')[1] if '於' in briefing else '本分局二樓會議室'}", style_top_info))
+    story.append(Paragraph("上級督導：", style_top_info))
+    story.append(Spacer(1, 2*mm))
+    story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
+
     doc.build(story)
     return buf.getvalue()
 
@@ -259,8 +275,6 @@ st.subheader("📄 報表產出與下載")
 with st.expander("點擊展開即時預覽"):
     st.components.v1.html(get_html(), height=400, scrolling=True)
 
-col_btn1, col_btn2 = st.columns(2)
-
 if st.button("💾 同步雲端並寄送備份信件", type="primary", use_container_width=True):
     with st.spinner("處理中..."):
         save_data(u, p_time, p_name, b_info, s_info, res_cmd, res_ptl)
@@ -269,12 +283,12 @@ if st.button("💾 同步雲端並寄送備份信件", type="primary", use_conta
         else: st.warning(f"⚠️ 雲端已同步，但信箱連線失敗：{mail_err}")
 
 st.divider()
-st.info("請點選下方按鈕下載 PDF 文件：")
+st.info("請下載 PDF 文件：")
 c_dl1, c_dl2 = st.columns(2)
 
 # 生成 PDF 檔案供下載
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
-c_dl1.download_button("📝 下載：1.勤務規劃表", data=pdf_plan, file_name=f"規劃表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
+c_dl1.download_button("📝 下載 1.勤務規劃表", data=pdf_plan, file_name=f"規劃表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
 
-pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info, res_cmd, res_ptl)
-c_dl2.download_button("🖋️ 下載：2.人員簽到表", data=pdf_attendance, file_name=f"簽到表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
+pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
+c_dl2.download_button("🖋️ 下載 2.人員簽到表", data=pdf_attendance, file_name=f"簽到表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
