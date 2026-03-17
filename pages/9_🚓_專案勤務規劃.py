@@ -16,6 +16,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
+import re
 
 # --- 1. 頁面設定 ---
 st.set_page_config(page_title="雲端勤務規劃系統", layout="wide", page_icon="🚓")
@@ -27,7 +28,7 @@ SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/a
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年3月20日19至23時"
 DEFAULT_PROJ    = "0320「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
-DEFAULT_BRIEF   = "19時30分於分局二樓會議室召開"
+DEFAULT_BRIEF   = "於分局二樓會議室召開" # 簡化，地點自動帶入表格
 DEFAULT_STATION = "環保局臨時檢驗站開設時間：20時至23時\n地點：桃園市龍潭區大昌路一段277號（龍潭區警政聯合辦公大樓）廣場"
 
 DEFAULT_CMD = pd.DataFrame([
@@ -60,6 +61,20 @@ def _get_font():
             pdfmetrics.registerFont(TTFont(fname, p))
             return fname
     return "Helvetica"
+
+def parse_meeting_time(time_str):
+    """提取勤務開始時間並計算後半小時"""
+    try:
+        # 尋找數字小時 (例如 19) [cite: 1, 2]
+        match = re.search(r"(\d+)至", time_str)
+        if match:
+            start_hour = int(match.group(1))
+            end_hour = start_hour + 1
+            # 格式化為 19時30分至20時00分 
+            return f"{start_hour}時30分至{end_hour}時00分"
+    except:
+        pass
+    return "19時30分至20時00分"
 
 @st.cache_resource
 def get_client():
@@ -147,7 +162,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     doc.build(story)
     return buf.getvalue()
 
-# (B) 簽到表 (依照最新要求修改表格結構)
+# (B) 簽到表 (依照「第一小時後半小時」邏輯與「新增二列」格式修改)
 def generate_attendance_pdf(unit, project, time_str, briefing):
     font = _get_font()
     buf = io.BytesIO()
@@ -160,35 +175,40 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=12, leading=22, alignment=1)
     style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
 
-    # 1. 標題
+    # 1. 標題 (對應來源 1)
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     
-    # 2. 基本資訊
-    story.append(Paragraph(f"時間：{time_str.split('時')[0]}時30分至20時00分", style_top_info))
-    story.append(Paragraph(f"地點：{briefing.split('於')[1] if '於' in briefing else '本分局二樓會議室'}", style_top_info))
+    # 2. 自動計算會議時間 (對應來源 2: 第一小時後半小時)
+    meeting_range = parse_meeting_time(time_str)
+    date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
+    story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
+    
+    # 3. 地點 (對應來源 5)
+    loc = briefing if "於" not in briefing else briefing.split("於")[1]
+    story.append(Paragraph(f"地點：{loc}", style_top_info))
     story.append(Spacer(1, 3*mm))
 
-    # 3. 核心簽到表格 (包含新增的頂部兩列)
+    # 4. 核心簽到表格 (包含分局長/上級督導、副分局長、單位格線)
     table_data = []
     
-    # --- 新增第一列：分局長 與 上級督導 ---
+    # --- 第一列：分局長 (左) | 上級督導 (右) ---
     table_data.append([
         Paragraph("分局長：", style_cell), "", 
         Paragraph("上級督導：", style_cell), ""
     ])
     
-    # --- 新增第二列：副分局長 (跨欄合併) ---
+    # --- 第二列：副分局長 (跨欄合併) ---
     table_data.append([
         Paragraph("副分局長：", style_cell), "", "", ""
     ])
 
-    # --- 單位格線標題列 ---
+    # --- 第三列：單位格線標題 ---
     table_data.append([
         Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), 
         Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)
     ])
     
-    # --- 單位格線內容 ---
+    # --- 單位內容 ---
     rows = [
         ("勤務指揮中心", "中興派出所"),
         ("交通組", "石門派出所"),
@@ -199,7 +219,7 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     for left, right in rows:
         table_data.append([Paragraph(left, style_cell), "", Paragraph(right, style_cell), ""])
     
-    # 計算行高：頂部兩列與標題較高，簽名欄固定高度
+    # 行高設定 
     row_heights = [18*mm, 18*mm, 10*mm] + [20*mm] * len(rows)
     
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=row_heights)
@@ -208,18 +228,18 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        # 合併副分局長列 (第1列，從第0欄到第3欄)
+        # 合併第一列簽名格
+        ('SPAN', (0,0), (0,0)), ('SPAN', (1,0), (1,0)), # 分局長與簽名
+        ('SPAN', (2,0), (2,0)), ('SPAN', (3,0), (3,0)), # 上級督導與簽名
+        # 合併第二列：副分局長跨四欄
         ('SPAN', (0,1), (3,1)), 
-        # 合併分局長與上級督導的簽名格 (自由選擇是否合併，這裡採維持四格但跨欄配置)
-        ('SPAN', (1,0), (1,0)), 
-        ('SPAN', (3,0), (3,0)),
-        # 背景色標籤
+        # 標題列背景
         ('BACKGROUND', (0,2), (0,2), colors.whitesmoke),
         ('BACKGROUND', (2,2), (2,2), colors.whitesmoke),
     ]))
     story.append(t)
 
-    # 4. 底部備註
+    # 5. 底部備註 (對應來源 7)
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
 
@@ -266,43 +286,27 @@ st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 
 c3, c4 = st.columns(2)
-b_info = c3.text_area("📢 勤前教育", b, height=100)
-s_info = c4.text_area("🚧 檢驗站資訊", s, height=100)
+b_info = c3.text_area("📢 勤前教育地點 (如：分局二樓會議室)", b, height=70)
+s_info = c4.text_area("🚧 檢驗站資訊", s, height=70)
 
 st.subheader("2. 巡邏編組")
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 
-# --- 預覽 HTML ---
-def get_html():
-    style = "<style>body{font-family:'標楷體';padding:10px;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .note{font-size:12pt;margin:10px 0;line-height:1.4;}</style>"
-    html = f"<html>{style}<body><h3 style='text-align:center'>{u}<br>{p_name}</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
-    for _, r in res_cmd.iterrows():
-        html += f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>"
-    html += f"</table><div class='note'><b>📢 勤前教育：</b>{b_info}<br><b>🚧 檢驗站資訊：</b>{s_info.replace(chr(10),'<br>')}</div>"
-    html += "<table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
-    for _, r in res_ptl.iterrows():
-        html += f"<tr><td style='white-space:nowrap;'>{r.get('編組','')}</td><td style='white-space:nowrap;'>{r.get('無線電','')}</td><td>{str(r.get('單位','')).replace('、','<br>')}</td><td>{str(r.get('服勤人員','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務分工','')}</td></tr>"
-    return html + "</table></body></html>"
-
 st.markdown("---")
-st.subheader("📄 報表產出與下載")
-with st.expander("點擊展開即時預覽"):
-    st.components.v1.html(get_html(), height=400, scrolling=True)
+st.subheader("📄 報表下載")
 
-if st.button("💾 同步雲端並寄送備份信件", type="primary", use_container_width=True):
+col_dl1, col_dl2 = st.columns(2)
+
+# 執行 PDF 生成
+pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
+col_dl1.download_button("📝 下載 1.勤務規劃表", data=pdf_plan, file_name=f"規劃表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
+
+pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
+col_dl2.download_button("🖋️ 下載 2.人員簽到表", data=pdf_attendance, file_name=f"簽到表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
+
+if st.button("💾 同步雲端並發送備份郵件", use_container_width=True):
     with st.spinner("處理中..."):
         save_data(u, p_time, p_name, b_info, s_info, res_cmd, res_ptl)
         ok, mail_err = send_report_email(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
-        if ok: st.success("✅ 雲端同步成功，檔案已寄至信箱！")
-        else: st.warning(f"⚠️ 雲端已同步，但信箱連線失敗：{mail_err}")
-
-st.divider()
-st.info("請下載 PDF 文件：")
-c_dl1, c_dl2 = st.columns(2)
-
-# 生成 PDF 檔案供下載
-pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
-c_dl1.download_button("📝 下載 1.勤務規劃表", data=pdf_plan, file_name=f"規劃表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
-
-pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
-c_dl2.download_button("🖋️ 下載 2.人員簽到表", data=pdf_attendance, file_name=f"簽到表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
+        if ok: st.success("✅ 同步完成！")
+        else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {mail_err}")
