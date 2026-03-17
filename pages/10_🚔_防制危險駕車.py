@@ -51,16 +51,6 @@ DEFAULT_PATROL = pd.DataFrame([
         "勤務時段": "3月6日\n22時至翌日6時", "無線電": "隆安80", "編組": "石門所", 
         "服勤人員": "線上巡邏警力兼任", 
         "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路巡邏（每1小時巡簽1次），並加強查緝毒駕"
-    },
-    {
-        "勤務時段": "3月6日\n22時至翌日6時", "無線電": "隆安90", "編組": "高平所", 
-        "服勤人員": "線上巡邏警力兼任", 
-        "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏（每1小時巡簽1次）"
-    },
-    {
-        "勤務時段": "3月6日\n22時至翌日6時", "無線電": "隆安990", "編組": "龍潭交通分隊", 
-        "服勤人員": "線上巡邏警力兼任", 
-        "任務分工": "「區域聯防」勤務，於龍源路及溪州橋旁新建道路巡邏（每1小時巡簽1次）"
     }
 ])
 
@@ -119,20 +109,23 @@ def save_data(time_str, commander, df_cmd, df_patrol):
     except:
         return False
 
-# ====== 終極排版引擎：精準切割第二個時段 ======
+# ==========================================
+# 🎯 無敵排版引擎：精準切割所有時段
+# ==========================================
 def auto_format_personnel(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
         return ""
-    s = str(val)
     
-    # 1. 你的原始邏輯：統一冒號並在後方強制換行
-    s = s.replace('：', '：\n').replace(':', ':\n')
-    s = s.replace('、', '\n')
+    s = str(val).replace('\\n', '\n').replace('、', '\n')
     
-    # 2. 【新增利器】遇到「XX-XX時」，前方一律強制斷開！(完美解決第二個時段黏在一起的問題)
-    s = re.sub(r'\s*(\d{2}-\d{2}時)', r'\n\1', s)
+    # 核心 1：只要遇到「數字-數字」，一律在【前方】強制斷行！
+    # 這行確保了第二個、第三個時段，絕對不會跟前面的人名黏在一起
+    s = re.sub(r'([^\n])\s*(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)', r'\1\n\2', s)
     
-    # 3. 逐行清理多餘空白與空行，重組成完美垂直並列
+    # 核心 2：在所有時段的【後方】強制補上全形冒號「：」並換行，把人名擠下去
+    s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)[：:\s]*', r'\1：\n', s)
+    
+    # 逐行清理空行，重組為完美的垂直並列
     lines = [line.strip() for line in s.split('\n') if line.strip()]
     return '\n'.join(lines)
 # ==========================================
@@ -160,7 +153,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22)
     style_col_header = ParagraphStyle('ColHeader', fontName=font, fontSize=16, leading=20, alignment=1)
     
-    # 行高微調讓垂直排列更好看
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=16, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=16, alignment=0)
     
@@ -177,8 +169,10 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     def clean(txt):
         if pd.isna(txt) or str(txt).strip() in ["None", "nan", ""]: 
             return ""
-        # 你的原始清理邏輯，完美支援 PDF 換行
-        return str(txt).replace("\n", "<br/>")
+        s = str(txt)
+        # PDF 中把時段與冒號一起加粗
+        s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?：?)', r'<b>\1</b>', s)
+        return s.replace('\n', '<br/>').replace('\\n', '<br/>')
 
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
@@ -209,7 +203,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     for _, r in df_patrol.iterrows():
         data_ptl.append([
             Paragraph(clean(r.get('勤務時段','')), style_cell), 
-            clean(r.get('無線電','')), 
+            clean(r.get('無線電','')).replace("<b>", "").replace("</b>", ""), 
             Paragraph(clean(r.get('編組','')).replace("、", "<br/>"), style_cell), 
             Paragraph(clean(r.get('服勤人員','')), style_cell), 
             Paragraph(clean(r.get('任務分工','')), style_cell_left)
@@ -340,13 +334,13 @@ if len(ed_ptl) > 0:
             current_personnel = str(ed_ptl.loc[0, '服勤人員'])
             lines = current_personnel.split('\n')
             for i in range(len(lines)):
-                if re.search(r'\d{2}-\d{2}時', lines[i]):
-                    if i + 1 < len(lines) and not re.search(r'\d{2}-\d{2}時', lines[i+1]):
+                if re.search(r'\d{2}-\d{2}[時]?', lines[i]):
+                    if i + 1 < len(lines) and not re.search(r'\d{2}-\d{2}[時]?', lines[i+1]):
                         lines[i+1] = title_name
             ed_ptl.loc[0, '服勤人員'] = '\n'.join(lines)
 # =========================================================
 
-# 第 1 道防線：初次載入就套用排版
+# 第一道防線：初次載入時套用終極排版引擎
 if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 
@@ -360,10 +354,9 @@ res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 res_ptl = res_ptl.fillna("")
 res_ptl = res_ptl[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
 
-# ====== 第 2 道防線：使用者編輯完畢後，針對結果再強制切割一次 ======
+# 第二道防線：手動編輯表格後，針對所有資料再狠狠排版一次！
 if '服勤人員' in res_ptl.columns:
     res_ptl['服勤人員'] = res_ptl['服勤人員'].apply(auto_format_personnel)
-# ====================================================================
 
 # ====== HTML 預覽引擎 (這才是你能確認換行的靈魂) ======
 st.subheader("4. 巡簽地點與備註 (預覽)")
