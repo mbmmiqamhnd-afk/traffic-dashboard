@@ -100,7 +100,6 @@ def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
 
 # --- 3. PDF 生成功能 ---
 
-# (A) 勤務規劃表
 def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     font = _get_font()
     buf = io.BytesIO()
@@ -148,7 +147,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     doc.build(story)
     return buf.getvalue()
 
-# (B) 簽到表 (依照上傳 PDF 格式修改 )
+# (B) 簽到表 (依照最新要求修改表格結構)
 def generate_attendance_pdf(unit, project, time_str, briefing):
     font = _get_font()
     buf = io.BytesIO()
@@ -161,21 +160,35 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=12, leading=22, alignment=1)
     style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
 
-    # 1. 標題 [cite: 1]
+    # 1. 標題
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     
-    # 2. 時間與分局長欄位並排 [cite: 2, 3]
-    top_table_data = [
-        [Paragraph(f"時間：{time_str.split('時')[0]}時30分至20時00分", style_top_info), 
-         Paragraph("分局長：", style_top_info)]
-    ]
-    tt = Table(top_table_data, colWidths=[page_width*0.75, page_width*0.25])
-    tt.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
-    story.append(tt)
-    story.append(Spacer(1, 2*mm))
+    # 2. 基本資訊
+    story.append(Paragraph(f"時間：{time_str.split('時')[0]}時30分至20時00分", style_top_info))
+    story.append(Paragraph(f"地點：{briefing.split('於')[1] if '於' in briefing else '本分局二樓會議室'}", style_top_info))
+    story.append(Spacer(1, 3*mm))
 
-    # 3. 核心簽到表格 [cite: 4]
-    # 固定單位格式
+    # 3. 核心簽到表格 (包含新增的頂部兩列)
+    table_data = []
+    
+    # --- 新增第一列：分局長 與 上級督導 ---
+    table_data.append([
+        Paragraph("分局長：", style_cell), "", 
+        Paragraph("上級督導：", style_cell), ""
+    ])
+    
+    # --- 新增第二列：副分局長 (跨欄合併) ---
+    table_data.append([
+        Paragraph("副分局長：", style_cell), "", "", ""
+    ])
+
+    # --- 單位格線標題列 ---
+    table_data.append([
+        Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), 
+        Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)
+    ])
+    
+    # --- 單位格線內容 ---
     rows = [
         ("勤務指揮中心", "中興派出所"),
         ("交通組", "石門派出所"),
@@ -183,30 +196,31 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
         ("聖亭派出所", "三和派出所"),
         ("龍潭派出所", "龍潭交通分隊")
     ]
-    
-    table_data = [[Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), 
-                    Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
-    
     for left, right in rows:
-        # 增加行高以方便簽名
         table_data.append([Paragraph(left, style_cell), "", Paragraph(right, style_cell), ""])
     
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=20*mm)
+    # 計算行高：頂部兩列與標題較高，簽名欄固定高度
+    row_heights = [18*mm, 18*mm, 10*mm] + [20*mm] * len(rows)
+    
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=row_heights)
     t.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,-1), font),
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('BACKGROUND', (0,0), (0,0), colors.whitesmoke),
-        ('BACKGROUND', (2,0), (2,0), colors.whitesmoke),
+        # 合併副分局長列 (第1列，從第0欄到第3欄)
+        ('SPAN', (0,1), (3,1)), 
+        # 合併分局長與上級督導的簽名格 (自由選擇是否合併，這裡採維持四格但跨欄配置)
+        ('SPAN', (1,0), (1,0)), 
+        ('SPAN', (3,0), (3,0)),
+        # 背景色標籤
+        ('BACKGROUND', (0,2), (0,2), colors.whitesmoke),
+        ('BACKGROUND', (2,2), (2,2), colors.whitesmoke),
     ]))
     story.append(t)
 
-    # 4. 地點、上級督導與備註 [cite: 5, 6, 7]
+    # 4. 底部備註
     story.append(Spacer(1, 5*mm))
-    story.append(Paragraph(f"地點：{briefing.split('於')[1] if '於' in briefing else '本分局二樓會議室'}", style_top_info))
-    story.append(Paragraph("上級督導：", style_top_info))
-    story.append(Spacer(1, 2*mm))
     story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
 
     doc.build(story)
