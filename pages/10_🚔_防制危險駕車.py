@@ -119,18 +119,22 @@ def save_data(time_str, commander, df_cmd, df_patrol):
     except:
         return False
 
-# ====== 還原你原本最完美的排版引擎 ======
+# ====== 終極排版引擎：精準切割第二個時段 ======
 def auto_format_personnel(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
         return ""
     s = str(val)
-    # 原汁原味保留你的處理邏輯
+    
+    # 1. 你的原始邏輯：統一冒號並在後方強制換行
     s = s.replace('：', '：\n').replace(':', ':\n')
     s = s.replace('、', '\n')
-    s = re.sub(r'[ \t]+(?=\d{2}-\d{2})', '\n', s)
-    s = re.sub(r'[ \t]*\n[ \t]*', '\n', s)
-    s = re.sub(r'\n+', '\n', s)
-    return s.strip()
+    
+    # 2. 【新增利器】遇到「XX-XX時」，前方一律強制斷開！(完美解決第二個時段黏在一起的問題)
+    s = re.sub(r'\s*(\d{2}-\d{2}時)', r'\n\1', s)
+    
+    # 3. 逐行清理多餘空白與空行，重組成完美垂直並列
+    lines = [line.strip() for line in s.split('\n') if line.strip()]
+    return '\n'.join(lines)
 # ==========================================
 
 # --- 3. PDF 生成 ---
@@ -236,7 +240,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     doc.build(story)
     return buf.getvalue()
 
-# --- 4. 寄信功能 (維持原樣) ---
+# --- 4. 寄信功能 ---
 def send_report_email(time_str, commander, df_cmd, df_patrol, file_date_str):
     try:
         sender = st.secrets["email"]["user"]
@@ -342,7 +346,7 @@ if len(ed_ptl) > 0:
             ed_ptl.loc[0, '服勤人員'] = '\n'.join(lines)
 # =========================================================
 
-# 強制套用你的自動排版引擎
+# 第 1 道防線：初次載入就套用排版
 if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 
@@ -356,7 +360,12 @@ res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 res_ptl = res_ptl.fillna("")
 res_ptl = res_ptl[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
 
-# ====== 還原你的 HTML 預覽引擎 (這才是你能確認換行的靈魂) ======
+# ====== 第 2 道防線：使用者編輯完畢後，針對結果再強制切割一次 ======
+if '服勤人員' in res_ptl.columns:
+    res_ptl['服勤人員'] = res_ptl['服勤人員'].apply(auto_format_personnel)
+# ====================================================================
+
+# ====== HTML 預覽引擎 (這才是你能確認換行的靈魂) ======
 st.subheader("4. 巡簽地點與備註 (預覽)")
 st.info("此區塊將直接附加於報表末端")
 
@@ -413,7 +422,6 @@ st.components.v1.html(get_html(), height=600, scrolling=True)
 if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
     save_data(p_time, cmdr_input, res_cmd, res_ptl)
     
-    # 加入你的寄信功能
     try:
         ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl, file_date_str)
         if ok:
