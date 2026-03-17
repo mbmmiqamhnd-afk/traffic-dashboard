@@ -13,6 +13,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
@@ -123,15 +124,15 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
     
-    # 📌 強制段落靠左對齊 (alignment=0 代表絕對靠左)，並設定縮排為 0 防止被推移
-    style_note = ParagraphStyle(
-        'Note', 
+    # 📌 為中間的「四行文字」設計專屬樣式，賦予一點點統一縮排 (5mm) 以確保彼此 100% 垂直對齊
+    style_middle_block = ParagraphStyle(
+        'MiddleBlock', 
         fontName=font, 
         fontSize=14, 
-        leading=20, 
-        spaceAfter=5, 
-        alignment=0, 
-        leftIndent=0, 
+        leading=22, 
+        spaceAfter=2*mm, 
+        alignment=TA_LEFT, 
+        leftIndent=5*mm,   # 統一縮排 5mm，形成整齊區塊
         firstLineIndent=0
     )
     style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
@@ -152,14 +153,16 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                             ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t1)
     
-    # 📌 將傳進來的文字先用 strip() 去除頭尾可能存在的空白或換行符號
-    briefing_clean = str(briefing).strip()
+    # 📌 將中間文字拆分為獨立的 4 個段落 (Paragraph)，徹底解決對齊誤差
+    briefing_clean = str(briefing).strip().replace('\n', '<br/>')
     station_clean = str(station).strip().replace('\n', '<br/>')
 
-    # 中間靠左文字區塊
     story.append(Spacer(1, 6*mm))
-    story.append(Paragraph(f"<b>📢 勤前教育：</b>{briefing_clean}", style_note))
-    story.append(Paragraph(f"<b>🚧 環保局臨時檢驗站開設：</b><br/>{station_clean}", style_note))
+    story.append(Paragraph("<b>📢 勤前教育：</b>", style_middle_block))
+    story.append(Paragraph(f"{briefing_clean}", style_middle_block))
+    story.append(Spacer(1, 2*mm)) # 兩大項之間的微小間距
+    story.append(Paragraph("<b>🚧 環保局臨時檢驗站開設：</b>", style_middle_block))
+    story.append(Paragraph(f"{station_clean}", style_middle_block))
     story.append(Spacer(1, 6*mm))
 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
@@ -198,7 +201,7 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
     story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
     
-    # 3. 地點 (同樣加上 strip 防呆)
+    # 3. 地點
     loc = str(briefing).strip() if "於" not in str(briefing) else str(briefing).strip().split("於")[1]
     story.append(Paragraph(f"地點：{loc}", style_top_info))
     story.append(Spacer(1, 3*mm))
@@ -299,16 +302,18 @@ s_info = st.text_area("🚧 環保局臨時檢驗站開設", s, height=70)
 st.subheader("2. 巡邏編組")
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 
+# 📌 確保 HTML 預覽的格式也分為明顯的 4 行垂直對齊
 def get_html():
-    style = "<style>body{font-family:'標楷體';padding:10px;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .note{font-size:12pt;margin:10px 0;line-height:1.4; text-align:left;}</style>"
+    style = "<style>body{font-family:'標楷體';padding:10px;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:12pt;margin:15px 0 15px 20px;line-height:1.6; text-align:left;}</style>"
     html = f"<html>{style}<body><h3 style='text-align:center'>{u}<br>{p_name}</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
     for _, r in res_cmd.iterrows():
         html += f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>"
     
-    # 📌 預覽 HTML 中同樣加上 strip() 清除多餘空白
-    b_html = str(b_info).strip()
+    b_html = str(b_info).strip().replace('\n', '<br>')
     s_html = str(s_info).strip().replace('\n', '<br>')
-    html += f"</table><div class='note'><b>📢 勤前教育：</b>{b_html}<br><b>🚧 環保局臨時檢驗站開設：</b><br>{s_html}</div>"
+    
+    # 用獨立區塊與 <br> 標籤呈現 4 行
+    html += f"</table><div class='middle-block'><b>📢 勤前教育：</b><br>{b_html}<br><br><b>🚧 環保局臨時檢驗站開設：</b><br>{s_html}</div>"
     
     html += "<table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
     for _, r in res_ptl.iterrows():
