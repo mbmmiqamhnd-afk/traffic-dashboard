@@ -104,10 +104,10 @@ def auto_format_personnel(val):
     # 1. 統一全形冒號並轉換雲端換行字元
     s = str(val).replace('\\n', '\n').replace(':', '：').replace('、', '\n')
     
-    # 2. 確保「時段」的【前方】被強制斷開 (避免人名與下一個時段黏在一起)
+    # 2. 確保「時段」的前方被強制斷開 (避免人名與下一個時段黏在一起)
     s = re.sub(r'(\d{2}-\d{2}時)', r'\n\1', s)
     
-    # 3. 確保「時段」的【後方】強制補上冒號與換行
+    # 3. 確保「時段」的後方強制補上冒號與換行
     s = re.sub(r'(\d{2}-\d{2}時)[：\s]*', r'\1：\n', s)
     
     # 4. 逐行清理空行，重組為完美的垂直並列
@@ -136,7 +136,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22)
     style_col_header = ParagraphStyle('ColHeader', fontName=font, fontSize=16, leading=20, alignment=1)
     
-    # 縮小行高(leading=16)讓垂直排列更緊湊好看
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=16, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=16, alignment=0)
     
@@ -151,11 +150,9 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
         if pd.isna(txt) or str(txt).strip() in ["None", "nan", ""]: 
             return ""
         s = str(txt)
-        # 在 PDF 產生時，針對時段與冒號加粗
         s = re.sub(r'(\d{2}-\d{2}時：?)', r'<b>\1</b>', s)
         return s.replace('\n', '<br/>').replace('\\n', '<br/>')
 
-    # ==================== 表格 1：任務編組 ====================
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -176,7 +173,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # ==================== 表格 2：警力佈署 ====================
     data_ptl = [
         [Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''],
         [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_left), '', '', '', ''],
@@ -305,4 +301,8 @@ res_ptl = res_ptl.fillna("")[~(res_ptl == "").all(axis=1)].reset_index(drop=True
 
 st.markdown("---")
 
-if st.button("同步雲端並下載
+if st.button("同步雲端並下載 PDF 💾", type="primary"):
+    save_data(p_time, cmdr_input, res_cmd, res_ptl)
+    st.success("✅ 雲端同步成功！")
+    pdf_out = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
+    st.download_button("點此下載排版後的 PDF", data=pdf_out, file_name=f"防制危險駕車勤務規劃表_{file_date_str}.pdf")
