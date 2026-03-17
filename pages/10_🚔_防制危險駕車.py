@@ -28,7 +28,7 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
 
-# --- 預設範本資料 ---
+# --- 預設資料 ---
 DEFAULT_TIME = "115年3月6日22時至翌日6時"
 DEFAULT_COMMANDER = "石門所副所長林榮裕"
 
@@ -96,25 +96,7 @@ def save_data(time_str, commander, df_cmd, df_patrol):
     except:
         return False
 
-# --- 3. 強制垂直排版引擎 ---
-def auto_format_personnel(val):
-    if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
-        return ""
-    
-    # 1. 統一全形冒號並轉換雲端換行字元
-    s = str(val).replace('\\n', '\n').replace(':', '：').replace('、', '\n')
-    
-    # 2. 確保「時段」的前方被強制斷開 (避免人名與下一個時段黏在一起)
-    s = re.sub(r'(\d{2}-\d{2}時)', r'\n\1', s)
-    
-    # 3. 確保「時段」的後方強制補上冒號與換行
-    s = re.sub(r'(\d{2}-\d{2}時)[：\s]*', r'\1：\n', s)
-    
-    # 4. 逐行清理空行，重組為完美的垂直並列
-    lines = [line.strip() for line in s.split('\n') if line.strip()]
-    return '\n'.join(lines)
-
-# --- 4. PDF 生成 ---
+# --- 3. PDF 生成 ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
@@ -135,10 +117,8 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
     style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22)
     style_col_header = ParagraphStyle('ColHeader', fontName=font, fontSize=16, leading=20, alignment=1)
-    
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=16, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=16, alignment=0)
-    
     style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4)
     style_note = ParagraphStyle('Note', fontName=font, fontSize=14, leading=20, spaceAfter=5)
     style_note_indent = ParagraphStyle('NoteIndent', fontName=font, fontSize=14, leading=20, spaceAfter=5, leftIndent=28, firstLineIndent=-28)
@@ -150,9 +130,12 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
         if pd.isna(txt) or str(txt).strip() in ["None", "nan", ""]: 
             return ""
         s = str(txt)
+        # 針對時段加上粗體
         s = re.sub(r'(\d{2}-\d{2}時：?)', r'<b>\1</b>', s)
+        # 轉譯換行給 PDF
         return s.replace('\n', '<br/>').replace('\\n', '<br/>')
 
+    # ==================== 表格 1：任務編組 ====================
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -173,6 +156,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
+    # ==================== 表格 2：警力佈署 ====================
     data_ptl = [
         [Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''],
         [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_left), '', '', '', ''],
@@ -214,7 +198,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     return buf.getvalue()
 
 
-# --- 5. 主介面邏輯 ---
+# --- 4. 主介面邏輯 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
     t, cmdr = DEFAULT_TIME, DEFAULT_COMMANDER
@@ -256,39 +240,45 @@ if match:
         except ValueError:
             pass 
 
-# ====== 魔法連動：單位、代號與服勤人員姓名同步 ======
+
+# =========================================================
+# 🎯 專門處理第一列「專責警力」的垂直排版與連動
+# =========================================================
 if len(ed_ptl) > 0:
+    # 1. 解析指揮官名稱與單位
     m_unit = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
     if m_unit:
         unit_name = m_unit.group(1)
         title_name = cmdr_input.replace(unit_name, "").strip()
         
+        # 2. 同步編組名稱
         suffix_word = "輪值" if unit_name.endswith("所") or unit_name.endswith("分隊") else "所輪值"
         ed_ptl.loc[0, '編組'] = f"專責警力\n（{unit_name}{suffix_word}）"
             
+        # 3. 同步無線電代號
         unit_base_map = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
         base_code = ""
         for k, v in unit_base_map.items():
             if k in unit_name:
                 base_code = v
                 break
-                
         if base_code:
             suffix = "1" if any(x in title_name for x in ["所長", "分隊長", "組長"]) else "2"
             ed_ptl.loc[0, '無線電'] = base_code + suffix
 
-        # 服勤人員垂直同步 (確保有冒號與換行)
+        # 4. 強制垂直排版：時段與姓名
         current_personnel = str(ed_ptl.loc[0, '服勤人員']).replace('\\n', '\n')
+        # 找出原本的所有時段
         time_slots = re.findall(r'(\d{2}-\d{2}時)', current_personnel)
+        
         if time_slots and title_name:
             new_val = ""
             for ts in time_slots:
+                # 保證「時段：」加上「換行」，下方緊接姓名
                 new_val += f"{ts}：\n{title_name}\n"
             ed_ptl.loc[0, '服勤人員'] = new_val.strip()
 
-# 強制對所有的服勤人員套用「垂直排版引擎」
-if '服勤人員' in ed_ptl.columns:
-    ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
+# =========================================================
 
 # 顯示介面編輯器
 st.subheader("2. 任務編組")
