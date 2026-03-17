@@ -170,9 +170,9 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
         s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?：?)', r'<b>\1</b>', s)
         return s.replace('\n', '<br/>').replace('\\n', '<br/>')
 
+    # 修復了上一版出錯的地方，確保字串完整
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
-                [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職ড়ান্ত```python
-稱", "代號", "姓名", "任務"]]]
+                [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
         data_cmd.append([
             Paragraph(f"<b>{clean(r.get('職稱',''))}</b>", style_cell), 
