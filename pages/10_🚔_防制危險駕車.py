@@ -115,17 +115,13 @@ def save_data(time_str, commander, df_cmd, df_patrol):
 def auto_format_personnel(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
         return ""
-    
     s = str(val).replace('\\n', '\n').replace('、', '\n')
     
-    # 核心 1：只要遇到「數字-數字」，一律在【前方】強制斷行！
-    # 這行確保了第二個、第三個時段，絕對不會跟前面的人名黏在一起
+    # 核心 1：只要遇到「數字-數字」，一律在前方強制斷行！
     s = re.sub(r'([^\n])\s*(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)', r'\1\n\2', s)
-    
-    # 核心 2：在所有時段的【後方】強制補上全形冒號「：」並換行，把人名擠下去
+    # 核心 2：在所有時段後方強制補上全形冒號「：」並換行
     s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)[：:\s]*', r'\1：\n', s)
     
-    # 逐行清理空行，重組為完美的垂直並列
     lines = [line.strip() for line in s.split('\n') if line.strip()]
     return '\n'.join(lines)
 # ==========================================
@@ -327,7 +323,11 @@ if len(ed_ptl) > 0:
         if base_code:
             current_radio = str(ed_ptl.loc[0, '無線電']).strip()
             if not current_radio.startswith(base_code):
-                suffix = "1" if any(x in title_name for x in ["所長", "分隊長", "組長"]) else "2"
+                # 精準排除副所長，給予正確的 1 或 2
+                if re.search(r'(?<!副)所長|分隊長|組長', title_name):
+                    suffix = "1"
+                else:
+                    suffix = "2"
                 ed_ptl.loc[0, '無線電'] = base_code + suffix
 
         if title_name:
@@ -354,9 +354,26 @@ res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 res_ptl = res_ptl.fillna("")
 res_ptl = res_ptl[~(res_ptl == "").all(axis=1)].reset_index(drop=True)
 
-# 第二道防線：手動編輯表格後，針對所有資料再狠狠排版一次！
+# ====== 第二道防線：使用者編輯完畢後，再次排版並判斷【主官代號】 ======
 if '服勤人員' in res_ptl.columns:
     res_ptl['服勤人員'] = res_ptl['服勤人員'].apply(auto_format_personnel)
+    
+    # 🚔 無線電代號自動判斷 (尾數 0 -> 1 或 2)
+    if '無線電' in res_ptl.columns:
+        for idx in res_ptl.index:
+            ppl_text = str(res_ptl.loc[idx, '服勤人員'])
+            rad_text = str(res_ptl.loc[idx, '無線電']).strip()
+            
+            # 如果出現真正的所長(不含副)或分隊長，將尾數 0 變 1
+            if re.search(r'(?<!副)所長|分隊長', ppl_text):
+                if rad_text.endswith('0'):
+                    res_ptl.loc[idx, '無線電'] = rad_text[:-1] + '1'
+            
+            # 如果出現副所長或小隊長，將尾數 0 變 2
+            elif re.search(r'副所長|小隊長', ppl_text):
+                if rad_text.endswith('0'):
+                    res_ptl.loc[idx, '無線電'] = rad_text[:-1] + '2'
+# ====================================================================
 
 # ====== HTML 預覽引擎 (這才是你能確認換行的靈魂) ======
 st.subheader("4. 巡簽地點與備註 (預覽)")
