@@ -28,7 +28,7 @@ SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/a
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年3月20日19至23時"
 DEFAULT_PROJ    = "0320「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
-DEFAULT_BRIEF   = "於分局二樓會議室召開" # 簡化，地點自動帶入表格
+DEFAULT_BRIEF   = "於分局二樓會議室召開" 
 DEFAULT_STATION = "環保局臨時檢驗站開設時間：20時至23時\n地點：桃園市龍潭區大昌路一段277號（龍潭區警政聯合辦公大樓）廣場"
 
 DEFAULT_CMD = pd.DataFrame([
@@ -63,14 +63,12 @@ def _get_font():
     return "Helvetica"
 
 def parse_meeting_time(time_str):
-    """提取勤務開始時間並計算後半小時"""
+    """提取勤務開始時間並計算第一小時的後半小時"""
     try:
-        # 尋找數字小時 (例如 19) [cite: 1, 2]
         match = re.search(r"(\d+)至", time_str)
         if match:
             start_hour = int(match.group(1))
             end_hour = start_hour + 1
-            # 格式化為 19時30分至20時00分 
             return f"{start_hour}時30分至{end_hour}時00分"
     except:
         pass
@@ -162,7 +160,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     doc.build(story)
     return buf.getvalue()
 
-# (B) 簽到表 (依照「第一小時後半小時」邏輯與「新增二列」格式修改)
+# (B) 簽到表 (依照您的需求優化排版)
 def generate_attendance_pdf(unit, project, time_str, briefing):
     font = _get_font()
     buf = io.BytesIO()
@@ -173,33 +171,34 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=12, leading=22, alignment=1)
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=22, alignment=0) # 新增靠左樣式
     style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
 
-    # 1. 標題 (對應來源 1)
+    # 1. 標題
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     
-    # 2. 自動計算會議時間 (對應來源 2: 第一小時後半小時)
+    # 2. 自動計算時間
     meeting_range = parse_meeting_time(time_str)
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
     story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
     
-    # 3. 地點 (對應來源 5)
+    # 3. 地點
     loc = briefing if "於" not in briefing else briefing.split("於")[1]
     story.append(Paragraph(f"地點：{loc}", style_top_info))
     story.append(Spacer(1, 3*mm))
 
-    # 4. 核心簽到表格 (包含分局長/上級督導、副分局長、單位格線)
+    # 4. 核心簽到表格
     table_data = []
     
     # --- 第一列：分局長 (左) | 上級督導 (右) ---
     table_data.append([
-        Paragraph("分局長：", style_cell), "", 
-        Paragraph("上級督導：", style_cell), ""
+        Paragraph("分局長：", style_cell_left), "", 
+        Paragraph("上級督導：", style_cell_left), ""
     ])
     
-    # --- 第二列：副分局長 (跨欄合併) ---
+    # --- 第二列：副分局長 (跨欄合併、文字靠左) ---
     table_data.append([
-        Paragraph("副分局長：", style_cell), "", "", ""
+        Paragraph("副分局長：", style_cell_left), "", "", ""
     ])
 
     # --- 第三列：單位格線標題 ---
@@ -219,7 +218,6 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     for left, right in rows:
         table_data.append([Paragraph(left, style_cell), "", Paragraph(right, style_cell), ""])
     
-    # 行高設定 
     row_heights = [18*mm, 18*mm, 10*mm] + [20*mm] * len(rows)
     
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=row_heights)
@@ -227,26 +225,38 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
         ('FONTNAME', (0,0), (-1,-1), font),
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        
+        # 預設全部置中
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        
+        # 針對「分局長」、「上級督導」與「副分局長」文字格靠左對齊
+        ('ALIGN', (0,0), (0,0), 'LEFT'), # 分局長文字
+        ('ALIGN', (2,0), (2,0), 'LEFT'), # 上級督導文字
+        ('ALIGN', (0,1), (0,1), 'LEFT'), # 副分局長文字
+        
         # 合併第一列簽名格
-        ('SPAN', (0,0), (0,0)), ('SPAN', (1,0), (1,0)), # 分局長與簽名
-        ('SPAN', (2,0), (2,0)), ('SPAN', (3,0), (3,0)), # 上級督導與簽名
+        ('SPAN', (0,0), (0,0)), ('SPAN', (1,0), (1,0)), 
+        ('SPAN', (2,0), (2,0)), ('SPAN', (3,0), (3,0)),
+        
         # 合併第二列：副分局長跨四欄
         ('SPAN', (0,1), (3,1)), 
+        
         # 標題列背景
         ('BACKGROUND', (0,2), (0,2), colors.whitesmoke),
         ('BACKGROUND', (2,2), (2,2), colors.whitesmoke),
     ]))
     story.append(t)
 
-    # 5. 底部備註 (對應來源 7)
+    # 5. 底部備註
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
 
     doc.build(story)
     return buf.getvalue()
 
-# --- 4. 寄信功能 ---
+# --- 4. 寄信與主介面 (略，同前版內容) ---
+# ... 此處維持原本的主介面程式碼 ...
+
 def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     try:
         sender = st.secrets["email"]["user"]
@@ -267,7 +277,6 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
         return True, None
     except Exception as e: return False, str(e)
 
-# --- 5. 主介面 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
     u, t, p, b, s = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF, DEFAULT_STATION
@@ -286,7 +295,7 @@ st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 
 c3, c4 = st.columns(2)
-b_info = c3.text_area("📢 勤前教育地點 (如：分局二樓會議室)", b, height=70)
+b_info = c3.text_area("📢 勤前教育地點", b, height=70)
 s_info = c4.text_area("🚧 檢驗站資訊", s, height=70)
 
 st.subheader("2. 巡邏編組")
@@ -294,10 +303,8 @@ res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 
 st.markdown("---")
 st.subheader("📄 報表下載")
-
 col_dl1, col_dl2 = st.columns(2)
 
-# 執行 PDF 生成
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
 col_dl1.download_button("📝 下載 1.勤務規劃表", data=pdf_plan, file_name=f"規劃表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
 
