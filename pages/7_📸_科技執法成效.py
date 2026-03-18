@@ -50,14 +50,20 @@ def create_formatted_excel(df_loc, date_range_text, total_count):
         workbook = writer.book
         ws = workbook.add_worksheet('科技執法成效統計')
         
+        # 定義格式
         title_fmt = workbook.add_format({'bold': True, 'font_size': 14})
+        # 新增紅色字體格式 (用於括號與期間)
+        red_title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'color': 'red'}) 
         header_fmt = workbook.add_format({'bg_color': '#F2F2F2', 'border': 1, 'bold': True, 'align': 'center'})
         data_fmt = workbook.add_format({'border': 1, 'align': 'center'})
         total_fmt = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFFCC', 'align': 'center'})
 
-        ws.write('A1', '科技執法成效', title_fmt)
+        # 使用 write_rich_string 將標題與紅色括號期間組合在 A1
+        ws.write_rich_string('A1', title_fmt, '科技執法成效 ', red_title_fmt, f'({date_range_text})')
+        
         ws.write('A2', '統計期間', workbook.add_format({'align': 'center', 'border': 1}))
-        ws.write('B2', date_range_text, workbook.add_format({'border': 1}))
+        # B2 儲存格的期間也同步改為紅色以求一致
+        ws.write('B2', date_range_text, workbook.add_format({'border': 1, 'color': 'red', 'align': 'center'}))
         ws.write('A3', '路口名稱', header_fmt)
         ws.write('B3', '舉發件數', header_fmt)
         
@@ -112,7 +118,8 @@ if uploaded_file:
         loc_summary.columns = ['路段名稱', '舉發件數']
 
         st.divider()
-        st.subheader(f"📅 統計期間 (累計至昨日)：{date_range_str}")
+        # 利用 Streamlit 的 Markdown 語法 :red[] 將括號與期間變成紅色
+        st.subheader(f"📅 統計期間 (累計至昨日)：:red[({date_range_str})]")
         
         # 顯示路段排行 (置中顯示)
         col1, col2, col3 = st.columns([1, 2, 1])
