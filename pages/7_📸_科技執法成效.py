@@ -43,26 +43,25 @@ def format_roc_date_range_to_yesterday():
     day = yesterday.day
     return f"{roc_year}年1月1日至{roc_year}年{month}月{day}日"
 
-# --- 核心：建立 Excel (僅保留路段排行) ---
+# --- 核心：建立 Excel (包含混合顏色標題) ---
 def create_formatted_excel(df_loc, date_range_text, total_count):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         workbook = writer.book
         ws = workbook.add_worksheet('科技執法成效統計')
         
-        # 定義格式
-        title_fmt = workbook.add_format({'bold': True, 'font_size': 14})
-        # 新增紅色字體格式 (用於括號與期間)
+        # 定義格式 (明確指定黑色與紅色，確保相容性)
+        black_title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'color': 'black'})
         red_title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'color': 'red'}) 
         header_fmt = workbook.add_format({'bg_color': '#F2F2F2', 'border': 1, 'bold': True, 'align': 'center'})
         data_fmt = workbook.add_format({'border': 1, 'align': 'center'})
         total_fmt = workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFFCC', 'align': 'center'})
 
-        # 使用 write_rich_string 將標題與紅色括號期間組合在 A1
-        ws.write_rich_string('A1', title_fmt, '科技執法成效 ', red_title_fmt, f'({date_range_text})')
+        # 寫入混合格式：黑色字串 + 紅色字串 (括號及期間)
+        ws.write_rich_string('A1', black_title_fmt, '科技執法成效 ', red_title_fmt, f'({date_range_text})')
         
         ws.write('A2', '統計期間', workbook.add_format({'align': 'center', 'border': 1}))
-        # B2 儲存格的期間也同步改為紅色以求一致
+        # B2 儲存格的期間也同步改為紅色
         ws.write('B2', date_range_text, workbook.add_format({'border': 1, 'color': 'red', 'align': 'center'}))
         ws.write('A3', '路口名稱', header_fmt)
         ws.write('B3', '舉發件數', header_fmt)
@@ -118,7 +117,7 @@ if uploaded_file:
         loc_summary.columns = ['路段名稱', '舉發件數']
 
         st.divider()
-        # 利用 Streamlit 的 Markdown 語法 :red[] 將括號與期間變成紅色
+        # Streamlit 網頁介面：使用 :red[] 讓括號與期間變紅
         st.subheader(f"📅 統計期間 (累計至昨日)：:red[({date_range_str})]")
         
         # 顯示路段排行 (置中顯示)
@@ -130,7 +129,7 @@ if uploaded_file:
             with st.spinner("⚡ 系統作業中..."):
                 excel_data = create_formatted_excel(loc_summary, date_range_str, len(df))
                 
-                # 同步 Google Sheets (僅保留路段排行)
+                # 同步 Google Sheets
                 try:
                     gc = gspread.service_account_from_dict(GCP_CREDS)
                     sh = gc.open_by_url(GOOGLE_SHEET_URL)
@@ -141,14 +140,60 @@ if uploaded_file:
                         ws = sh.add_worksheet(title=sheet_name, rows="100", cols="20")
                     ws.clear()
                     
-                    # 準備寫入資料
+                    # 1. 先寫入所有資料 (純文字)
+                    title_text = f"科技執法成效 ({date_range_str})"
                     update_data = [
-                        [f"科技執法成效 ({date_range_str})", ""],
+                        [title_text, ""],
                         ["路段名稱", "舉發件數"]
                     ] + loc_summary.values.tolist() + [["舉發總數", len(df)]]
                     
                     ws.update(values=update_data)
-                    st.success("✅ Google 試算表『路段排行』同步成功！")
+
+                    # 2. 使用 batch_update 將 A1 儲存格的「括號及期間」變成紅色
+                    start_index_of_red = len("科技執法成效 ") 
+                    requests = {
+                        "requests": [
+                            {
+                                "updateCells": {
+                                    "range": {
+                                        "sheetId": ws.id,
+                                        "startRowIndex": 0, "endRowIndex": 1,
+                                        "startColumnIndex": 0, "endColumnIndex": 1
+                                    },
+                                    "rows": [
+                                        {
+                                            "values": [
+                                                {
+                                                    "userEnteredValue": {"stringValue": title_text},
+                                                    "textFormatRuns": [
+                                                        {
+                                                            "startIndex": 0,
+                                                            "format": {
+                                                                "foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0},
+                                                                "bold": True,
+                                                                "fontSize": 14
+                                                            }
+                                                        },
+                                                        {
+                                                            "startIndex": start_index_of_red,
+                                                            "format": {
+                                                                "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0},
+                                                                "bold": True,
+                                                                "fontSize": 14
+                                                            }
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "fields": "userEnteredValue,textFormatRuns"
+                                }
+                            }
+                        ]
+                    }
+                    sh.batch_update(requests)
+                    st.success("✅ Google 試算表『路段排行』同步成功 (含紅色標題)！")
                 except Exception as e: 
                     st.warning(f"⚠️ 雲端同步失敗: {e}")
 
