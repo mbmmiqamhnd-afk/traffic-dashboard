@@ -20,7 +20,7 @@ from reportlab.lib.units import mm
 import re
 
 # --- 1. 頁面設定 ---
-st.set_page_config(page_title="雲端勤務規劃系統", layout="wide", page_icon="警車")
+st.set_page_config(page_title="雲端勤務規劃系統", layout="wide", page_icon="🚓")
 
 # --- 常數與設定 ---
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
@@ -48,6 +48,8 @@ DEFAULT_PTL = pd.DataFrame([
     {"編組": "第二巡邏組", "無線電": "隆安62", "單位": "龍潭所", "服勤人員": "副所長全楚文、警員龔品璇", "任務分工": "於大昌路二段周邊巡查。"},
     {"編組": "第三巡邏組", "無線電": "隆安72", "單位": "中興所", "服勤人員": "副所長薛德祥、警員冷柔萱", "任務分工": "於中興路周邊巡查。"},
     {"編組": "第四巡邏組", "無線電": "隆安83", "單位": "石門所", "服勤人員": "巡佐林偉政、警員盧瑾瑤", "任務分工": "於北龍路周邊巡查。"},
+    {"編組": "第五巡邏組", "無線電": "隆安33", "單位": "三和所、高平所", "服勤人員": "警員唐銘聰、警員張湃柏", "任務分工": "於大昌路一、二段、北龍路及中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第六巡邏組", "無線電": "隆安994", "單位": "龍潭交通分隊", "服勤人員": "小隊長林振生、警員吳沛軒", "任務分工": "於大昌路一、二段、北龍路及中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
 ])
 
 # --- 2. 輔助函數 ---
@@ -110,7 +112,6 @@ def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
     except: return False
 
 # --- 3. PDF 生成功能 ---
-
 def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     font = _get_font()
     buf = io.BytesIO()
@@ -122,18 +123,24 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
-    style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
     
     style_middle_block = ParagraphStyle(
-        'MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm, alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0
+        'MiddleBlock', 
+        fontName=font, 
+        fontSize=14, 
+        leading=22, 
+        spaceAfter=2*mm, 
+        alignment=TA_LEFT, 
+        leftIndent=5*mm,
+        firstLineIndent=0
     )
+    style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
 
     story.append(Paragraph(f"{unit}執行{project}規劃表", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
     def clean(t): return str(t).replace("\n", "<br/>").replace("、", "<br/>")
 
-    # 表格 1：任務編組
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -145,43 +152,31 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                             ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t1)
     
-    # 中間區塊
     briefing_clean = str(briefing).strip().replace('\n', '<br/>')
     station_clean = str(station).strip().replace('\n', '<br/>')
 
     story.append(Spacer(1, 6*mm))
     story.append(Paragraph("<b>📢 勤前教育：</b>", style_middle_block))
     story.append(Paragraph(f"{briefing_clean}", style_middle_block))
-    story.append(Spacer(1, 2*mm))
+    story.append(Spacer(1, 2*mm)) 
     story.append(Paragraph("<b>🚧 環保局臨時檢驗站開設：</b>", style_middle_block))
     story.append(Paragraph(f"{station_clean}", style_middle_block))
     story.append(Spacer(1, 6*mm))
 
-    # 表格 2：警力佈署 (新增標題列並跨欄合併)
-    data_ptl = [
-        [Paragraph("<b>警 力 佈 署</b>", style_table_title), '', '', '', ''],
-        [Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]
-    ]
+    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_ptl.iterrows():
         task = f"{r.get('任務分工','')}<br/><font color='blue' size='11'>*雨備方案：各治安要點巡邏。</font>"
         data_ptl.append([str(r.get('編組','')), str(r.get('無線電','')), Paragraph(clean(r.get('單位','')), style_cell), 
                          Paragraph(clean(r.get('服勤人員','')), style_cell), Paragraph(task, style_cell_left)])
     
     t2 = Table(data_ptl, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
-    t2.setStyle(TableStyle([
-        ('FONTNAME',(0,0),(-1,-1),font),
-        ('FONTSIZE',(0,0),(-1,-1),14),
-        ('GRID',(0,0),(-1,-1),0.5,colors.black),
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-        ('ALIGN',(0,0),(-1,1),'CENTER'),
-        ('SPAN',(0,0),(-1,0)), # 跨欄合併「警力佈署」標題
-        ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')) # 標題列與欄位名灰色背景
-    ]))
+    t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('FONTSIZE',(0,0),(-1,-1),14),('ALIGN',(0,1),(1,-1),'CENTER'),
+                            ('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t2)
-    
     doc.build(story)
     return buf.getvalue()
 
+# (B) 簽到表
 def generate_attendance_pdf(unit, project, time_str, briefing):
     font = _get_font()
     buf = io.BytesIO()
@@ -191,25 +186,34 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
 
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
+    
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0) 
     style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
 
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
+    
     meeting_range = parse_meeting_time(time_str)
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
     story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
+    
     loc = str(briefing).strip() if "於" not in str(briefing) else str(briefing).strip().split("於")[1]
     story.append(Paragraph(f"地點：{loc}", style_top_info))
     story.append(Spacer(1, 3*mm))
 
-    table_data = [
-        [Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""],
-        [Paragraph("副分局長：", style_cell_left), "", "", ""],
-        [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]
-    ]
+    table_data = []
+    table_data.append([Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""])
+    table_data.append([Paragraph("副分局長：", style_cell_left), "", "", ""])
+    table_data.append([Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), 
+                        Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)])
     
-    rows = [("交通組", "中興派出所"), ("勤務指揮中心", "石門派出所"), ("督察組", "高平派出所"), ("聖亭派出所", "三和派出所"), ("龍潭派出所", "龍潭交通分隊")]
+    rows = [
+        ("交通組", "中興派出所"),
+        ("勤務指揮中心", "石門派出所"),
+        ("督察組", "高平派出所"),
+        ("聖亭派出所", "三和派出所"),
+        ("龍潭派出所", "龍潭交通分隊")
+    ]
     for l, r in rows:
         table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
     
@@ -222,13 +226,18 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
         ('GRID', (0,0), (-1,-1), 0.5, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (0,0), (0,0), 'LEFT'),
+        ('ALIGN', (2,0), (2,0), 'LEFT'),
+        ('ALIGN', (0,1), (0,1), 'LEFT'),
         ('SPAN', (0,1), (3,1)), 
         ('BACKGROUND', (0,2), (0,2), colors.whitesmoke),
         ('BACKGROUND', (2,2), (2,2), colors.whitesmoke),
     ]))
     story.append(t)
+
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
+
     doc.build(story)
     return buf.getvalue()
 
@@ -237,6 +246,7 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
     try:
         sender = st.secrets["email"]["user"]
         pwd = st.secrets["email"]["password"]
+        
         msg = MIMEMultipart()
         msg["From"], msg["To"] = sender, sender
         msg["Subject"] = f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
@@ -262,7 +272,7 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
         return True, None
     except Exception as e: return False, str(e)
 
-# --- 5. 主介面 ---
+# --- 5. 主介面與智慧代號計算邏輯 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
     u, t, p, b, s = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF, DEFAULT_STATION
@@ -284,9 +294,50 @@ b_info = st.text_area("📢 勤前教育", b, height=70)
 s_info = st.text_area("🚧 環保局臨時檢驗站開設", s, height=70)
 
 st.subheader("2. 巡邏編組")
-res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
+st.info("💡 系統會自動依據「單位」（優先看上方單位）及「服勤人員」計算無線電代號（所長為1、副所長為2）。未標示主副官時將保留您輸入的代號，或自動帶入單位基礎代號。")
+res_ptl_raw = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True)
 
-# 預覽 HTML (同樣反映警力佈署標題)
+# 📌 智慧計算代號邏輯
+def auto_assign_radio_code(df):
+    base_prefixes = {
+        "交通分隊": "99", 
+        "聖亭": "5", 
+        "龍潭": "6", 
+        "中興": "7", 
+        "石門": "8", 
+        "高平": "9", 
+        "三和": "3"
+    }
+    for idx, row in df.iterrows():
+        unit = str(row.get('單位', ''))
+        person = str(row.get('服勤人員', ''))
+        current_radio = str(row.get('無線電', '')).strip()
+        
+        if not unit:
+            continue
+            
+        # 若為雙單位 (例如：三和所、高平所)，以第一個為基準
+        first_unit = re.split(r'[\n、 ]', unit.strip())[0]
+        
+        base_pfx = ""
+        for k, v in base_prefixes.items():
+            if k in first_unit:
+                base_pfx = v
+                break
+        
+        if base_pfx:
+            if "副所長" in person:
+                df.at[idx, '無線電'] = f"隆安{base_pfx}2"
+            elif "所長" in person:
+                df.at[idx, '無線電'] = f"隆安{base_pfx}1"
+            else:
+                # 一般人員，若未填寫正確代號則帶入基礎代號 (尾數為0)
+                if not current_radio.startswith(f"隆安{base_pfx}"):
+                    df.at[idx, '無線電'] = f"隆安{base_pfx}0"
+    return df
+
+res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
+
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:12pt;margin:15px 0 15px 20px;line-height:1.6; text-align:left;}</style>"
     html = f"<html>{style}<body><h3 style='text-align:center'>{u}<br>{p_name}</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
@@ -295,20 +346,22 @@ def get_html():
     
     b_html = str(b_info).strip().replace('\n', '<br>')
     s_html = str(s_info).strip().replace('\n', '<br>')
+    
     html += f"</table><div class='middle-block'><b>📢 勤前教育：</b><br>{b_html}<br><br><b>🚧 環保局臨時檢驗站開設：</b><br>{s_html}</div>"
     
-    html += "<table><tr><th colspan='5'>警 力 佈 署</th></tr><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
+    html += "<table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
     for _, r in res_ptl.iterrows():
-        html += f"<tr><td>{r.get('編組','')}</td><td>{r.get('無線電','')}</td><td>{str(r.get('單位','')).replace('、','<br>')}</td><td>{str(r.get('服勤人員','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務分工','')}</td></tr>"
+        html += f"<tr><td style='white-space:nowrap;'>{r.get('編組','')}</td><td style='white-space:nowrap;'>{r.get('無線電','')}</td><td>{str(r.get('單位','')).replace('、','<br>')}</td><td>{str(r.get('服勤人員','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務分工','')}</td></tr>"
     return html + "</table></body></html>"
 
 st.markdown("---")
 st.subheader("📄 報表下載與同步")
 
-with st.expander("點擊展開即時預覽"):
-    st.components.v1.html(get_html(), height=400, scrolling=True)
+with st.expander("點擊展開即時預覽 (代號已依據所長/副所長自動校正)"):
+    st.components.v1.html(get_html(), height=500, scrolling=True)
 
 col_dl1, col_dl2 = st.columns(2)
+
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
 col_dl1.download_button("📝 下載 1.勤務規劃表", data=pdf_plan, file_name=f"規劃表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
 
