@@ -81,7 +81,7 @@ if f1_active and f2_active:
                 except: return pd.read_csv(f, encoding='cp950', **kwargs)
             return pd.read_excel(f, **kwargs)
 
-        # 抓日期 (已加入移除 115 邏輯)
+        # 抓日期 (修正：完整顯示「統計期間」且移除「115」)
         date_range_str = "未知期間"
         df1_h = smart_read(f1_active, nrows=10, header=None)
         for _, r in df1_h.iterrows():
@@ -90,7 +90,6 @@ if f1_active and f2_active:
                     raw = str(cell).replace('(入案日)', '').split('：')[-1].split(':')[-1].strip()
                     m = re.search(r'([0-9年月日\-至\s]+)', raw)
                     if m: 
-                        # 移除 115 年度字樣
                         date_range_str = m.group(1).replace('115', '').strip()
 
         # 讀取數據
@@ -154,8 +153,8 @@ if f1_active and f2_active:
                 for idx in vals.index:
                     if pd.notna(vals.loc[idx]) and vals.loc[idx] <= lim: reds.append((idx, df_f.columns.get_loc(c_n)))
 
-        # --- 3. 顯示 ---
-        st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(期間：{date_range_str})]")
+        # --- 3. 顯示 (這裡改為「統計期間」) ---
+        st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(統計期間：{date_range_str})]")
         def style_df(x):
             df_s = pd.DataFrame('', index=x.index, columns=x.columns)
             for r, c in reds: df_s.iloc[r, c] = 'color: red; font-weight: bold;'
@@ -167,16 +166,17 @@ if f1_active and f2_active:
                 gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                 sh = gc.open_by_url(GOOGLE_SHEET_URL)
                 ws = sh.worksheet(PROJECT_NAME)
+                # 這裡也同步改為「統計期間」
                 full_t = f"{PROJECT_NAME} (統計期間：{date_range_str})"
                 ws.clear()
                 ws.update(values=[[full_t]+[""]*18, [""]+[c for c in CATS for _ in range(3)], ["單位"]+["取締","目標","比率"]*6] + df_f.values.tolist())
                 reqs = [
                     {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
                     {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat.horizontalAlignment"}},
-                    {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 1}, "bold": True}}, {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1, "green": 0, "blue": 0}, "bold": True}}]}]}], "fields": "userEnteredValue,textFormatRuns"}}
+                    {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True}}, {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True}}]}]}], "fields": "userEnteredValue,textFormatRuns"}}
                 ]
                 for r, c in reds: reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r+3, "endRowIndex": r+4, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 1}, "bold": True}}}, "fields": "userEnteredFormat.textFormat"}})
                 sh.batch_update({"requests": reqs})
-                st.success("✅ 日期已簡化並同步完成！")
+                st.success("✅ 已修復字樣並同步完成！")
     except Exception as e:
         st.error(f"❌ 解析錯誤：{e}")
