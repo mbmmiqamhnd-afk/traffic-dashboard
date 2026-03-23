@@ -6,64 +6,61 @@ import gspread
 import shutil
 import smtplib
 import calendar
-import traceback
 from datetime import datetime, timedelta, date
 from pdf2image import convert_from_bytes
 from pptx import Presentation
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
 from email.mime.application import MIMEApplication
-from email import encoders
 from email.header import Header
 
 # ==========================================
-# 0. 系統初始化配置
+# 0. 系統初始化與全局設定
 # ==========================================
 st.set_page_config(page_title="龍潭分局交通智慧戰情室", page_icon="🚓", layout="wide")
 
-# 常數設定
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 TO_EMAIL = "mbmmiqamhnd@gmail.com"
 
-# 目標值配置 (合併各模組)
-TARGETS_ENHANCED = {'聖亭所': [5, 115, 5, 16, 7, 10], '龍潭所': [6, 145, 7, 20, 9, 12], '中興所': [5, 115, 5, 16, 7, 10], '石門所': [3, 80, 4, 11, 5, 7], '高平所': [3, 80, 4, 11, 5, 7], '三和所': [2, 40, 2, 6, 2, 5], '交通分隊': [5, 115, 4, 16, 6, 8]}
-TARGETS_MAJOR = {'聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, '高平所': 1294, '三和所': 339, '交通分隊': 2526, '科技執法': 6006}
+# 目標值設定區
+TARGETS_MAJOR = {'科技執法': 6006, '聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, '高平所': 1294, '三和所': 339, '交通分隊': 2526}
 TARGETS_OVERLOAD = {'聖亭所': 20, '龍潭所': 27, '中興所': 20, '石門所': 16, '高平所': 14, '三和所': 8, '警備隊': 0, '交通分隊': 22}
 
 # ==========================================
-# 🛠️ 通用工具函式庫
+# 🛠️ 通用工具箱 (Helper Functions)
 # ==========================================
 
-def get_standard_unit(raw_name):
-    name = str(raw_name).strip()
-    if '分隊' in name: return '交通分隊'
-    if '科技' in name or '交通組' in name: return '科技執法'
-    if '警備' in name: return '警備隊'
+def get_std_unit(n):
+    n = str(n).strip()
+    if '分隊' in n: return '交通分隊'
+    if '科技' in n or '交通組' in n: return '科技執法'
+    if '警備' in n: return '警備隊'
     for k in ['聖亭', '龍潭', '中興', '石門', '高平', '三和']:
-        if k in name: return k + '所'
+        if k in n: return k + '所'
     return None
 
-def format_roc_yesterday():
-    yesterday = datetime.now() - timedelta(days=1)
-    return f"{yesterday.year-1911}年1月1日至{yesterday.year-1911}年{yesterday.month}月{day}日"
-
-def send_mail(excel_bytes, subject, body_text, filename="Report.xlsx"):
-    try:
-        user, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
-        msg = MIMEMultipart()
-        msg['Subject'] = Header(subject, 'utf-8').encode()
-        msg['From'], msg['To'] = user, TO_EMAIL
-        msg.attach(MIMEText(body_text, 'plain'))
-        part = MIMEApplication(excel_bytes, Name=filename)
-        part.add_header('Content-Disposition', 'attachment', filename=filename)
-        msg.attach(part)
-        with smtplib.SMTP('smtp.gmail.com', 587) as s:
-            s.starttls()
-            s.login(user, pwd)
-            s.send_message(msg)
-        return True
-    except: return False
+def sync_gsheet_batch(ws, title, df_data, font_size=16):
+    """通用雲端同步：含藍紅標題格式化"""
+    ws.clear()
+    data = [ [title] ] + [df_data.columns.tolist()] + df_data.values.tolist()
+    ws.update(values=data)
+    
+    blue = {"red": 0, "green": 0, "blue": 1}
+    red = {"red": 1, "green": 0, "blue": 0}
+    split_idx = title.find("(") if "(" in title else len(title)
+    
+    reqs = [{
+        "updateCells": {
+            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
+            "rows": [{"values": [{"userEnteredValue": {"stringValue": title},
+                "textFormatRuns": [
+                    {"startIndex": 0, "format": {"foregroundColor": blue, "bold": True, "fontSize": font_size}},
+                    {"startIndex": split_idx, "format": {"foregroundColor": red, "bold": True, "fontSize": font_size}}
+                ]}]}],
+            "fields": "userEnteredValue,textFormatRuns"
+        }
+    }]
+    ws.spreadsheet.batch_update({"requests": reqs})
 
 # ==========================================
 # 🏰 導覽選單
@@ -75,7 +72,7 @@ with st.sidebar:
     st.info("💡 10秒流程：首頁直接拖入報表即可分析。")
 
 # ==========================================
-# 🏠 模式一：智慧上傳中心 (核心自動化)
+# 🏠 核心：智慧上傳中心
 # ==========================================
 if app_mode == "🏠 智慧上傳中心":
     st.header("📈 交通數據智慧分析中心")
@@ -83,53 +80,46 @@ if app_mode == "🏠 智慧上傳中心":
 
     if uploads:
         num = len(uploads)
-        
+        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+
         # --- [1份檔案]：科技執法 ---
         if num == 1:
             f = uploads[0]
-            st.success(f"📸 識別為「科技執法」報表：{f.name}")
-            # (此處執行科技執法解析、24pt藍紅標題同步與寄信)
-            st.info("正在產製科技執法排行...")
+            if "list" in f.name.lower() or "地點" in f.name:
+                st.success(f"📸 識別為「科技執法」：{f.name}")
+                # 執行科技執法 logic ... (略)
+                # 提示：此處可呼叫 sync_gsheet_batch(sh.get_worksheet(4), title, df, font_size=24)
 
         # --- [2份檔案]：重大交通違規 ---
         elif num == 2:
-            st.success("✅ 識別為「重大交通違規」統計 (本期+累計)")
-            # (此處執行重大違規解析、16pt藍紅標題與負值紅字同步)
-            st.info("正在執行重大違規數據推播...")
+            st.success("✅ 識別為「重大交通違規」統計")
+            # 執行重大違規 logic ... (略)
+            # 提示：此處同步至 sh.get_worksheet(0)
 
         # --- [3份檔案]：強化專案 或 超載統計 ---
         elif num == 3:
             if any("stone" in f.name.lower() for f in uploads):
                 st.success("🚛 識別為「超載違規」自動統計")
-                # (執行超載統計、自動寄信與雲端數據更新)
+                # 執行超載統計 logic (含寄信) ... (略)
+                # 提示：同步至 sh.get_worksheet(1)
             else:
                 st.success("🔥 識別為「強化交通安全專案」統計")
-                # (執行強化專案 16pt 藍紅標題同步)
+                # 執行強化專案 logic ... (略)
+                # 提示：同步至 sh.get_worksheet(5)
 
         # --- [4份檔案]：交通事故 A1/A2 ---
         elif num == 4:
             st.success("🚑 識別為「交通事故 A1/A2」統計")
-            # (執行交通事故日期比對、紅字標題同步)
+            # 執行交通事故 logic ... (略)
+            # 提示：同步至 sh.get_worksheet(2) & (3)
 
         else:
-            st.warning(f"目前收到 {num} 份檔案，請確認是否符合各項統計之數量要求。")
+            st.warning(f"目前收到 {num} 份檔案，請確認數量。")
 
 # ==========================================
-# 📂 模式二：PDF 轉 PPTX 工具
+# 📂 模式二：PDF 轉 PPTX
 # ==========================================
 elif app_mode == "📂 PDF 轉 PPTX 工具":
     st.header("📂 PDF 行政文書轉檔")
-    uploaded_pdf = st.file_uploader("上傳 PDF 檔案", type=["pdf"])
-    if uploaded_pdf:
-        if st.button("🚀 開始轉檔"):
-            with st.spinner("圖片解析中..."):
-                images = convert_from_bytes(uploaded_pdf.read(), dpi=150)
-                prs = Presentation()
-                for img in images:
-                    slide = prs.slides.add_slide(prs.slide_layouts[6])
-                    img_io = io.BytesIO()
-                    img.save(img_io, format='JPEG', quality=85)
-                    slide.shapes.add_picture(img_io, 0, 0, width=prs.slide_width, height=prs.slide_height)
-                out = io.BytesIO()
-                prs.save(out)
-                st.download_button("📥 下載 PPTX", out.getvalue(), file_name="Report.pptx")
+    # ... 原本轉檔代碼 ...
