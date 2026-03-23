@@ -99,10 +99,8 @@ if f1_active and len(f2_active) >= 1:
                     m = re.search(r'([0-9年月日\-至\s]+)', raw)
                     if m: date_range_str = m.group(1).replace('115', '').strip()
 
-        # 讀取法條數據
+        # 讀取數據
         df1 = make_columns_unique(smart_read(f1_active, skiprows=3)).reset_index(drop=True)
-        
-        # 讀取大型車數據 (支援多個檔案)
         df2_list = []
         for f in f2_active:
             df_t = smart_read(f, header=None)
@@ -126,7 +124,7 @@ if f1_active and len(f2_active) >= 1:
 
         df2_all['大型車純違規'] = (df2_all['舉發總數'] - df2_all['違反管制規定'] - df2_all['其他違規']).clip(lower=0)
 
-        # 彙整統計表格
+        # 彙整表格
         final_rows = []
         for unit in TARGET_CONFIG.keys():
             d15 = get_counts(df1, unit, CATS[:5])
@@ -182,7 +180,7 @@ if f1_active and len(f2_active) >= 1:
                         "mergeType": "MERGE_ALL"
                     }
                 },
-                # 設定分段顏色 (專案藍色, 期間紅色)
+                # 設定分段顏色 (專案藍色, 期間紅色) 並將字體設為 16
                 {
                     "updateCells": {
                         "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
@@ -190,8 +188,8 @@ if f1_active and len(f2_active) >= 1:
                             "values": [{
                                 "userEnteredValue": {"stringValue": full_t},
                                 "textFormatRuns": [
-                                    {"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 12}},
-                                    {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True, "fontSize": 12}}
+                                    {"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 16}},
+                                    {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True, "fontSize": 16}}
                                 ]
                             }]
                         }],
