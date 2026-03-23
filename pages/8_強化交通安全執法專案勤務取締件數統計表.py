@@ -11,7 +11,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="強化專案統計 - 龍潭分局", layout="wide")
 
-GOOGLE_SHEET_URL = "[https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit](https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit)"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 PROJECT_NAME = "強化交通安全執法專案勤務取締件數統計表"
 
 TARGET_CONFIG = {
@@ -69,7 +69,7 @@ if auto_f1 and auto_f2:
     st.success(f"✅ 自動模式：偵測到 GitHub 報表")
     f1_active, f2_active = auto_f1[0], auto_f2
 else:
-    st.info("💡 提示：未偵測到自動更新檔案，請手動上傳。")
+    st.info("💡 提示：根目錄未偵測到自動更新檔案，請手動上傳。")
     c1, c2 = st.columns(2)
     f1_active = c1.file_uploader("📂 1. 法條報表", type=["xlsx", "csv"], key="m1")
     f2_active = c2.file_uploader("📂 2. 大型車報表 (可多選)", type=["xlsx", "csv"], accept_multiple_files=True, key="m2")
@@ -84,7 +84,7 @@ if f1_active and f2_active:
                 except: return pd.read_csv(f, encoding='cp950', **kwargs)
             return pd.read_excel(f, **kwargs)
 
-        # 抓日期
+        # A. 抓日期
         date_range_str = "未知期間"
         df1_h = smart_read(f1_active, nrows=10, header=None)
         for _, r in df1_h.iterrows():
@@ -94,10 +94,10 @@ if f1_active and f2_active:
                     m = re.search(r'([0-9年月日\-至\s]+)', raw)
                     if m: date_range_str = m.group(1).replace('115', '').strip()
 
-        # 讀取 F1
+        # B. 讀取 F1
         df1 = make_columns_unique(smart_read(f1_active, skiprows=3)).reset_index(drop=True)
 
-        # 讀取 F2 (多檔合併)
+        # C. 讀取 F2 (多檔合併)
         df2_list = []
         for f in f2_active:
             df_t = smart_read(f, header=None)
@@ -122,7 +122,7 @@ if f1_active and f2_active:
         
         df2_all['大型車純違規'] = (df2_all.get('舉發總數', 0) - df2_all.get('違反管制規定', 0) - df2_all.get('其他違規', 0)).clip(lower=0)
 
-        # 彙整數據
+        # D. 彙整數據
         final_rows = []
         for unit in TARGET_CONFIG.keys():
             d15 = get_counts(df1, unit, CATS[:5])
