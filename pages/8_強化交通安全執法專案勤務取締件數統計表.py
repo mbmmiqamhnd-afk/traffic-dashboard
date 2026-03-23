@@ -81,7 +81,7 @@ if f1_active and f2_active:
                 except: return pd.read_csv(f, encoding='cp950', **kwargs)
             return pd.read_excel(f, **kwargs)
 
-        # 抓日期
+        # 抓日期 (已加入移除 115 邏輯)
         date_range_str = "未知期間"
         df1_h = smart_read(f1_active, nrows=10, header=None)
         for _, r in df1_h.iterrows():
@@ -89,7 +89,9 @@ if f1_active and f2_active:
                 if '統計期間' in str(cell):
                     raw = str(cell).replace('(入案日)', '').split('：')[-1].split(':')[-1].strip()
                     m = re.search(r'([0-9年月日\-至\s]+)', raw)
-                    if m: date_range_str = m.group(1).strip()
+                    if m: 
+                        # 移除 115 年度字樣
+                        date_range_str = m.group(1).replace('115', '').strip()
 
         # 讀取數據
         df1 = make_columns_unique(smart_read(f1_active, skiprows=3)).reset_index(drop=True)
@@ -175,6 +177,6 @@ if f1_active and f2_active:
                 ]
                 for r, c in reds: reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r+3, "endRowIndex": r+4, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 1}, "bold": True}}}, "fields": "userEnteredFormat.textFormat"}})
                 sh.batch_update({"requests": reqs})
-                st.success("✅ 同步完成！")
+                st.success("✅ 日期已簡化並同步完成！")
     except Exception as e:
         st.error(f"❌ 解析錯誤：{e}")
