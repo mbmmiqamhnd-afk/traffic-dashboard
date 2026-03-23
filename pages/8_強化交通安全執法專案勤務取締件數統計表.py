@@ -117,8 +117,12 @@ if f1_active and f2_active:
                 df_c = make_columns_unique(df_c).reset_index(drop=True)
                 needed = ['單位', '舉發總數', '違反管制規定', '其他違規']
                 existing = [c for c in needed if c in df_c.columns]
+                
                 if '單位' in existing:
-                    df2_list.append(df_c[existing])
+                    # 🌟 核心修正：將「檔案名稱」記錄進去，作為判斷交大或分局的依據
+                    file_name = f if isinstance(f, str) else f.name
+                    df_c['來源檔名'] = str(file_name)
+                    df2_list.append(df_c)
 
         if not df2_list:
             st.error("❌ 大型車報表欄位抓取失敗")
@@ -140,14 +144,16 @@ if f1_active and f2_active:
             d15 = get_counts(df1, unit, CATS[:5])
 
             if unit == '交通分隊':
+                # 🌟 如果是交通分隊，強制只找檔名有「大隊」的檔案，並且單位名稱包含「龍潭」
                 u_rows = df2_all[
-                    (df2_all['單位'].str.contains('交通大隊', na=False)) &
+                    (df2_all['來源檔名'].str.contains('大隊|交大', na=False)) &
                     (df2_all['單位'].str.contains('龍潭', na=False))
                 ]
             else:
+                # 🌟 如果是派出所，強制排除檔名有「大隊」的檔案
                 u_rows = df2_all[
                     (df2_all['單位'].apply(map_unit_name) == unit) &
-                    (~df2_all['單位'].str.contains('交通大隊', na=False))
+                    (~df2_all['來源檔名'].str.contains('大隊|交大', na=False))
                 ]
 
             h_sum = int(u_rows['大型車純違規'].sum()) if not u_rows.empty else 0
