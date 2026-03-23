@@ -55,12 +55,13 @@ def map_unit_name(raw_name):
     return None
 
 def get_counts(df, unit, categories_list):
-    # 這裡也要重整 index 避免對應錯誤
-    rows = df[df['單位'].apply(map_unit_name) == unit].copy()
+    # 這裡必須重整 index 避免重複標籤干擾篩選
+    df_clean = df.reset_index(drop=True)
+    rows = df_clean[df_clean['單位'].apply(map_unit_name) == unit].copy()
     counts = {}
     for cat in categories_list:
         keywords = LAW_MAP.get(cat, [])
-        matched_cols = [c for c in df.columns if any(k in str(c) for k in keywords)]
+        matched_cols = [c for c in df_clean.columns if any(k in str(c) for k in keywords)]
         counts[cat] = int(rows[matched_cols].sum().sum()) if not rows.empty else 0
     return counts
 
@@ -69,7 +70,7 @@ def get_counts(df, unit, categories_list):
 # ==========================================
 st.title(f"📈 強化交通安全執法專案")
 
-# 搜尋根目錄下的最新 Excel
+# 搜尋根目錄下最新的 Excel
 auto_f1_list = sorted(glob.glob("強化執法專案*.xlsx"), reverse=True)
 auto_f2_list = glob.glob("*R17*.xlsx")
 
@@ -95,7 +96,7 @@ else:
     f2_active_list = c2.file_uploader("📂 2. 上傳『大型車違規表』(支援多檔)", type=["xlsx", "csv"], accept_multiple_files=True, key="manual_f2")
 
 # ==========================================
-# 2. 數據處理核心 (修正 Duplicate Labels)
+# 2. 數據處理核心 (地毯式清理 Duplicate Labels)
 # ==========================================
 if f1_active and f2_active_list:
     try:
@@ -106,11 +107,11 @@ if f1_active and f2_active_list:
                 except: return pd.read_csv(f, encoding='cp950', **kwargs)
             return pd.read_excel(f, **kwargs)
 
-        # A. 處理法條報表
+        # A. 處理法條報表 (F1)
         df1_raw = smart_read(f1_active, skiprows=3)
+        # 強制清理欄位重複名與索引
         df1_raw.columns = [str(c).strip() for c in df1_raw.columns]
-        # 重整 index 避免重複標籤
-        df1_raw = df1_raw.reset_index(drop=True)
+        df1_raw = df1_raw.loc[:, ~df1_raw.columns.duplicated()].reset_index(drop=True)
         
         # 抓取日期
         df1_date_check = smart_read(f1_active, nrows=10, header=None)
@@ -121,7 +122,7 @@ if f1_active and f2_active_list:
                     match = re.search(r'([0-9年月日\-至]+)', str(cell).split('：')[-1])
                     if match: date_range_str = match.group(1).strip()
 
-        # B. 處理大型車報表 (修正重複標籤重點區)
+        # B. 處理大型車報表 (F2 多檔地毯式清理)
         df2_collector = []
         for f in f2_active_list:
             df_tmp = smart_read(f, header=None)
@@ -130,25 +131,40 @@ if f1_active and f2_active_list:
                 row_str = [str(x).strip() for x in r.values]
                 if '單位' in row_str and '舉發總數' in row_str:
                     h_idx = idx; break
+            
             if h_idx is not None:
-                cols = [str(c).strip() for c in df_tmp.iloc[h_idx]]
+                # 解決欄位名重複的問題 (例如兩個 '單位')
+                raw_cols = [str(c).strip() for c in df_tmp.iloc[h_idx]]
+                new_cols = []
+                counts = {}
+                for c in raw_cols:
+                    if c in counts:
+                        counts[c] += 1
+                        new_cols.append(f"{c}_{counts[c]}")
+                    else:
+                        counts[c] = 0
+                        new_cols.append(c)
+                
                 df_c = df_tmp.iloc[h_idx+1:].copy()
-                df_c.columns = cols
-                # 只保留關鍵欄位，其餘捨棄避免衝突
+                df_c.columns = new_cols
+                df_c = df_c.reset_index(drop=True)
+                
+                # 只保留必要欄位
                 needed = ['單位', '舉發總數', '違反管制規定', '其他違規']
                 existing = [c for c in needed if c in df_c.columns]
-                df_c = df_c[existing].reset_index(drop=True)
+                df_c = df_c[existing]
                 df2_collector.append(df_c)
 
-        # 合併時強制 ignore_index
+        # 強制重整全表索引
         df2_all = pd.concat(df2_collector, ignore_index=True)
+        df2_all = df2_all.loc[:, ~df2_all.columns.duplicated()].reset_index(drop=True)
         df2_all['標準單位'] = df2_all['單位'].apply(map_unit_name)
         
         for c in ['舉發總數', '違反管制規定', '其他違規']:
             df2_all[c] = pd.to_numeric(df2_all.get(c, 0), errors='coerce').fillna(0)
         df2_all['大型車純違規'] = (df2_all['舉發總數'] - df2_all.get('違反管制規定',0) - df2_all.get('其他違規',0)).clip(lower=0)
 
-        # C. 彙整數據
+        # C. 彙整各單位數據
         final_rows = []
         for unit in TARGET_CONFIG.keys():
             d15 = get_counts(df1_raw, unit, CATS[:5])
@@ -167,7 +183,7 @@ if f1_active and f2_active_list:
         for cat in CATS: header_cols.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
         df_final = pd.DataFrame(final_rows, columns=header_cols)
 
-        # D. 合計列
+        # D. 合計列計算
         total_row = ["合計"]
         for i in range(1, len(header_cols), 3):
             c_s = df_final.iloc[:, i].sum()
@@ -175,13 +191,12 @@ if f1_active and f2_active_list:
             r_s = f"{(c_s/t_s*100):.1f}%" if t_s > 0 else "0.0%"
             total_row.extend([int(c_s), int(t_s), r_s])
         
-        # 遮罩處理
         mask_units = ['交通組', '警備隊']
         mask_cols = [c for c in df_final.columns if '目標' in c or '達成率' in c]
         df_final.loc[df_final['單位'].isin(mask_units), mask_cols] = '-'
         df_final = pd.concat([pd.DataFrame([total_row], columns=header_cols), df_final], ignore_index=True)
 
-        # E. 紅色標記
+        # E. 最後兩名紅色標記 (確保數據為數值)
         red_coords = []
         for cat in CATS:
             c_name = f"{cat}_達成率"
@@ -198,11 +213,12 @@ if f1_active and f2_active_list:
             for r, c in red_coords: df_s.iloc[r, c] = 'color: red; font-weight: bold;'
             return df_s
 
-        # --- 顯示 ---
+        # ==========================================
+        # 3. 網頁顯示與雲端同步
+        # ==========================================
         st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(期間：{date_range_str})]")
         st.dataframe(df_final.style.apply(apply_highlight, axis=None), use_container_width=True, hide_index=True)
 
-        # --- 雲端同步 ---
         if st.button("🚀 同步至雲端 Google Sheets"):
             with st.spinner("正在上傳數據..."):
                 try:
