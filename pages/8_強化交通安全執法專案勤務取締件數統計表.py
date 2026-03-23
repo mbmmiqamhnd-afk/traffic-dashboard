@@ -27,7 +27,7 @@ LAW_MAP = {
     "嚴重超速": ["43條", "40條"], "車不讓人": ["44條", "48條"], "行人違規": ["78條"]
 }
 
-# --- 輔助函數 ---
+# --- 核心輔助函數 ---
 def map_unit_name(raw_name):
     raw = str(raw_name).strip()
     if '交通分隊' in raw:
@@ -42,6 +42,7 @@ def map_unit_name(raw_name):
     return None
 
 def make_columns_unique(df):
+    """徹底解決 duplicate labels 報錯的核心函數"""
     cols = pd.Series(df.columns.map(str))
     for dup in cols[cols.duplicated()].unique(): 
         cols[cols == dup] = [f"{dup}_{i}" if i != 0 else dup for i in range(sum(cols == dup))]
@@ -59,22 +60,22 @@ def get_counts(df, unit, categories_list):
         counts[cat] = int(rows[matched].sum().sum()) if not rows.empty else 0
     return counts
 
-# --- 1. 檔案偵測 ---
+# --- 1. 檔案偵測邏輯 ---
 st.title(f"📈 強化交通安全執法專案")
 auto_f1 = sorted(glob.glob("強化執法專案*.xlsx"), reverse=True)
 auto_f2 = glob.glob("*R17*.xlsx")
 
 f1_active, f2_active = None, []
 if auto_f1 and auto_f2:
-    st.success(f"✅ 自動模式：偵測到最新報表")
+    st.success(f"✅ 自動模式：偵測到 GitHub 報表")
     f1_active, f2_active = auto_f1[0], auto_f2
 else:
-    st.info("💡 請上傳報表檔案")
+    st.info("💡 提示：根目錄未偵測到自動更新檔案，請手動上傳。")
     c1, c2 = st.columns(2)
     f1_active = c1.file_uploader("📂 1. 法條報表", type=["xlsx", "csv"], key="m1")
-    f2_active = c2.file_uploader("📂 2. 大型車報表", type=["xlsx", "csv"], accept_multiple_files=True, key="m2")
+    f2_active = c2.file_uploader("📂 2. 大型車報表 (可多選)", type=["xlsx", "csv"], accept_multiple_files=True, key="m2")
 
-# --- 2. 處理 ---
+# --- 2. 數據處理核心 ---
 if f1_active and f2_active:
     try:
         def smart_read(f, **kwargs):
@@ -84,7 +85,7 @@ if f1_active and f2_active:
                 except: return pd.read_csv(f, encoding='cp950', **kwargs)
             return pd.read_excel(f, **kwargs)
 
-        # 抓日期
+        # A. 抓日期 (修正：完整顯示並移除 115)
         date_range_str = "未知期間"
         df1_h = smart_read(f1_active, nrows=10, header=None)
         for _, r in df1_h.iterrows():
@@ -94,9 +95,10 @@ if f1_active and f2_active:
                     m = re.search(r'([0-9年月日\-至\s]+)', raw)
                     if m: date_range_str = m.group(1).replace('115', '').strip()
 
-        # 讀取數據
+        # B. 讀取 F1
         df1 = make_columns_unique(smart_read(f1_active, skiprows=3)).reset_index(drop=True)
-        
+
+        # C. 讀取 F2 (多檔合併)
         df2_list = []
         for f in f2_active:
             df_t = smart_read(f, header=None)
@@ -105,37 +107,37 @@ if f1_active and f2_active:
                 df_c = df_t.iloc[h_idx+1:].copy()
                 df_c.columns = [str(x).strip() for x in df_t.iloc[h_idx].values]
                 df_c = make_columns_unique(df_c).reset_index(drop=True)
+                # 確保包含所有必要欄位
                 needed = ['單位', '舉發總數', '違反管制規定', '其他違規']
                 existing = [c for c in needed if c in df_c.columns]
                 if '單位' in existing:
                     df2_list.append(df_c[existing])
 
         if not df2_list:
-            st.error("❌ 無法解析大型車報表欄位")
+            st.error("❌ 大型車報表欄位抓取失敗")
             st.stop()
 
         df2_all = pd.concat(df2_list, ignore_index=True).reset_index(drop=True)
-        
-        # 數值化
         for c in ['舉發總數','違反管制規定','其他違規']:
-            if c in df2_all.columns: df2_all[c] = pd.to_numeric(df2_all[c], errors='coerce').fillna(0)
+            if c in df2_all.columns:
+                df2_all[c] = pd.to_numeric(df2_all[c], errors='coerce').fillna(0)
+        
+        # 🌟 大型車違規計算公式：總數 - 管制 - 其他
         df2_all['大型車純違規'] = (df2_all.get('舉發總數', 0) - df2_all.get('違反管制規定', 0) - df2_all.get('其他違規', 0)).clip(lower=0)
 
-        # 彙整數據
+        # D. 彙整數據
         final_rows = []
         for unit in TARGET_CONFIG.keys():
-            # 1. 前五項法條數據 (F1)
             d15 = get_counts(df1, unit, CATS[:5])
             
-            # 2. 大型車數據定向抓取 (F2)
+            # 🌟 交通分隊：鎖定含有「交通大隊」且「龍潭」的行
             if unit == '交通分隊':
-                # 🌟 核心修正：僅抓取名稱含有「交通大隊」且含有「龍潭」的行數據
                 u_rows = df2_all[
                     (df2_all['單位'].str.contains('交通大隊', na=False)) & 
                     (df2_all['單位'].str.contains('龍潭', na=False))
                 ]
             else:
-                # 派出所則從所有非交大的行數據中比對 (排除掉含有交通大隊字樣的，防止誤加總)
+                # 派出所：排除含有「交通大隊」的行
                 u_rows = df2_all[
                     (df2_all['單位'].apply(map_unit_name) == unit) & 
                     (~df2_all['單位'].str.contains('交通大隊', na=False))
@@ -154,15 +156,17 @@ if f1_active and f2_active:
         for cat in CATS: headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
         df_f = pd.DataFrame(final_rows, columns=headers)
         
-        # 合計與遮罩
+        # 合計列
         total = ["合計"]
         for i in range(1, len(headers), 3):
             cs, ts = df_f.iloc[:, i].sum(), df_f.iloc[:, i+1].sum()
             total.extend([int(cs), int(ts), f"{(cs/ts*100):.1f}%" if ts > 0 else "0.0%"])
+        
+        # 遮罩交通組與警備隊
         df_f.loc[df_f['單位'].isin(['交通組','警備隊']), [c for c in df_f.columns if '目標' in c or '達成率' in c]] = '-'
         df_f = pd.concat([pd.DataFrame([total], columns=headers), df_f], ignore_index=True)
 
-        # 紅標標記
+        # 最後兩名紅標邏輯
         reds = []
         for cat in CATS:
             c_n = f"{cat}_達成率"
@@ -170,31 +174,39 @@ if f1_active and f2_active:
             if not vals.dropna().empty:
                 lim = vals.nsmallest(2).iloc[-1]
                 for idx in vals.index:
-                    if pd.notna(vals.loc[idx]) and vals.loc[idx] <= lim: reds.append((idx, df_f.columns.get_loc(c_n)))
+                    if pd.notna(vals.loc[idx]) and vals.loc[idx] <= lim:
+                        reds.append((idx, df_f.columns.get_loc(c_n)))
 
-        # --- 3. 顯示 ---
+        # --- 3. 網頁顯示與雲端同步 ---
         st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(統計期間：{date_range_str})]")
+        
         def style_df(x):
-            df_style = pd.DataFrame('', index=x.index, columns=x.columns)
-            for r, c in reds: df_style.iloc[r, c] = 'color: red; font-weight: bold;'
-            return df_style
+            df_s = pd.DataFrame('', index=x.index, columns=x.columns)
+            for r, c in reds: df_s.iloc[r, c] = 'color: red; font-weight: bold;'
+            return df_s
+            
         st.dataframe(df_f.style.apply(style_df, axis=None), use_container_width=True, hide_index=True)
 
-        if st.button("🚀 同步至雲端"):
+        if st.button("🚀 同步至雲端 Google Sheets"):
             with st.spinner("同步中..."):
                 gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                 sh = gc.open_by_url(GOOGLE_SHEET_URL)
                 ws = sh.worksheet(PROJECT_NAME)
+                
                 full_t = f"{PROJECT_NAME} (統計期間：{date_range_str})"
                 ws.clear()
                 ws.update(values=[[full_t]+[""]*18, [""]+[c for c in CATS for _ in range(3)], ["單位"]+["取締","目標","比率"]*6] + df_f.values.tolist())
+                
                 reqs = [
                     {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
                     {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat.horizontalAlignment"}},
-                    {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True}}, {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True}}]}]}], "fields": "userEnteredValue,textFormatRuns"}}
+                    {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True}}, {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0}, "green": 0.0, "blue": 0.0}, "bold": True}}]}]}], "fields": "userEnteredValue,textFormatRuns"}}
                 ]
-                for r, c in reds: reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r+3, "endRowIndex": r+4, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 1}, "bold": True}}}, "fields": "userEnteredFormat.textFormat"}})
+                for r, c in reds:
+                    reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r+3, "endRowIndex": r+4, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 1.0}, "bold": True}}}, "fields": "userEnteredFormat.textFormat"}})
+                
                 sh.batch_update({"requests": reqs})
-                st.success("✅ 交通分隊數據已鎖定大隊報表來源並同步！")
+                st.success("✅ 數據與格式已完美同步！")
+
     except Exception as e:
         st.error(f"❌ 解析錯誤：{e}")
