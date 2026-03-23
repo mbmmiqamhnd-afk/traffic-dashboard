@@ -11,7 +11,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="強化專案統計 - 龍潭分局", layout="wide")
 
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
+GOOGLE_SHEET_URL = "[https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit](https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit)"
 PROJECT_NAME = "強化交通安全執法專案勤務取締件數統計表"
 
 TARGET_CONFIG = {
@@ -80,11 +80,13 @@ if f1_active and f2_active:
         def smart_read(f, **kwargs):
             fname = f if isinstance(f, str) else f.name
             if fname.endswith('.csv'):
-                try: return pd.read_csv(f, **kwargs)
-                except: return pd.read_csv(f, encoding='cp950', **kwargs)
+                try: 
+                    return pd.read_csv(f, **kwargs)
+                except: 
+                    return pd.read_csv(f, encoding='cp950', **kwargs)
             return pd.read_excel(f, **kwargs)
 
-        # A. 抓日期
+        # 抓日期
         date_range_str = "未知期間"
         df1_h = smart_read(f1_active, nrows=10, header=None)
         for _, r in df1_h.iterrows():
@@ -92,16 +94,23 @@ if f1_active and f2_active:
                 if '統計期間' in str(cell):
                     raw = str(cell).replace('(入案日)', '').split('：')[-1].split(':')[-1].strip()
                     m = re.search(r'([0-9年月日\-至\s]+)', raw)
-                    if m: date_range_str = m.group(1).replace('115', '').strip()
+                    if m: 
+                        date_range_str = m.group(1).replace('115', '').strip()
 
-        # B. 讀取 F1
+        # 讀取 F1
         df1 = make_columns_unique(smart_read(f1_active, skiprows=3)).reset_index(drop=True)
 
-        # C. 讀取 F2 (多檔合併)
+        # 讀取 F2
         df2_list = []
         for f in f2_active:
             df_t = smart_read(f, header=None)
-            h_idx = next((i for i, row in df_t.head(30).iterrows() if '單位' in [str(x).strip() for x in row.values] and '舉發總數' in [str(x).strip() for x in row.values]), None)
+            h_idx = None
+            for i, row in df_t.head(30).iterrows():
+                row_vals = [str(x).strip() for x in row.values]
+                if '單位' in row_vals and '舉發總數' in row_vals:
+                    h_idx = i
+                    break
+            
             if h_idx is not None:
                 df_c = df_t.iloc[h_idx+1:].copy()
                 df_c.columns = [str(x).strip() for x in df_t.iloc[h_idx].values]
@@ -116,13 +125,16 @@ if f1_active and f2_active:
             st.stop()
 
         df2_all = pd.concat(df2_list, ignore_index=True).reset_index(drop=True)
-        for c in ['舉發總數','違反管制規定','其他違規']:
-            if c in df2_all.columns:
-                df2_all[c] = pd.to_numeric(df2_all[c], errors='coerce').fillna(0)
         
-        df2_all['大型車純違規'] = (df2_all.get('舉發總數', 0) - df2_all.get('違反管制規定', 0) - df2_all.get('其他違規', 0)).clip(lower=0)
+        # 安全數值化處理
+        for c in ['舉發總數', '違反管制規定', '其他違規']:
+            if c not in df2_all.columns:
+                df2_all[c] = 0
+            df2_all[c] = pd.to_numeric(df2_all[c], errors='coerce').fillna(0)
+        
+        df2_all['大型車純違規'] = (df2_all['舉發總數'] - df2_all['違反管制規定'] - df2_all['其他違規']).clip(lower=0)
 
-        # D. 彙整數據
+        # 彙整數據
         final_rows = []
         for unit in TARGET_CONFIG.keys():
             d15 = get_counts(df1, unit, CATS[:5])
@@ -148,13 +160,15 @@ if f1_active and f2_active:
             final_rows.append(res)
 
         headers = ["單位"]
-        for cat in CATS: headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
+        for cat in CATS: 
+            headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
         df_f = pd.DataFrame(final_rows, columns=headers)
         
         # 合計列
         total = ["合計"]
         for i in range(1, len(headers), 3):
-            cs, ts = df_f.iloc[:, i].sum(), df_f.iloc[:, i+1].sum()
+            cs = df_f.iloc[:, i].sum()
+            ts = df_f.iloc[:, i+1].sum()
             total.extend([int(cs), int(ts), f"{(cs/ts*100):.1f}%" if ts > 0 else "0.0%"])
         
         df_f.loc[df_f['單位'].isin(['交通組','警備隊']), [c for c in df_f.columns if '目標' in c or '達成率' in c]] = '-'
@@ -176,7 +190,8 @@ if f1_active and f2_active:
         
         def style_df(x):
             df_s = pd.DataFrame('', index=x.index, columns=x.columns)
-            for r, c in reds: df_s.iloc[r, c] = 'color: red; font-weight: bold;'
+            for r, c in reds: 
+                df_s.iloc[r, c] = 'color: red; font-weight: bold;'
             return df_s
             
         st.dataframe(df_f.style.apply(style_df, axis=None), use_container_width=True, hide_index=True)
@@ -191,13 +206,38 @@ if f1_active and f2_active:
                 ws.clear()
                 ws.update(values=[[full_t]+[""]*18, [""]+[c for c in CATS for _ in range(3)], ["單位"]+["取締","目標","比率"]*6] + df_f.values.tolist())
                 
+                # 將過長的 API 請求拆解排版，防止貼上時變形
                 reqs = [
-                    {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
-                    {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat.horizontalAlignment"}},
-                    {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True}}, {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0}, "green": 0.0, "blue": 0.0}, "bold": True}}]}]}], "fields": "userEnteredValue,textFormatRuns"}}
+                    {
+                        "mergeCells": {
+                            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19},
+                            "mergeType": "MERGE_ALL"
+                        }
+                    },
+                    {
+                        "repeatCell": {
+                            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19},
+                            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
+                            "fields": "userEnteredFormat.horizontalAlignment"
+                        }
+                    },
+                    {
+                        "updateCells": {
+                            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
+                            "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True}}, {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0}, "green": 0.0, "blue": 0.0}, "bold": True}}]}]}],
+                            "fields": "userEnteredValue,textFormatRuns"
+                        }
+                    }
                 ]
+                
                 for r, c in reds:
-                    reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r+3, "endRowIndex": r+4, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 1.0}, "bold": True}}}, "fields": "userEnteredFormat.textFormat"}})
+                    reqs.append({
+                        "repeatCell": {
+                            "range": {"sheetId": ws.id, "startRowIndex": r+3, "endRowIndex": r+4, "startColumnIndex": c, "endColumnIndex": c+1},
+                            "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 1.0}, "bold": True}}},
+                            "fields": "userEnteredFormat.textFormat"
+                        }
+                    })
                 
                 sh.batch_update({"requests": reqs})
                 st.success("✅ 數據與格式已完美同步！")
