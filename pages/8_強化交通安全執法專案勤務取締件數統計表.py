@@ -11,7 +11,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="強化專案統計 - 龍潭分局", layout="wide")
 
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
+GOOGLE_SHEET_URL = "[https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit](https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit)"
 PROJECT_NAME = "強化交通安全執法專案勤務取締件數統計表"
 
 TARGET_CONFIG = {
@@ -119,7 +119,6 @@ if f1_active and f2_active:
                 existing = [c for c in needed if c in df_c.columns]
                 
                 if '單位' in existing:
-                    # 🌟 核心修正：將「檔案名稱」記錄進去，作為判斷交大或分局的依據
                     file_name = f if isinstance(f, str) else f.name
                     df_c['來源檔名'] = str(file_name)
                     df2_list.append(df_c)
@@ -144,13 +143,11 @@ if f1_active and f2_active:
             d15 = get_counts(df1, unit, CATS[:5])
 
             if unit == '交通分隊':
-                # 🌟 如果是交通分隊，強制只找檔名有「大隊」的檔案，並且單位名稱包含「龍潭」
                 u_rows = df2_all[
                     (df2_all['來源檔名'].str.contains('大隊|交大', na=False)) &
                     (df2_all['單位'].str.contains('龍潭', na=False))
                 ]
             else:
-                # 🌟 如果是派出所，強制排除檔名有「大隊」的檔案
                 u_rows = df2_all[
                     (df2_all['單位'].apply(map_unit_name) == unit) &
                     (~df2_all['來源檔名'].str.contains('大隊|交大', na=False))
@@ -210,10 +207,12 @@ if f1_active and f2_active:
 
                 full_t = f"{PROJECT_NAME} (統計期間：{date_range_str})"
                 ws.clear()
+                
+                # 🌟 這裡已修改為 "達成率"
                 ws.update(values=[
                     [full_t] + [""] * 18,
                     [""] + [c for c in CATS for _ in range(3)],
-                    ["單位"] + ["取締", "目標", "比率"] * 6
+                    ["單位"] + ["取締", "目標", "達成率"] * 6
                 ] + df_f.values.tolist())
 
                 reqs = [
@@ -252,7 +251,7 @@ if f1_active and f2_active:
                     })
 
                 sh.batch_update({"requests": reqs})
-                st.success("✅ 數據與格式已完美同步！")
+                st.success("✅ 達成率字樣與格式已完美同步！")
 
     except Exception as e:
         st.error(f"❌ 解析錯誤：{e}")
