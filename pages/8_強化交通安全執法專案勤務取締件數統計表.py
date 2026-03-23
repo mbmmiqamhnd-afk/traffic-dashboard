@@ -111,7 +111,7 @@ if f1_active and f2_active_list:
             for cell in row.values:
                 if '統計期間' in str(cell):
                     match = re.search(r'([0-9年月日\-至]+)', str(cell).split('：')[-1])
-                    if match: date_range_str = m.group(1).strip() if (m := match) else "期間偵測錯誤"
+                    if match: date_range_str = match.group(1).strip()
 
         # B. 處理大型車報表
         df2_collector = []
@@ -188,7 +188,7 @@ if f1_active and f2_active_list:
                     if pd.notna(vals.loc[r_idx]) and vals.loc[r_idx] <= limit:
                         red_coords.append((r_idx, c_idx))
 
-        # --- 3. 畫面顯示 (修正 Styler 錯誤) ---
+        # --- 3. 畫面顯示 ---
         st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(期間：{date_range_str})]")
         
         def style_red_cells(x):
@@ -200,7 +200,7 @@ if f1_active and f2_active_list:
 
         st.dataframe(df_final.style.apply(style_red_cells, axis=None), use_container_width=True, hide_index=True)
 
-        # --- 同步雲端 ---
+        # --- 同步雲端 (恢復雙色標題格式) ---
         if st.button("🚀 同步至雲端 Google Sheets"):
             with st.spinner("同步中..."):
                 try:
@@ -209,8 +209,9 @@ if f1_active and f2_active_list:
                     try: ws = sh.worksheet(PROJECT_NAME)
                     except: ws = sh.add_worksheet(title=PROJECT_NAME, rows=50, cols=20)
                     
-                    title_text = f"{PROJECT_NAME} (統計期間：{date_range_str})"
-                    h1 = [title_text] + [""] * 18
+                    # 組合完整標題文字
+                    full_title = f"{PROJECT_NAME} (統計期間：{date_range_str})"
+                    h1 = [full_title] + [""] * 18
                     h2 = [""] + [c for c in CATS for _ in range(3)]
                     h3 = ["單位"] + ["取締件數", "目標值", "達成率"] * 6
                     
@@ -218,13 +219,35 @@ if f1_active and f2_active_list:
                     ws.update(values=[h1, h2, h3] + df_final.values.tolist())
                     
                     reqs = []
+                    # 合併首列並置中
                     reqs.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}})
-                    # 紅色標記同步
+                    reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat.horizontalAlignment"}})
+
+                    # 🌟 核心：雙色標題處理
+                    # startIndex: 0 開始是藍色 (專案名)
+                    # startIndex: len(PROJECT_NAME) 開始是紅色 (日期括號內容)
+                    reqs.append({
+                        "updateCells": {
+                            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
+                            "rows": [{
+                                "values": [{
+                                    "userEnteredValue": {"stringValue": full_title},
+                                    "textFormatRuns": [
+                                        {"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 12}},
+                                        {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True, "fontSize": 12}}
+                                    ]
+                                }]
+                            }],
+                            "fields": "userEnteredValue,textFormatRuns"
+                        }
+                    })
+
+                    # 同步紅色標記
                     for r, c in red_coords:
                         reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r+3, "endRowIndex": r+4, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 1.0}, "bold": True}}}, "fields": "userEnteredFormat.textFormat"}})
                     
                     sh.batch_update({"requests": reqs})
-                    st.success("✅ 同步完美達成！")
+                    st.success("✅ 數據與雙色標題已完美同步！")
                 except Exception as sync_e:
                     st.error(f"同步失敗：{sync_e}")
 
