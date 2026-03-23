@@ -10,6 +10,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="強化專案統計 - 龍潭分局", layout="wide")
 
+# 請確保您的 secrets 中已設定 gcp_service_account
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 PROJECT_NAME = "強化交通安全執法專案勤務取締件數統計表"
 
@@ -60,9 +61,9 @@ def get_counts(df, unit, categories_list):
 
 # --- 1. 智慧上傳介面 ---
 st.title(f"📈 強化交通安全執法專案")
-st.markdown("##### 🚀 **自動化流程：** 拖入 3 份報表後，系統會自動解析並「同步至雲端」")
+st.markdown("##### 🚀 **自動化流程：** 拖入 3 份報表後，系統將自動解析並「同步至雲端並設定格式」")
 
-all_uploads = st.file_uploader("📂 請全選並拖入報表", 
+all_uploads = st.file_uploader("📂 請全選並拖入報表（法條報表、大隊R17、分局R17）", 
                                type=["xlsx", "csv"], 
                                accept_multiple_files=True)
 
@@ -98,8 +99,10 @@ if f1_active and len(f2_active) >= 1:
                     m = re.search(r'([0-9年月日\-至\s]+)', raw)
                     if m: date_range_str = m.group(1).replace('115', '').strip()
 
-        # 讀取數據
+        # 讀取法條數據
         df1 = make_columns_unique(smart_read(f1_active, skiprows=3)).reset_index(drop=True)
+        
+        # 讀取大型車數據 (支援多個檔案)
         df2_list = []
         for f in f2_active:
             df_t = smart_read(f, header=None)
@@ -123,7 +126,7 @@ if f1_active and len(f2_active) >= 1:
 
         df2_all['大型車純違規'] = (df2_all['舉發總數'] - df2_all['違反管制規定'] - df2_all['其他違規']).clip(lower=0)
 
-        # 彙整表格
+        # 彙整統計表格
         final_rows = []
         for unit in TARGET_CONFIG.keys():
             d15 = get_counts(df1, unit, CATS[:5])
@@ -150,16 +153,18 @@ if f1_active and len(f2_active) >= 1:
             total.extend([int(cs), int(ts), f"{(cs/ts*100):.1f}%" if ts > 0 else "0.0%"])
         df_f = pd.concat([pd.DataFrame([total], columns=headers), df_f], ignore_index=True)
 
-        # --- 🌟 關鍵修改：自動執行同步邏輯 ---
+        # 網頁顯示
         st.divider()
         st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(統計期間：{date_range_str})]")
         st.dataframe(df_f, use_container_width=True, hide_index=True)
 
-        # 只要跑完上面的分析，這段程式碼就會直接執行上傳
-        with st.status("🔄 偵測到報表，正在自動同步至雲端...", expanded=False) as status:
+        # --- 🌟 最終自動同步與格式化邏輯 ---
+        with st.status("🔄 偵測到報表，正在自動同步並設定雲端格式...", expanded=False) as status:
             gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
             sh = gc.open_by_url(GOOGLE_SHEET_URL)
             ws = sh.worksheet(PROJECT_NAME)
+            
+            # 1. 更新文字數據
             full_t = f"{PROJECT_NAME} (統計期間：{date_range_str})"
             ws.clear()
             ws.update(values=[
@@ -167,9 +172,46 @@ if f1_active and len(f2_active) >= 1:
                 [""] + [c for c in CATS for _ in range(3)],
                 ["單位"] + ["取締件數", "目標值", "達成率"] * 6
             ] + df_f.values.tolist())
-            status.update(label="✅ 雲端試算表已完成同步！", state="complete", expanded=False)
+
+            # 2. 建立格式設定請求 (藍紅標題與合併居中)
+            reqs = [
+                # 合併第一列標題
+                {
+                    "mergeCells": {
+                        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19},
+                        "mergeType": "MERGE_ALL"
+                    }
+                },
+                # 設定分段顏色 (專案藍色, 期間紅色)
+                {
+                    "updateCells": {
+                        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
+                        "rows": [{
+                            "values": [{
+                                "userEnteredValue": {"stringValue": full_t},
+                                "textFormatRuns": [
+                                    {"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 12}},
+                                    {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True, "fontSize": 12}}
+                                ]
+                            }]
+                        }],
+                        "fields": "userEnteredValue,textFormatRuns"
+                    }
+                },
+                # 全域文字置中
+                {
+                    "repeatCell": {
+                        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 19},
+                        "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+                        "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"
+                    }
+                }
+            ]
+
+            sh.batch_update({"requests": reqs})
+            status.update(label="✅ 雲端試算表已自動完成同步與美化！", state="complete", expanded=False)
 
     except Exception as e:
         st.error(f"❌ 解析錯誤：{e}")
 else:
-    st.warning("⏳ 準備就緒，請拖入報表檔案...")
+    st.warning("⏳ 準備就緒，請同時拖入 3 份報表檔案（不限順序）...")
