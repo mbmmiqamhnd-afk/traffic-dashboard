@@ -164,7 +164,8 @@ if f1_active and f2_active:
 
         headers = ["單位"]
         for cat in CATS:
-            headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
+            # 🌟 這裡全面修改為 取締件數、目標值、達成率
+            headers.extend([f"{cat}_取締件數", f"{cat}_目標值", f"{cat}_達成率"])
         df_f = pd.DataFrame(final_rows, columns=headers)
 
         # 合計列
@@ -174,7 +175,7 @@ if f1_active and f2_active:
             ts = df_f.iloc[:, i+1].sum()
             total.extend([int(cs), int(ts), f"{(cs/ts*100):.1f}%" if ts > 0 else "0.0%"])
 
-        df_f.loc[df_f['單位'].isin(['交通組', '警備隊']), [c for c in df_f.columns if '目標' in c or '達成率' in c]] = '-'
+        df_f.loc[df_f['單位'].isin(['交通組', '警備隊']), [c for c in df_f.columns if '目標值' in c or '達成率' in c]] = '-'
         df_f = pd.concat([pd.DataFrame([total], columns=headers), df_f], ignore_index=True)
 
         # 紅標邏輯
@@ -208,11 +209,11 @@ if f1_active and f2_active:
                 full_t = f"{PROJECT_NAME} (統計期間：{date_range_str})"
                 ws.clear()
                 
-                # 🌟 這裡已修改為 "達成率"
+                # 🌟 雲端表頭統一為 取締件數、目標值、達成率
                 ws.update(values=[
                     [full_t] + [""] * 18,
                     [""] + [c for c in CATS for _ in range(3)],
-                    ["單位"] + ["取締", "目標", "達成率"] * 6
+                    ["單位"] + ["取締件數", "目標值", "達成率"] * 6
                 ] + df_f.values.tolist())
 
                 reqs = [
@@ -251,7 +252,7 @@ if f1_active and f2_active:
                     })
 
                 sh.batch_update({"requests": reqs})
-                st.success("✅ 達成率字樣與格式已完美同步！")
+                st.success("✅ 「取締件數」與「目標值」等字樣已完美同步！")
 
     except Exception as e:
         st.error(f"❌ 解析錯誤：{e}")
