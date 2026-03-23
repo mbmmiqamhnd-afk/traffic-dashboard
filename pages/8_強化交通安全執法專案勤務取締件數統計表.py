@@ -27,6 +27,7 @@ LAW_MAP = {
     "嚴重超速": ["43條", "40條"], "車不讓人": ["44條", "48條"], "行人違規": ["78條"]
 }
 
+# --- 輔助函數 ---
 def map_unit_name(raw_name):
     raw = str(raw_name).strip()
     if '交通組' in raw: return '交通組'
@@ -38,7 +39,6 @@ def map_unit_name(raw_name):
     return None
 
 def make_columns_unique(df):
-    """強制讓 DataFrame 的欄位名稱唯一化，防止 reindex 錯誤"""
     cols = pd.Series(df.columns.map(str))
     for dup in cols[cols.duplicated()].unique(): 
         cols[cols == dup] = [f"{dup}_{i}" if i != 0 else dup for i in range(sum(cols == dup))]
@@ -63,10 +63,10 @@ auto_f2 = glob.glob("*R17*.xlsx")
 
 f1_active, f2_active = None, []
 if auto_f1 and auto_f2:
-    st.success(f"✅ 自動偵測成功：{auto_f1[0]}")
+    st.success(f"✅ 自動模式：偵測到報表 ({auto_f1[0]})")
     f1_active, f2_active = auto_f1[0], auto_f2
 else:
-    st.info("💡 請手動上傳報表")
+    st.info("💡 請上傳報表檔案")
     c1, c2 = st.columns(2)
     f1_active = c1.file_uploader("📂 1. 法條報表", type=["xlsx", "csv"], key="m1")
     f2_active = c2.file_uploader("📂 2. 大型車報表", type=["xlsx", "csv"], accept_multiple_files=True, key="m2")
@@ -83,74 +83,66 @@ if f1_active and f2_active:
 
         # 抓日期
         date_range_str = "未知期間"
-        df1_head = smart_read(f1_active, nrows=10, header=None)
-        for _, r in df1_head.iterrows():
+        df1_h = smart_read(f1_active, nrows=10, header=None)
+        for _, r in df1_h.iterrows():
             for cell in r.values:
                 if '統計期間' in str(cell):
                     raw = str(cell).replace('(入案日)', '').split('：')[-1].split(':')[-1].strip()
                     m = re.search(r'([0-9年月日\-至\s]+)', raw)
                     if m: date_range_str = m.group(1).strip()
 
-        # 讀取 F1
-        df1 = smart_read(f1_active, skiprows=3)
-        df1 = make_columns_unique(df1).reset_index(drop=True)
-
-        # 讀取 F2
+        # 讀取數據
+        df1 = make_columns_unique(smart_read(f1_active, skiprows=3)).reset_index(drop=True)
+        
         df2_list = []
         for f in f2_active:
             df_t = smart_read(f, header=None)
             h_idx = next((i for i, row in df_t.head(30).iterrows() if '單位' in [str(x).strip() for x in row.values] and '舉發總數' in [str(x).strip() for x in row.values]), None)
-            
             if h_idx is not None:
                 df_c = df_t.iloc[h_idx+1:].copy()
                 df_c.columns = [str(x).strip() for x in df_t.iloc[h_idx].values]
                 df_c = make_columns_unique(df_c).reset_index(drop=True)
-                
                 needed = ['單位', '舉發總數', '違反管制規定', '其他違規']
                 existing = [c for c in needed if c in df_c.columns]
-                if '單位' in existing:
-                    df2_list.append(df_c[existing])
+                if '單位' in existing: df2_list.append(df_c[existing])
 
         if not df2_list:
-            st.error("❌ 大型車報表欄位異常")
+            st.error("❌ 無法解析大型車報表欄位")
             st.stop()
 
         df2_all = pd.concat(df2_list, ignore_index=True).reset_index(drop=True)
         df2_all['標準單位'] = df2_all['單位'].apply(map_unit_name)
         for c in ['舉發總數','違反管制規定','其他違規']:
-            if c in df2_all.columns:
-                df2_all[c] = pd.to_numeric(df2_all[c], errors='coerce').fillna(0)
+            if c in df2_all.columns: df2_all[c] = pd.to_numeric(df2_all[c], errors='coerce').fillna(0)
         
         df2_all['大型車純違規'] = (df2_all.get('舉發總數', 0) - df2_all.get('違反管制規定', 0) - df2_all.get('其他違規', 0)).clip(lower=0)
 
-        # 彙整
-        final_data = []
+        # 彙整數據
+        final_rows = []
         for unit in TARGET_CONFIG.keys():
             d15 = get_counts(df1, unit, CATS[:5])
             u_rows = df2_all[df2_all['標準單位'] == unit]
             h_sum = int(u_rows['大型車純違規'].sum()) if not u_rows.empty else 0
-            
-            row = [unit]
+            res = [unit]
             for i, cat in enumerate(CATS):
                 cnt = d15.get(cat, 0) if cat != "大型車違規" else h_sum
                 tgt = TARGET_CONFIG[unit][i]
-                row.extend([cnt, tgt, f"{(cnt/tgt*100):.1f}%" if tgt > 0 else "0.0%"])
-            final_data.append(row)
+                res.extend([cnt, tgt, f"{(cnt/tgt*100):.1f}%" if tgt > 0 else "0.0%"])
+            final_rows.append(res)
 
         headers = ["單位"]
         for cat in CATS: headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
-        df_f = pd.DataFrame(final_data, columns=headers)
+        df_f = pd.DataFrame(final_rows, columns=headers)
         
-        # 合計列
+        # 合計與遮罩
         total = ["合計"]
         for i in range(1, len(headers), 3):
             cs, ts = df_f.iloc[:, i].sum(), df_f.iloc[:, i+1].sum()
             total.extend([int(cs), int(ts), f"{(cs/ts*100):.1f}%" if ts > 0 else "0.0%"])
-        
         df_f.loc[df_f['單位'].isin(['交通組','警備隊']), [c for c in df_f.columns if '目標' in c or '達成率' in c]] = '-'
         df_f = pd.concat([pd.DataFrame([total], columns=headers), df_f], ignore_index=True)
 
-        # 紅標
+        # 紅標標記
         reds = []
         for cat in CATS:
             c_n = f"{cat}_達成率"
@@ -160,7 +152,7 @@ if f1_active and f2_active:
                 for idx in vals.index:
                     if pd.notna(vals.loc[idx]) and vals.loc[idx] <= lim: reds.append((idx, df_f.columns.get_loc(c_n)))
 
-        # 顯示
+        # --- 3. 顯示 ---
         st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(期間：{date_range_str})]")
         def style_df(x):
             df_s = pd.DataFrame('', index=x.index, columns=x.columns)
@@ -173,16 +165,16 @@ if f1_active and f2_active:
                 gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                 sh = gc.open_by_url(GOOGLE_SHEET_URL)
                 ws = sh.worksheet(PROJECT_NAME)
-                full_title = f"{PROJECT_NAME} (統計期間：{date_range_str})"
+                full_t = f"{PROJECT_NAME} (統計期間：{date_range_str})"
                 ws.clear()
-                ws.update(values=[[full_title] + [""]*18, [""] + [c for c in CATS for _ in range(3)], ["單位"] + ["取締", "目標", "比率"]*6] + df_f.values.tolist())
-                
+                ws.update(values=[[full_t]+[""]*18, [""]+[c for c in CATS for _ in range(3)], ["單位"]+["取締","目標","比率"]*6] + df_f.values.tolist())
                 reqs = [
                     {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
                     {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat.horizontalAlignment"}},
-                    {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": full_title}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True}}, {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0}, "green": 0.0, "blue": 0.0}, "bold": True}}]}]}], "fields": "userEnteredValue,textFormatRuns"}}
+                    {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 1}, "bold": True}}, {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1, "green": 0, "blue": 0}, "bold": True}}]}]}], "fields": "userEnteredValue,textFormatRuns"}}
                 ]
-                for r, c in reds: reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r+3, "endRowIndex": r+4, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 1.0}, "bold": True}}}, "fields": "userEnteredFormat.textFormat"}})
+                for r, c in reds: reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r+3, "endRowIndex": r+4, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 1}, "bold": True}}}, "fields": "userEnteredFormat.textFormat"}})
                 sh.batch_update({"requests": reqs})
-                st.success("✅ 同步成功！")
-    except Exception as e: st.error(f"❌ 解析錯誤：{e}")
+                st.success("✅ 同步完成！")
+    except Exception as e:
+        st.error(f"❌ 解析錯誤：{e}")
