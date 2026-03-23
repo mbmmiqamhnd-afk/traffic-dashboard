@@ -30,12 +30,15 @@ LAW_MAP = {
 # --- 輔助函數 ---
 def map_unit_name(raw_name):
     raw = str(raw_name).strip()
+    if '交通分隊' in raw:
+        if '龍潭' in raw: return '交通分隊'
+        if not any(ex in raw for ex in ['楊梅', '大溪', '平鎮', '中壢', '八德', '蘆竹', '龜山', '大園', '桃園']):
+            return '交通分隊'
     if '交通組' in raw: return '交通組'
     if '警備隊' in raw: return '警備隊'
     for k in ['聖亭', '中興', '石門', '高平', '三和']:
         if k in raw: return k + '所'
     if '龍潭派出所' in raw or raw in ['龍潭', '龍潭所']: return '龍潭所'
-    if '交通分隊' in raw and not any(ex in raw for ex in ['楊梅', '大溪', '平鎮', '中壢', '八德']): return '交通分隊'
     return None
 
 def make_columns_unique(df):
@@ -63,7 +66,7 @@ auto_f2 = glob.glob("*R17*.xlsx")
 
 f1_active, f2_active = None, []
 if auto_f1 and auto_f2:
-    st.success(f"✅ 自動模式：偵測到報表 ({auto_f1[0]})")
+    st.success(f"✅ 自動模式：偵測到最新報表")
     f1_active, f2_active = auto_f1[0], auto_f2
 else:
     st.info("💡 請上傳報表檔案")
@@ -81,7 +84,7 @@ if f1_active and f2_active:
                 except: return pd.read_csv(f, encoding='cp950', **kwargs)
             return pd.read_excel(f, **kwargs)
 
-        # 抓日期 (修正：完整顯示「統計期間」且移除「115」)
+        # 抓日期
         date_range_str = "未知期間"
         df1_h = smart_read(f1_active, nrows=10, header=None)
         for _, r in df1_h.iterrows():
@@ -89,8 +92,7 @@ if f1_active and f2_active:
                 if '統計期間' in str(cell):
                     raw = str(cell).replace('(入案日)', '').split('：')[-1].split(':')[-1].strip()
                     m = re.search(r'([0-9年月日\-至\s]+)', raw)
-                    if m: 
-                        date_range_str = m.group(1).replace('115', '').strip()
+                    if m: date_range_str = m.group(1).replace('115', '').strip()
 
         # 讀取數據
         df1 = make_columns_unique(smart_read(f1_active, skiprows=3)).reset_index(drop=True)
@@ -105,25 +107,42 @@ if f1_active and f2_active:
                 df_c = make_columns_unique(df_c).reset_index(drop=True)
                 needed = ['單位', '舉發總數', '違反管制規定', '其他違規']
                 existing = [c for c in needed if c in df_c.columns]
-                if '單位' in existing: df2_list.append(df_c[existing])
+                if '單位' in existing:
+                    df2_list.append(df_c[existing])
 
         if not df2_list:
             st.error("❌ 無法解析大型車報表欄位")
             st.stop()
 
         df2_all = pd.concat(df2_list, ignore_index=True).reset_index(drop=True)
-        df2_all['標準單位'] = df2_all['單位'].apply(map_unit_name)
+        
+        # 數值化
         for c in ['舉發總數','違反管制規定','其他違規']:
             if c in df2_all.columns: df2_all[c] = pd.to_numeric(df2_all[c], errors='coerce').fillna(0)
-        
         df2_all['大型車純違規'] = (df2_all.get('舉發總數', 0) - df2_all.get('違反管制規定', 0) - df2_all.get('其他違規', 0)).clip(lower=0)
 
         # 彙整數據
         final_rows = []
         for unit in TARGET_CONFIG.keys():
+            # 1. 前五項法條數據 (F1)
             d15 = get_counts(df1, unit, CATS[:5])
-            u_rows = df2_all[df2_all['標準單位'] == unit]
+            
+            # 2. 大型車數據定向抓取 (F2)
+            if unit == '交通分隊':
+                # 🌟 核心修正：僅抓取名稱含有「交通大隊」且含有「龍潭」的行數據
+                u_rows = df2_all[
+                    (df2_all['單位'].str.contains('交通大隊', na=False)) & 
+                    (df2_all['單位'].str.contains('龍潭', na=False))
+                ]
+            else:
+                # 派出所則從所有非交大的行數據中比對 (排除掉含有交通大隊字樣的，防止誤加總)
+                u_rows = df2_all[
+                    (df2_all['單位'].apply(map_unit_name) == unit) & 
+                    (~df2_all['單位'].str.contains('交通大隊', na=False))
+                ]
+            
             h_sum = int(u_rows['大型車純違規'].sum()) if not u_rows.empty else 0
+            
             res = [unit]
             for i, cat in enumerate(CATS):
                 cnt = d15.get(cat, 0) if cat != "大型車違規" else h_sum
@@ -153,12 +172,12 @@ if f1_active and f2_active:
                 for idx in vals.index:
                     if pd.notna(vals.loc[idx]) and vals.loc[idx] <= lim: reds.append((idx, df_f.columns.get_loc(c_n)))
 
-        # --- 3. 顯示 (這裡改為「統計期間」) ---
+        # --- 3. 顯示 ---
         st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(統計期間：{date_range_str})]")
         def style_df(x):
-            df_s = pd.DataFrame('', index=x.index, columns=x.columns)
-            for r, c in reds: df_s.iloc[r, c] = 'color: red; font-weight: bold;'
-            return df_s
+            df_style = pd.DataFrame('', index=x.index, columns=x.columns)
+            for r, c in reds: df_style.iloc[r, c] = 'color: red; font-weight: bold;'
+            return df_style
         st.dataframe(df_f.style.apply(style_df, axis=None), use_container_width=True, hide_index=True)
 
         if st.button("🚀 同步至雲端"):
@@ -166,7 +185,6 @@ if f1_active and f2_active:
                 gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                 sh = gc.open_by_url(GOOGLE_SHEET_URL)
                 ws = sh.worksheet(PROJECT_NAME)
-                # 這裡也同步改為「統計期間」
                 full_t = f"{PROJECT_NAME} (統計期間：{date_range_str})"
                 ws.clear()
                 ws.update(values=[[full_t]+[""]*18, [""]+[c for c in CATS for _ in range(3)], ["單位"]+["取締","目標","比率"]*6] + df_f.values.tolist())
@@ -177,6 +195,6 @@ if f1_active and f2_active:
                 ]
                 for r, c in reds: reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r+3, "endRowIndex": r+4, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 1}, "bold": True}}}, "fields": "userEnteredFormat.textFormat"}})
                 sh.batch_update({"requests": reqs})
-                st.success("✅ 已修復字樣並同步完成！")
+                st.success("✅ 交通分隊數據已鎖定大隊報表來源並同步！")
     except Exception as e:
         st.error(f"❌ 解析錯誤：{e}")
