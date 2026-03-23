@@ -11,7 +11,7 @@ from datetime import datetime
 # ==========================================
 st.set_page_config(page_title="強化專案統計 - 龍潭分局", layout="wide")
 
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
+GOOGLE_SHEET_URL = "[https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit](https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit)"
 PROJECT_NAME = "強化交通安全執法專案勤務取締件數統計表"
 
 TARGET_CONFIG = {
@@ -42,7 +42,6 @@ def map_unit_name(raw_name):
     return None
 
 def make_columns_unique(df):
-    """徹底解決 duplicate labels 報錯的核心函數"""
     cols = pd.Series(df.columns.map(str))
     for dup in cols[cols.duplicated()].unique(): 
         cols[cols == dup] = [f"{dup}_{i}" if i != 0 else dup for i in range(sum(cols == dup))]
@@ -70,7 +69,7 @@ if auto_f1 and auto_f2:
     st.success(f"✅ 自動模式：偵測到 GitHub 報表")
     f1_active, f2_active = auto_f1[0], auto_f2
 else:
-    st.info("💡 提示：根目錄未偵測到自動更新檔案，請手動上傳。")
+    st.info("💡 提示：未偵測到自動更新檔案，請手動上傳。")
     c1, c2 = st.columns(2)
     f1_active = c1.file_uploader("📂 1. 法條報表", type=["xlsx", "csv"], key="m1")
     f2_active = c2.file_uploader("📂 2. 大型車報表 (可多選)", type=["xlsx", "csv"], accept_multiple_files=True, key="m2")
@@ -85,7 +84,7 @@ if f1_active and f2_active:
                 except: return pd.read_csv(f, encoding='cp950', **kwargs)
             return pd.read_excel(f, **kwargs)
 
-        # A. 抓日期 (修正：完整顯示並移除 115)
+        # 抓日期
         date_range_str = "未知期間"
         df1_h = smart_read(f1_active, nrows=10, header=None)
         for _, r in df1_h.iterrows():
@@ -95,10 +94,10 @@ if f1_active and f2_active:
                     m = re.search(r'([0-9年月日\-至\s]+)', raw)
                     if m: date_range_str = m.group(1).replace('115', '').strip()
 
-        # B. 讀取 F1
+        # 讀取 F1
         df1 = make_columns_unique(smart_read(f1_active, skiprows=3)).reset_index(drop=True)
 
-        # C. 讀取 F2 (多檔合併)
+        # 讀取 F2 (多檔合併)
         df2_list = []
         for f in f2_active:
             df_t = smart_read(f, header=None)
@@ -107,7 +106,6 @@ if f1_active and f2_active:
                 df_c = df_t.iloc[h_idx+1:].copy()
                 df_c.columns = [str(x).strip() for x in df_t.iloc[h_idx].values]
                 df_c = make_columns_unique(df_c).reset_index(drop=True)
-                # 確保包含所有必要欄位
                 needed = ['單位', '舉發總數', '違反管制規定', '其他違規']
                 existing = [c for c in needed if c in df_c.columns]
                 if '單位' in existing:
@@ -122,22 +120,19 @@ if f1_active and f2_active:
             if c in df2_all.columns:
                 df2_all[c] = pd.to_numeric(df2_all[c], errors='coerce').fillna(0)
         
-        # 🌟 大型車違規計算公式：總數 - 管制 - 其他
         df2_all['大型車純違規'] = (df2_all.get('舉發總數', 0) - df2_all.get('違反管制規定', 0) - df2_all.get('其他違規', 0)).clip(lower=0)
 
-        # D. 彙整數據
+        # 彙整數據
         final_rows = []
         for unit in TARGET_CONFIG.keys():
             d15 = get_counts(df1, unit, CATS[:5])
             
-            # 🌟 交通分隊：鎖定含有「交通大隊」且「龍潭」的行
             if unit == '交通分隊':
                 u_rows = df2_all[
                     (df2_all['單位'].str.contains('交通大隊', na=False)) & 
                     (df2_all['單位'].str.contains('龍潭', na=False))
                 ]
             else:
-                # 派出所：排除含有「交通大隊」的行
                 u_rows = df2_all[
                     (df2_all['單位'].apply(map_unit_name) == unit) & 
                     (~df2_all['單位'].str.contains('交通大隊', na=False))
@@ -162,11 +157,10 @@ if f1_active and f2_active:
             cs, ts = df_f.iloc[:, i].sum(), df_f.iloc[:, i+1].sum()
             total.extend([int(cs), int(ts), f"{(cs/ts*100):.1f}%" if ts > 0 else "0.0%"])
         
-        # 遮罩交通組與警備隊
         df_f.loc[df_f['單位'].isin(['交通組','警備隊']), [c for c in df_f.columns if '目標' in c or '達成率' in c]] = '-'
         df_f = pd.concat([pd.DataFrame([total], columns=headers), df_f], ignore_index=True)
 
-        # 最後兩名紅標邏輯
+        # 紅標邏輯
         reds = []
         for cat in CATS:
             c_n = f"{cat}_達成率"
