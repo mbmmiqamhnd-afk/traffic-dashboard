@@ -111,7 +111,7 @@ if f1_active and f2_active_list:
             for cell in row.values:
                 if '統計期間' in str(cell):
                     match = re.search(r'([0-9年月日\-至]+)', str(cell).split('：')[-1])
-                    if match: date_range_str = match.group(1).strip()
+                    if match: date_range_str = m.group(1).strip() if (m := match) else "期間偵測錯誤"
 
         # B. 處理大型車報表
         df2_collector = []
@@ -134,7 +134,7 @@ if f1_active and f2_active_list:
                 df_c = df_tmp.iloc[h_idx+1:].copy()
                 df_c.columns = new_cols
                 df_c = df_c.reset_index(drop=True)
-                needed = ['單位', '舉發總數', '違反管制規定', '其他違規']
+                needed = ['單位', '舉發總數', '違反管制規定', '大型車違規', '其他違規']
                 existing = [c for c in needed if c in df_c.columns]
                 df2_collector.append(df_c[existing])
 
@@ -146,7 +146,7 @@ if f1_active and f2_active_list:
             df2_all[c] = pd.to_numeric(df2_all.get(c, 0), errors='coerce').fillna(0)
         df2_all['大型車純違規'] = (df2_all['舉發總數'] - df2_all.get('違反管制規定',0) - df2_all.get('其他違規',0)).clip(lower=0)
 
-        # C. 彙整各單位數據
+        # C. 彙整數據
         final_rows = []
         for unit in TARGET_CONFIG.keys():
             d15 = get_counts(df1_raw, unit, CATS[:5])
@@ -160,13 +160,13 @@ if f1_active and f2_active_list:
                 row.extend([cnt, tgt, ratio])
             final_rows.append(row)
 
-        header_cols = ["單位"]
-        for cat in CATS: header_cols.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
-        df_final = pd.DataFrame(final_rows, columns=header_cols)
+        headers = ["單位"]
+        for cat in CATS: headers.extend([f"{cat}_取締", f"{cat}_目標", f"{cat}_達成率"])
+        df_final = pd.DataFrame(final_rows, columns=headers)
 
         # 合計列
         total_row = ["合計"]
-        for i in range(1, len(header_cols), 3):
+        for i in range(1, len(headers), 3):
             c_s = df_final.iloc[:, i].sum()
             t_s = df_final.iloc[:, i+1].sum()
             r_s = f"{(c_s/t_s*100):.1f}%" if t_s > 0 else "0.0%"
@@ -174,7 +174,7 @@ if f1_active and f2_active_list:
         
         mask_units = ['交通組', '警備隊']
         df_final.loc[df_final['單位'].isin(mask_units), [c for c in df_final.columns if '目標' in c or '達成率' in c]] = '-'
-        df_final = pd.concat([pd.DataFrame([total_row], columns=header_cols), df_final], ignore_index=True)
+        df_final = pd.concat([pd.DataFrame([total_row], columns=headers), df_final], ignore_index=True)
 
         # 紅色標記邏輯
         red_coords = []
@@ -188,44 +188,45 @@ if f1_active and f2_active_list:
                     if pd.notna(vals.loc[r_idx]) and vals.loc[r_idx] <= limit:
                         red_coords.append((r_idx, c_idx))
 
-        # ==========================================
-        # 3. 畫面顯示與雲端同步 (恢復精美格式)
-        # ==========================================
+        # --- 3. 畫面顯示 (修正 Styler 錯誤) ---
         st.markdown(f"### 📊 :blue[{PROJECT_NAME}] :red[(期間：{date_range_str})]")
-        st.dataframe(df_final.style.apply(lambda x: [['color: red; font-weight: bold;' if (r, c) in red_coords else '' for c, _ in enumerate(x.columns)] for r, _ in enumerate(x.index)], axis=None), use_container_width=True, hide_index=True)
+        
+        def style_red_cells(x):
+            df_style = pd.DataFrame('', index=x.index, columns=x.columns)
+            for r, c in red_coords:
+                if r < len(df_style) and c < len(df_style.columns):
+                    df_style.iloc[r, c] = 'color: red; font-weight: bold;'
+            return df_style
 
+        st.dataframe(df_final.style.apply(style_red_cells, axis=None), use_container_width=True, hide_index=True)
+
+        # --- 同步雲端 ---
         if st.button("🚀 同步至雲端 Google Sheets"):
-            with st.spinner("正在同步精美格式..."):
+            with st.spinner("同步中..."):
                 try:
                     gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                     sh = gc.open_by_url(GOOGLE_SHEET_URL)
                     try: ws = sh.worksheet(PROJECT_NAME)
                     except: ws = sh.add_worksheet(title=PROJECT_NAME, rows=50, cols=20)
                     
-                    # A. 準備三層表頭
                     title_text = f"{PROJECT_NAME} (統計期間：{date_range_str})"
                     h1 = [title_text] + [""] * 18
                     h2 = [""] + [c for c in CATS for _ in range(3)]
                     h3 = ["單位"] + ["取締件數", "目標值", "達成率"] * 6
                     
-                    # B. 清空並寫入數值
                     ws.clear()
                     ws.update(values=[h1, h2, h3] + df_final.values.tolist())
                     
-                    # C. 執行格式化 Request
                     reqs = []
-                    # 合併第一列 (標題)
                     reqs.append({"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}})
-                    # 雙色標題
-                    reqs.append({"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": title_text}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"blue": 1.0}, "bold": True}}, {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0}, "bold": True}}]}]}], "fields": "userEnteredValue,textFormatRuns"}})
-                    # 紅色標記
+                    # 紅色標記同步
                     for r, c in red_coords:
                         reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r+3, "endRowIndex": r+4, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 1.0}, "bold": True}}}, "fields": "userEnteredFormat.textFormat"}})
                     
                     sh.batch_update({"requests": reqs})
-                    st.success("✅ 數據與格式已完美同步！")
+                    st.success("✅ 同步完美達成！")
                 except Exception as sync_e:
                     st.error(f"同步失敗：{sync_e}")
 
     except Exception as e:
-        st.error(f"❌ 數據解析錯誤：{e}")
+        st.error(f"❌ 解析錯誤：{e}")
