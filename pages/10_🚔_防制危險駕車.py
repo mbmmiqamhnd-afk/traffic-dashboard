@@ -28,29 +28,13 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
 
-# --- 預設範本資料 ---
-DEFAULT_TIME = "115年3月6日22時至翌日6時"
-DEFAULT_COMMANDER = "石門所副所長林榮裕"
-
-CHECKIN_POINTS = """1. 中油高原交流道站（龍源路2-20號）
-2. 萊爾富超商-龍潭石門山店（龍源路大平段262號）
-3. 7-11龍潭佳園門市（中正路三坑段776號）
-4. 旭日路三坑自然生態公園停車場
-5. 旭日路與大溪區交界處"""
-
-NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
-二、攔檢、盤查車輛時，應隨時注意自身安全及執勤態度。
-三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
-四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
-
-# --- 2. 核心排版引擎 ---
+# --- 2. 核心排版引擎 (時段自動換行) ---
 def auto_format_personnel(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
         return ""
     s = str(val).replace('\\n', '\n').replace('、', '\n')
-    # 核心 1：只要遇到「數字-數字」，一律在前方強制斷行
+    # 遇到時段強制斷行並補上冒號
     s = re.sub(r'([^\n])\s*(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)', r'\1\n\2', s)
-    # 核心 2：在所有時段後方強制補上全形冒號「：」並換行
     s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)[：:\s]*', r'\1：\n', s)
     lines = [line.strip() for line in s.split('\n') if line.strip()]
     return '\n'.join(lines)
@@ -90,7 +74,7 @@ def save_data(time_str, commander, df_cmd, df_patrol):
         return True
     except: return False
 
-# --- 4. PDF 生成 (恢復原有精美排版) ---
+# --- 4. PDF 生成 (精準字體設定：標題 16 / 內文 14) ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
@@ -107,13 +91,13 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     page_width = A4[0] - 24*mm
     story = []
     
+    # 🎯 字體大小邏輯設定
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, alignment=1, spaceAfter=8)
     style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
-    style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22)
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=16, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=16, alignment=0)
+    style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22) # 標題 16
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1) # 內文 14
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
     style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4)
-    style_note = ParagraphStyle('Note', fontName=font, fontSize=14, leading=20, leftIndent=28, firstLineIndent=-28)
 
     story.append(Paragraph(f"<b>{UNIT}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
@@ -124,7 +108,8 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
         return s.replace('\n', '<br/>')
 
     # 任務編組
-    data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], ["職稱", "代號", "姓名", "任務"]]
+    data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
+                [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
         data_cmd.append([Paragraph(f"<b>{clean(r['職稱'])}</b>", style_cell), clean(r['代號']), clean(r['姓名']).replace("、", "<br/>"), Paragraph(clean(r['任務']), style_cell_left)])
     
@@ -134,21 +119,24 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(Spacer(1, 6*mm))
 
     # 警力佈署
-    data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_left), '', '', '', ''], ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]
+    data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
+                [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_left), '', '', '', ''], 
+                [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
     for _, r in df_patrol.iterrows():
         data_ptl.append([Paragraph(clean(r['勤務時段']), style_cell), clean(r['無線電']), Paragraph(clean(r['編組']), style_cell), Paragraph(clean(r['服勤人員']), style_cell), Paragraph(clean(r['任務分工']), style_cell_left)])
 
     t2 = Table(data_ptl, colWidths=[page_width*0.20, page_width*0.10, page_width*0.15, page_width*0.25, page_width*0.30])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
     story.append(t2)
+    
+    # 備註區塊
     story.append(Spacer(1, 6*mm))
-
     story.append(Paragraph("<b>📍 巡簽地點：</b>", style_section))
-    story.append(Paragraph(CHECKIN_POINTS.replace("\n", "<br/>"), ParagraphStyle('N', fontName=font, fontSize=14, leading=20)))
+    story.append(Paragraph(CHECKIN_POINTS.replace("\n", "<br/>"), style_cell_left))
     story.append(Spacer(1, 4*mm))
     story.append(Paragraph("<b>📝 備註：</b>", style_section))
-    for line in NOTES.split('\n'):
-        if line.strip(): story.append(Paragraph(line.strip(), style_note))
+    for line in (re.sub(r'^\s+', '', l) for l in NOTES.split('\n') if l.strip()):
+        story.append(Paragraph(line, style_cell_left))
 
     doc.build(story)
     return buf.getvalue()
@@ -176,7 +164,7 @@ def send_report_email(time_str, commander, df_cmd, df_patrol, file_date_str):
 # --- 6. 主介面邏輯 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
-    t, cmdr = DEFAULT_TIME, DEFAULT_COMMANDER
+    t, cmdr = "115年3月6日22時至翌日6時", "石門所副所長林榮裕"
     ed_cmd, ed_ptl = pd.DataFrame(), pd.DataFrame()
 else:
     sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
@@ -188,7 +176,7 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
 
-# 🎯 核心連動：暴力去職稱 (僅留單位)
+# 🎯 核心連動：暴力去職稱 (自動修正 石門所輪值)
 unit_match = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
 if unit_match and len(ed_ptl) > 0:
     pure_unit = unit_match.group(1)
@@ -201,7 +189,7 @@ if unit_match and len(ed_ptl) > 0:
     if name_only:
         ed_ptl.at[0, '服勤人員'] = re.sub(r'(\d{2}-\d{2}時：?)\n?.*', f'\\1\n{name_only}', str(ed_ptl.at[0, '服勤人員']))
 
-# 全表掃描：去除任何殘留職稱
+# 全表去職稱掃描
 if '編組' in ed_ptl.columns:
     ed_ptl['編組'] = ed_ptl['編組'].apply(lambda x: re.sub(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))(?:副所長|所長|分隊長|小隊長|警員)', r'\1輪值', str(x)))
 
@@ -213,14 +201,14 @@ if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# --- 7. HTML 完整預覽引擎 ---
+# --- 7. HTML 完整預覽 (標題 16pt / 內文 14pt) ---
 st.markdown("---")
-st.subheader("📄 報表預覽 (完整內容)")
+st.subheader("📄 報表預覽 (標題 16pt / 內文 14pt)")
 
 def get_html_preview(df_c, df_p, cmdr_name, time_str):
     cmd_h = "".join([f"<tr><td>{r['職稱']}</td><td>{r['代號']}</td><td>{r['姓名']}</td><td>{r['任務']}</td></tr>" for _, r in df_c.iterrows()])
     ptl_h = "".join([f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>" for _, r in df_p.iterrows()])
-    return f"""<style>table {{ width: 100%; border-collapse: collapse; font-family: "標楷體"; }} th, td {{ border: 1px solid black; padding: 8px; text-align: center; font-size: 14pt; }} th {{ background-color: #f2f2f2; font-size: 16pt; }}</style>
+    return f"""<style>table {{ width: 100%; border-collapse: collapse; font-family: "標楷體"; }} th, td {{ border: 1px solid black; padding: 8px; text-align: center; }} th {{ background-color: #f2f2f2; font-size: 16pt; }} td {{ font-size: 14pt; }}</style>
     <h2 style='text-align:center;'>{UNIT} 規劃表</h2><div style='text-align:right;'>時間：{time_str} | 指揮官：{cmdr_name}</div><br>
     <table><tr><th colspan="4">任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>{cmd_h}</table><br>
     <table><tr><th colspan="5">警 力 佈 署</th></tr><tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>{ptl_h}</table>"""
