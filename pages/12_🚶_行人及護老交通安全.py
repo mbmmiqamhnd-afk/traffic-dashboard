@@ -133,8 +133,8 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
     s_cell   = ParagraphStyle("c",  fontName=font, fontSize=14, leading=18, alignment=1)
     s_left   = ParagraphStyle("l",  fontName=font, fontSize=14, leading=18, alignment=0)
     
-    # 修正 PDF 的備註樣式：使用 leftIndent 與 firstLineIndent 達成懸掛縮進
-    s_note   = ParagraphStyle("n",  fontName=font, fontSize=12, leading=16, 
+    # PDF 懸掛縮進設定：leftIndent 控制整體縮排，firstLineIndent (負值) 將第一行拉回
+    s_note   = ParagraphStyle("n",  fontName=font, fontSize=12, leading=18, 
                               leftIndent=14*mm, firstLineIndent=-14*mm, spaceAfter=4)
     
     def c(txt, style=s_cell):
@@ -172,7 +172,7 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
     story.append(KeepTogether([t2]))
     story.append(Spacer(1, 6*mm))
 
-    # 備註（自動處理段落，使其能套用懸掛縮進）
+    # 備註 (逐行加入 Paragraph 以觸發懸掛縮進)
     story.append(Paragraph("<b>備註：</b>", s_note))
     for line in notes_content.split('\n'):
         if line.strip():
@@ -211,28 +211,26 @@ ed_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 st.subheader("3. 警力佈署")
 ed_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
 st.subheader("4. 備註編輯")
-ed_notes = st.text_area("編輯備註內容", value=current_notes, height=300)
+ed_notes = st.text_area("編輯備註內容 (修改此處內容後會自動同步到 PDF 與預覽)", value=current_notes, height=300)
 
-# --- 8. HTML 預覽 (修正備註縮排) ---
+# --- 8. HTML 預覽 (CSS 懸掛縮進) ---
 def get_html(notes_content):
     parts = []
-    # CSS 中使用 padding-left 與 text-indent -em 達成懸掛縮進
-    parts.append("<style>body{font-family:'標楷體';padding:20px;} table{width:100%;border-collapse:collapse;} th{border:1px solid black;padding:8px;font-size:16pt;background-color:#f2f2f2;text-align:center;line-height:1.5;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note-container{font-size:12pt;margin-top:15px;line-height:1.6;} .note-line{padding-left:3em;text-indent:-3em;margin-bottom:4px;}</style>")
+    # HTML 懸掛縮進：padding-left 提供空間，text-indent -em 將第一行拉回
+    parts.append("<style>body{font-family:'標楷體';padding:20px;} table{width:100%;border-collapse:collapse;} th{border:1px solid black;padding:8px;font-size:16pt;background-color:#f2f2f2;text-align:center;line-height:1.5;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note-container{font-size:12pt;margin-top:15px;line-height:1.6;} .note-line{padding-left:3.2em;text-indent:-3.2em;margin-bottom:6px;}</style>")
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}{c_month}執行「行人及護老交通安全」專案勤務規劃表</b></h2><br>")
     
-    # 任務編組
     parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th width='15%'>職稱</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
     for _, r in ed_cmd.iterrows():
         parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     parts.append("</table><br>")
     
-    # 警力佈署
     parts.append("<table><tr><th colspan='3'>警 力 佈 署</th></tr><tr><th width='28%'>執行勤務日期</th><th width='16%'>單位</th><th width='56%'>路段</th></tr>")
     for _, r in ed_sch.iterrows():
         parts.append(f"<tr><td>{str(r.get('日期（6時至10時、16時至20時）','')).replace(chr(10),'<br>')}</td><td>{r.get('單位','')}</td><td style='text-align:left'>{str(r.get('路段','')).replace(chr(10),'<br>')}</td></tr>")
     parts.append("</table>")
     
-    # 備註區塊
+    # 備註顯示邏輯
     parts.append("<div class='note-container'><b>備註：</b>")
     for line in notes_content.split('\n'):
         if line.strip():
@@ -241,7 +239,7 @@ def get_html(notes_content):
     return "".join(parts)
 
 st.markdown("---")
-st.components.v1.html(get_html(ed_notes), height=700, scrolling=True)
+st.components.v1.html(get_html(ed_notes), height=750, scrolling=True)
 
 if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
     save_data(c_month, ed_cmd, ed_sch, ed_notes)
