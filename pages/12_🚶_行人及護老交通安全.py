@@ -133,15 +133,16 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
     s_cell   = ParagraphStyle("c",  fontName=font, fontSize=14, leading=18, alignment=1)
     s_left   = ParagraphStyle("l",  fontName=font, fontSize=14, leading=18, alignment=0)
     
-    # --- PDF 縮進微調 ---
-    # 標題如「貳、」約佔 2 個中文字，設定 8.5mm 大約能精確對齊首字
+    # 備註縮排設定 (8.5mm 大約對齊首字)
     s_note   = ParagraphStyle("n",  fontName=font, fontSize=12, leading=18, 
                               leftIndent=8.5*mm, firstLineIndent=-8.5*mm, spaceAfter=4)
     
     def c(txt, style=s_cell):
         return Paragraph(str(txt).replace("\n","<br/>"), style)
 
-    story.append(Paragraph(f"<b>{UNIT}{month}執行「行人及護老交通安全」專案勤務規劃表</b>", s_title))
+    # 標頭文字
+    header_text = f"<b>{UNIT}{month}執行「行人及護老交通安全」專案勤務規劃表</b>"
+    story.append(Paragraph(header_text, s_title))
 
     # 任務編組
     cw1 = [W*0.15, W*0.12, W*0.28, W*0.45]
@@ -190,6 +191,7 @@ def send_report_email(subject, month, df_cmd, df_schedule, notes):
         msg = MIMEMultipart(); msg["From"] = sender; msg["To"] = sender; msg["Subject"] = subject
         msg.attach(MIMEText("附件為最新的護老交通安全勤務規劃表 PDF。", "plain", "utf-8"))
         part = MIMEBase("application", "pdf"); part.set_payload(pdf_bytes); encoders.encode_base64(part)
+        # 附件檔案名稱也改為主題名稱
         part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(subject)}.pdf")
         msg.attach(part)
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
@@ -214,12 +216,14 @@ ed_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
 st.subheader("4. 備註編輯")
 ed_notes = st.text_area("編輯備註內容", value=current_notes, height=300)
 
-# --- 8. HTML 預覽 (縮進微調靠左) ---
+# --- 定義標頭名稱 (作為檔案名稱使用) ---
+full_header_name = f"{UNIT}{c_month}執行「行人及護老交通安全」專案勤務規劃表"
+
+# --- 8. HTML 預覽 ---
 def get_html(notes_content):
     parts = []
-    # HTML 懸掛縮進調整：padding-left 設為 2.2em，text-indent 設為 -2.2em
     parts.append("<style>body{font-family:'標楷體';padding:20px;} table{width:100%;border-collapse:collapse;} th{border:1px solid black;padding:8px;font-size:16pt;background-color:#f2f2f2;text-align:center;line-height:1.5;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note-container{font-size:12pt;margin-top:15px;line-height:1.6;} .note-line{padding-left:2.2em;text-indent:-2.2em;margin-bottom:6px;}</style>")
-    parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}{c_month}執行「行人及護老交通安全」專案勤務規劃表</b></h2><br>")
+    parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{full_header_name}</b></h2><br>")
     
     parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th width='15%'>職稱</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
     for _, r in ed_cmd.iterrows():
@@ -243,9 +247,13 @@ st.components.v1.html(get_html(ed_notes), height=750, scrolling=True)
 
 if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
     save_data(c_month, ed_cmd, ed_sch, ed_notes)
-    fname = f"護老交通安全勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
-    ok, mail_err = send_report_email(fname, c_month, ed_cmd, ed_sch, ed_notes)
+    
+    # 使用標頭名稱作為檔名與郵件標題
+    ok, mail_err = send_report_email(full_header_name, c_month, ed_cmd, ed_sch, ed_notes)
+    
     if ok: st.success("📧 雲端同步成功，報表已寄至信箱！")
     else: st.error(f"❌ 雲端同步成功，但寄信失敗：{mail_err}")
+    
     pdf_out = generate_pdf(c_month, ed_cmd, ed_sch, ed_notes)
-    st.download_button("點此下載 PDF", data=pdf_out, file_name=f"{fname}.pdf")
+    # 下載檔案名稱設為標頭名稱
+    st.download_button("點此下載 PDF", data=pdf_out, file_name=f"{full_header_name}.pdf")
