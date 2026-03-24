@@ -28,10 +28,6 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
 
-# --- 預設範本資料 ---
-DEFAULT_TIME = "115年3月6日22時至翌日6時"
-DEFAULT_COMMANDER = "石門所副所長林榮裕"
-
 # --- 2. 建立連線與讀取 ---
 @st.cache_resource
 def get_client():
@@ -47,9 +43,10 @@ def load_data():
         client = get_client()
         if client is None: return None, None, None, "離線模式"
         sh = client.open_by_key(SHEET_ID)
-        return pd.DataFrame(sh.worksheet("危駕_設定").get_all_records()), \
-               pd.DataFrame(sh.worksheet("危駕_指揮組").get_all_records()), \
-               pd.DataFrame(sh.worksheet("危駕_警力佈署").get_all_records()), None
+        df_set = pd.DataFrame(sh.worksheet("危駕_設定").get_all_records())
+        df_cmd = pd.DataFrame(sh.worksheet("危駕_指揮組").get_all_records())
+        df_ptl = pd.DataFrame(sh.worksheet("危駕_警力佈署").get_all_records())
+        return df_set, df_cmd, df_ptl, None
     except Exception as e: return None, None, None, str(e)
 
 def save_data(time_str, commander, df_cmd, df_patrol):
@@ -57,6 +54,7 @@ def save_data(time_str, commander, df_cmd, df_patrol):
         client = get_client()
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
+        sh.worksheet("危駕_設定").clear()
         sh.worksheet("危駕_設定").update([["Key", "Value"], ["plan_time", time_str], ["commander", commander]])
         for ws_name, df in [("危駕_指揮組", df_cmd), ("危駕_警力佈署", df_patrol)]:
             ws = sh.worksheet(ws_name)
@@ -73,7 +71,7 @@ def auto_format_personnel(val):
     s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)[：:\s]*', r'\1：\n', s)
     return '\n'.join([line.strip() for line in s.split('\n') if line.strip()])
 
-# --- 3. PDF 生成相關 ---
+# --- 3. PDF 生成 ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
@@ -89,11 +87,11 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
     page_width = A4[0] - 24*mm
     story = []
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, alignment=1, spaceAfter=8)
-    style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
-    style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1)
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=16, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=16, alignment=0)
+    style_title = ParagraphStyle('T', fontName=font, fontSize=16, alignment=1, spaceAfter=8)
+    style_info = ParagraphStyle('I', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
+    style_th = ParagraphStyle('H', fontName=font, fontSize=16, alignment=1)
+    style_c = ParagraphStyle('C', fontName=font, fontSize=14, leading=16, alignment=1)
+    style_l = ParagraphStyle('L', fontName=font, fontSize=14, leading=16, alignment=0)
 
     story.append(Paragraph(f"<b>{UNIT}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
@@ -103,88 +101,88 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
         s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?：?)', r'<b>\1</b>', s)
         return s.replace('\n', '<br/>')
 
-    # 指揮組表格
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], ["職稱", "代號", "姓名", "任務"]]
     for _, r in df_cmd.iterrows():
-        data_cmd.append([Paragraph(f"<b>{clean(r['職稱'])}</b>", style_cell), clean(r['代號']), clean(r['姓名']).replace("、", "<br/>"), Paragraph(clean(r['任務']), style_cell_left)])
+        data_cmd.append([Paragraph(f"<b>{clean(r['職稱'])}</b>", style_c), clean(r['代號']), clean(r['姓名']).replace("、", "<br/>"), Paragraph(clean(r['任務']), style_l)])
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45])
     t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]))
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署表格
-    data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_left), '', '', '', ''], ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]
+    data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_l), '', '', '', ''], ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]
     for _, r in df_patrol.iterrows():
-        data_ptl.append([Paragraph(clean(r['勤務時段']), style_cell), clean(r['無線電']), Paragraph(clean(r['編組']), style_cell), Paragraph(clean(r['服勤人員']), style_cell), Paragraph(clean(r['任務分工']), style_cell_left)])
+        data_ptl.append([Paragraph(clean(r['勤務時段']), style_c), clean(r['無線電']), Paragraph(clean(r['編組']), style_c), Paragraph(clean(r['服勤人員']), style_c), Paragraph(clean(r['任務分工']), style_l)])
     t2 = Table(data_ptl, colWidths=[page_width*0.20, page_width*0.10, page_width*0.15, page_width*0.25, page_width*0.30])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
     story.append(t2)
     doc.build(story)
     return buf.getvalue()
 
-# --- 4. 主介面邏輯 ---
+# --- 4. 主流程 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
-    t, cmdr = DEFAULT_TIME, DEFAULT_COMMANDER
+    t_val, cmdr_val = "115年3月6日22時至翌日6時", "石門所副所長林榮裕"
     ed_cmd, ed_ptl = pd.DataFrame(), pd.DataFrame()
 else:
     sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
-    t, cmdr = sd.get("plan_time", DEFAULT_TIME), sd.get("commander", DEFAULT_COMMANDER)
+    t_val, cmdr_val = sd.get("plan_time", ""), sd.get("commander", "")
     ed_cmd, ed_ptl = df_cmd, df_ptl
 
 st.title("🚔 防制危險駕車專案勤務規劃表")
 
-st.subheader("1. 基礎資訊")
-p_time = st.text_input("勤務時間", t)
-cmdr_input = st.text_input("交通快打指揮官", cmdr)
+p_time = st.text_input("1. 勤務時間", t_val)
+cmdr_input = st.text_input("2. 交通快打指揮官", cmdr_val)
 
-# 🎯【核心修正：強制更正單位名稱】🎯
-# 只要偵測到「XX所/分隊/分局」，就強行將其與「輪值」組合，無視雲端舊資料
-unit_match = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
-if unit_match and len(ed_ptl) > 0:
-    pure_unit = unit_match.group(1)
-    
-    # 使用 .iat 或 .at 進行絕對定址修改，確保 Streamlit 刷新
-    ed_ptl.at[0, '編組'] = f"專責警力\n（{pure_unit}輪值）"
-    
-    # 無線電代號連動
-    unit_map = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
-    base = next((v for k, v in unit_map.items() if k in pure_unit), "隆安")
-    suffix = "2" if re.search(r'副|小隊長', cmdr_input) else "1"
-    ed_ptl.at[0, '無線電'] = base + suffix
+# ====== 🎯 暴力修正引擎：解決「副所長」文字殘留問題 ======
+if len(ed_ptl) > 0:
+    # A. 提取單位名稱 (如: 石門所)
+    m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
+    if m:
+        unit = m.group(1)
+        # B. 無論雲端存什麼，強制複寫第一列
+        # 這裡用 loc 確保精準寫入
+        ed_ptl.loc[0, '編組'] = f"專責警力\n（{unit}輪值）"
+        
+        # C. 無線電連動
+        umap = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
+        base = next((v for k, v in umap.items() if k in unit), "隆安")
+        suffix = "2" if any(x in cmdr_input for x in ["副", "小隊長"]) else "1"
+        ed_ptl.loc[0, '無線電'] = base + suffix
 
-    # 服勤人員連動
-    name_only = cmdr_input.replace(pure_unit, "").strip()
-    if name_only:
-        staff_text = str(ed_ptl.at[0, '服勤人員'])
-        ed_ptl.at[0, '服勤人員'] = re.sub(r'(\d{2}-\d{2}時：?)\n?.*', f'\\1\n{name_only}', staff_text)
+        # D. 姓名連動
+        name = cmdr_input.replace(unit, "").strip()
+        if name:
+            old_staff = str(ed_ptl.loc[0, '服勤人員'])
+            ed_ptl.loc[0, '服勤人員'] = re.sub(r'(\d{2}-\d{2}時：?)\n?.*', f'\\1\n{name}', old_staff)
 
-# 日期自動推算
-date_m = re.search(r'(\d+)月(\d+)日', p_time)
-if date_m and len(ed_ptl) > 0:
-    m, d = int(date_m.group(1)), int(date_m.group(2))
-    dt_next = datetime(datetime.now().year, m, d) + timedelta(days=1)
-    ed_ptl.at[0, '勤務時段'] = f"{dt_next.month}月{dt_next.day}日\n零時至4時"
+# E. 最後一道防線：遍歷全表，只要「編組」欄位有職稱，通通切掉
+if '編組' in ed_ptl.columns:
+    def force_clean(x):
+        s = str(x)
+        # 如果裡面有「所」又有「副所長」，把副所長等職稱刪掉
+        return re.sub(r'(副所長|所長|分隊長|小隊長)', '', s)
+    ed_ptl['編組'] = ed_ptl['編組'].apply(force_clean)
 
-st.subheader("2. 任務編組")
+# 日期自動跳隔天
+dm = re.search(r'(\d+)月(\d+)日', p_time)
+if dm and len(ed_ptl) > 0:
+    m, d = int(dm.group(1)), int(dm.group(2))
+    dt_n = datetime(datetime.now().year, m, d) + timedelta(days=1)
+    ed_ptl.loc[0, '勤務時段'] = f"{dt_n.month}月{dt_n.day}日\n零時至4時"
+
+# --- 顯示編輯器 ---
+st.subheader("3. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).fillna("")
 
-st.subheader("3. 警力佈署")
-# 顯示前最後一次確保格式
+st.subheader("4. 警力佈署")
 if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
-
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# --- 5. 預覽與下載 ---
+# --- 存檔與下載 ---
 st.markdown("---")
-if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
-    save_data(p_time, cmdr_input, res_cmd, res_ptl)
-    st.success("✅ 已同步至雲端試算表！")
-    pdf_out = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
-    st.download_button("點此下載 PDF 報表", data=pdf_out, file_name=f"危駕勤務表_{datetime.now().strftime('%m%d')}.pdf")
-
-# HTML 預覽 (簡化版)
-st.subheader("📄 報表預覽")
-preview_html = f"<b>{UNIT}規劃表</b><br>指揮官：{cmdr_input}<br><table border='1' style='border-collapse:collapse;width:100%'><tr><th>編組</th><th>人員</th></tr><tr><td>{res_ptl.iloc[0,2] if len(res_ptl)>0 else ''}</td><td>{res_ptl.iloc[0,3] if len(res_ptl)>0 else ''}</td></tr></table>"
-st.components.v1.html(preview_html, height=200)
+if st.button("💾 同步雲端、下載 PDF", type="primary"):
+    if save_data(p_time, cmdr_input, res_cmd, res_ptl):
+        st.success("✅ 雲端同步成功！")
+        pdf = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
+        st.download_button("📥 下載 PDF 報表", data=pdf, file_name=f"危駕勤務_{datetime.now().strftime('%m%d')}.pdf")
