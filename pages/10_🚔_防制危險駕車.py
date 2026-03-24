@@ -128,7 +128,8 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 🎯 警力佈署 (微調代號欄寬度 page_width*0.13 以容納 4 中文字)
+    # 🎯 警力佈署欄寬分配修正
+    # 分配比例：時段 22% (防換行), 代號 13% (容4字), 編組 15%, 人員 23%, 任務 27%
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -141,8 +142,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             Paragraph(br(r['任務分工']), style_cell_l)
         ])
 
-    # 欄寬重新分配：時段 17%, 代號 13%, 編組 15%, 人員 25%, 任務 30%
-    t2 = Table(data_ptl, colWidths=[page_width*0.17, page_width*0.13, page_width*0.15, page_width*0.25, page_width*0.30])
+    t2 = Table(data_ptl, colWidths=[page_width*0.22, page_width*0.13, page_width*0.15, page_width*0.23, page_width*0.27])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
     story.append(t2)
     
