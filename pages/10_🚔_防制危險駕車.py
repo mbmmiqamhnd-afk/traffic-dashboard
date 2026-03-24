@@ -96,24 +96,22 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(Paragraph(f"<b>{UNIT_FULL}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
-    def clean(txt):
+    def clean_pdf(txt):
         s = str(txt) if not pd.isna(txt) else ""
         s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?：?)', r'<b>\1</b>', s)
         return s.replace('\n', '<br/>')
 
-    # 任務編組表
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], ["職稱", "代號", "姓名", "任務"]]
     for _, r in df_cmd.iterrows():
-        data_cmd.append([Paragraph(f"<b>{clean(r['職稱'])}</b>", style_c), clean(r['代號']), clean(r['姓名']).replace("、", "<br/>"), Paragraph(clean(r['任務']), style_l)])
+        data_cmd.append([Paragraph(f"<b>{clean_pdf(r['職稱'])}</b>", style_c), clean_pdf(r['代號']), clean_pdf(r['姓名']).replace("、", "<br/>"), Paragraph(clean_pdf(r['任務']), style_l)])
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45])
     t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]))
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署表
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_l), '', '', '', ''], ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]
-    for _, r in df_ptl.iterrows():
-        data_ptl.append([Paragraph(clean(r['勤務時段']), style_c), clean(r['無線電']), Paragraph(clean(r['編組']), style_c), Paragraph(clean(r['服勤人員']), style_c), Paragraph(clean(r['任務分工']), style_l)])
+    for _, r in df_patrol.iterrows():
+        data_ptl.append([Paragraph(clean_pdf(r['勤務時段']), style_c), clean_pdf(r['無線電']), Paragraph(clean_pdf(r['編組']), style_c), Paragraph(clean_pdf(r['服勤人員']), style_c), Paragraph(clean_pdf(r['任務分工']), style_l)])
     t2 = Table(data_ptl, colWidths=[page_width*0.20, page_width*0.10, page_width*0.15, page_width*0.25, page_width*0.30])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
     story.append(t2)
@@ -135,37 +133,34 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t_val)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr_val)
 
-# ====== 🎯 核心修正：暴力切除職稱引擎 ======
+# ====== 🎯 暴力修正引擎：去除「副所長」文字 ======
 if len(ed_ptl) > 0:
-    # 1. 抓取單位名稱 (找到「所/分隊/分局」就停下)
+    # 1. 抓取單位
     m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
     if m:
         pure_unit = m.group(1)
-        
-        # 2. 強制覆蓋第一列「編組」
-        # 我們直接暴力重新定義這一格，完全不理會雲端原本的文字
+        # 強制修正第一列編組為：單位 + 輪值
         ed_ptl.at[0, '編組'] = f"專責警力\n（{pure_unit}輪值）"
         
-        # 3. 無線電連動
+        # 2. 無線電連動
         umap = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
         base = next((v for k, v in umap.items() if k in pure_unit), "隆安")
         suffix = "2" if "副" in cmdr_input or "小隊長" in cmdr_input else "1"
         ed_ptl.at[0, '無線電'] = base + suffix
 
-        # 4. 姓名填入服勤人員
+        # 3. 姓名填入服勤人員
         name_only = cmdr_input.replace(pure_unit, "").strip()
         if name_only:
             current_p = str(ed_ptl.at[0, '服勤人員'])
             ed_ptl.at[0, '服勤人員'] = re.sub(r'(\d{2}-\d{2}時：?)\n?.*', f'\\1\n{name_only}', current_p)
 
-# 5. 第二道防線：如果表格內還有其他地方出現「XX所副所長...」，一律強制過濾
+# 最後防線：全面掃描編組欄位，切除職稱
 if '編組' in ed_ptl.columns:
     def ultimate_clean(val):
         s = str(val)
-        # 如果包含「所」且後面接著職稱，就只保留到「所」並加上「輪值」
-        # 這裡用 Regex 尋找：(XX所) + (職稱) -> 只留 (XX所) + 輪值
-        s = re.sub(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))(?:副所長|所長|分隊長|小隊長|警員|副分隊長)', r'\1輪值', s)
-        # 處理括號內的情況
+        # 將「XX所副所長」改為「XX所輪值」
+        s = re.sub(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))(?:副所長|所長|分隊長|小隊長|副分隊長|警員)', r'\1輪值', s)
+        # 針對括號內的文字
         s = re.sub(r'（([\u4e00-\u9fa5]+(?:所|分隊|分局)).*）', r'（\1輪值）', s)
         return s
     ed_ptl['編組'] = ed_ptl['編組'].apply(ultimate_clean)
@@ -173,10 +168,11 @@ if '編組' in ed_ptl.columns:
 # 日期連動
 dm = re.search(r'(\d+)月(\d+)日', p_time)
 if dm and len(ed_ptl) > 0:
-    dt_n = datetime(datetime.now().year, int(dm.group(1)), int(dm.group(2))) + timedelta(days=1)
-    ed_ptl.at[0, '勤務時段'] = f"{dt_n.month}月{dt_n.day}日\n零時至4時"
+    try:
+        dt_n = datetime(datetime.now().year, int(dm.group(1)), int(dm.group(2))) + timedelta(days=1)
+        ed_ptl.at[0, '勤務時段'] = f"{dt_n.month}月{dt_n.day}日\n零時至4時"
+    except: pass
 
-# --- 顯示編輯器 ---
 st.subheader("3. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).fillna("")
 
@@ -185,14 +181,50 @@ if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# --- 存檔與下載 ---
+# --- 5. 完整預覽引擎 (顯示所有列) ---
 st.markdown("---")
+st.subheader("📄 報表預覽 (完整內容)")
+
+def get_preview_html(df_cmd_res, df_ptl_res, commander_name):
+    # 生成任務編組 HTML
+    cmd_rows = ""
+    for _, r in df_cmd_res.iterrows():
+        cmd_rows += f"<tr><td>{r['職稱']}</td><td>{r['代號']}</td><td>{r['姓名']}</td><td>{r['任務']}</td></tr>"
+    
+    # 生成警力佈署 HTML
+    ptl_rows = ""
+    for _, r in df_ptl_res.iterrows():
+        ptl_rows += f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>"
+
+    html = f"""
+    <style>
+        table {{ width: 100%; border-collapse: collapse; font-family: "標楷體"; }}
+        th, td {{ border: 1px solid black; padding: 8px; text-align: center; }}
+        th {{ background-color: #f2f2f2; }}
+        .title {{ text-align: center; font-size: 18px; font-weight: bold; }}
+    </style>
+    <div class="title">{UNIT_FULL} 規劃表</div>
+    <div style="text-align: right;">指揮官：{commander_name}</div>
+    <br>
+    <table>
+        <tr><th colspan="4">任 務 編 組</th></tr>
+        <tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>
+        {cmd_rows}
+    </table>
+    <br>
+    <table>
+        <tr><th colspan="5">警 力 佈 署</th></tr>
+        <tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>
+        {ptl_rows}
+    </table>
+    """
+    return html
+
+st.components.v1.html(get_preview_html(res_cmd, res_ptl, cmdr_input), height=600, scrolling=True)
+
+# --- 6. 存檔與下載 ---
 if st.button("💾 同步雲端、下載 PDF", type="primary"):
     if save_data(p_time, cmdr_input, res_cmd, res_ptl):
         st.success("✅ 同步成功！")
         pdf = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
         st.download_button("📥 下載 PDF 報表", data=pdf, file_name=f"危駕勤務_{datetime.now().strftime('%m%d')}.pdf")
-
-st.subheader("📄 預覽 (第一筆資料)")
-if len(res_ptl) > 0:
-    st.write(f"編組欄位實際內容： `{res_ptl.iloc[0,2]}`")
