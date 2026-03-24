@@ -66,8 +66,7 @@ DEFAULT_NOTES = """壹、警察局規劃3月份「行人及護老交通安全專
 # --- 2. gspread 連線 ---
 @st.cache_resource
 def get_client():
-    if "gcp_service_account" not in st.secrets:
-        return None
+    if "gcp_service_account" not in st.secrets: return None
     creds_dict = dict(st.secrets["gcp_service_account"])
     creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
@@ -85,16 +84,13 @@ def load_data():
         ws_cmd = next((w for w in ws_list if w.title == "護老_指揮組"), None)
         ws_sch = next((w for w in ws_list if w.title == "護老_勤務表"), None)
         if not all([ws_set, ws_cmd, ws_sch]): return None, None, None, None, "缺工作表"
-        
         df_settings = pd.DataFrame(ws_set.get_all_records())
         df_cmd      = pd.DataFrame(ws_cmd.get_all_records())
         df_schedule = pd.DataFrame(ws_sch.get_all_records())
-        
         sd = dict(zip(df_settings.iloc[:,0], df_settings.iloc[:,1]))
         notes = sd.get("notes", DEFAULT_NOTES)
         return df_settings, df_cmd, df_schedule, notes, None
-    except Exception as e:
-        return None, None, None, None, str(e)
+    except Exception as e: return None, None, None, None, str(e)
 
 # --- 4. 寫入 ---
 def save_data(month, df_cmd, df_schedule, notes):
@@ -105,20 +101,17 @@ def save_data(month, df_cmd, df_schedule, notes):
         ws_set = sh.worksheet("護老_設定")
         ws_set.clear()
         ws_set.update([["Key", "Value"], ["month", month], ["notes", notes]])
-        
         ws_cmd = sh.worksheet("護老_指揮組")
         ws_cmd.clear()
         ws_cmd.update([df_cmd.columns.tolist()] + df_cmd.fillna("").values.tolist())
-        
         ws_sch = sh.worksheet("護老_勤務表")
         ws_sch.clear()
         ws_sch.update([df_schedule.columns.tolist()] + df_schedule.fillna("").values.tolist())
         load_data.clear()
         return True
-    except:
-        return False
+    except: return False
 
-# --- 5. 字型與 PDF 產生 (維持原版面字體大小) ---
+# --- 5. 字型與 PDF 產生 ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
@@ -139,7 +132,10 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
     s_th     = ParagraphStyle("th", fontName=font, fontSize=16, alignment=1, leading=22)
     s_cell   = ParagraphStyle("c",  fontName=font, fontSize=14, leading=18, alignment=1)
     s_left   = ParagraphStyle("l",  fontName=font, fontSize=14, leading=18, alignment=0)
-    s_note   = ParagraphStyle("n",  fontName=font, fontSize=12, leading=16, spaceAfter=4)
+    
+    # 修正 PDF 的備註樣式：使用 leftIndent 與 firstLineIndent 達成懸掛縮進
+    s_note   = ParagraphStyle("n",  fontName=font, fontSize=12, leading=16, 
+                              leftIndent=14*mm, firstLineIndent=-14*mm, spaceAfter=4)
     
     def c(txt, style=s_cell):
         return Paragraph(str(txt).replace("\n","<br/>"), style)
@@ -171,28 +167,28 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
     for k in range(len(non_empty) - 1):
         s, e = non_empty[k], non_empty[k+1] - 1
         if e > s: table_styles.append(('SPAN', (0, s+2), (0, e+2)))
-    
     t2 = Table(data2, colWidths=cw2, repeatRows=2)
     t2.setStyle(TableStyle(table_styles))
     story.append(KeepTogether([t2]))
     story.append(Spacer(1, 6*mm))
 
-    # 備註
-    story.append(Paragraph(f"<b>備註：</b><br/>{notes_content.replace(chr(10),'<br/>')}", s_note))
+    # 備註（自動處理段落，使其能套用懸掛縮進）
+    story.append(Paragraph("<b>備註：</b>", s_note))
+    for line in notes_content.split('\n'):
+        if line.strip():
+            story.append(Paragraph(line, s_note))
+            
     doc.build(story)
     return buf.getvalue()
 
 # --- 6. 寄信功能 ---
 def send_report_email(subject, month, df_cmd, df_schedule, notes):
     try:
-        sender = st.secrets["email"]["user"]
-        pwd = st.secrets["email"]["password"]
+        sender = st.secrets["email"]["user"]; pwd = st.secrets["email"]["password"]
         pdf_bytes = generate_pdf(month, df_cmd, df_schedule, notes)
-        msg = MIMEMultipart()
-        msg["From"] = sender; msg["To"] = sender; msg["Subject"] = subject
+        msg = MIMEMultipart(); msg["From"] = sender; msg["To"] = sender; msg["Subject"] = subject
         msg.attach(MIMEText("附件為最新的護老交通安全勤務規劃表 PDF。", "plain", "utf-8"))
-        part = MIMEBase("application", "pdf")
-        part.set_payload(pdf_bytes); encoders.encode_base64(part)
+        part = MIMEBase("application", "pdf"); part.set_payload(pdf_bytes); encoders.encode_base64(part)
         part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(subject)}.pdf")
         msg.attach(part)
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
@@ -203,65 +199,55 @@ def send_report_email(subject, month, df_cmd, df_schedule, notes):
 # --- 7. 主介面邏輯 ---
 df_set, df_cmd_raw, df_sch_raw, db_notes, err = load_data()
 if err or df_set is None:
-    c_month = DEFAULT_MONTH
-    ed_cmd, ed_sch = DEFAULT_CMD.copy(), DEFAULT_SCHEDULE.copy()
-    current_notes = DEFAULT_NOTES
+    c_month = DEFAULT_MONTH; ed_cmd, ed_sch = DEFAULT_CMD.copy(), DEFAULT_SCHEDULE.copy(); current_notes = DEFAULT_NOTES
 else:
     sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
-    c_month = sd.get("month", DEFAULT_MONTH)
-    ed_cmd, ed_sch = df_cmd_raw, df_sch_raw
-    current_notes = db_notes
+    c_month = sd.get("month", DEFAULT_MONTH); ed_cmd, ed_sch = df_cmd_raw, df_sch_raw; current_notes = db_notes
 
 st.title("🚶 行人及護老交通安全專案勤務規劃表")
-
-st.subheader("1. 基礎資訊")
-c_month = st.text_input("月份", value=c_month)
-
+c_month = st.text_input("1. 月份", value=c_month)
 st.subheader("2. 任務編組")
 ed_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
-
-st.subheader("3. 執行勤務日期、單位及路段")
+st.subheader("3. 警力佈署")
 ed_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
-
-st.subheader("4. 備註編輯 (可修改壹之期程內容)")
-# 使用文字區塊讓使用者編輯備註
+st.subheader("4. 備註編輯")
 ed_notes = st.text_area("編輯備註內容", value=current_notes, height=300)
 
-# --- 8. HTML 預覽 (維持原版面樣式) ---
+# --- 8. HTML 預覽 (修正備註縮排) ---
 def get_html(notes_content):
     parts = []
-    parts.append("<style>body{font-family:'標楷體';padding:20px;} table{width:100%;border-collapse:collapse;} th{border:1px solid black;padding:8px;font-size:16pt;background-color:#f2f2f2;text-align:center;line-height:1.5;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:12pt;margin-top:15px;line-height:1.6;}</style>")
+    # CSS 中使用 padding-left 與 text-indent -em 達成懸掛縮進
+    parts.append("<style>body{font-family:'標楷體';padding:20px;} table{width:100%;border-collapse:collapse;} th{border:1px solid black;padding:8px;font-size:16pt;background-color:#f2f2f2;text-align:center;line-height:1.5;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note-container{font-size:12pt;margin-top:15px;line-height:1.6;} .note-line{padding-left:3em;text-indent:-3em;margin-bottom:4px;}</style>")
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}{c_month}執行「行人及護老交通安全」專案勤務規劃表</b></h2><br>")
     
     # 任務編組
-    parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr>")
-    parts.append("<tr><th width='15%'>職稱</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
+    parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th width='15%'>職稱</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
     for _, r in ed_cmd.iterrows():
         parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     parts.append("</table><br>")
     
     # 警力佈署
-    parts.append("<table><tr><th colspan='3'>警 力 佈 署</th></tr>")
-    parts.append("<tr><th width='28%'>執行勤務日期（6時至10時、16時至20時）</th><th width='16%'>單位</th><th width='56%'>路段</th></tr>")
+    parts.append("<table><tr><th colspan='3'>警 力 佈 署</th></tr><tr><th width='28%'>執行勤務日期</th><th width='16%'>單位</th><th width='56%'>路段</th></tr>")
     for _, r in ed_sch.iterrows():
         parts.append(f"<tr><td>{str(r.get('日期（6時至10時、16時至20時）','')).replace(chr(10),'<br>')}</td><td>{r.get('單位','')}</td><td style='text-align:left'>{str(r.get('路段','')).replace(chr(10),'<br>')}</td></tr>")
     parts.append("</table>")
     
-    parts.append(f"<div class='note'><b>備註：</b><br>{notes_content.replace(chr(10), '<br>')}</div></body></html>")
+    # 備註區塊
+    parts.append("<div class='note-container'><b>備註：</b>")
+    for line in notes_content.split('\n'):
+        if line.strip():
+            parts.append(f"<div class='note-line'>{line}</div>")
+    parts.append("</div></body></html>")
     return "".join(parts)
 
 st.markdown("---")
-st.subheader("📄 預覽與輸出")
 st.components.v1.html(get_html(ed_notes), height=700, scrolling=True)
 
 if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
     save_data(c_month, ed_cmd, ed_sch, ed_notes)
-    
     fname = f"護老交通安全勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
     ok, mail_err = send_report_email(fname, c_month, ed_cmd, ed_sch, ed_notes)
-    
     if ok: st.success("📧 雲端同步成功，報表已寄至信箱！")
     else: st.error(f"❌ 雲端同步成功，但寄信失敗：{mail_err}")
-    
     pdf_out = generate_pdf(c_month, ed_cmd, ed_sch, ed_notes)
     st.download_button("點此下載 PDF", data=pdf_out, file_name=f"{fname}.pdf")
