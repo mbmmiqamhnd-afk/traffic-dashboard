@@ -40,9 +40,10 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
 # --- 2. 格式化工具 ---
-def format_staff_only(val):
+def auto_format_personnel(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: return ""
     s = str(val).replace('\\n', '\n').replace('、', '\n')
+    # 強制在時間前換行並補上冒號 (僅限服勤人員)
     s = re.sub(r'([^\n])\s*(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)', r'\1\n\2', s)
     s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)[：:\s]*', r'\1：\n', s)
     return '\n'.join([l.strip() for l in s.split('\n') if l.strip()])
@@ -103,17 +104,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     style_th = ParagraphStyle('H', fontName=font, fontSize=16, alignment=1, leading=22)
     style_cell = ParagraphStyle('C', fontName=font, fontSize=14, leading=18, alignment=1) 
     style_cell_l = ParagraphStyle('L', fontName=font, fontSize=14, leading=18, alignment=0)
-    
-    # 🎯 核心修正：備註懸掛縮排樣式 (對齊編號後第一個字)
-    style_note_hanging = ParagraphStyle(
-        'NoteHanging', 
-        fontName=font, 
-        fontSize=14, 
-        leading=20, 
-        alignment=0,
-        leftIndent=28,       # 整體向左縮排 2 個字寬
-        firstLineIndent=-28  # 首行往回跳 2 個字寬，讓「一、」突出來
-    )
+    style_note_hanging = ParagraphStyle('NH', fontName=font, fontSize=14, leading=20, alignment=0, leftIndent=28, firstLineIndent=-28)
 
     story.append(Paragraph(f"<b>{UNIT}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
@@ -140,7 +131,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署 (時段 22%, 代號 13%)
+    # 警力佈署 (時段恢復 22% 寬度)
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -157,14 +148,11 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
     story.append(t2)
     
-    # 備註區塊 (套用懸掛縮排)
     story.append(Spacer(1, 6*mm)); story.append(Paragraph("<b>📍 巡簽地點：</b>", style_cell_l))
-    # 巡簽地點通常是 1. 2. 3. 也可以套用縮排
-    for l in CHECKIN_POINTS.split('\n'): 
+    for l in CHECKIN_POINTS.split('\n'):
         if l.strip(): story.append(Paragraph(l.strip(), style_note_hanging))
-        
     story.append(Spacer(1, 4*mm)); story.append(Paragraph("<b>📝 備註：</b>", style_cell_l))
-    for l in NOTES.split('\n'): 
+    for l in NOTES.split('\n'):
         if l.strip(): story.append(Paragraph(l.strip(), style_note_hanging))
 
     doc.build(story)
@@ -204,7 +192,24 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
 
-# 自動修正連動
+# ====== 🎯 恢復原始連動邏輯 ======
+match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
+if match and len(ed_ptl) > 0:
+    y_str, m, d = match.group(1), int(match.group(2)), int(match.group(3))
+    y_out = y_str if y_str else str(datetime.now().year - 1911)
+    
+    # 邏輯 A：其餘線上警力顯示當日 22 時至翌日 6 時 (自動斷行)
+    if len(ed_ptl) > 1:
+        p_time_no_year = re.sub(r'^\d+年', '', p_time)
+        ed_ptl.loc[1:, '勤務時段'] = re.sub(r'(\d+日)\s*', r'\1\n', p_time_no_year)
+    
+    # 邏輯 B：第一筆專責警力顯示翌日 0 時至 4 時
+    try:
+        dt_next = datetime(int(y_out) + 1911, m, d) + timedelta(days=1)
+        ed_ptl.at[0, '勤務時段'] = f"{dt_next.month}月{dt_next.day}日\n零時至4時"
+    except: pass
+
+# 指揮官連動 (去職稱 + 無線電)
 u_m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
 if u_m and len(ed_ptl) > 0:
     pu = u_m.group(1); ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
@@ -216,14 +221,14 @@ if u_m and len(ed_ptl) > 0:
 st.subheader("3. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).fillna("")
 st.subheader("4. 警力佈署")
-if '服勤人員' in ed_ptl.columns: ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
+if '服勤人員' in ed_ptl.columns: ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
 # --- 6. 預覽 ---
 def get_preview(df_c, df_p, cmdr_n, time_s):
     cmd_h = "".join([f"<tr><td>{r['職稱']}</td><td>{r['代號']}</td><td>{str(r['姓名']).replace('、','<br>')}</td><td>{r['任務']}</td></tr>" for _, r in df_c.iterrows()])
     ptl_h = "".join([f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>" for _, r in df_p.iterrows()])
-    return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }} .hanging {{ padding-left: 2em; text-indent: -2em; text-align: left; }}</style>
+    return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }}</style>
     <h2 style='text-align:center;'>{UNIT} 規劃表</h2><div style='text-align:right;'>指揮官：{cmdr_n}</div><br>
     <table><tr><th colspan="4">任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>{cmd_h}</table><br>
     <table><tr><th colspan="5">警 力 佈 署</th></tr><tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>{ptl_h}</table>"""
@@ -238,4 +243,4 @@ if st.button("💾 同步、寄信並下載 PDF", type="primary"):
         if ok: st.success("✅ 同步成功，郵件已寄送！")
         else: st.error(f"⚠️ 同步成功，但郵件失敗：{mail_err}")
         pdf = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
-        st.download_button("📥 下載 PDF", data=pdf, file_name=f"危駕勤務_{dt_label}.pdf")
+        st.download_button("📥 下載 PDF", data=pdf, file_name=f"危駕勤務表_{dt_label}.pdf")
