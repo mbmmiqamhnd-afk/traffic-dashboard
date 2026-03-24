@@ -62,7 +62,7 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "115年3月27日～\n3月28日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、優勢巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"}
@@ -71,7 +71,7 @@ DEFAULT_SCHEDULE = pd.DataFrame([
 CHECKIN_POINTS = """1. 中油高原交流道站（龍源路2-20號）
 2. 萊爾富超商-龍潭石門山店（龍源路大平段262號）
 3. 7-11龍潭佳園門市（中正路三坑段776號）
-4. 旭日路三坑自然生態公園停車停車場
+4. 旭日路三坑自然生態公園停車場
 5. 旭日路與大溪區交界處"""
 
 NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
@@ -150,8 +150,14 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
     
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
+    
+    # 💡 重點修正：懸掛縮排設定
+    # leftIndent 設為 10mm（縮排距離）
+    # firstLineIndent 設為 -10mm（讓第一行突出來，對齊首字）
+    style_hanging = ParagraphStyle('Hanging', fontName=font, fontSize=14, leading=20, 
+                                   leftIndent=10*mm, firstLineIndent=-10*mm, spaceAfter=5)
+    
     style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4)
-    style_note = ParagraphStyle('Note', fontName=font, fontSize=14, leading=20, spaceAfter=5)
 
     story.append(Paragraph(f"<b>{full_title}</b>", style_title))
     
@@ -217,11 +223,18 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
     story.append(t2)
     story.append(Spacer(1, 6*mm))
 
+    # --- 巡簽地點與備註 ---
     story.append(Paragraph("<b>📍 巡簽地點：</b>", style_section))
-    story.append(Paragraph(CHECKIN_POINTS.replace("\n", "<br/>"), style_note))
+    for line in CHECKIN_POINTS.split('\n'):
+        if line.strip():
+            story.append(Paragraph(line, style_hanging))
+            
     story.append(Spacer(1, 4*mm))
+    
     story.append(Paragraph("<b>📝 備註：</b>", style_section))
-    story.append(Paragraph(NOTES.replace("\n", "<br/>"), style_note))
+    for line in NOTES.split('\n'):
+        if line.strip():
+            story.append(Paragraph(line, style_hanging))
 
     doc.build(story)
     return buf.getvalue()
@@ -236,116 +249,5 @@ def send_report_email(full_title, df_cmd, df_schedule):
         msg = MIMEMultipart()
         msg["From"] = sender
         msg["To"] = sender
-        msg["Subject"] = full_title # 主旨設為標頭名稱
-        msg.attach(MIMEText(f"附件為最新的「{full_title}」報表 PDF。", "plain", "utf-8"))
-        
-        part = MIMEBase("application", "pdf")
-        part.set_payload(pdf_bytes)
-        encoders.encode_base64(part)
-        filename = _ul.quote(f"{full_title}.pdf") # 附件檔名
-        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{filename}")
-        msg.attach(part)
-        
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender, pwd)
-            server.sendmail(sender, sender, msg.as_string())
-        return True, None
-    except Exception as e:
-        return False, str(e)
-
-# --- 5. 主介面邏輯 ---
-df_set, df_cmd_data, df_sch_data, err = load_data()
-if err or df_set is None:
-    c_month = DEFAULT_MONTH
-    ed_cmd, ed_sch = DEFAULT_CMD.copy(), DEFAULT_SCHEDULE.copy()
-else:
-    sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
-    c_month = sd.get("month", DEFAULT_MONTH)
-    ed_cmd, ed_sch = df_cmd_data, df_sch_data
-
-st.title("🚔 防制危險駕車專案勤務規劃表（月份版）")
-
-st.subheader("1. 基礎資訊")
-c_month = st.text_input("月份", c_month)
-
-# 💡 關鍵變數：根據輸入內容產生標頭名稱
-full_header_title = f"{UNIT}{c_month}執行「防制危險駕車」專案勤務規劃表"
-
-st.subheader("2. 任務編組")
-res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
-
-st.subheader("3. 警力佈署")
-res_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
-
-# --- HTML 預覽產生器 ---
-def get_html():
-    chk_html = CHECKIN_POINTS.replace('\n', '<br>')
-    note_html = NOTES.replace('\n', '<br>')
-    
-    parts = []
-    parts.append("<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:14pt;margin:15px 0;line-height:1.6;}</style>")
-    parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{full_header_title}</b></h2><br>")
-    
-    parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr>")
-    parts.append("<tr><th width='15%'>職稱</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
-    for _, r in res_cmd.iterrows():
-        name = str(r.get('姓名', '')).replace('、', '<br>')
-        parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td>")
-        parts.append(f"<td>{name}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
-    parts.append("</table>")
-    
-    parts.append("<table><tr><th colspan='3'>警 力 佈 署</th></tr>")
-    parts.append("<tr><th width='22%'>日期（22時至翌日6時）</th><th width='22%'>單位</th><th width='56%'>分工</th></tr>")
-    
-    col_date = '日期（22時至翌日6時）'
-    total_rows = len(res_sch)
-    row_spans = {}
-    skip_rows = set()
-    i = 0
-    while i < total_rows:
-        d_val = str(res_sch.iloc[i][col_date]).strip()
-        if d_val != "":
-            span = 1
-            for j in range(i + 1, total_rows):
-                if str(res_sch.iloc[j][col_date]).strip() == "": span += 1
-                else: break
-            row_spans[i] = span
-            for k in range(1, span): skip_rows.add(i + k)
-            i += span
-        else: i += 1
-
-    for idx, row in res_sch.iterrows():
-        parts.append("<tr>")
-        date_str = str(row.get(col_date,'')).replace('\n', '<br>')
-        if idx in row_spans:
-            rs = row_spans[idx]
-            parts.append(f"<td rowspan='{rs}'>{date_str}</td>")
-        elif idx in skip_rows: pass
-        else: parts.append(f"<td>{date_str}</td>")
-        parts.append(f"<td>{str(row.get('單位','')).replace(chr(10), '<br>')}</td><td style='text-align:left'>{str(row.get('分工','')).replace(chr(10), '<br>')}</td></tr>")
-    parts.append("</table>")
-    parts.append(f"<div class='note'><b>📍 巡簽地點：</b><br>{chk_html}</div>")
-    parts.append(f"<div class='note'><b>📝 備註：</b><br>{note_html}</div>")
-    parts.append("</body></html>")
-    return "".join(parts)
-
-st.markdown("---")
-st.subheader("📄 預覽與輸出")
-st.components.v1.html(get_html(), height=600, scrolling=True)
-
-if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
-    save_data(c_month, res_cmd, res_sch)
-    # 傳入標頭名稱作為主旨
-    ok, mail_err = send_report_email(full_header_title, res_cmd, res_sch)
-    
-    if ok: st.success("📧 雲端同步成功，報表已寄至信箱！")
-    else: st.error(f"❌ 雲端同步成功，但寄信失敗：{mail_err}")
-    
-    pdf_out = generate_pdf_from_data(full_header_title, res_cmd, res_sch)
-    # 💡 檔案名稱改為標頭名稱
-    st.download_button(
-        label="點此下載 PDF", 
-        data=pdf_out, 
-        file_name=f"{full_header_title}.pdf",
-        mime="application/pdf"
-    )
+        msg["Subject"] = full_title
+        msg.attach(MIMEText(f"附件為最新的「{full_
