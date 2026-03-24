@@ -41,12 +41,9 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 
 # --- 2. 格式化工具 ---
 def format_staff_only(val):
-    """僅針對服勤人員欄位：時段後強制換行"""
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: return ""
     s = str(val).replace('\\n', '\n').replace('、', '\n')
-    # 遇到時段強制斷行
     s = re.sub(r'([^\n])\s*(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)', r'\1\n\2', s)
-    # 冒號後強制換行 (僅限此欄位)
     s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)[：:\s]*', r'\1：\n', s)
     return '\n'.join([l.strip() for l in s.split('\n') if l.strip()])
 
@@ -106,6 +103,17 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     style_th = ParagraphStyle('H', fontName=font, fontSize=16, alignment=1, leading=22)
     style_cell = ParagraphStyle('C', fontName=font, fontSize=14, leading=18, alignment=1) 
     style_cell_l = ParagraphStyle('L', fontName=font, fontSize=14, leading=18, alignment=0)
+    
+    # 🎯 核心修正：備註懸掛縮排樣式 (對齊編號後第一個字)
+    style_note_hanging = ParagraphStyle(
+        'NoteHanging', 
+        fontName=font, 
+        fontSize=14, 
+        leading=20, 
+        alignment=0,
+        leftIndent=28,       # 整體向左縮排 2 個字寬
+        firstLineIndent=-28  # 首行往回跳 2 個字寬，讓「一、」突出來
+    )
 
     story.append(Paragraph(f"<b>{UNIT}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
@@ -124,7 +132,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             Paragraph(f"<b>{br(r['職稱'])}</b>", style_cell), 
             Paragraph(br(r['代號']), style_cell), 
             Paragraph(br(r['姓名']).replace('、', '<br/>'), style_cell), 
-            Paragraph(br(r['任務']), style_cell_l) # 任務不強制冒號換行
+            Paragraph(br(r['任務']), style_cell_l)
         ])
     
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45])
@@ -142,17 +150,22 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             Paragraph(br(r['無線電']), style_cell), 
             Paragraph(br(r['編組']), style_cell), 
             Paragraph(br(r['服勤人員']), style_cell), 
-            Paragraph(br(r['任務分工']), style_cell_l) # 任務分工冒號不強制換行
+            Paragraph(br(r['任務分工']), style_cell_l)
         ])
 
     t2 = Table(data_ptl, colWidths=[page_width*0.22, page_width*0.13, page_width*0.15, page_width*0.23, page_width*0.27])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
     story.append(t2)
     
+    # 備註區塊 (套用懸掛縮排)
     story.append(Spacer(1, 6*mm)); story.append(Paragraph("<b>📍 巡簽地點：</b>", style_cell_l))
-    story.append(Paragraph(br(CHECKIN_POINTS, False), style_cell_l)); story.append(Spacer(1, 4*mm))
-    story.append(Paragraph("<b>📝 備註：</b>", style_cell_l))
-    for l in NOTES.split('\n'): story.append(Paragraph(l.strip(), style_cell_l))
+    # 巡簽地點通常是 1. 2. 3. 也可以套用縮排
+    for l in CHECKIN_POINTS.split('\n'): 
+        if l.strip(): story.append(Paragraph(l.strip(), style_note_hanging))
+        
+    story.append(Spacer(1, 4*mm)); story.append(Paragraph("<b>📝 備註：</b>", style_cell_l))
+    for l in NOTES.split('\n'): 
+        if l.strip(): story.append(Paragraph(l.strip(), style_note_hanging))
 
     doc.build(story)
     return buf.getvalue()
@@ -191,7 +204,7 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
 
-# 自動修正編組與無線電
+# 自動修正連動
 u_m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
 if u_m and len(ed_ptl) > 0:
     pu = u_m.group(1); ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
@@ -203,7 +216,6 @@ if u_m and len(ed_ptl) > 0:
 st.subheader("3. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).fillna("")
 st.subheader("4. 警力佈署")
-# 🎯 僅服勤人員欄位使用時段強制換行
 if '服勤人員' in ed_ptl.columns: ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
@@ -211,7 +223,7 @@ res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).f
 def get_preview(df_c, df_p, cmdr_n, time_s):
     cmd_h = "".join([f"<tr><td>{r['職稱']}</td><td>{r['代號']}</td><td>{str(r['姓名']).replace('、','<br>')}</td><td>{r['任務']}</td></tr>" for _, r in df_c.iterrows()])
     ptl_h = "".join([f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>" for _, r in df_p.iterrows()])
-    return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }}</style>
+    return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }} .hanging {{ padding-left: 2em; text-indent: -2em; text-align: left; }}</style>
     <h2 style='text-align:center;'>{UNIT} 規劃表</h2><div style='text-align:right;'>指揮官：{cmdr_n}</div><br>
     <table><tr><th colspan="4">任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>{cmd_h}</table><br>
     <table><tr><th colspan="5">警 力 佈 署</th></tr><tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>{ptl_h}</table>"""
