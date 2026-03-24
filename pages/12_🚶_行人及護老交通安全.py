@@ -43,7 +43,7 @@ DEFAULT_CMD = pd.DataFrame([
 DEFAULT_SCHEDULE = pd.DataFrame([
     {"日期（6時至10時、16時至20時）": "3月2～6、9～13、16～20日、23～27及30～31日（3月之上班日）", "單位": "聖亭派出所", "路段": "中豐路、聖亭路段\n校園周邊道路或轄區行人易肇事路口"},
     {"日期（6時至10時、16時至20時）": "", "單位": "龍潭派出所", "路段": "中豐路、中正路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "中興派出所", "路段": "中興路、福龍路段\n校園周邊道路 or 轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "中興派出所", "路段": "中興路、福龍路段\n校園周邊道路或轄區行人易肇事路口"},
     {"日期（6時至10時、16時至20時）": "", "單位": "石門派出所", "路段": "中正、文化路段\n校園周邊道路或轄區行人易肇事路口"},
     {"日期（6時至10時、16時至20時）": "", "單位": "高平派出所", "路段": "中豐、中原路段\n校園周邊道路或轄區行人易肇事路口"},
     {"日期（6時至10時、16時至20時）": "", "單位": "三和派出所", "路段": "龍新路、楊銅路段\n校園周邊道路或轄區行人易肇事路口"},
@@ -56,8 +56,12 @@ DEFAULT_NOTES = """壹、警察局規劃3月份「行人及護老交通安全專
 二、3月12日（星期四）6至10時、16至20時。
 三、3月24日（星期二）6至10時、16至20時。
 四、3月30日（星期一）6至10時、16至20時。
-貳、執行本專案勤務視轄區狀況及執勤警力...
-(以下略)"""
+貳、執行本專案勤務視轄區狀況及執勤警力，擇定轄區易肇事路口（段）及校園周邊道路，依上揭日期妥適編排勤務（必要時得另行規劃專案）協助維護行人、學童及高齡者通行安全，並加強取締「車不讓人」、「未依規定停讓」、「違規（臨時）停車」、「行人違反路權」及「道路障礙」等違規，必要時得合併相關勤務實施，以達「一種勤務多種功能」之效益。
+叁、執行「行人及護老交通安全實施計畫」合強化違規取締項目：
+一、車不讓人（第44條第1項第2款、第2項、第3項、第45條第1項第6款）
+二、違規（臨時）停車（第55條、第56條）
+三、行人（含代步器、電動輪椅）違反路權（第78條、第80條）
+四、道路障礙（第82條）"""
 
 # --- 2. gspread 連線 ---
 @st.cache_resource
@@ -80,13 +84,12 @@ def load_data():
         ws_set = next((w for w in ws_list if w.title == "護老_設定"), None)
         ws_cmd = next((w for w in ws_list if w.title == "護老_指揮組"), None)
         ws_sch = next((w for w in ws_list if w.title == "護老_勤務表"), None)
-        if not all([ws_set, ws_cmd, ws_sch]):
-            return None, None, None, None, "缺工作表"
+        if not all([ws_set, ws_cmd, ws_sch]): return None, None, None, None, "缺工作表"
+        
         df_settings = pd.DataFrame(ws_set.get_all_records())
         df_cmd      = pd.DataFrame(ws_cmd.get_all_records())
         df_schedule = pd.DataFrame(ws_sch.get_all_records())
         
-        # 嘗試從設定表讀取備註內容
         sd = dict(zip(df_settings.iloc[:,0], df_settings.iloc[:,1]))
         notes = sd.get("notes", DEFAULT_NOTES)
         return df_settings, df_cmd, df_schedule, notes, None
@@ -115,7 +118,7 @@ def save_data(month, df_cmd, df_schedule, notes):
     except:
         return False
 
-# --- 5. 字型與 PDF 產生 ---
+# --- 5. 字型與 PDF 產生 (維持原版面字體大小) ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
@@ -125,7 +128,7 @@ def _get_font():
             return fname
     return "Helvetica"
 
-def generate_pdf(month, df_cmd, df_schedule, notes):
+def generate_pdf(month, df_cmd, df_schedule, notes_content):
     font = _get_font()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=12*mm, bottomMargin=12*mm)
@@ -174,8 +177,8 @@ def generate_pdf(month, df_cmd, df_schedule, notes):
     story.append(KeepTogether([t2]))
     story.append(Spacer(1, 6*mm))
 
-    # 備註 (使用編輯後的內容)
-    story.append(Paragraph(f"<b>備註：</b><br/>{notes.replace(chr(10),'<br/>')}", s_note))
+    # 備註
+    story.append(Paragraph(f"<b>備註：</b><br/>{notes_content.replace(chr(10),'<br/>')}", s_note))
     doc.build(story)
     return buf.getvalue()
 
@@ -220,24 +223,26 @@ ed_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 st.subheader("3. 執行勤務日期、單位及路段")
 ed_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
 
-st.subheader("4. 備註內容 (可直接修改壹、貳等內容)")
-# 關鍵：讓使用者可以直接修改備註文字
-ed_notes = st.text_area("編輯備註欄位", value=current_notes, height=250)
+st.subheader("4. 備註編輯 (可修改壹之期程內容)")
+# 使用文字區塊讓使用者編輯備註
+ed_notes = st.text_area("編輯備註內容", value=current_notes, height=300)
 
-# --- 8. HTML 預覽 (更新備註來源) ---
+# --- 8. HTML 預覽 (維持原版面樣式) ---
 def get_html(notes_content):
     parts = []
-    parts.append("<style>body{font-family:'標楷體';padding:20px;} table{width:100%;border-collapse:collapse;} th{border:1px solid black;padding:8px;font-size:16pt;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;} .note{font-size:12pt;margin-top:15px;line-height:1.6;}</style>")
-    parts.append(f"<html><body><h2 style='text-align:center;'>{UNIT}{c_month}執行「行人及護老交通安全」專案勤務規劃表</h2>")
+    parts.append("<style>body{font-family:'標楷體';padding:20px;} table{width:100%;border-collapse:collapse;} th{border:1px solid black;padding:8px;font-size:16pt;background-color:#f2f2f2;text-align:center;line-height:1.5;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note{font-size:12pt;margin-top:15px;line-height:1.6;}</style>")
+    parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}{c_month}執行「行人及護老交通安全」專案勤務規劃表</b></h2><br>")
     
-    # 任務編組表
-    parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>")
+    # 任務編組
+    parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr>")
+    parts.append("<tr><th width='15%'>職稱</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
     for _, r in ed_cmd.iterrows():
         parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     parts.append("</table><br>")
     
-    # 警力佈署表
-    parts.append("<table><tr><th colspan='3'>警 力 佈 署</th></tr><tr><th>執行勤務日期</th><th>單位</th><th>路段</th></tr>")
+    # 警力佈署
+    parts.append("<table><tr><th colspan='3'>警 力 佈 署</th></tr>")
+    parts.append("<tr><th width='28%'>執行勤務日期（6時至10時、16時至20時）</th><th width='16%'>單位</th><th width='56%'>路段</th></tr>")
     for _, r in ed_sch.iterrows():
         parts.append(f"<tr><td>{str(r.get('日期（6時至10時、16時至20時）','')).replace(chr(10),'<br>')}</td><td>{r.get('單位','')}</td><td style='text-align:left'>{str(r.get('路段','')).replace(chr(10),'<br>')}</td></tr>")
     parts.append("</table>")
@@ -247,10 +252,9 @@ def get_html(notes_content):
 
 st.markdown("---")
 st.subheader("📄 預覽與輸出")
-st.components.v1.html(get_html(ed_notes), height=600, scrolling=True)
+st.components.v1.html(get_html(ed_notes), height=700, scrolling=True)
 
 if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
-    # 存檔時連同修改後的備註一起存入 Google Sheets
     save_data(c_month, ed_cmd, ed_sch, ed_notes)
     
     fname = f"護老交通安全勤務規劃表_{datetime.now().strftime('%Y%m%d')}"
