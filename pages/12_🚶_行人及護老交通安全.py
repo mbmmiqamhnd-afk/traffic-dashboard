@@ -36,7 +36,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "上級督導官", "代號": "駐區督察", "姓名": "孫三陽", "任務": "重點機動督導。"},
     {"職稱": "督導組", "代號": "隆安6", "姓名": "督察組組長 黃長旗、督察組督察員 黃中彥、督察組警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律。"},
     {"職稱": "指導組", "代號": "隆安684", "姓名": "督察組教官 郭文義", "任務": "指導各編組勤務執行及狀況處置。"},
-    {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "交通組組長 楊孟竟、交通組警務員 盧冠仁、交通組警務員 李峯甫、交通組巡官 郭勝隆、交通組巡官 羅千金、交通組警員 吳享運、秘書室巡官 陳鵬翔（代理人：警員張庭溱）、人事室警員 陳明祥、行政組警務佐 曾威仁", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
+    {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "交通組組長 楊孟竟、交通組警務員 盧冠仁、交通組警務員 李峯甫、交通組巡官 郭勝隆、交通組巡官 羅千金、交通組警員 吳享運、秘書室巡官 陳鵬翔（代理人：警員張庭溱）、人事室警員 陳明祥", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
     {"職稱": "通訊組", "代號": "隆安", "姓名": "主任 蔡奇青、執勤官 李文章、執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜。"}
 ])
 
@@ -133,9 +133,10 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
     s_cell   = ParagraphStyle("c",  fontName=font, fontSize=14, leading=18, alignment=1)
     s_left   = ParagraphStyle("l",  fontName=font, fontSize=14, leading=18, alignment=0)
     
-    # PDF 懸掛縮進設定：leftIndent 控制整體縮排，firstLineIndent (負值) 將第一行拉回
+    # --- PDF 縮進微調 ---
+    # 標題如「貳、」約佔 2 個中文字，設定 8.5mm 大約能精確對齊首字
     s_note   = ParagraphStyle("n",  fontName=font, fontSize=12, leading=18, 
-                              leftIndent=14*mm, firstLineIndent=-14*mm, spaceAfter=4)
+                              leftIndent=8.5*mm, firstLineIndent=-8.5*mm, spaceAfter=4)
     
     def c(txt, style=s_cell):
         return Paragraph(str(txt).replace("\n","<br/>"), style)
@@ -172,7 +173,7 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
     story.append(KeepTogether([t2]))
     story.append(Spacer(1, 6*mm))
 
-    # 備註 (逐行加入 Paragraph 以觸發懸掛縮進)
+    # 備註
     story.append(Paragraph("<b>備註：</b>", s_note))
     for line in notes_content.split('\n'):
         if line.strip():
@@ -211,13 +212,13 @@ ed_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 st.subheader("3. 警力佈署")
 ed_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
 st.subheader("4. 備註編輯")
-ed_notes = st.text_area("編輯備註內容 (修改此處內容後會自動同步到 PDF 與預覽)", value=current_notes, height=300)
+ed_notes = st.text_area("編輯備註內容", value=current_notes, height=300)
 
-# --- 8. HTML 預覽 (CSS 懸掛縮進) ---
+# --- 8. HTML 預覽 (縮進微調靠左) ---
 def get_html(notes_content):
     parts = []
-    # HTML 懸掛縮進：padding-left 提供空間，text-indent -em 將第一行拉回
-    parts.append("<style>body{font-family:'標楷體';padding:20px;} table{width:100%;border-collapse:collapse;} th{border:1px solid black;padding:8px;font-size:16pt;background-color:#f2f2f2;text-align:center;line-height:1.5;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note-container{font-size:12pt;margin-top:15px;line-height:1.6;} .note-line{padding-left:3.2em;text-indent:-3.2em;margin-bottom:6px;}</style>")
+    # HTML 懸掛縮進調整：padding-left 設為 2.2em，text-indent 設為 -2.2em
+    parts.append("<style>body{font-family:'標楷體';padding:20px;} table{width:100%;border-collapse:collapse;} th{border:1px solid black;padding:8px;font-size:16pt;background-color:#f2f2f2;text-align:center;line-height:1.5;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note-container{font-size:12pt;margin-top:15px;line-height:1.6;} .note-line{padding-left:2.2em;text-indent:-2.2em;margin-bottom:6px;}</style>")
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{UNIT}{c_month}執行「行人及護老交通安全」專案勤務規劃表</b></h2><br>")
     
     parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th width='15%'>職稱</th><th width='12%'>代號</th><th width='28%'>姓名</th><th width='45%'>任務</th></tr>")
@@ -230,7 +231,6 @@ def get_html(notes_content):
         parts.append(f"<tr><td>{str(r.get('日期（6時至10時、16時至20時）','')).replace(chr(10),'<br>')}</td><td>{r.get('單位','')}</td><td style='text-align:left'>{str(r.get('路段','')).replace(chr(10),'<br>')}</td></tr>")
     parts.append("</table>")
     
-    # 備註顯示邏輯
     parts.append("<div class='note-container'><b>備註：</b>")
     for line in notes_content.split('\n'):
         if line.strip():
