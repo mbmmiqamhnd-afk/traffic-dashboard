@@ -101,8 +101,8 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     style_title = ParagraphStyle('T', fontName=font, fontSize=16, alignment=1, spaceAfter=8)
     style_info = ParagraphStyle('I', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
     style_th = ParagraphStyle('H', fontName=font, fontSize=16, alignment=1, leading=22)
-    style_cell = ParagraphStyle('C', fontName=font, fontSize=14, leading=18, alignment=1) # 內文 14
-    style_cell_l = ParagraphStyle('L', fontName=font, fontSize=14, leading=18, alignment=0)
+    style_cell = ParagraphStyle('C', fontName=font, fontSize=14, leading=18, alignment=1) # 內容字體 14
+    style_cell_l = ParagraphStyle('L', fontName=font, fontSize=14, leading=18, alignment=0) # 內容字體 14
 
     story.append(Paragraph(f"<b>{UNIT}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
@@ -116,7 +116,12 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
-        data_cmd.append([Paragraph(f"<b>{br(r['職稱'])}</b>", style_cell), br(r['代號']), Paragraph(br(r['姓名']), style_cell), Paragraph(br(r['任務']), style_cell_l)])
+        data_cmd.append([
+            Paragraph(f"<b>{br(r['職稱'])}</b>", style_cell), 
+            Paragraph(br(r['代號']), style_cell), 
+            Paragraph(br(r['姓名']), style_cell), 
+            Paragraph(br(r['任務']), style_cell_l)
+        ])
     
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45])
     t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]))
@@ -128,7 +133,13 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
     for _, r in df_patrol.iterrows():
-        data_ptl.append([Paragraph(br(r['勤務時段']), style_cell), br(r['無線電']), Paragraph(br(r['編組']), style_cell), Paragraph(br(r['服勤人員']), style_cell), Paragraph(br(r['任務分工']), style_cell_l)])
+        data_ptl.append([
+            Paragraph(br(r['勤務時段']), style_cell), 
+            Paragraph(br(r['無線電']), style_cell), 
+            Paragraph(br(r['編組']), style_cell), 
+            Paragraph(br(r['服勤人員']), style_cell), 
+            Paragraph(br(r['任務分工']), style_cell_l)
+        ])
 
     t2 = Table(data_ptl, colWidths=[page_width*0.20, page_width*0.10, page_width*0.15, page_width*0.25, page_width*0.30])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
@@ -145,7 +156,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
 # --- 4. 寄信功能 ---
 def send_report_email(time_str, commander, df_cmd, df_patrol, file_date_str):
     try:
-        if "email" not in st.secrets: return False, "未設定 secrets email 參數"
+        if "email" not in st.secrets: return False, "未設定 secrets"
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         pdf_bytes = generate_pdf_from_data(time_str, commander, df_cmd, df_patrol)
         msg = MIMEMultipart()
@@ -176,7 +187,7 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
 
-# 自動修正編組與無線電
+# 自動更正「輪值」
 u_m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
 if u_m and len(ed_ptl) > 0:
     pu = u_m.group(1); ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
@@ -202,19 +213,12 @@ def get_preview(df_c, df_p, cmdr_n, time_s):
 
 st.components.v1.html(get_preview(res_cmd, res_ptl, cmdr_input, p_time), height=500, scrolling=True)
 
-# --- 7. 修正寄信呼叫邏輯 ---
+# --- 7. 儲存與寄信 ---
 if st.button("💾 同步、寄信並下載 PDF", type="primary"):
-    # 執行儲存
     if save_data(p_time, cmdr_input, res_cmd, res_ptl):
         dt_label = datetime.now().strftime('%Y%m%d')
-        # 🎯 呼叫寄信函數並顯示結果
         ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl, dt_label)
-        
-        if ok:
-            st.success(f"✅ 同步成功，郵件已寄送！(日期: {dt_label})")
-        else:
-            st.error(f"⚠️ 同步成功，但郵件發送失敗：{mail_err}")
-            
-        # 生成 PDF 下載按鈕
+        if ok: st.success("✅ 同步成功，郵件已寄送！")
+        else: st.error(f"⚠️ 同步成功，但郵件失敗：{mail_err}")
         pdf = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
-        st.download_button("📥 下載 PDF 報表", data=pdf, file_name=f"危駕勤務_{dt_label}.pdf")
+        st.download_button("📥 下載 PDF", data=pdf, file_name=f"危駕勤務_{dt_label}.pdf")
