@@ -40,10 +40,13 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
 # --- 2. 格式化工具 ---
-def auto_format_personnel(val):
+def format_staff_only(val):
+    """僅針對服勤人員欄位：時段後強制換行"""
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: return ""
     s = str(val).replace('\\n', '\n').replace('、', '\n')
+    # 遇到時段強制斷行
     s = re.sub(r'([^\n])\s*(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)', r'\1\n\2', s)
+    # 冒號後強制換行 (僅限此欄位)
     s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?)[：:\s]*', r'\1：\n', s)
     return '\n'.join([l.strip() for l in s.split('\n') if l.strip()])
 
@@ -107,9 +110,10 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(Paragraph(f"<b>{UNIT}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
-    def br(txt):
-        s = str(txt).replace('\n', '<br/>').replace('、', '<br/>')
-        s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?：?)', r'<b>\1</b>', s)
+    def br(txt, bold_time=True):
+        s = str(txt).replace('\n', '<br/>')
+        if bold_time:
+            s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?：?)', r'<b>\1</b>', s)
         return s
 
     # 任務編組
@@ -119,8 +123,8 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
         data_cmd.append([
             Paragraph(f"<b>{br(r['職稱'])}</b>", style_cell), 
             Paragraph(br(r['代號']), style_cell), 
-            Paragraph(br(r['姓名']), style_cell), 
-            Paragraph(br(r['任務']), style_cell_l)
+            Paragraph(br(r['姓名']).replace('、', '<br/>'), style_cell), 
+            Paragraph(br(r['任務']), style_cell_l) # 任務不強制冒號換行
         ])
     
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45])
@@ -128,8 +132,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 🎯 警力佈署欄寬分配修正
-    # 分配比例：時段 22% (防換行), 代號 13% (容4字), 編組 15%, 人員 23%, 任務 27%
+    # 警力佈署 (時段 22%, 代號 13%)
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -139,7 +142,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             Paragraph(br(r['無線電']), style_cell), 
             Paragraph(br(r['編組']), style_cell), 
             Paragraph(br(r['服勤人員']), style_cell), 
-            Paragraph(br(r['任務分工']), style_cell_l)
+            Paragraph(br(r['任務分工']), style_cell_l) # 任務分工冒號不強制換行
         ])
 
     t2 = Table(data_ptl, colWidths=[page_width*0.22, page_width*0.13, page_width*0.15, page_width*0.23, page_width*0.27])
@@ -147,7 +150,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t2)
     
     story.append(Spacer(1, 6*mm)); story.append(Paragraph("<b>📍 巡簽地點：</b>", style_cell_l))
-    story.append(Paragraph(br(CHECKIN_POINTS), style_cell_l)); story.append(Spacer(1, 4*mm))
+    story.append(Paragraph(br(CHECKIN_POINTS, False), style_cell_l)); story.append(Spacer(1, 4*mm))
     story.append(Paragraph("<b>📝 備註：</b>", style_cell_l))
     for l in NOTES.split('\n'): story.append(Paragraph(l.strip(), style_cell_l))
 
@@ -200,7 +203,8 @@ if u_m and len(ed_ptl) > 0:
 st.subheader("3. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).fillna("")
 st.subheader("4. 警力佈署")
-if '服勤人員' in ed_ptl.columns: ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
+# 🎯 僅服勤人員欄位使用時段強制換行
+if '服勤人員' in ed_ptl.columns: ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
 # --- 6. 預覽 ---
