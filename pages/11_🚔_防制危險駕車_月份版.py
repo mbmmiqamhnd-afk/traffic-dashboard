@@ -91,8 +91,7 @@ def load_data():
 def save_data(month, df_cmd, df_schedule):
     try:
         client = get_client()
-        if client is None:
-            return False
+        if client is None: return False
         sh = client.open_by_key(SHEET_ID)
         ws_set = sh.worksheet("危駕月_設定")
         ws_set.clear()
@@ -105,14 +104,12 @@ def save_data(month, df_cmd, df_schedule):
             ws.update([df.columns.tolist()] + df.values.tolist())
         load_data.clear()
         return True
-    except:
-        return False
+    except: return False
 
 # --- 3. PDF 生成 ---
 def _get_font():
     fname = "kaiu"
-    if fname in pdfmetrics.getRegisteredFontNames():
-        return fname
+    if fname in pdfmetrics.getRegisteredFontNames(): return fname
     for p in ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]:
         if os.path.exists(p):
             pdfmetrics.registerFont(TTFont(fname, p))
@@ -132,70 +129,48 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
     
-    # 懸掛縮排設定：leftIndent 設為 8.5mm 大約是兩個全形字寬
+    # 懸掛縮排修正
     style_hanging = ParagraphStyle('Hanging', fontName=font, fontSize=14, leading=20, 
                                    leftIndent=8.5*mm, firstLineIndent=-8.5*mm, spaceAfter=5)
-    style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4, fontWeight='bold')
+    style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4)
 
     story.append(Paragraph(f"<b>{full_title}</b>", style_title))
     
     def clean(txt):
         return str(txt).replace("\n", "<br/>").replace("、", "<br/>")
 
-    # 任務編組表格
+    # 任務編組
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
-        data_cmd.append([
-            Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell), 
-            Paragraph(str(r.get('代號','')), style_cell),
-            Paragraph(clean(r.get('姓名','')), style_cell), 
-            Paragraph(str(r.get('任務','')), style_cell_left)
-        ])
-                           
+        data_cmd.append([Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell), Paragraph(str(r.get('代號','')), style_cell), Paragraph(clean(r.get('姓名','')), style_cell), Paragraph(str(r.get('任務','')), style_cell_left)])
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.12, page_width*0.28, page_width*0.45], repeatRows=2)
-    t1.setStyle(TableStyle([
-        ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), 
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), 
-        ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), 
-        ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)
-    ]))
+    t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署表格
+    # 警力佈署
     data_sch = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["日期（22時至翌日6時）", "單位", "分工"]]]
     for _, r in df_schedule.iterrows():
-        data_sch.append([
-            Paragraph(clean(r.get('日期（22時至翌日6時）','')), style_cell), 
-            Paragraph(clean(r.get('單位','')), style_cell), 
-            Paragraph(str(r.get('分工','')), style_cell_left)
-        ])
+        data_sch.append([Paragraph(clean(r.get('日期（22時至翌日6時）','')), style_cell), Paragraph(clean(r.get('單位','')), style_cell), Paragraph(str(r.get('分工','')), style_cell_left)])
 
     t2 = Table(data_sch, colWidths=[page_width*0.22, page_width*0.22, page_width*0.56], repeatRows=2)
-    t2_styles = [
-        ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black),
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), 
-        ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),
-        ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)
-    ]
+    t2_styles = [('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]
 
-    # 合併日期單元格邏輯
+    # 合併單元格
     date_col = '日期（22時至翌日6時）'
     non_empty = [i for i, val in enumerate(df_schedule[date_col]) if str(val).strip() != ""]
     non_empty.append(len(df_schedule))
     for k in range(len(non_empty) - 1):
         s, e = non_empty[k], non_empty[k+1] - 1
-        if e > s:
-            t2_styles.append(('SPAN', (0, s + 2), (0, e + 2)))
-            t2_styles.append(('VALIGN', (0, s + 2), (0, e + 2), 'MIDDLE'))
+        if e > s: t2_styles.append(('SPAN', (0, s + 2), (0, e + 2))); t2_styles.append(('VALIGN', (0, s + 2), (0, e + 2), 'MIDDLE'))
 
     t2.setStyle(TableStyle(t2_styles))
     story.append(t2)
     story.append(Spacer(1, 6*mm))
 
-    # 巡簽地點與備註
+    # 巡簽與備註
     story.append(Paragraph("<b>📍 巡簽地點：</b>", style_section))
     for line in CHECKIN_POINTS.split('\n'):
         if line.strip(): story.append(Paragraph(line, style_hanging))
@@ -210,14 +185,11 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
 # --- 4. 寄信功能 ---
 def send_report_email(full_title, df_cmd, df_schedule):
     try:
-        sender = st.secrets["email"]["user"]
-        pwd = st.secrets["email"]["password"]
+        sender = st.secrets["email"]["user"]; pwd = st.secrets["email"]["password"]
         pdf_bytes = generate_pdf_from_data(full_title, df_cmd, df_schedule)
-        msg = MIMEMultipart()
-        msg["From"] = sender; msg["To"] = sender; msg["Subject"] = full_title
+        msg = MIMEMultipart(); msg["From"] = sender; msg["To"] = sender; msg["Subject"] = full_title
         msg.attach(MIMEText(f"附件為最新的「{full_title}」報表 PDF。", "plain", "utf-8"))
-        part = MIMEBase("application", "pdf")
-        part.set_payload(pdf_bytes); encoders.encode_base64(part)
+        part = MIMEBase("application", "pdf"); part.set_payload(pdf_bytes); encoders.encode_base64(part)
         part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(full_title)}.pdf")
         msg.attach(part)
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
@@ -225,14 +197,16 @@ def send_report_email(full_title, df_cmd, df_schedule):
         return True, None
     except Exception as e: return False, str(e)
 
-# --- 5. 主介面 ---
+# --- 5. 主介面邏輯 (修正後的關鍵區塊) ---
 df_set, df_cmd_raw, df_sch_raw, err = load_data()
-c_month = sd.get("month", DEFAULT_MONTH) if not (err or df_set is None) else DEFAULT_MONTH
+
+# 初始化變數，確保不論有沒有讀到資料，c_month 都有值
 if not (err or df_set is None):
     sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     c_month = sd.get("month", DEFAULT_MONTH)
     ed_cmd, ed_sch = df_cmd_raw, df_sch_raw
 else:
+    c_month = DEFAULT_MONTH
     ed_cmd, ed_sch = DEFAULT_CMD.copy(), DEFAULT_SCHEDULE.copy()
 
 st.title("🚔 防制危險駕車專案勤務規劃表（月份版）")
@@ -244,6 +218,7 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 st.subheader("3. 警力佈署")
 res_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
 
+# HTML 預覽
 def get_html():
     parts = ["<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note-section{font-size:14pt;font-weight:bold;margin-top:15px;} .hanging-note{font-size:14pt;padding-left:2.2em;text-indent:-2.2em;margin-bottom:5px;line-height:1.6;}</style>"]
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{full_title}</b></h2><br>")
@@ -251,9 +226,8 @@ def get_html():
     for _, r in res_cmd.iterrows():
         parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     parts.append("</table><br><table><tr><th colspan='3'>警 力 佈 署</th></tr><tr><th>日期</th><th>單位</th><th>分工</th></tr>")
-    
     col_date = '日期（22時至翌日6時）'
-    for idx, row in res_sch.iterrows():
+    for _, row in res_sch.iterrows():
         parts.append(f"<tr><td>{str(row.get(col_date,'')).replace(chr(10),'<br>')}</td><td>{str(row.get('單位','')).replace(chr(10),'<br>')}</td><td style='text-align:left'>{str(row.get('分工','')).replace(chr(10),'<br>')}</td></tr>")
     parts.append("</table>")
     parts.append("<div class='note-section'>📍 巡簽地點：</div>")
