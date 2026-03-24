@@ -101,8 +101,8 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     style_title = ParagraphStyle('T', fontName=font, fontSize=16, alignment=1, spaceAfter=8)
     style_info = ParagraphStyle('I', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
     style_th = ParagraphStyle('H', fontName=font, fontSize=16, alignment=1, leading=22)
-    style_cell = ParagraphStyle('C', fontName=font, fontSize=14, leading=18, alignment=1) # 內容字體 14
-    style_cell_l = ParagraphStyle('L', fontName=font, fontSize=14, leading=18, alignment=0) # 內容字體 14
+    style_cell = ParagraphStyle('C', fontName=font, fontSize=14, leading=18, alignment=1) 
+    style_cell_l = ParagraphStyle('L', fontName=font, fontSize=14, leading=18, alignment=0)
 
     story.append(Paragraph(f"<b>{UNIT}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
@@ -128,7 +128,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署
+    # 🎯 警力佈署 (微調代號欄寬度 page_width*0.13 以容納 4 中文字)
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -141,7 +141,8 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             Paragraph(br(r['任務分工']), style_cell_l)
         ])
 
-    t2 = Table(data_ptl, colWidths=[page_width*0.20, page_width*0.10, page_width*0.15, page_width*0.25, page_width*0.30])
+    # 欄寬重新分配：時段 17%, 代號 13%, 編組 15%, 人員 25%, 任務 30%
+    t2 = Table(data_ptl, colWidths=[page_width*0.17, page_width*0.13, page_width*0.15, page_width*0.25, page_width*0.30])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
     story.append(t2)
     
@@ -187,7 +188,7 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
 
-# 自動更正「輪值」
+# 自動修正編組與無線電
 u_m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
 if u_m and len(ed_ptl) > 0:
     pu = u_m.group(1); ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
