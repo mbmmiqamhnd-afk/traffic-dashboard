@@ -28,7 +28,7 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT_FULL = "桃園市政府警察局龍潭分局"
 
-# --- 2. 建立連線與讀取 ---
+# --- 2. 工具函數 (連動雲端與格式化) ---
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets: return None
@@ -118,7 +118,27 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     doc.build(story)
     return buf.getvalue()
 
-# --- 4. 主介面邏輯 ---
+# --- 4. 寄信功能 ---
+def send_report_email(time_str, commander, df_cmd, df_patrol, file_date_str):
+    try:
+        sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
+        pdf_bytes = generate_pdf_from_data(time_str, commander, df_cmd, df_patrol)
+        msg = MIMEMultipart()
+        msg["From"], msg["To"], msg["Subject"] = sender, sender, f"防制危險駕車勤務規劃表_{file_date_str}"
+        msg.attach(MIMEText("附件為最新的防制危險駕車勤務規劃表 PDF。", "plain", "utf-8"))
+        part = MIMEBase("application", "pdf")
+        part.set_payload(pdf_bytes)
+        encoders.encode_base64(part)
+        filename = _ul.quote(f"{msg['Subject']}.pdf")
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{filename}")
+        msg.attach(part)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, pwd)
+            server.sendmail(sender, sender, msg.as_string())
+        return True, None
+    except Exception as e: return False, str(e)
+
+# --- 5. 主介面邏輯 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
     t_val, cmdr_val = "115年3月6日22時至翌日6時", "石門所副所長林榮裕"
@@ -133,34 +153,26 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t_val)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr_val)
 
-# ====== 🎯 暴力修正引擎：去除「副所長」文字 ======
+# ====== 🎯 核心修正：強力去職稱邏輯 ======
 if len(ed_ptl) > 0:
-    # 1. 抓取單位
     m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
     if m:
         pure_unit = m.group(1)
-        # 強制修正第一列編組為：單位 + 輪值
         ed_ptl.at[0, '編組'] = f"專責警力\n（{pure_unit}輪值）"
-        
-        # 2. 無線電連動
         umap = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
         base = next((v for k, v in umap.items() if k in pure_unit), "隆安")
         suffix = "2" if "副" in cmdr_input or "小隊長" in cmdr_input else "1"
         ed_ptl.at[0, '無線電'] = base + suffix
-
-        # 3. 姓名填入服勤人員
         name_only = cmdr_input.replace(pure_unit, "").strip()
         if name_only:
             current_p = str(ed_ptl.at[0, '服勤人員'])
             ed_ptl.at[0, '服勤人員'] = re.sub(r'(\d{2}-\d{2}時：?)\n?.*', f'\\1\n{name_only}', current_p)
 
-# 最後防線：全面掃描編組欄位，切除職稱
+# 全面清洗職稱，確保不殘留「副所長」
 if '編組' in ed_ptl.columns:
     def ultimate_clean(val):
         s = str(val)
-        # 將「XX所副所長」改為「XX所輪值」
-        s = re.sub(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))(?:副所長|所長|分隊長|小隊長|副分隊長|警員)', r'\1輪值', s)
-        # 針對括號內的文字
+        s = re.sub(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))(?:副所長|所長|分隊長|小隊長|警員|副分隊長)', r'\1輪值', s)
         s = re.sub(r'（([\u4e00-\u9fa5]+(?:所|分隊|分局)).*）', r'（\1輪值）', s)
         return s
     ed_ptl['編組'] = ed_ptl['編組'].apply(ultimate_clean)
@@ -181,50 +193,39 @@ if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(auto_format_personnel)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# --- 5. 完整預覽引擎 (顯示所有列) ---
+# --- 6. 完整預覽 HTML ---
 st.markdown("---")
 st.subheader("📄 報表預覽 (完整內容)")
 
 def get_preview_html(df_cmd_res, df_ptl_res, commander_name):
-    # 生成任務編組 HTML
-    cmd_rows = ""
-    for _, r in df_cmd_res.iterrows():
-        cmd_rows += f"<tr><td>{r['職稱']}</td><td>{r['代號']}</td><td>{r['姓名']}</td><td>{r['任務']}</td></tr>"
-    
-    # 生成警力佈署 HTML
-    ptl_rows = ""
-    for _, r in df_ptl_res.iterrows():
-        ptl_rows += f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>"
+    cmd_rows = "".join([f"<tr><td>{r['職稱']}</td><td>{r['代號']}</td><td>{r['姓名']}</td><td>{r['任務']}</td></tr>" for _, r in df_cmd_res.iterrows()])
+    ptl_rows = "".join([f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>" for _, r in df_ptl_res.iterrows()])
+    return f"""<style>table {{ width: 100%; border-collapse: collapse; font-family: "標楷體"; }} th, td {{ border: 1px solid black; padding: 6px; text-align: center; }} th {{ background-color: #f2f2f2; }}</style>
+    <div style="text-align: center; font-size: 20px; font-weight: bold;">{UNIT_FULL} 規劃表</div>
+    <div style="text-align: right;">指揮官：{commander_name}</div><br>
+    <table><tr><th colspan="4">任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>{cmd_rows}</table><br>
+    <table><tr><th colspan="5">警 力 佈 署</th></tr><tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>{ptl_rows}</table>"""
 
-    html = f"""
-    <style>
-        table {{ width: 100%; border-collapse: collapse; font-family: "標楷體"; }}
-        th, td {{ border: 1px solid black; padding: 8px; text-align: center; }}
-        th {{ background-color: #f2f2f2; }}
-        .title {{ text-align: center; font-size: 18px; font-weight: bold; }}
-    </style>
-    <div class="title">{UNIT_FULL} 規劃表</div>
-    <div style="text-align: right;">指揮官：{commander_name}</div>
-    <br>
-    <table>
-        <tr><th colspan="4">任 務 編 組</th></tr>
-        <tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>
-        {cmd_rows}
-    </table>
-    <br>
-    <table>
-        <tr><th colspan="5">警 力 佈 署</th></tr>
-        <tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>
-        {ptl_rows}
-    </table>
-    """
-    return html
+st.components.v1.html(get_preview_html(res_cmd, res_ptl, cmdr_input), height=500, scrolling=True)
 
-st.components.v1.html(get_preview_html(res_cmd, res_ptl, cmdr_input), height=600, scrolling=True)
+# --- 7. 存檔、寄信、下載 ---
+if st.button("💾 同步雲端、寄信並下載 PDF", type="primary"):
+    # 決定檔名日期
+    file_dt = datetime.now().strftime('%Y%m%d')
+    m_f = re.search(r'(\d+)月(\d+)日', p_time)
+    if m_f:
+        y_f = re.search(r'(\d+)年', p_time).group(1) if re.search(r'(\d+)年', p_time) else str(datetime.now().year - 1911)
+        file_dt = f"{y_f}{int(m_f.group(1)):02d}{int(m_f.group(2)):02d}"
 
-# --- 6. 存檔與下載 ---
-if st.button("💾 同步雲端、下載 PDF", type="primary"):
+    # 執行儲存
     if save_data(p_time, cmdr_input, res_cmd, res_ptl):
-        st.success("✅ 同步成功！")
-        pdf = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
-        st.download_button("📥 下載 PDF 報表", data=pdf, file_name=f"危駕勤務_{datetime.now().strftime('%m%d')}.pdf")
+        # 執行寄信
+        ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl, file_dt)
+        if ok:
+            st.success(f"✅ 已成功同步雲端並寄送郵件！(日期標籤: {file_dt})")
+        else:
+            st.warning(f"⚠️ 同步成功，但郵件寄送失敗: {mail_err}")
+            
+        # 生成 PDF 提供下載
+        pdf_bytes = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
+        st.download_button("📥 下載 PDF 報表", data=pdf_bytes, file_name=f"危駕勤務表_{file_dt}.pdf")
