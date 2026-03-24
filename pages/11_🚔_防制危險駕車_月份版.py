@@ -47,24 +47,6 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "115年3月13日～\n3月14日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "115年3月20日～\n3月21日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "115年3月27日～\n3月28日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"}
 ])
 
@@ -147,24 +129,20 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=10)
     style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22)
     style_col_header = ParagraphStyle('ColHeader', fontName=font, fontSize=16, leading=20, alignment=1)
-    
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
     
-    # 💡 重點修正：懸掛縮排設定
-    # leftIndent 設為 10mm（縮排距離）
-    # firstLineIndent 設為 -10mm（讓第一行突出來，對齊首字）
+    # 懸掛縮排設定：leftIndent 設為 8.5mm 大約是兩個全形字寬
     style_hanging = ParagraphStyle('Hanging', fontName=font, fontSize=14, leading=20, 
-                                   leftIndent=10*mm, firstLineIndent=-10*mm, spaceAfter=5)
-    
-    style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4)
+                                   leftIndent=8.5*mm, firstLineIndent=-8.5*mm, spaceAfter=5)
+    style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4, fontWeight='bold')
 
     story.append(Paragraph(f"<b>{full_title}</b>", style_title))
     
     def clean(txt):
         return str(txt).replace("\n", "<br/>").replace("、", "<br/>")
 
-    # ==================== 表格 1：任務編組 ====================
+    # 任務編組表格
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -185,10 +163,9 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # ==================== 表格 2：警力佈署 ====================
+    # 警力佈署表格
     data_sch = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["日期（22時至翌日6時）", "單位", "分工"]]]
-    
     for _, r in df_schedule.iterrows():
         data_sch.append([
             Paragraph(clean(r.get('日期（22時至翌日6時）','')), style_cell), 
@@ -197,44 +174,35 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
         ])
 
     t2 = Table(data_sch, colWidths=[page_width*0.22, page_width*0.22, page_width*0.56], repeatRows=2)
-    
-    table_styles = [
-        ('FONTNAME',(0,0),(-1,-1),font),
-        ('GRID',(0,0),(-1,-1),0.5,colors.black),
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-        ('SPAN',(0,0),(-1,0)), 
+    t2_styles = [
+        ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), 
         ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),
         ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)
     ]
 
+    # 合併日期單元格邏輯
     date_col = '日期（22時至翌日6時）'
-    non_empty_indices = [i for i, val in enumerate(df_schedule[date_col]) if str(val).strip() != ""]
-    non_empty_indices.append(len(df_schedule))
-    
-    header_offset = 2
-    for k in range(len(non_empty_indices) - 1):
-        start_row = non_empty_indices[k]
-        end_row = non_empty_indices[k+1] - 1
-        if end_row > start_row:
-            table_styles.append(('SPAN', (0, start_row + header_offset), (0, end_row + header_offset)))
-            table_styles.append(('VALIGN', (0, start_row + header_offset), (0, end_row + header_offset), 'MIDDLE'))
+    non_empty = [i for i, val in enumerate(df_schedule[date_col]) if str(val).strip() != ""]
+    non_empty.append(len(df_schedule))
+    for k in range(len(non_empty) - 1):
+        s, e = non_empty[k], non_empty[k+1] - 1
+        if e > s:
+            t2_styles.append(('SPAN', (0, s + 2), (0, e + 2)))
+            t2_styles.append(('VALIGN', (0, s + 2), (0, e + 2), 'MIDDLE'))
 
-    t2.setStyle(TableStyle(table_styles))
+    t2.setStyle(TableStyle(t2_styles))
     story.append(t2)
     story.append(Spacer(1, 6*mm))
 
-    # --- 巡簽地點與備註 ---
+    # 巡簽地點與備註
     story.append(Paragraph("<b>📍 巡簽地點：</b>", style_section))
     for line in CHECKIN_POINTS.split('\n'):
-        if line.strip():
-            story.append(Paragraph(line, style_hanging))
-            
+        if line.strip(): story.append(Paragraph(line, style_hanging))
     story.append(Spacer(1, 4*mm))
-    
     story.append(Paragraph("<b>📝 備註：</b>", style_section))
     for line in NOTES.split('\n'):
-        if line.strip():
-            story.append(Paragraph(line, style_hanging))
+        if line.strip(): story.append(Paragraph(line, style_hanging))
 
     doc.build(story)
     return buf.getvalue()
@@ -245,9 +213,65 @@ def send_report_email(full_title, df_cmd, df_schedule):
         sender = st.secrets["email"]["user"]
         pwd = st.secrets["email"]["password"]
         pdf_bytes = generate_pdf_from_data(full_title, df_cmd, df_schedule)
-        
         msg = MIMEMultipart()
-        msg["From"] = sender
-        msg["To"] = sender
-        msg["Subject"] = full_title
-        msg.attach(MIMEText(f"附件為最新的「{full_
+        msg["From"] = sender; msg["To"] = sender; msg["Subject"] = full_title
+        msg.attach(MIMEText(f"附件為最新的「{full_title}」報表 PDF。", "plain", "utf-8"))
+        part = MIMEBase("application", "pdf")
+        part.set_payload(pdf_bytes); encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(full_title)}.pdf")
+        msg.attach(part)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, pwd); server.sendmail(sender, sender, msg.as_string())
+        return True, None
+    except Exception as e: return False, str(e)
+
+# --- 5. 主介面 ---
+df_set, df_cmd_raw, df_sch_raw, err = load_data()
+c_month = sd.get("month", DEFAULT_MONTH) if not (err or df_set is None) else DEFAULT_MONTH
+if not (err or df_set is None):
+    sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
+    c_month = sd.get("month", DEFAULT_MONTH)
+    ed_cmd, ed_sch = df_cmd_raw, df_sch_raw
+else:
+    ed_cmd, ed_sch = DEFAULT_CMD.copy(), DEFAULT_SCHEDULE.copy()
+
+st.title("🚔 防制危險駕車專案勤務規劃表（月份版）")
+c_month = st.text_input("1. 月份資訊", c_month)
+full_title = f"{UNIT}{c_month}執行「防制危險駕車」專案勤務規劃表"
+
+st.subheader("2. 任務編組")
+res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
+st.subheader("3. 警力佈署")
+res_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
+
+def get_html():
+    parts = ["<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note-section{font-size:14pt;font-weight:bold;margin-top:15px;} .hanging-note{font-size:14pt;padding-left:2.2em;text-indent:-2.2em;margin-bottom:5px;line-height:1.6;}</style>"]
+    parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{full_title}</b></h2><br>")
+    parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>")
+    for _, r in res_cmd.iterrows():
+        parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
+    parts.append("</table><br><table><tr><th colspan='3'>警 力 佈 署</th></tr><tr><th>日期</th><th>單位</th><th>分工</th></tr>")
+    
+    col_date = '日期（22時至翌日6時）'
+    for idx, row in res_sch.iterrows():
+        parts.append(f"<tr><td>{str(row.get(col_date,'')).replace(chr(10),'<br>')}</td><td>{str(row.get('單位','')).replace(chr(10),'<br>')}</td><td style='text-align:left'>{str(row.get('分工','')).replace(chr(10),'<br>')}</td></tr>")
+    parts.append("</table>")
+    parts.append("<div class='note-section'>📍 巡簽地點：</div>")
+    for line in CHECKIN_POINTS.split('\n'):
+        if line.strip(): parts.append(f"<div class='hanging-note'>{line}</div>")
+    parts.append("<div class='note-section'>📝 備註：</div>")
+    for line in NOTES.split('\n'):
+        if line.strip(): parts.append(f"<div class='hanging-note'>{line}</div>")
+    parts.append("</body></html>")
+    return "".join(parts)
+
+st.markdown("---")
+st.components.v1.html(get_html(), height=600, scrolling=True)
+
+if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
+    save_data(c_month, res_cmd, res_sch)
+    ok, mail_err = send_report_email(full_title, res_cmd, res_sch)
+    if ok: st.success(f"📧 雲端同步成功，報表「{full_title}」已寄至信箱！")
+    else: st.error(f"❌ 同步成功但寄信失敗：{mail_err}")
+    pdf_out = generate_pdf_from_data(full_title, res_cmd, res_sch)
+    st.download_button(label="下載 PDF", data=pdf_out, file_name=f"{full_title}.pdf", mime="application/pdf")
