@@ -59,14 +59,31 @@ def get_counts(df, unit, categories_list):
         counts[cat] = int(rows[matched].sum().sum()) if not rows.empty else 0
     return counts
 
-# --- 1. 智慧上傳介面 ---
+# ==========================================
+# 1. 智慧上傳介面 (雙通道接收)
+# ==========================================
 st.title(f"📈 強化交通安全執法專案")
-st.markdown("##### 🚀 **自動化流程：** 拖入 3 份報表後，系統將自動解析並「同步至雲端並設定格式」")
+st.markdown("##### 🚀 **自動化流程：** 拖入報表後，系統將自動解析並「同步至雲端並設定格式」")
 
-all_uploads = st.file_uploader("📂 請全選並拖入報表（法條報表、大隊R17、分局R17）", 
-                               type=["xlsx", "csv"], 
-                               accept_multiple_files=True)
+all_uploads = None
 
+# 🌟【關鍵修改區】：雙通道接收檔案 🌟
+if "auto_files_project" in st.session_state and st.session_state["auto_files_project"]:
+    st.info("📥 系統已自動載入從「首頁」分配過來的檔案！")
+    all_uploads = st.session_state["auto_files_project"]
+    
+    # 防呆機制：取消載入
+    if st.button("❌ 取消自動載入，改為手動上傳"):
+        del st.session_state["auto_files_project"]
+        st.rerun()
+else:
+    all_uploads = st.file_uploader("📂 請全選並拖入報表（法條報表、大隊R17、分局R17）", 
+                                   type=["xlsx", "csv"], 
+                                   accept_multiple_files=True)
+
+# ==========================================
+# 2. 數據處理與自動同步
+# ==========================================
 f1_active = None
 f2_active = []
 
@@ -75,11 +92,10 @@ if all_uploads:
         if "強化" in f.name:
             f1_active = f
             st.success(f"✔️ 已識別法條報表: **{f.name}**")
-        elif "R17" in f.name:
+        elif "R17" in f.name or "r17" in f.name.lower() or "砂石車" in f.name:
             f2_active.append(f)
             st.success(f"✔️ 已識別大型車報表: **{f.name}**")
 
-# --- 2. 數據處理與自動同步 ---
 if f1_active and len(f2_active) >= 1:
     try:
         def smart_read(f, **kwargs):
@@ -212,4 +228,4 @@ if f1_active and len(f2_active) >= 1:
     except Exception as e:
         st.error(f"❌ 解析錯誤：{e}")
 else:
-    st.warning("⏳ 準備就緒，請同時拖入 3 份報表檔案（不限順序）...")
+    st.warning("⏳ 準備就緒，請透過首頁分配或手動拖入報表檔案（法條報表、大型車報表）...")
