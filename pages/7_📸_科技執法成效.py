@@ -88,9 +88,24 @@ def create_formatted_excel(df_loc, date_range_text, total_count):
         
     return output
 
-# --- 主流程 ---
-uploaded_file = st.file_uploader("請上傳清冊檔案 (如 list2.csv 或 Excel)", type=['csv', 'xlsx'])
+# ==========================================
+# 🌟 雙通道接收：從首頁分配 或 手動上傳
+# ==========================================
+uploaded_file = None
 
+if "auto_files_tech" in st.session_state and st.session_state["auto_files_tech"]:
+    st.info("📥 系統已自動載入從「首頁」分配過來的檔案！")
+    # 科技執法只需要一份檔案，取出列表中的第一份
+    uploaded_file = st.session_state["auto_files_tech"][0]
+    
+    if st.button("❌ 取消自動載入，改為手動上傳"):
+        del st.session_state["auto_files_tech"]
+        st.rerun()
+else:
+    # 原本的手動上傳模式
+    uploaded_file = st.file_uploader("請上傳清冊檔案 (如 list2.csv 或 Excel)", type=['csv', 'xlsx'])
+
+# --- 主流程 ---
 if uploaded_file:
     try:
         # 讀取檔案
