@@ -33,6 +33,7 @@ except ImportError:
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 TO_EMAIL = "mbmmiqamhnd@gmail.com"
 
+# 讀取 Secrets
 try:
     MY_EMAIL = st.secrets.get("email", {}).get("user", "")
     MY_PASSWORD = st.secrets.get("email", {}).get("password", "")
@@ -62,33 +63,29 @@ PROJECT_CATS = ["酒後駕車", "闖紅燈", "嚴重超速", "車不讓人", "�
 PROJECT_LAW_MAP = {"酒後駕車": ["35條", "73條2項", "73條3項"], "闖紅燈": ["53條"], "嚴重超速": ["43條", "40條"], "車不讓人": ["44條", "48條"], "行人違規": ["78條"]}
 
 # ==========================================
-# 2. 🌟 完全恢復的格式化邏輯 🌟
+# 2. 🌟 核心格式化輔助函數 🌟
 # ==========================================
 def sync_to_specified_sheet(df):
-    """重大違規：保留 A1 總標題，僅更新 A2 以降並標紅字"""
+    """重大違規專用：雲端同步與格式鎖定 (完全不動A1)"""
     try:
         gc = gspread.service_account_from_dict(GCP_CREDS)
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         ws = sh.get_worksheet(0)
         
-        # 1. 準備數據 (包含兩層 Header, 數據, 腳註)
         col_tuples = df.columns.tolist()
         top_row = [t[0] for t in col_tuples]
         bottom_row = [t[1] for t in col_tuples]
         data_body = df.values.tolist() 
         data_list = [top_row, bottom_row] + data_body
         
-        # 2. 從 A2 開始寫入，保留 A1 總標題格式
         ws.update(range_name='A2', values=data_list)
         
-        # 3. 處理內容顏色 (括號紅字與負值紅字)
         if HAS_FORMATTING:
             data_rows_end_idx = len(data_list) + 1
             red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             
             requests = []
-            # 標題括號紅字 (Row Index 1 = Google Sheets 裡的 Row 2)
             for i, text in enumerate(top_row):
                 if "(" in text:
                     p_start = text.find("(")
@@ -103,7 +100,6 @@ def sync_to_specified_sheet(df):
                         }
                     })
 
-            # 負值紅字規則 (H 欄)
             requests.append({
                 "addConditionalFormatRule": {
                     "rule": {
@@ -122,7 +118,7 @@ def sync_to_specified_sheet(df):
         return False
 
 def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
-    """交通事故：第二列表頭數字轉紅"""
+    """交通事故專用：Google Sheets 標題括號與數字轉紅字"""
     text = str(text)
     pattern = r'([0-9\(\)\/\-]+)'
     tokens = re.split(pattern, text)
@@ -130,7 +126,7 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
     current_pos = 0
     for token in tokens:
         if not token: continue
-        color = {"red": 1, "green": 0, "blue": 0} if re.match(pattern, token) else {"red": 0, "green": 0, "blue": 0}
+        color = {"red": 1.0, "green": 0.0, "blue": 0.0} if re.match(pattern, token) else {"red": 0.0, "green": 0.0, "blue": 0.0}
         runs.append({"startIndex": current_pos, "format": {"foregroundColor": color, "bold": True}})
         current_pos += len(token)
     return {
@@ -140,7 +136,6 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
             "range": {"sheetId": sheet_id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1, "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1}
         }
     }
-
 
 # ==========================================
 # 3. 業務邏輯處理
@@ -193,7 +188,7 @@ def process_tech_enforcement(files):
         ws = sh.worksheet("科技執法-路段排行") if "科技執法-路段排行" in [s.title for s in sh.worksheets()] else sh.add_worksheet(title="科技執法-路段排行", rows="100", cols="20")
         ws.clear()
         title_text = f"科技執法成效 ({date_range_str})"
-        ws.update(values=[[title_text, ""], ["路段名稱", "舉發件數"]] + loc_summary.values.tolist() + [["舉發總數", len(df)]])
+        ws.update(range_name='A1', values=[[title_text, ""], ["路段名稱", "舉發件數"]] + loc_summary.values.tolist() + [["舉發總數", len(df)]])
         reqs = {"requests": [{"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
                 "rows": [{"values": [{"userEnteredValue": {"stringValue": title_text},
                 "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 24}},
@@ -363,7 +358,8 @@ def process_major(files):
     st.dataframe(df_final, use_container_width=True)
 
     if GCP_CREDS:
-        sync_to_specified_sheet(df_final)
+        if sync_to_specified_sheet(df_final):
+            st.write("✅ 雲端格式 (保留原始 A1 標題) 與數據同步完成")
 
 def process_project(files):
     f1 = next((f for f in files if "強化" in f.name), None)
@@ -411,85 +407,4 @@ def process_project(files):
         if '交通分隊' in raw: return '交通分隊' if '龍潭' in raw or not any(x in raw for x in ['楊梅','大溪','平鎮','中壢','八德','蘆竹','龜山','大園','桃園']) else None
         if '交通組' in raw: return '交通組'
         if '警備隊' in raw: return '警備隊'
-        for k in ['聖亭', '中興', '石門', '高平', '三和']: 
-            if k in raw: return k + '所'
-        if '龍潭派出所' in raw or raw in ['龍潭', '龍潭所']: return '龍潭所'
-        return None
-
-    def get_c(unit):
-        r = df1[df1.get('單位', pd.Series()).apply(get_unit) == unit]
-        return {cat: int(r[[c for c in df1.columns if any(k in str(c) for k in PROJECT_LAW_MAP.get(cat, []))]].sum().sum()) if not r.empty else 0 for cat in PROJECT_CATS[:5]}
-
-    final_rows = []
-    for u, tgts in PROJECT_TARGETS.items():
-        d15 = get_c(u)
-        u_r = df2[(df2['來源檔名'].str.contains('大隊|交大', na=False)) & (df2['單位'].str.contains('龍潭', na=False))] if u == '交通分隊' else df2[(df2['單位'].apply(get_unit) == u) & (~df2['來源檔名'].str.contains('大隊|交大', na=False))]
-        h_sum = int(u_r['大型車純違規'].sum()) if not u_r.empty else 0
-        res = [u]
-        for i, cat in enumerate(PROJECT_CATS):
-            cnt = d15.get(cat, 0) if cat != "大型車違規" else h_sum
-            res.extend([cnt, tgts[i], f"{(cnt/tgts[i]*100):.1f}%" if tgts[i] > 0 else "0.0%"])
-        final_rows.append(res)
-
-    headers = ["單位"] + [f"{cat}_{x}" for cat in PROJECT_CATS for x in ["取締件數", "目標值", "達成率"]]
-    df_f = pd.DataFrame(final_rows, columns=headers)
-    
-    t_row = ["合計"]
-    for i in range(1, len(headers), 3):
-        cs, ts = df_f.iloc[:, i].sum(), df_f.iloc[:, i+1].sum()
-        t_row.extend([int(cs), int(ts), f"{(cs/ts*100):.1f}%" if ts > 0 else "0.0%"])
-    df_f = pd.concat([pd.DataFrame([t_row], columns=headers), df_f], ignore_index=True)
-    
-    st.write(f"📊 **{PROJECT_NAME} 統計結果：**")
-    st.dataframe(df_f, hide_index=True)
-
-    if GCP_CREDS:
-        gc = gspread.service_account_from_dict(GCP_CREDS)
-        ws = gc.open_by_url(GOOGLE_SHEET_URL).worksheet(PROJECT_NAME)
-        full_t = f"{PROJECT_NAME} (統計期間：{date_str})"
-        ws.clear()
-        ws.update(values=[[full_t] + [""] * 18, [""] + [c for c in PROJECT_CATS for _ in range(3)], ["單位"] + ["取締件數", "目標值", "達成率"] * 6] + df_f.values.tolist())
-        
-        reqs = [
-            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
-            {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
-                "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [
-                {"startIndex": 0, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 1}, "bold": True, "fontSize": 16}},
-                {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1, "green": 0, "blue": 0}, "bold": True, "fontSize": 16}}]}]}], "fields": "userEnteredValue,textFormatRuns"}},
-            {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}}, "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"}}
-        ]
-        ws.spreadsheet.batch_update({"requests": reqs})
-
-def process_accident(files):
-    meta = []
-    for f in files:
-        f.seek(0)
-        df_raw = pd.read_csv(f, header=None) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
-        dates = re.findall(r'(\d{3})[./](\d{1,2})[./](\d{1,2})', str(df_raw.iloc[:5, :5].values))
-        if len(dates) >= 2:
-            df_raw[0] = df_raw[0].astype(str)
-            df_data = df_raw[df_raw[0].str.contains("所|總計|合計", na=False)].rename(columns={0: "Station", 5: "A1_Deaths", 9: "A2_Injuries"})
-            for c in ["A1_Deaths", "A2_Injuries"]: df_data[c] = pd.to_numeric(df_data[c].astype(str).str.replace(",", ""), errors='coerce').fillna(0)
-            df_data['Station_Short'] = df_data['Station'].str.replace('派出所', '所').str.replace('總計', '合計').str.strip()
-            
-            meta.append({'df': df_data, 'year': int(dates[1][0]), 'start_day': int(dates[0][1])*100 + int(dates[0][2]), 
-                         'range': f"{int(dates[0][1]):02d}{int(dates[0][2]):02d}-{int(dates[1][1]):02d}{int(dates[1][2]):02d}", 'is_cumu': (int(dates[0][1]) == 1 and int(dates[0][2]) == 1)})
-                         
-    this_year = max(m['year'] for m in meta)
-    f_lst = sorted([f for f in meta if f['year'] < this_year], key=lambda x: x['year'])[-1]
-    f_cur = next(f for f in meta if f['year'] == this_year and f['is_cumu'])
-    period_files = sorted([f for f in meta if f['year'] == this_year and not f['is_cumu']], key=lambda x: x['start_day'])
-    f_prev, f_wk = period_files[0], period_files[1]
-
-    labels = {"wk": f_wk['range'], "prev": f_prev['range'], "cur": f_cur['range'], "lst": f_lst['range']}
-    stations = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
-    
-    def bld_tbl(c_name, is_a2=False):
-        m = pd.merge(f_wk['df'][['Station_Short', c_name]], f_prev['df'][['Station_Short', c_name]], on='Station_Short', suffixes=('_wk', '_prev'))
-        m = pd.merge(pd.merge(m, f_cur['df'][['Station_Short', c_name]].rename(columns={c_name: c_name+'_cur'}), on='Station_Short'), f_lst['df'][['Station_Short', c_name]].rename(columns={c_name: c_name+'_lst'}), on='Station_Short')
-        m = m[m['Station_Short'].isin(stations)].copy()
-        m['Station_Short'] = pd.Categorical(m['Station_Short'], categories=stations, ordered=True)
-        m = pd.concat([pd.DataFrame([dict(m.select_dtypes(include='number').sum().to_dict(), Station_Short='合計')]), m.sort_values('Station_Short')], ignore_index=True)
-        m['Diff'] = m[c_name+'_cur'] - m[c_name+'_lst']
-        if is_a2:
-            m['Pct'] = m.apply
+        for k in ['聖亭', '中興',
