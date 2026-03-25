@@ -70,7 +70,7 @@ def send_email_alert(subject, body, df_attachment=None):
         sender = st.secrets.get("email_sender", "")
         password = st.secrets.get("email_password", "")
         if not sender or not password:
-            st.warning("⚠️ 尚未設定 Email 密碼，跳過郵件發送。")
+            st.warning("⚠️ 尚未設定 Email 帳密，跳過郵件發送。")
             return
             
         msg = MIMEMultipart()
@@ -125,23 +125,35 @@ if app_mode == "🏠 智慧上傳中心":
             
         category_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": [], "未知分類": []}
 
-        # 智慧分配：依據檔名特徵分類
+        # --- 2. 智慧分配：依據檔名特徵分類 ---
         for f in uploads:
-            name = f.name.lower()
+            name = f.name.lower() # 轉小寫方便比對英文
+            
+            # [科技執法]
             if "list" in name or "地點" in name or "科技" in name:
                 category_files["科技執法"].append(f)
+                
+            # [超載統計]
             elif "stone" in name or "超載" in name:
                 category_files["超載統計"].append(f)
+                
+            # [重大違規]
             elif "重大" in name:
                 category_files["重大違規"].append(f)
-            elif "強化" in name or "專案" in name:
+                
+            # [強化專案] (包含大型車違規)
+            elif "強化" in name or "專案" in name or "砂石車" in name or "r17" in name:
                 category_files["強化專案"].append(f)
-            elif "a1" in name or "a2" in name or "事故" in name:
+                
+            # [交通事故] (包含案件統計表)
+            elif "a1" in name or "a2" in name or "事故" in name or "案件統計" in name:
                 category_files["交通事故"].append(f)
+                
+            # [未知分類]
             else:
                 category_files["未知分類"].append(f)
 
-        # 執行統計邏輯
+        # --- 3. 執行統計邏輯 ---
         with st.spinner("資料運算與雲端同步中..."):
             
             # [科技執法] - Worksheet 4
@@ -165,7 +177,7 @@ if app_mode == "🏠 智慧上傳中心":
                 try:
                     df_list = [load_data(f) for f in category_files["重大違規"]]
                     df = pd.concat(df_list, ignore_index=True)
-                    sync_gsheet_batch(sh.get_worksheet(0), f"重大交通違規({datetime.now().strftime('%Y-%m-%d')})", df.head(50)) # 範例:取前50筆
+                    sync_gsheet_batch(sh.get_worksheet(0), f"重大交通違規({datetime.now().strftime('%Y-%m-%d')})", df.head(50))
                 except Exception as e:
                     st.error(f"重大違規處理錯誤: {e}")
 
@@ -175,7 +187,6 @@ if app_mode == "🏠 智慧上傳中心":
                 try:
                     df_list = [load_data(f) for f in category_files["超載統計"]]
                     df = pd.concat(df_list, ignore_index=True)
-                    # 計算並合併目標值
                     unit_col = next((col for col in df.columns if '單位' in col), None)
                     if unit_col:
                         df['標準單位'] = df[unit_col].apply(get_std_unit)
@@ -185,20 +196,33 @@ if app_mode == "🏠 智慧上傳中心":
                         final_df['達成率'] = (final_df['本月件數'] / final_df['目標值'] * 100).round(2).astype(str) + '%'
                         
                         sync_gsheet_batch(sh.get_worksheet(1), f"超載統計({datetime.now().strftime('%Y-%m-%d')})", final_df)
-                        # 寄信通知
                         send_email_alert("龍潭分局-超載違規自動統計完成", "長官您好，本期超載違規數據已結算完畢，請參閱附件。", final_df)
                 except Exception as e:
                     st.error(f"超載統計處理錯誤: {e}")
 
             # [強化專案] - Worksheet 5
             if category_files["強化專案"]:
-                st.success(f"🔥 識別「強化交通安全專案」：共 {len(category_files['強化專案'])} 份")
-                # 可在此填寫對應邏輯...
+                st.success(f"🔥 識別「強化交通安全專案 (含砂石車)」：共 {len(category_files['強化專案'])} 份")
+                try:
+                    df_list = [load_data(f) for f in category_files["強化專案"]]
+                    df = pd.concat(df_list, ignore_index=True)
+                    # TODO: 這裡可以填入針對強化專案/砂石車的具體 Pandas 計算邏輯
+                    # 暫時先直接上傳前50筆作為示意
+                    sync_gsheet_batch(sh.get_worksheet(5), f"強化專案統計({datetime.now().strftime('%Y-%m-%d')})", df.head(50))
+                except Exception as e:
+                    st.error(f"強化專案處理錯誤: {e}")
 
             # [交通事故] - Worksheet 2, 3
             if category_files["交通事故"]:
-                st.success(f"🚑 識別「交通事故」：共 {len(category_files['交通事故'])} 份")
-                # 可在此填寫對應邏輯...
+                st.success(f"🚑 識別「交通事故 (含案件統計)」：共 {len(category_files['交通事故'])} 份")
+                try:
+                    df_list = [load_data(f) for f in category_files["交通事故"]]
+                    df = pd.concat(df_list, ignore_index=True)
+                    # TODO: 這裡可以填入交通事故 A1/A2 的具體 Pandas 計算邏輯
+                    # 暫時先上傳至 Worksheet 2 作為示意
+                    sync_gsheet_batch(sh.get_worksheet(2), f"交通事故統計({datetime.now().strftime('%Y-%m-%d')})", df.head(50))
+                except Exception as e:
+                    st.error(f"交通事故處理錯誤: {e}")
 
             # [未知防呆]
             if category_files["未知分類"]:
@@ -218,7 +242,7 @@ elif app_mode == "📂 PDF 轉 PPTX 工具":
         if st.button("🚀 開始轉換"):
             with st.spinner("正在將 PDF 轉換為圖片，並合成簡報..."):
                 try:
-                    # 1. 將 PDF 轉為圖片清單 (需確認伺服器有安裝 poppler)
+                    # 1. 將 PDF 轉為圖片清單 (需確認伺服器有安裝 poppler-utils)
                     pdf_bytes = pdf_file.read()
                     images = convert_from_bytes(pdf_bytes, dpi=200)
                     
