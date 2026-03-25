@@ -590,7 +590,10 @@ if app_mode == "🏠 智慧批次處理中心":
         import os
         import glob
         
-        folder_path = os.path.join(os.getcwd(), "今日待上傳報表")
+        # 💡 強制抓取「這支程式碼檔案」所在的絕對位置，就不會迷路了！
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        folder_path = os.path.join(base_dir, "今日待上傳報表")
+        
         if os.path.exists(folder_path):
             # 建立一個偽裝類別，讓本地檔案的格式看起來跟 st.file_uploader 上傳的一模一樣
             class LocalMockFile(io.BytesIO):
