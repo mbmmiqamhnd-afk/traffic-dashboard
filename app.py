@@ -259,7 +259,6 @@ def process_major(files):
                 if k in n: return k + '所'
             return None
             
-        # 🌟 安全防呆邏輯：將空值安全轉換為 0 🌟
         def clean_val(v):
             if pd.isna(v) or str(v).strip().lower() == 'nan': return 0
             try: return int(float(str(v).replace(',', '').strip() or 0))
@@ -293,9 +292,13 @@ def process_major(files):
     rows.insert(0, ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate])
     rows.append([MAJOR_FOOTNOTE] + [""] * 9)
     
-    label_w, label_y = f"本期({date_w})" if date_w else "本期", f"本年累計({date_y})" if date_y else "本年累計"
+    # 🌟 修復重複表頭的問題：正確拆分出 label_y (本年) 與 label_l (去年)
+    label_w = f"本期({date_w})" if date_w else "本期"
+    label_y = f"本年累計({date_y})" if date_y else "本年累計"
+    label_l = f"去年累計({date_y})" if date_y else "去年累計" 
+    
     df_final = pd.DataFrame(rows, columns=pd.MultiIndex.from_arrays([
-        ['統計期間', label_w, label_w, label_y, label_y, label_y, label_y, '本年與去年同期比較', '目標值', '達成率'],
+        ['統計期間', label_w, label_w, label_y, label_y, label_l, label_l, '本年與去年同期比較', '目標值', '達成率'],
         ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
     ]))
     st.write("📊 **重大違規統計結果：**")
