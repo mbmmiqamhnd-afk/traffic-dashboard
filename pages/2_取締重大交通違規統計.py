@@ -3,13 +3,12 @@ import pandas as pd
 import re
 import io
 import gspread
-from gspread_formatting import *
 
 # ==========================================
 # 0. 初始化設定 (這部分必須在最前面)
 # ==========================================
-st.set_page_config(page_title="交通統計系統", layout="wide")
-st.title("🚔 交通統計自動化系統")
+st.set_page_config(page_title="重大交通違規統計", layout="wide", page_icon="🚨")
+st.title("🚨 重大交通違規統計自動化系統")
 
 # 確認格式套件是否載入成功
 try:
@@ -57,7 +56,6 @@ def sync_to_specified_sheet(df):
         data_list = [top_row, bottom_row] + data_body
         
         # 2. 從 A2 開始寫入，保留 A1 總標題格式
-        # 不使用 ws.clear() 與 mergeCells 指令，保留你手動設定的合併與顏色
         ws.update(range_name='A2', values=data_list)
         
         # 3. 處理內容顏色 (括號紅字與負值紅字)
@@ -132,16 +130,44 @@ def parse_excel_data(uploaded_file, sheet_keyword, col_indices):
         return None, ""
 
 # ==========================================
-# 4. 主介面 (確保元件正確顯示)
+# 4. 主介面 (雙通道接收)
 # ==========================================
-# 上傳按鈕放置在 columns 中，確保結構整齊
-col1, col2 = st.columns(2)
-with col1:
-    file_period = st.file_uploader("📂 1. 上傳「本期」檔案", type=['xlsx'])
-with col2:
-    file_year = st.file_uploader("📂 2. 上傳「累計」檔案", type=['xlsx'])
 
-# --- 核心邏輯判斷 ---
+file_period = None
+file_year = None
+
+# 🌟【關鍵修改區】：雙通道接收檔案 🌟
+if "auto_files_major" in st.session_state and st.session_state["auto_files_major"]:
+    st.info("📥 系統已自動載入從「首頁」分配過來的檔案！")
+    files = st.session_state["auto_files_major"]
+    
+    # 自動識別「本期」與「累計」
+    if len(files) >= 2:
+        for f in files:
+            if "(1)" in f.name:
+                file_year = f
+            else:
+                file_period = f
+                
+        # 防呆：如果都沒抓到 (1)，就照順序塞
+        if file_year is None: file_year = files[1]
+        if file_period is None: file_period = files[0]
+    else:
+        st.warning("⚠️ 首頁分配的檔案數量不足 (需 2 份)，請手動補齊。")
+        
+    if st.button("❌ 取消自動載入，改為手動上傳"):
+        del st.session_state["auto_files_major"]
+        st.rerun()
+
+else:
+    # 原始的手動上傳介面
+    col1, col2 = st.columns(2)
+    with col1:
+        file_period = st.file_uploader("📂 1. 上傳「本期」檔案", type=['xlsx'])
+    with col2:
+        file_year = st.file_uploader("📂 2. 上傳「累計」檔案 (檔名需含 (1))", type=['xlsx'])
+
+# --- 核心邏輯判斷 (完全保留原功能) ---
 if file_period and file_year:
     d_week, date_w = parse_excel_data(file_period, "重點違規統計表", [15, 16])
     d_year, date_y = parse_excel_data(file_year, "(1)", [15, 16])
@@ -189,4 +215,4 @@ if file_period and file_year:
     else:
         st.error("解析失敗，請確認檔案內容是否正確。")
 else:
-    st.info("💡 請先上傳「本期」與「累計」兩個 Excel 檔案以開始統計。")
+    st.info("💡 請透過首頁分配或手動上傳「本期」與「累計」兩個 Excel 檔案以開始統計。")
