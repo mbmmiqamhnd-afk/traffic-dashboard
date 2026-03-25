@@ -62,8 +62,33 @@ PROJECT_TARGETS = {
 PROJECT_CATS = ["酒後駕車", "闖紅燈", "嚴重超速", "車不讓人", "行人違規", "大型車違規"]
 PROJECT_LAW_MAP = {"酒後駕車": ["35條", "73條2項", "73條3項"], "闖紅燈": ["53條"], "嚴重超速": ["43條", "40條"], "車不讓人": ["44條", "48條"], "行人違規": ["78條"]}
 
+
 # ==========================================
-# 2. 各模組運算大腦 (背景自動執行函數)
+# 2. 核心輔助函數 (還原您的原始完美排版設定)
+# ==========================================
+def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
+    """Google Sheets 紅字格式請求：數字與符號轉紅 (交通事故專用)"""
+    text = str(text)
+    pattern = r'([0-9\(\)\/\-]+)'
+    tokens = re.split(pattern, text)
+    runs = []
+    current_pos = 0
+    for token in tokens:
+        if not token: continue
+        color = {"red": 1.0, "green": 0.0, "blue": 0.0} if re.match(pattern, token) else {"red": 0.0, "green": 0.0, "blue": 0.0}
+        runs.append({"startIndex": current_pos, "format": {"foregroundColor": color, "bold": True}})
+        current_pos += len(token)
+    return {
+        "updateCells": {
+            "rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}],
+            "fields": "userEnteredValue,textFormatRuns",
+            "range": {"sheetId": sheet_id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1, "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1}
+        }
+    }
+
+
+# ==========================================
+# 3. 各模組運算大腦 (背景自動執行函數)
 # ==========================================
 
 def process_tech_enforcement(files):
@@ -292,7 +317,6 @@ def process_major(files):
     rows.insert(0, ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate])
     rows.append([MAJOR_FOOTNOTE] + [""] * 9)
     
-    # 🌟 修復重複表頭的問題：正確拆分出 label_y (本年) 與 label_l (去年)
     label_w = f"本期({date_w})" if date_w else "本期"
     label_y = f"本年累計({date_y})" if date_y else "本年累計"
     label_l = f"去年累計({date_y})" if date_y else "去年累計" 
@@ -304,24 +328,38 @@ def process_major(files):
     st.write("📊 **重大違規統計結果：**")
     st.dataframe(df_final, use_container_width=True)
 
+    # 🌟 修正：使用跟您原本一模一樣的格式還原方式 🌟
     if GCP_CREDS and HAS_FORMATTING:
         gc = gspread.service_account_from_dict(GCP_CREDS)
         ws = gc.open_by_url(GOOGLE_SHEET_URL).get_worksheet(0)
-        data_list = [df_final.columns.get_level_values(0).tolist(), df_final.columns.get_level_values(1).tolist()] + df_final.values.tolist()
+        
+        col_tuples = df_final.columns.tolist()
+        top_row = [t[0] for t in col_tuples]
+        bottom_row = [t[1] for t in col_tuples]
+        data_list = [top_row, bottom_row] + df_final.values.tolist()
         ws.update(range_name='A2', values=data_list)
         
-        red = {"red": 1.0, "green": 0.0, "blue": 0.0}
+        red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
+        black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
         requests = []
         for i, text in enumerate(data_list[0]):
             if "(" in text:
-                requests.append({"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
-                    "rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": [
-                    {"startIndex": 0, "format": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}}},
-                    {"startIndex": text.find("("), "format": {"foregroundColor": red}}]}]}], "fields": "userEnteredValue,textFormatRuns"}})
+                p_start = text.find("(")
+                requests.append({
+                    "updateCells": {
+                        "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
+                        "rows": [{ "values": [{ "textFormatRuns": [
+                            {"startIndex": 0, "format": {"foregroundColor": black_color}},
+                            {"startIndex": p_start, "format": {"foregroundColor": red_color}}
+                        ], "userEnteredValue": {"stringValue": text} }] }],
+                        "fields": "userEnteredValue,textFormatRuns"
+                    }
+                })
         requests.append({"addConditionalFormatRule": {"rule": {"ranges": [{"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": len(data_list)+1, "startColumnIndex": 7, "endColumnIndex": 8}],
-            "booleanRule": {"condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": "0"}]}, "format": {"textFormat": {"foregroundColor": red}}}}, "index": 0}})
+            "booleanRule": {"condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": "0"}]}, "format": {"textFormat": {"foregroundColor": red_color}}}}, "index": 0}})
         ws.spreadsheet.batch_update({"requests": requests})
         st.write("✅ 雲端格式與數據同步完成")
+
 
 def process_project(files):
     """🔥 強化專案處理邏輯"""
@@ -475,24 +513,28 @@ def process_accident(files):
     c1.write("📊 **A1 死亡人數統計**"); c1.dataframe(a1_res, hide_index=True)
     c2.write("📊 **A2 受傷人數統計**"); c2.dataframe(a2_res, hide_index=True)
 
+    # 🌟 修正：使用跟您原本一模一樣的格式還原方式 🌟
     if GCP_CREDS:
         gc = gspread.service_account_from_dict(GCP_CREDS)
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         for ws_idx, df in zip([2, 3], [a1_res, a2_res]):
             ws = sh.get_worksheet(ws_idx)
             ws.batch_clear(["A2:G20"])
+            
+            # 同步標題 (含紅字)
             reqs = []
-            for c_idx, text in enumerate(df.columns):
-                pattern = r'([0-9\(\)\/\-]+)'
-                runs = [{"startIndex": pos, "format": {"foregroundColor": {"red": 1, "green": 0, "blue": 0} if re.match(pattern, tk) else {"red": 0, "green": 0, "blue": 0}, "bold": True}}
-                        for pos, tk in zip([sum(len(t) for t in re.split(pattern, str(text))[:i]) for i in range(len(re.split(pattern, str(text))))], re.split(pattern, str(text))) if tk]
-                reqs.append({"updateCells": {"rows": [{"values": [{"userEnteredValue": {"stringValue": str(text)}, "textFormatRuns": runs}]}], "fields": "userEnteredValue,textFormatRuns", "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": c_idx, "endColumnIndex": c_idx + 1}}})
+            for c_idx, c_name in enumerate(df.columns):
+                reqs.append(get_gsheet_rich_text_req(ws.id, 1, c_idx, c_name))
             sh.batch_update({"requests": reqs})
-            ws.update('A3', [[int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row] for row in df.values.tolist()])
+            
+            # 同步內容
+            data_rows = [[int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row] for row in df.values.tolist()]
+            ws.update(range_name='A3', values=data_rows)
+            
         st.write("✅ 交通事故雲端紅字格式已更新")
 
 # ==========================================
-# 3. 戰情室首頁與排程器
+# 4. 戰情室首頁與排程器
 # ==========================================
 with st.sidebar:
     st.title("🚓 龍潭分局戰情室")
@@ -513,10 +555,10 @@ if app_mode == "🏠 智慧批次處理中心":
             st.info("💡 若要處理新報表，請直接點擊上方『X』刪除舊檔並拖入新檔案。")
         else:
             # 建立分類收納盒
-            cat_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": []}
+            cat_files = {"科技稍法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": []}
             for f in uploads:
                 name = f.name.lower()
-                if "list" in name or "地點" in name or "科技" in name: cat_files["科技執法"].append(f)
+                if "list" in name or "地點" in name or "科技" in name: cat_files["科技稍法"].append(f)
                 elif "stone" in name or "超載" in name: cat_files["超載統計"].append(f)
                 elif "重大" in name: cat_files["重大違規"].append(f)
                 elif "強化" in name or "專案" in name or "砂石車" in name or "r17" in name: cat_files["強化專案"].append(f)
@@ -526,9 +568,9 @@ if app_mode == "🏠 智慧批次處理中心":
             st.subheader("🚀 啟動全自動批次作業")
             
             try:
-                if cat_files["科技執法"]:
-                    with st.status(f"📸 自動處理【科技執法】({len(cat_files['科技執法'])} 份)...", expanded=True) as status:
-                        process_tech_enforcement(cat_files["科技執法"])
+                if cat_files["科技稍法"]:
+                    with st.status(f"📸 自動處理【科技執法】({len(cat_files['科技稍法'])} 份)...", expanded=True) as status:
+                        process_tech_enforcement(cat_files["科技稍法"])
                         status.update(label="✅ 科技執法處理完成！", state="complete")
                         
                 if cat_files["超載統計"]:
