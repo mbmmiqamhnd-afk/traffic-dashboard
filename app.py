@@ -259,11 +259,17 @@ def process_major(files):
                 if k in n: return k + '所'
             return None
             
+        # 🌟 安全防呆邏輯：將空值安全轉換為 0 🌟
+        def clean_val(v):
+            if pd.isna(v) or str(v).strip().lower() == 'nan': return 0
+            try: return int(float(str(v).replace(',', '').strip() or 0))
+            except: return 0
+
         udata = {}
         for _, r in df.iterrows():
             u = get_u(r.iloc[0])
             if u and "合計" not in str(r.iloc[0]):
-                udata[u] = {'stop': int(float(str(r.iloc[cols[0]]).replace(',','').strip() or 0)), 'cit': int(float(str(r.iloc[cols[1]]).replace(',','').strip() or 0))}
+                udata[u] = {'stop': clean_val(r.iloc[cols[0]]), 'cit': clean_val(r.iloc[cols[1]])}
         return udata, dt
 
     d_wk, date_w = parse_ex(f_period, "重點違規統計表", [15, 16])
