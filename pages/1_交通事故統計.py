@@ -8,7 +8,7 @@ from datetime import datetime
 # ==========================================
 # 🔐 1. 系統配置
 # ==========================================
-st.set_page_config(page_title="龍潭分局交通數據整合系統", layout="wide", page_icon="🚓")
+st.set_page_config(page_title="交通事故統計", layout="wide", page_icon="🚑")
 
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 
@@ -70,14 +70,26 @@ def build_traffic_table(df_wk, df_prev, df_cur, df_lst, stations, col_name, labe
     return res
 
 # ==========================================
-# 🚀 3. Streamlit 主入口 (萬能上傳框)
+# 🚀 3. Streamlit 主入口 (雙通道接收)
 # ==========================================
 
-st.title("🚑 龍潭分局 - 交通數據智慧分析系統")
-st.markdown("##### 🚀 **操作說明：** 拖入 4 個交通事故報表後，系統將自動解析、計算並完成雲端同步。")
+st.title("🚑 龍潭分局 - 交通事故統計系統")
+st.markdown("##### 🚀 **操作說明：** 需準備 4 個交通事故報表，系統將自動解析、計算並完成雲端同步。")
 
-all_files = st.file_uploader("📂 請全選並拖入所有 Excel 報表", type=["xlsx", "csv"], accept_multiple_files=True)
+# 🌟【關鍵修改區】：雙通道接收檔案 🌟
+all_files = None
+if "auto_files_accident" in st.session_state and st.session_state["auto_files_accident"]:
+    st.info("📥 系統已自動載入從「首頁」分配過來的檔案！")
+    all_files = st.session_state["auto_files_accident"]
+    
+    # 防呆機制：取消載入
+    if st.button("❌ 取消自動載入，改為手動上傳"):
+        del st.session_state["auto_files_accident"]
+        st.rerun()
+else:
+    all_files = st.file_uploader("📂 請全選並拖入所有 Excel 報表 (需 4 份)", type=["xlsx", "csv"], accept_multiple_files=True)
 
+# 以下為您原本強大的分析邏輯 (完全保留)
 if all_files:
     # --- 交通事故處理邏輯 (偵測到 4 個檔案) ---
     if len(all_files) == 4:
@@ -149,14 +161,14 @@ if all_files:
 
                     status.update(label="✅ 交通事故統計完成，雲端紅字格式已更新！", state="complete")
                 else:
-                    st.error("日期解析失敗，請確認檔案內容。")
+                    st.error("日期解析失敗，請確認檔案內容或數量。")
 
             except Exception as e:
                 st.error(f"分析失敗：{e}")
     
-    # --- 如果上傳的是其他數量的檔案 (可擴充強化專案等邏輯) ---
+    # --- 如果上傳的是其他數量的檔案 ---
     else:
-        st.info("💡 提示：若要分析「交通事故」，請同時拖入 4 個檔案。目前檔案數量不符。")
+        st.warning(f"⚠️ 注意：交通事故分析需剛好 4 份檔案，目前收到 {len(all_files)} 份檔案。")
 
 else:
-    st.warning("⏳ 準備就緒，請拖入報表檔案...")
+    st.info("⏳ 準備就緒，請透過首頁分配或手動上傳報表檔案...")
