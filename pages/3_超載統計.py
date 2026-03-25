@@ -113,8 +113,20 @@ if st.sidebar.button("📧 寄送測試郵件 (不含附件)"):
     if res == "成功": st.sidebar.success("✅ 郵件設定正確，測試信已送出")
     else: st.sidebar.error(f"❌ 測試失敗\n{res}")
 
-files = st.file_uploader("請同時上傳 3 個 stoneCnt 報表", accept_multiple_files=True, type=['xlsx', 'xls'])
+# 🌟【關鍵修改區】：雙通道接收檔案 🌟
+files = None
+if "auto_files_overload" in st.session_state and st.session_state["auto_files_overload"]:
+    st.info("📥 系統已自動載入從「首頁」分配過來的檔案！")
+    files = st.session_state["auto_files_overload"]
+    
+    # 防呆機制：提供按鈕讓使用者清除首頁傳來的檔案，恢復手動上傳模式
+    if st.button("❌ 取消自動載入，改為手動上傳"):
+        del st.session_state["auto_files_overload"]
+        st.rerun()
+else:
+    files = st.file_uploader("請同時上傳 3 個 stoneCnt 報表", accept_multiple_files=True, type=['xlsx', 'xls'])
 
+# 以下您的邏輯完全保持不變
 if files and len(files) >= 3:
     try:
         file_hash = "".join(sorted([f.name + str(f.size) for f in files]))
@@ -169,59 +181,38 @@ if files and len(files) >= 3:
         if st.session_state.get("processed_hash") != file_hash:
             with st.status("🚀 執行雲端同步與自動寄信...") as s:
                 try:
-                    # ==========================================
-                    # 1. Google Sheets 同步 (資料版：保留格式)
-                    # ==========================================
+                    # 1. Google Sheets 同步
                     gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
                     sh = gc.open_by_url(GOOGLE_SHEET_URL)
                     ws = sh.get_worksheet(1) # 假設是第2個工作表
                     
-                    # 準備寫入的欄位名稱 (移除 HTML 標籤)
                     clean_cols = ['統計期間', raw_wk, raw_yt, raw_ly, '本年與去年同期比較', '目標值', '達成率']
-                    
-                    # 計算底部說明文字的位置 
-                    # Row 1: 標題
-                    # Row 2: 欄位
-                    # Row 3~End: 資料
                     footer_row_idx = 2 + len(df_final) + 1
                     
-                    # 寫入資料 (使用 update 僅更新值，不動格式)
                     ws.update(range_name='A1', values=[['取締超載違規件數統計表']])
                     ws.update(range_name='A2', values=[clean_cols] + df_final.values.tolist())
                     ws.update(range_name=f'A{footer_row_idx}', values=[[f_plain]])
                     
                     st.write("✅ 試算表數據已更新 (保留原格式)")
 
-                    # ==========================================
                     # 2. 自動寄信 (Excel 包含藍色大標題)
-                    # ==========================================
                     st.write("📧 正在準備郵件附件並寄信...")
                     df_sync = df_final.copy()
                     df_sync.columns = clean_cols
                     
                     df_excel_buffer = io.BytesIO()
                     
-                    # 使用 ExcelWriter 引擎製作美觀報表
                     with pd.ExcelWriter(df_excel_buffer, engine='xlsxwriter') as writer:
-                        # 資料從第 2 列開始寫 (startrow=1)
                         df_sync.to_excel(writer, index=False, startrow=1, sheet_name='Sheet1')
-                        
                         workbook = writer.book
                         worksheet = writer.sheets['Sheet1']
                         
-                        # 定義標題格式 (藍色、粗體、18號、置中)
                         title_format = workbook.add_format({
-                            'bold': True,
-                            'font_size': 18,
-                            'align': 'center',
-                            'valign': 'vcenter',
-                            'font_color': 'blue'
+                            'bold': True, 'font_size': 18, 'align': 'center',
+                            'valign': 'vcenter', 'font_color': 'blue'
                         })
                         
-                        # 合併 A1:G1 並寫入標題
                         worksheet.merge_range('A1:G1', '取締超載違規件數統計表', title_format)
-                        
-                        # (選用) 調整欄寬
                         worksheet.set_column('A:A', 15)
                         worksheet.set_column('B:G', 12)
 
