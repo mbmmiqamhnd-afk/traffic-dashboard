@@ -33,7 +33,6 @@ except ImportError:
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 TO_EMAIL = "mbmmiqamhnd@gmail.com"
 
-# 讀取 Secrets
 try:
     MY_EMAIL = st.secrets.get("email", {}).get("user", "")
     MY_PASSWORD = st.secrets.get("email", {}).get("password", "")
@@ -60,13 +59,19 @@ PROJECT_TARGETS = {
     '交通分隊': [5, 115, 4, 16, 6, 8], '交通組': [0, 0, 0, 0, 0, 0], '警備隊': [0, 0, 0, 0, 0, 0]
 }
 PROJECT_CATS = ["酒後駕車", "闖紅燈", "嚴重超速", "車不讓人", "行人違規", "大型車違規"]
-PROJECT_LAW_MAP = {"酒後駕車": ["35條", "73條2項", "73條3項"], "闖紅燈": ["53條"], "嚴重超速": ["43條", "40條"], "車不讓人": ["44條", "48條"], "行人違規": ["78條"]}
+PROJECT_LAW_MAP = {
+    "酒後駕車": ["35條", "73條2項", "73條3項"], 
+    "闖紅燈": ["53條"], 
+    "嚴重超速": ["43條", "40條"], 
+    "車不讓人": ["44條", "48條"], 
+    "行人違規": ["78條"]
+}
 
 # ==========================================
-# 2. 🌟 核心格式化輔助函數 🌟
+# 2. 🌟 恢復的格式化邏輯 (不動 A1) 🌟
 # ==========================================
 def sync_to_specified_sheet(df):
-    """重大違規專用：雲端同步與格式鎖定 (完全不動A1)"""
+    """重大違規：保留 A1 總標題，僅更新 A2 以降並標紅字"""
     try:
         gc = gspread.service_account_from_dict(GCP_CREDS)
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
@@ -137,6 +142,7 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
         }
     }
 
+
 # ==========================================
 # 3. 業務邏輯處理
 # ==========================================
@@ -188,7 +194,7 @@ def process_tech_enforcement(files):
         ws = sh.worksheet("科技執法-路段排行") if "科技執法-路段排行" in [s.title for s in sh.worksheets()] else sh.add_worksheet(title="科技執法-路段排行", rows="100", cols="20")
         ws.clear()
         title_text = f"科技執法成效 ({date_range_str})"
-        ws.update(range_name='A1', values=[[title_text, ""], ["路段名稱", "舉發件數"]] + loc_summary.values.tolist() + [["舉發總數", len(df)]])
+        ws.update(values=[[title_text, ""], ["路段名稱", "舉發件數"]] + loc_summary.values.tolist() + [["舉發總數", len(df)]])
         reqs = {"requests": [{"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
                 "rows": [{"values": [{"userEnteredValue": {"stringValue": title_text},
                 "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 24}},
@@ -240,7 +246,9 @@ def process_overload(files):
         return counts, s, e
 
     d_wk, s_wk, e_wk = parse_rpt(f_wk); d_yt, s_yt, e_yt = parse_rpt(f_yt); d_ly, s_ly, e_ly = parse_rpt(f_ly)
-    raw_wk, raw_yt, raw_ly = f"本期 ({s_wk[-4:]}~{e_wk[-4:]})", f"本年累計 ({s_yt[-4:]}~{e_yt[-4:]})", f"去年累計 ({s_ly[-4:]}~{e_ly[-4:]})"
+    raw_wk = f"本期 ({s_wk[-4:]}~{e_wk[-4:]})"
+    raw_yt = f"本年累計 ({s_yt[-4:]}~{e_yt[-4:]})"
+    raw_ly = f"去年累計 ({s_ly[-4:]}~{e_ly[-4:]})"
     
     body = []
     for u in OVERLOAD_UNIT_ORDER:
@@ -359,7 +367,7 @@ def process_major(files):
 
     if GCP_CREDS:
         if sync_to_specified_sheet(df_final):
-            st.write("✅ 雲端格式 (保留原始 A1 標題) 與數據同步完成")
+            st.write("✅ 雲端格式與數據同步完成")
 
 def process_project(files):
     f1 = next((f for f in files if "強化" in f.name), None)
@@ -404,7 +412,205 @@ def process_project(files):
 
     def get_unit(raw):
         raw = str(raw).strip()
-        if '交通分隊' in raw: return '交通分隊' if '龍潭' in raw or not any(x in raw for x in ['楊梅','大溪','平鎮','中壢','八德','蘆竹','龜山','大園','桃園']) else None
+        if '交通分隊' in raw: 
+            if '龍潭' in raw or not any(x in raw for x in ['楊梅','大溪','平鎮','中壢','八德','蘆竹','龜山','大園','桃園']):
+                return '交通分隊'
+            return None
         if '交通組' in raw: return '交通組'
         if '警備隊' in raw: return '警備隊'
-        for k in ['聖亭', '中興',
+        for k in ['聖亭', '中興', '石門', '高平', '三和']: 
+            if k in raw: return k + '所'
+        if '龍潭派出所' in raw or raw in ['龍潭', '龍潭所']: return '龍潭所'
+        return None
+
+    def get_c(unit):
+        r = df1[df1.get('單位', pd.Series()).apply(get_unit) == unit]
+        return {cat: int(r[[c for c in df1.columns if any(k in str(c) for k in PROJECT_LAW_MAP.get(cat, []))]].sum().sum()) if not r.empty else 0 for cat in PROJECT_CATS[:5]}
+
+    final_rows = []
+    for u, tgts in PROJECT_TARGETS.items():
+        d15 = get_c(u)
+        u_r = df2[(df2['來源檔名'].str.contains('大隊|交大', na=False)) & (df2['單位'].str.contains('龍潭', na=False))] if u == '交通分隊' else df2[(df2['單位'].apply(get_unit) == u) & (~df2['來源檔名'].str.contains('大隊|交大', na=False))]
+        h_sum = int(u_r['大型車純違規'].sum()) if not u_r.empty else 0
+        res = [u]
+        for i, cat in enumerate(PROJECT_CATS):
+            cnt = d15.get(cat, 0) if cat != "大型車違規" else h_sum
+            res.extend([cnt, tgts[i], f"{(cnt/tgts[i]*100):.1f}%" if tgts[i] > 0 else "0.0%"])
+        final_rows.append(res)
+
+    headers = ["單位"] + [f"{cat}_{x}" for cat in PROJECT_CATS for x in ["取締件數", "目標值", "達成率"]]
+    df_f = pd.DataFrame(final_rows, columns=headers)
+    
+    t_row = ["合計"]
+    for i in range(1, len(headers), 3):
+        cs, ts = df_f.iloc[:, i].sum(), df_f.iloc[:, i+1].sum()
+        t_row.extend([int(cs), int(ts), f"{(cs/ts*100):.1f}%" if ts > 0 else "0.0%"])
+    df_f = pd.concat([pd.DataFrame([t_row], columns=headers), df_f], ignore_index=True)
+    
+    st.write(f"📊 **{PROJECT_NAME} 統計結果：**")
+    st.dataframe(df_f, hide_index=True)
+
+    if GCP_CREDS:
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        ws = gc.open_by_url(GOOGLE_SHEET_URL).worksheet(PROJECT_NAME)
+        full_t = f"{PROJECT_NAME} (統計期間：{date_str})"
+        ws.clear()
+        ws.update(values=[[full_t] + [""] * 18, [""] + [c for c in PROJECT_CATS for _ in range(3)], ["單位"] + ["取締件數", "目標值", "達成率"] * 6] + df_f.values.tolist())
+        
+        reqs = [
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
+            {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
+                "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [
+                {"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 16}},
+                {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True, "fontSize": 16}}]}]}], "fields": "userEnteredValue,textFormatRuns"}},
+            {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}}, "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"}}
+        ]
+        ws.spreadsheet.batch_update({"requests": reqs})
+        st.write("✅ 雲端同步與格式化完成")
+
+def process_accident(files):
+    meta = []
+    for f in files:
+        f.seek(0)
+        df_raw = pd.read_csv(f, header=None) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
+        dates = re.findall(r'(\d{3})[./](\d{1,2})[./](\d{1,2})', str(df_raw.iloc[:5, :5].values))
+        if len(dates) >= 2:
+            df_raw[0] = df_raw[0].astype(str)
+            df_data = df_raw[df_raw[0].str.contains("所|總計|合計", na=False)].rename(columns={0: "Station", 5: "A1_Deaths", 9: "A2_Injuries"})
+            for c in ["A1_Deaths", "A2_Injuries"]: df_data[c] = pd.to_numeric(df_data[c].astype(str).str.replace(",", ""), errors='coerce').fillna(0)
+            df_data['Station_Short'] = df_data['Station'].str.replace('派出所', '所').str.replace('總計', '合計').str.strip()
+            
+            meta.append({'df': df_data, 'year': int(dates[1][0]), 'start_day': int(dates[0][1])*100 + int(dates[0][2]), 
+                         'range': f"{int(dates[0][1]):02d}{int(dates[0][2]):02d}-{int(dates[1][1]):02d}{int(dates[1][2]):02d}", 'is_cumu': (int(dates[0][1]) == 1 and int(dates[0][2]) == 1)})
+                         
+    this_year = max(m['year'] for m in meta)
+    f_lst = sorted([f for f in meta if f['year'] < this_year], key=lambda x: x['year'])[-1]
+    f_cur = next(f for f in meta if f['year'] == this_year and f['is_cumu'])
+    period_files = sorted([f for f in meta if f['year'] == this_year and not f['is_cumu']], key=lambda x: x['start_day'])
+    f_prev, f_wk = period_files[0], period_files[1]
+
+    labels = {"wk": f_wk['range'], "prev": f_prev['range'], "cur": f_cur['range'], "lst": f_lst['range']}
+    stations = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
+    
+    def bld_tbl(c_name, is_a2=False):
+        m = pd.merge(f_wk['df'][['Station_Short', c_name]], f_prev['df'][['Station_Short', c_name]], on='Station_Short', suffixes=('_wk', '_prev'))
+        m = pd.merge(pd.merge(m, f_cur['df'][['Station_Short', c_name]].rename(columns={c_name: c_name+'_cur'}), on='Station_Short'), f_lst['df'][['Station_Short', c_name]].rename(columns={c_name: c_name+'_lst'}), on='Station_Short')
+        m = m[m['Station_Short'].isin(stations)].copy()
+        m['Station_Short'] = pd.Categorical(m['Station_Short'], categories=stations, ordered=True)
+        m = pd.concat([pd.DataFrame([dict(m.select_dtypes(include='number').sum().to_dict(), Station_Short='合計')]), m.sort_values('Station_Short')], ignore_index=True)
+        m['Diff'] = m[c_name+'_cur'] - m[c_name+'_lst']
+        if is_a2:
+            m['Pct'] = m.apply(lambda x: f"{(x['Diff']/x[c_name+'_lst']):.2%}" if x[c_name+'_lst'] != 0 else "0.00%", axis=1)
+            res = m[['Station_Short', c_name+'_wk', c_name+'_prev', c_name+'_cur', c_name+'_lst', 'Diff', 'Pct']]
+            res.columns = ['統計期間', f'本期({labels["wk"]})', f'前期({labels["prev"]})', f'本年累計({labels["cur"]})', f'去年累計({labels["lst"]})', '本年與去年同期比較', '增減比例']
+        else:
+            res = m[['Station_Short', c_name+'_wk', c_name+'_cur', c_name+'_lst', 'Diff']]
+            res.columns = ['統計期間', f'本期({labels["wk"]})', f'本年累計({labels["cur"]})', f'去年累計({labels["lst"]})', '本年與去年同期比較']
+        return res
+
+    a1_res, a2_res = bld_tbl('A1_Deaths'), bld_tbl('A2_Injuries', True)
+    
+    c1, c2 = st.columns(2)
+    c1.write("📊 **A1 死亡人數統計**"); c1.dataframe(a1_res, hide_index=True)
+    c2.write("📊 **A2 受傷人數統計**"); c2.dataframe(a2_res, hide_index=True)
+
+    if GCP_CREDS:
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        for ws_idx, df in zip([2, 3], [a1_res, a2_res]):
+            ws = sh.get_worksheet(ws_idx)
+            ws.batch_clear(["A2:G20"]) 
+            
+            reqs = []
+            for c_idx, c_name in enumerate(df.columns):
+                reqs.append(get_gsheet_rich_text_req(ws.id, 1, c_idx, c_name))
+            sh.batch_update({"requests": reqs})
+            
+            data_rows = [[int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row] for row in df.values.tolist()]
+            ws.update(range_name='A3', values=data_rows)
+            
+        st.write("✅ 交通事故雲端 (保留原始 A1 標題) 格式已更新")
+
+# ==========================================
+# 4. 戰情室首頁與排程器
+# ==========================================
+with st.sidebar:
+    st.title("🚓 龍潭分局戰情室")
+    app_mode = st.selectbox("功能模組", ["🏠 智慧批次處理中心", "📂 PDF 轉 PPTX 工具"])
+    st.info("💡 只要將所有報表全選、拖入，系統即自動分類並依序處理所有業務！")
+
+if app_mode == "🏠 智慧批次處理中心":
+    st.header("📈 交通數據全自動批次處理中心")
+    st.markdown("請將您從警政系統匯出的所有報表（不限順序、不限數量）**一次全部拖入下方**。")
+    
+    uploads = st.file_uploader("📂 拖入所有報表檔案", type=["xlsx", "csv", "xls"], accept_multiple_files=True)
+    
+    if uploads:
+        file_hash = sum([f.size for f in uploads]) + len(uploads)
+        if st.session_state.get("last_processed_hash") == file_hash:
+            st.success("✅ 目前上傳的檔案皆已全自動處理完畢！")
+            st.info("💡 若要處理新報表，請直接點擊上方『X』刪除舊檔並拖入新檔案。")
+        else:
+            cat_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": []}
+            for f in uploads:
+                name = f.name.lower()
+                if "list" in name or "地點" in name or "科技" in name: cat_files["科技執法"].append(f)
+                elif "stone" in name or "超載" in name: cat_files["超載統計"].append(f)
+                elif "重大" in name: cat_files["重大違規"].append(f)
+                elif "強化" in name or "專案" in name or "砂石車" in name or "r17" in name: cat_files["強化專案"].append(f)
+                elif "a1" in name or "a2" in name or "事故" in name or "案件統計" in name: cat_files["交通事故"].append(f)
+            
+            st.divider()
+            st.subheader("🚀 啟動全自動批次作業")
+            
+            try:
+                if cat_files["科技執法"]:
+                    with st.status(f"📸 自動處理【科技執法】({len(cat_files['科技執法'])} 份)...", expanded=True) as status:
+                        process_tech_enforcement(cat_files["科技執法"])
+                        status.update(label="✅ 科技執法處理完成！", state="complete")
+                        
+                if cat_files["超載統計"]:
+                    with st.status(f"🚛 自動處理【超載統計】({len(cat_files['超載統計'])} 份)...", expanded=True) as status:
+                        process_overload(cat_files["超載統計"])
+                        status.update(label="✅ 超載統計處理完成！", state="complete")
+                        
+                if cat_files["重大違規"]:
+                    with st.status(f"🚨 自動處理【重大交通違規】({len(cat_files['重大違規'])} 份)...", expanded=True) as status:
+                        process_major(cat_files["重大違規"])
+                        status.update(label="✅ 重大交通違規處理完成！", state="complete")
+                        
+                if cat_files["強化專案"]:
+                    with st.status(f"🔥 自動處理【強化交通安全專案】({len(cat_files['強化專案'])} 份)...", expanded=True) as status:
+                        process_project(cat_files["強化專案"])
+                        status.update(label="✅ 強化交通安全專案處理完成！", state="complete")
+                        
+                if cat_files["交通事故"]:
+                    with st.status(f"🚑 自動處理【交通事故】({len(cat_files['交通事故'])} 份)...", expanded=True) as status:
+                        process_accident(cat_files["交通事故"])
+                        status.update(label="✅ 交通事故處理完成！", state="complete")
+                
+                st.session_state["last_processed_hash"] = file_hash
+                st.balloons()
+                
+            except Exception as e:
+                st.error(f"⚠️ 批次處理發生例外錯誤：{e}")
+                st.write(traceback.format_exc())
+
+elif app_mode == "📂 PDF 轉 PPTX 工具":
+    st.header("📂 PDF 行政文書轉 PPTX 簡報")
+    pdf_file = st.file_uploader("上傳 PDF 檔案", type=["pdf"])
+    if pdf_file and st.button("🚀 開始轉換"):
+        with st.spinner("轉換中..."):
+            try:
+                images, prs = convert_from_bytes(pdf_file.read(), dpi=200), Presentation()
+                for img in images:
+                    slide = prs.slides.add_slide(prs.slide_layouts[6])
+                    img_byte_arr = io.BytesIO()
+                    img.save(img_byte_arr, format='PNG')
+                    slide.shapes.add_picture(io.BytesIO(img_byte_arr.getvalue()), 0, 0, width=prs.slide_width, height=prs.slide_height)
+                pptx_io = io.BytesIO()
+                prs.save(pptx_io)
+                st.success("✅ 轉換完成！")
+                st.download_button("📥 下載 PPTX", data=pptx_io.getvalue(), file_name=f"{pdf_file.name.replace('.pdf', '')}_轉換.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+            except Exception as e:
+                st.error(f"錯誤：{e}")
