@@ -68,10 +68,10 @@ PROJECT_LAW_MAP = {
 }
 
 # ==========================================
-# 2. 🌟 恢復的格式化邏輯 (不動 A1) 🌟
+# 2. 🌟 恢復原廠設定的格式化邏輯 (絕對不動 A1) 🌟
 # ==========================================
 def sync_to_specified_sheet(df):
-    """重大違規：保留 A1 總標題，僅更新 A2 以降並標紅字"""
+    """🚨重大違規專用：保留 A1 總標題，僅從 A2 開始更新，並針對第二列表頭作黑紅分離"""
     try:
         gc = gspread.service_account_from_dict(GCP_CREDS)
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
@@ -83,6 +83,7 @@ def sync_to_specified_sheet(df):
         data_body = df.values.tolist() 
         data_list = [top_row, bottom_row] + data_body
         
+        # 🌟 這裡最關鍵：從 A2 開始寫入，完美避開並保留您手動設定的 A1 標題！
         ws.update(range_name='A2', values=data_list)
         
         if HAS_FORMATTING:
@@ -91,6 +92,7 @@ def sync_to_specified_sheet(df):
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             
             requests = []
+            # 針對 Row Index 1 (也就是試算表裡的第二列) 處理括號紅字
             for i, text in enumerate(top_row):
                 if "(" in text:
                     p_start = text.find("(")
@@ -123,7 +125,7 @@ def sync_to_specified_sheet(df):
         return False
 
 def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
-    """交通事故專用：Google Sheets 標題括號與數字轉紅字"""
+    """🚑交通事故專用：Google Sheets 標題括號與數字轉紅字"""
     text = str(text)
     pattern = r'([0-9\(\)\/\-]+)'
     tokens = re.split(pattern, text)
@@ -148,6 +150,7 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
 # ==========================================
 
 def process_tech_enforcement(files):
+    """📸 科技執法"""
     f = files[0]
     f.seek(0)
     df = pd.read_csv(f, encoding='cp950') if f.name.endswith('.csv') else pd.read_excel(f)
@@ -194,7 +197,7 @@ def process_tech_enforcement(files):
         ws = sh.worksheet("科技執法-路段排行") if "科技執法-路段排行" in [s.title for s in sh.worksheets()] else sh.add_worksheet(title="科技執法-路段排行", rows="100", cols="20")
         ws.clear()
         title_text = f"科技執法成效 ({date_range_str})"
-        ws.update(values=[[title_text, ""], ["路段名稱", "舉發件數"]] + loc_summary.values.tolist() + [["舉發總數", len(df)]])
+        ws.update(range_name='A1', values=[[title_text, ""], ["路段名稱", "舉發件數"]] + loc_summary.values.tolist() + [["舉發總數", len(df)]])
         reqs = {"requests": [{"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
                 "rows": [{"values": [{"userEnteredValue": {"stringValue": title_text},
                 "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 24}},
@@ -215,6 +218,7 @@ def process_tech_enforcement(files):
             s.send_message(msg)
 
 def process_overload(files):
+    """🚛 超載違規"""
     f_wk, f_yt, f_ly = None, None, None
     for f in files:
         if "(1)" in f.name: f_yt = f
@@ -246,9 +250,7 @@ def process_overload(files):
         return counts, s, e
 
     d_wk, s_wk, e_wk = parse_rpt(f_wk); d_yt, s_yt, e_yt = parse_rpt(f_yt); d_ly, s_ly, e_ly = parse_rpt(f_ly)
-    raw_wk = f"本期 ({s_wk[-4:]}~{e_wk[-4:]})"
-    raw_yt = f"本年累計 ({s_yt[-4:]}~{e_yt[-4:]})"
-    raw_ly = f"去年累計 ({s_ly[-4:]}~{e_ly[-4:]})"
+    raw_wk, raw_yt, raw_ly = f"本期 ({s_wk[-4:]}~{e_wk[-4:]})", f"本年累計 ({s_yt[-4:]}~{e_yt[-4:]})", f"去年累計 ({s_ly[-4:]}~{e_ly[-4:]})"
     
     body = []
     for u in OVERLOAD_UNIT_ORDER:
@@ -295,6 +297,7 @@ def process_overload(files):
             s.starttls(); s.login(MY_EMAIL, MY_PASSWORD); s.send_message(msg)
 
 def process_major(files):
+    """🚨 重大違規"""
     f_period, f_year = None, None
     for f in files:
         if "(1)" in f.name: f_year = f
@@ -367,9 +370,10 @@ def process_major(files):
 
     if GCP_CREDS:
         if sync_to_specified_sheet(df_final):
-            st.write("✅ 雲端格式與數據同步完成")
+            st.write("✅ 雲端格式 (保留原始 A1 標題) 與數據同步完成")
 
 def process_project(files):
+    """🔥 強化專案"""
     f1 = next((f for f in files if "強化" in f.name), None)
     f2_list = [f for f in files if "r17" in f.name.lower() or "砂石車" in f.name]
     
@@ -412,10 +416,7 @@ def process_project(files):
 
     def get_unit(raw):
         raw = str(raw).strip()
-        if '交通分隊' in raw: 
-            if '龍潭' in raw or not any(x in raw for x in ['楊梅','大溪','平鎮','中壢','八德','蘆竹','龜山','大園','桃園']):
-                return '交通分隊'
-            return None
+        if '交通分隊' in raw: return '交通分隊' if '龍潭' in raw or not any(x in raw for x in ['楊梅','大溪','平鎮','中壢','八德','蘆竹','龜山','大園','桃園']) else None
         if '交通組' in raw: return '交通組'
         if '警備隊' in raw: return '警備隊'
         for k in ['聖亭', '中興', '石門', '高平', '三和']: 
@@ -469,6 +470,7 @@ def process_project(files):
         st.write("✅ 雲端同步與格式化完成")
 
 def process_accident(files):
+    """🚑 交通事故"""
     meta = []
     for f in files:
         f.seek(0)
@@ -519,17 +521,22 @@ def process_accident(files):
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         for ws_idx, df in zip([2, 3], [a1_res, a2_res]):
             ws = sh.get_worksheet(ws_idx)
+            # 🌟 這裡完全依照原版：只清除 A2:G20，絕對不碰 A1 大標題！
             ws.batch_clear(["A2:G20"]) 
             
+            # 同步標題 (Row Index 1 = 試算表第二列)
             reqs = []
             for c_idx, c_name in enumerate(df.columns):
+                # Row Index=1 (也就是第二列) 做紅字格式
                 reqs.append(get_gsheet_rich_text_req(ws.id, 1, c_idx, c_name))
             sh.batch_update({"requests": reqs})
             
+            # 同步內容 (從 A3 開始)
             data_rows = [[int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row] for row in df.values.tolist()]
             ws.update(range_name='A3', values=data_rows)
             
         st.write("✅ 交通事故雲端 (保留原始 A1 標題) 格式已更新")
+
 
 # ==========================================
 # 4. 戰情室首頁與排程器
