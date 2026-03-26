@@ -589,13 +589,23 @@ if app_mode == "🏠 智慧批次處理中心":
     
     # --- 🌟 新增：自動載入按鈕 ---
     if st.button("🔄 自動載入『今日待上傳報表』資料夾", use_container_width=True, type="primary"):
-        # 💡 智慧尋找資料夾：同時檢查當前目錄、程式碼目錄、以及上一層目錄
+        import os
+        import glob
+        
+        # 💡 終極地毯式搜索：當前目錄 + 程式碼所在目錄一路往上找 3 層
         base_dir = os.path.dirname(os.path.abspath(__file__))
+        cwd_dir = os.getcwd()
+        
         possible_paths = [
-            os.path.join(os.getcwd(), "今日待上傳報表"),               # 終端機執行目錄 (通常是 WPy64-31700)
-            os.path.join(base_dir, "今日待上傳報表"),                   # 程式碼所在目錄
-            os.path.join(os.path.dirname(base_dir), "今日待上傳報表")    # 程式碼的上一層目錄
+            os.path.join(cwd_dir, "今日待上傳報表"),
+            os.path.join(base_dir, "今日待上傳報表"),
+            os.path.join(os.path.dirname(base_dir), "今日待上傳報表"),
+            os.path.join(os.path.dirname(os.path.dirname(base_dir)), "今日待上傳報表"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(base_dir))), "今日待上傳報表")
         ]
+        
+        # 移除重複的路徑，保持清單乾淨
+        possible_paths = list(dict.fromkeys(possible_paths))
         
         folder_path = None
         for p in possible_paths:
@@ -618,11 +628,15 @@ if app_mode == "🏠 智慧批次處理中心":
             
             if auto_uploads:
                 uploads = auto_uploads # 把自動讀取的檔案交給 uploads 變數
+                st.success(f"✅ 成功在以下路徑找到資料夾：\n`{folder_path}`")
                 st.success(f"✅ 成功自動載入 {len(uploads)} 份報表，準備開始處理！")
             else:
-                st.warning("⚠️ 資料夾內目前沒有找到報表檔案。")
+                st.warning(f"⚠️ 在 `{folder_path}` 找到了資料夾，但裡面沒有副檔名為 xlsx, xls, csv 的報表檔案。")
         else:
-            st.error("❌ 找不到『今日待上傳報表』資料夾，請確認自動下載機器人已經執行完畢。")
+            st.error("❌ 找不到『今日待上傳報表』資料夾！")
+            st.info("🔍 **系統剛剛搜尋了以下路徑，但都沒有看到該資料夾。請檢查您的隨身碟路徑是否與以下相符：**")
+            for p in possible_paths:
+                st.code(p)
 
     st.divider()
     st.subheader("🚀 啟動全自動批次作業")
