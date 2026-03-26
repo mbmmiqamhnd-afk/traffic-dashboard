@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import io
+import os
+import glob
 import re
 import gspread
 import smtplib
@@ -587,14 +589,21 @@ if app_mode == "🏠 智慧批次處理中心":
     
     # --- 🌟 新增：自動載入按鈕 ---
     if st.button("🔄 自動載入『今日待上傳報表』資料夾", use_container_width=True, type="primary"):
-        import os
-        import glob
-        
-        # 💡 強制抓取「這支程式碼檔案」所在的絕對位置，就不會迷路了！
+        # 💡 智慧尋找資料夾：同時檢查當前目錄、程式碼目錄、以及上一層目錄
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        folder_path = os.path.join(base_dir, "今日待上傳報表")
+        possible_paths = [
+            os.path.join(os.getcwd(), "今日待上傳報表"),               # 終端機執行目錄 (通常是 WPy64-31700)
+            os.path.join(base_dir, "今日待上傳報表"),                   # 程式碼所在目錄
+            os.path.join(os.path.dirname(base_dir), "今日待上傳報表")    # 程式碼的上一層目錄
+        ]
         
-        if os.path.exists(folder_path):
+        folder_path = None
+        for p in possible_paths:
+            if os.path.exists(p):
+                folder_path = p
+                break
+                
+        if folder_path:
             # 建立一個偽裝類別，讓本地檔案的格式看起來跟 st.file_uploader 上傳的一模一樣
             class LocalMockFile(io.BytesIO):
                 def __init__(self, filepath):
