@@ -114,11 +114,9 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
-    # 任務編組 (自動略過空白列)
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
-        # 如果整列都是空的，就跳過不繪製
         if all(str(v).strip() == "" for v in r.values): continue
         data_cmd.append([Paragraph(br(r['職稱']), style_cell), Paragraph(br(r['代號']), style_cell), Paragraph(br(r['姓名']), style_cell), Paragraph(br(r['任務']), style_cell_l)])
     
@@ -127,12 +125,10 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署 (自動略過空白列)
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
     for _, r in df_patrol.iterrows():
-        # 如果整列都是空的，就跳過不繪製
         if all(str(v).strip() == "" for v in r.values): continue
         data_ptl.append([Paragraph(br(r['勤務時段']), style_cell), Paragraph(br(r['無線電']), style_cell), Paragraph(br(r['編組']), style_cell), Paragraph(br(r['服勤人員']), style_cell), Paragraph(br(r['任務分工']), style_cell_l)])
 
@@ -212,7 +208,14 @@ if u_m and len(ed_ptl) > 0:
     ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
     umap = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
     base = next((v for k, v in umap.items() if k in pu), "隆安")
-    suffix = "2" if any(kw in cmdr_input for kw in ["副", "小隊長", "所副"]) else "1"
+    
+    # 🎯 單位代號字尾判斷邏輯：
+    # 若包含「所長」或「分隊長」，且不包含「副」，則為 1；其餘皆為 2。
+    if ("所長" in cmdr_input and "副" not in cmdr_input) or ("分隊長" in cmdr_input and "副" not in cmdr_input):
+        suffix = "1"
+    else:
+        suffix = "2"
+        
     ed_ptl.at[0, '無線電'] = base + suffix
 
 st.subheader("3. 任務編組")
@@ -223,7 +226,7 @@ if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# --- 6. 預覽 (修正：過濾預覽畫面的空白列) ---
+# --- 6. 預覽 (HTML) ---
 def get_preview(df_c, df_p, cmdr_n, time_s):
     cmd_rows = []
     for _, r in df_c.iterrows():
