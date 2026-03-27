@@ -505,7 +505,7 @@ def process_project(files):
         st.write("✅ 雲端同步完成 (已套用：未達100%之後兩名標示紅字)")
 
 def process_accident(files):
-    """🚑 交通事故 (含正值變紅且鎖定格式邏輯)"""
+    """🚑 交通事故 (極致鎖定：只更新比較欄位的顏色)"""
     meta = []
     for f in files:
         f.seek(0)
@@ -555,12 +555,13 @@ def process_accident(files):
         gc = gspread.service_account_from_dict(GCP_CREDS)
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         
-        RED_FMT = {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True}}
-        BLACK_FMT = {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": False}}
+        # 💡 [修正核心] 移除了 "bold": True，且字典中只有 color 設定
+        RED_FMT = {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
+        BLACK_FMT = {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}}}
 
         for ws_idx, df in zip([2, 3], [a1_res, a2_res]):
             ws = sh.get_worksheet(ws_idx)
-            # 🌟 絕對不碰 A1 大標題！
+            # 絕對不碰 A1 大標題！
             ws.batch_clear(["A2:G20"]) 
             
             # 更新表頭 (第二列)
@@ -573,7 +574,7 @@ def process_accident(files):
             data_rows = [[int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row] for row in df.values.tolist()]
             ws.update(range_name='A3', values=data_rows)
             
-            # 🌟 比較值顏色邏輯：正值紅、負值黑，且「只動顏色不動字體」
+            # 🌟 極致精準鎖定：只准更新「顏色」，絕對不碰您原本設定的字體、大小、粗體或對齊！
             diff_col = 4 if ws_idx == 2 else 5
             color_reqs = []
             for r_idx, row_vals in enumerate(df.values):
@@ -584,13 +585,13 @@ def process_accident(files):
                     "repeatCell": {
                         "range": {"sheetId": ws.id, "startRowIndex": target_r, "endRowIndex": target_r + 1, "startColumnIndex": diff_col, "endColumnIndex": diff_col + 1},
                         "cell": {"userEnteredFormat": fmt}, 
-                        # 💡 這裡就是關鍵：限制 API 只允許更新前景顏色與粗細
-                        "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"
+                        # 💡 指令面嚴格限制：只允許覆寫 userEnteredFormat.textFormat.foregroundColor
+                        "fields": "userEnteredFormat.textFormat.foregroundColor"
                     }
                 })
             sh.batch_update({"requests": color_reqs})
             
-        st.write("✅ 交通事故雲端已更新（完美套用：正值紅字，並鎖定原有字體格式）")
+        st.write("✅ 交通事故雲端已更新（完美套用：僅正值紅字，其餘試算表格式皆保留原廠設定）")
 
 # ==========================================
 # 4. 戰情室首頁與排程器
