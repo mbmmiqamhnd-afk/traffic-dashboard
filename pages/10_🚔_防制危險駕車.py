@@ -43,14 +43,8 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 def format_staff_only(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
         return ""
-    
-    # 將 \ 或 、 轉為換行符號 \n
     s = str(val).replace('\\', '\n').replace('、', '\n')
-    
-    # 自動偵測：時段（如 22-02：）後方若緊接姓名，強制插入 \n
     s = re.sub(r'(\d{2}[:：]?\d{0,2}\s*-\s*\d{2}[:：]?\d{0,2}[時]?[:：])\s*([^\n\s])', r'\1\n\2', s)
-    
-    # 清理每一行開頭空格，確保垂直對齊
     lines = [l.strip() for l in s.split('\n') if l.strip()]
     return '\n'.join(lines)
 
@@ -63,7 +57,7 @@ def get_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=10) # 縮短快取時間至 10 秒，確保試算表修改後能快速反映
+@st.cache_data(ttl=10)
 def load_data():
     try:
         client = get_client()
@@ -122,7 +116,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
-    # 任務編組
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -138,7 +131,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -165,20 +157,20 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     doc.build(story)
     return buf.getvalue()
 
-# --- 4. 寄信功能 ---
-def send_report_email(time_str, commander, df_cmd, df_patrol, file_date_str):
+# --- 4. 寄信功能 (修正檔名為勤務時間) ---
+def send_report_email(time_str, commander, df_cmd, df_patrol, custom_filename):
     try:
         if "email" not in st.secrets: return False, "未設定 secrets"
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         pdf_bytes = generate_pdf_from_data(time_str, commander, df_cmd, df_patrol)
         msg = MIMEMultipart()
-        msg["From"], msg["To"], msg["Subject"] = sender, sender, f"防制危險駕車勤務規劃表_{file_date_str}"
-        msg.attach(MIMEText("附件為最新的防制危險駕車勤務規劃表 PDF。", "plain", "utf-8"))
+        msg["From"], msg["To"], msg["Subject"] = sender, sender, custom_filename
+        msg.attach(MIMEText(f"附件為 {custom_filename}。", "plain", "utf-8"))
         part = MIMEBase("application", "pdf")
         part.set_payload(pdf_bytes)
         encoders.encode_base64(part)
-        filename = _ul.quote(f"{msg['Subject']}.pdf")
-        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{filename}")
+        filename_encoded = _ul.quote(f"{custom_filename}.pdf")
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{filename_encoded}")
         msg.attach(part)
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
@@ -204,11 +196,8 @@ cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
 u_m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
 if u_m and len(ed_ptl) > 0:
     full_match = u_m.group(1) 
-    # 第一步：過濾常見組合詞
     pu = re.sub(r'(副所長|所長|小隊長|分隊長|副隊長|隊長|副所|所副)', '', full_match)
-    # 第二步：二次檢查，避免 Regex 沒抓乾淨殘留單字
     pu = pu.replace('副', '').replace('長', '')
-    
     ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
     umap = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
     base = next((v for k, v in umap.items() if k in pu), "隆安")
@@ -233,12 +222,17 @@ def get_preview(df_c, df_p, cmdr_n, time_s):
 
 st.components.v1.html(get_preview(res_cmd, res_ptl, cmdr_input, p_time), height=500, scrolling=True)
 
-# --- 7. 儲存與寄信 ---
+# --- 7. 儲存與寄信 (檔名自動抓取勤務時間的年月日) ---
 if st.button("💾 同步、寄信並下載 PDF", type="primary"):
+    # 從勤務時間抓取日期，例如 "115年3月6日"
+    date_match = re.search(r'(\d+年\d+月\d+日)', p_time)
+    file_date = date_match.group(1) if date_match else datetime.now().strftime('%Y%m%d')
+    final_filename = f"防制危險駕車勤務規劃表_{file_date}"
+
     if save_data(p_time, cmdr_input, res_cmd, res_ptl):
-        dt_label = datetime.now().strftime('%Y%m%d')
-        ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl, dt_label)
-        if ok: st.success("✅ 同步成功，郵件已寄送！")
+        ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl, final_filename)
+        if ok: st.success(f"✅ 同步成功，郵件「{final_filename}」已寄送！")
         else: st.error(f"⚠️ 同步成功，但郵件失敗：{mail_err}")
-        pdf = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
-        st.download_button("📥 下載 PDF", data=pdf, file_name=f"危駕勤務表_{dt_label}.pdf")
+        
+        pdf_data = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
+        st.download_button("📥 下載 PDF", data=pdf_data, file_name=f"{final_filename}.pdf")
