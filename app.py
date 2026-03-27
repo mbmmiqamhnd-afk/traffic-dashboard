@@ -85,7 +85,7 @@ def sync_to_specified_sheet(df):
         data_body = df.values.tolist() 
         data_list = [top_row, bottom_row] + data_body
         
-        # 從 A2 開始寫入，保留 A1 標題
+        # 🌟 從 A2 開始寫入，保留 A1 標題
         ws.update(range_name='A2', values=data_list)
         
         if HAS_FORMATTING:
@@ -101,8 +101,8 @@ def sync_to_specified_sheet(df):
                         "updateCells": {
                             "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
                             "rows": [{ "values": [{ "textFormatRuns": [
-                                {"startIndex": 0, "format": {"foregroundColor": black_color, "bold": True, "fontFamily": "微軟正黑體", "fontSize": 12}},
-                                {"startIndex": p_start, "format": {"foregroundColor": red_color, "bold": True, "fontFamily": "微軟正黑體", "fontSize": 12}}
+                                {"startIndex": 0, "format": {"foregroundColor": black_color}},
+                                {"startIndex": p_start, "format": {"foregroundColor": red_color}}
                             ], "userEnteredValue": {"stringValue": text} }] }],
                             "fields": "userEnteredValue,textFormatRuns"
                         }
@@ -126,7 +126,7 @@ def sync_to_specified_sheet(df):
         return False
 
 def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
-    """🚑交通事故專用：Google Sheets 標題括號與數字轉紅字 (已加入微軟正黑體與大小鎖定)"""
+    """🚑交通事故專用：Google Sheets 標題括號與數字轉紅字 (表頭已恢復原始設定)"""
     text = str(text)
     pattern = r'([0-9\(\)\/\-]+)'
     tokens = re.split(pattern, text)
@@ -135,15 +135,7 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
     for token in tokens:
         if not token: continue
         color = {"red": 1.0, "green": 0.0, "blue": 0.0} if re.match(pattern, token) else {"red": 0.0, "green": 0.0, "blue": 0.0}
-        runs.append({
-            "startIndex": current_pos, 
-            "format": {
-                "foregroundColor": color, 
-                "bold": True, 
-                "fontFamily": "微軟正黑體", 
-                "fontSize": 12
-            }
-        })
+        runs.append({"startIndex": current_pos, "format": {"foregroundColor": color, "bold": True}})
         current_pos += len(token)
     return {
         "updateCells": {
