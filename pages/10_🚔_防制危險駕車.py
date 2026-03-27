@@ -125,7 +125,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署 (包含交通快打指揮官欄位)
+    # 警力佈署 (確保包含交通快打指揮官列)
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -170,16 +170,21 @@ def send_report_email(time_str, commander, df_cmd, df_patrol, custom_filename):
 # --- 5. 介面與邏輯 ---
 df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
-    t, cmdr = "115年3月6日22時至翌日6時", "石門所副所長林榮裕"
+    t, cmdr_default = "115年3月6日22時至翌日6時", "石門所副所長林榮裕"
     ed_cmd = pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
     ed_ptl = pd.DataFrame(columns=["勤務時段", "無線電", "編組", "服勤人員", "任務分工"])
 else:
-    sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1])); t, cmdr = sd.get("plan_time", ""), sd.get("commander", "")
+    sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
+    t = sd.get("plan_time", "")
+    cmdr_default = sd.get("commander", "")
     ed_cmd, ed_ptl = df_cmd, df_ptl
 
 st.title("🚔 防制危險駕車專案勤務規劃表")
+
+# ====== 這裡重新放回輸入欄位 ======
 p_time = st.text_input("1. 勤務時間", t)
-cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
+cmdr_input = st.text_input("2. 交通快打指揮官", cmdr_default)
+# ==============================
 
 # --- 🎯 核心連動邏輯 (勤務時段連動) ---
 date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
@@ -211,12 +216,13 @@ if u_m and len(ed_ptl) > 0:
 
 st.subheader("3. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).fillna("")
+
 st.subheader("4. 警力佈署")
 if '服勤人員' in ed_ptl.columns: 
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# --- 6. 預覽 (修正：加入交通快打指揮官欄位) ---
+# --- 6. 預覽 (HTML) ---
 def get_preview(df_c, df_p, cmdr_n, time_s):
     cmd_h = "".join([f"<tr><td>{str(r['職稱']).replace('\n','<br>')}</td><td>{r['代號']}</td><td>{str(r['姓名']).replace('\n','<br>')}</td><td>{r['任務']}</td></tr>" for _, r in df_c.iterrows()])
     ptl_h = "".join([f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>" for _, r in df_p.iterrows()])
