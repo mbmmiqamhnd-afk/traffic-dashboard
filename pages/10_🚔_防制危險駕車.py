@@ -39,14 +39,14 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
-# --- 2. 格式化工具 (支援 \ 與 冒號 換行) ---
+# --- 2. 格式化工具 ---
 def format_staff_only(val):
-    if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
-        return ""
+    if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: return ""
+    # 支援 \ 換行與 、 換行
     s = str(val).replace('\\', '\n').replace('、', '\n')
+    # 自動偵測時段後接姓名換行
     s = re.sub(r'(\d{2}[:：]?\d{0,2}\s*-\s*\d{2}[:：]?\d{0,2}[時]?[:：])\s*([^\n\s])', r'\1\n\2', s)
-    lines = [l.strip() for l in s.split('\n') if l.strip()]
-    return '\n'.join(lines)
+    return '\n'.join([l.strip() for l in s.split('\n') if l.strip()])
 
 # --- 3. 雲端與 PDF 引擎 ---
 @st.cache_resource
@@ -116,32 +116,23 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
+    # 任務編組
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
-        data_cmd.append([
-            Paragraph(br(r['職稱']), style_cell), 
-            Paragraph(br(r['代號']), style_cell), 
-            Paragraph(br(r['姓名']), style_cell), 
-            Paragraph(br(r['任務']), style_cell_l)
-        ])
+        data_cmd.append([Paragraph(br(r['職稱']), style_cell), Paragraph(br(r['代號']), style_cell), Paragraph(br(r['姓名']), style_cell), Paragraph(br(r['任務']), style_cell_l)])
     
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45])
     t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]))
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
+    # 警力佈署
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
     for _, r in df_patrol.iterrows():
-        data_ptl.append([
-            Paragraph(br(r['勤務時段']), style_cell), 
-            Paragraph(br(r['無線電']), style_cell), 
-            Paragraph(br(r['編組']), style_cell), 
-            Paragraph(br(r['服勤人員']), style_cell), 
-            Paragraph(br(r['任務分工']), style_cell_l)
-        ])
+        data_ptl.append([Paragraph(br(r['勤務時段']), style_cell), Paragraph(br(r['無線電']), style_cell), Paragraph(br(r['編組']), style_cell), Paragraph(br(r['服勤人員']), style_cell), Paragraph(br(r['任務分工']), style_cell_l)])
 
     t2 = Table(data_ptl, colWidths=[page_width*0.22, page_width*0.13, page_width*0.15, page_width*0.23, page_width*0.27])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
@@ -157,7 +148,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     doc.build(story)
     return buf.getvalue()
 
-# --- 4. 寄信功能 (修正檔名為勤務時間) ---
+# --- 4. 寄信功能 ---
 def send_report_email(time_str, commander, df_cmd, df_patrol, custom_filename):
     try:
         if "email" not in st.secrets: return False, "未設定 secrets"
@@ -192,12 +183,34 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
 
-# --- 🎯 核心連動修正：強力過濾職稱殘留 ---
+# --- 🎯 核心連動邏輯修正 (勤務時段連動) ---
+# 抓取年月日邏輯
+date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
+if date_match and len(ed_ptl) > 0:
+    try:
+        y_val = date_match.group(1)
+        m_val = int(date_match.group(2))
+        d_val = int(date_match.group(3))
+        # 民國轉西元
+        y_tw = int(y_val) if y_val else (datetime.now().year - 1911)
+        base_dt = datetime(y_tw + 1911, m_val, d_val)
+        next_dt = base_dt + timedelta(days=1)
+        
+        # 1. 警力佈署第一列 (翌日零時)
+        ed_ptl.at[0, '勤務時段'] = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
+        
+        # 2. 警力佈署其餘列 (同步勤務時間內容)
+        if len(ed_ptl) > 1:
+            p_time_no_year = re.sub(r'^\d+年', '', p_time) # 去年份
+            formatted_time = re.sub(r'(\d+日)', r'\1\n', p_time_no_year) # 日之後換行
+            ed_ptl.loc[1:, '勤務時段'] = formatted_time
+    except: pass
+
+# --- 🎯 單位與指揮官過濾 ---
 u_m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
 if u_m and len(ed_ptl) > 0:
     full_match = u_m.group(1) 
-    pu = re.sub(r'(副所長|所長|小隊長|分隊長|副隊長|隊長|副所|所副)', '', full_match)
-    pu = pu.replace('副', '').replace('長', '')
+    pu = re.sub(r'(副所長|所長|小隊長|分隊長|副隊長|隊長|副所|所副)', '', full_match).replace('副', '').replace('長', '')
     ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
     umap = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
     base = next((v for k, v in umap.items() if k in pu), "隆安")
@@ -222,12 +235,11 @@ def get_preview(df_c, df_p, cmdr_n, time_s):
 
 st.components.v1.html(get_preview(res_cmd, res_ptl, cmdr_input, p_time), height=500, scrolling=True)
 
-# --- 7. 儲存與寄信 (檔名自動抓取勤務時間的年月日) ---
+# --- 7. 儲存與寄信 ---
 if st.button("💾 同步、寄信並下載 PDF", type="primary"):
-    # 從勤務時間抓取日期，例如 "115年3月6日"
-    date_match = re.search(r'(\d+年\d+月\d+日)', p_time)
-    file_date = date_match.group(1) if date_match else datetime.now().strftime('%Y%m%d')
-    final_filename = f"防制危險駕車勤務規劃表_{file_date}"
+    # 檔名抓取日期
+    date_fn = date_match.group(0) if date_match else datetime.now().strftime('%Y%m%d')
+    final_filename = f"防制危險駕車勤務規劃表_{date_fn}"
 
     if save_data(p_time, cmdr_input, res_cmd, res_ptl):
         ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl, final_filename)
