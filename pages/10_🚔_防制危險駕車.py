@@ -42,9 +42,7 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 # --- 2. 格式化工具 ---
 def format_staff_only(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: return ""
-    # 支援 \ 換行與 、 換行
     s = str(val).replace('\\', '\n').replace('、', '\n')
-    # 自動偵測時段後接姓名換行
     s = re.sub(r'(\d{2}[:：]?\d{0,2}\s*-\s*\d{2}[:：]?\d{0,2}[時]?[:：])\s*([^\n\s])', r'\1\n\2', s)
     return '\n'.join([l.strip() for l in s.split('\n') if l.strip()])
 
@@ -127,7 +125,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署
+    # 警力佈署 (包含交通快打指揮官欄位)
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -183,30 +181,24 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
 
-# --- 🎯 核心連動邏輯修正 (勤務時段連動) ---
-# 抓取年月日邏輯
+# --- 🎯 核心連動邏輯 (勤務時段連動) ---
 date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
 if date_match and len(ed_ptl) > 0:
     try:
         y_val = date_match.group(1)
         m_val = int(date_match.group(2))
         d_val = int(date_match.group(3))
-        # 民國轉西元
         y_tw = int(y_val) if y_val else (datetime.now().year - 1911)
         base_dt = datetime(y_tw + 1911, m_val, d_val)
         next_dt = base_dt + timedelta(days=1)
-        
-        # 1. 警力佈署第一列 (翌日零時)
         ed_ptl.at[0, '勤務時段'] = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
-        
-        # 2. 警力佈署其餘列 (同步勤務時間內容)
         if len(ed_ptl) > 1:
-            p_time_no_year = re.sub(r'^\d+年', '', p_time) # 去年份
-            formatted_time = re.sub(r'(\d+日)', r'\1\n', p_time_no_year) # 日之後換行
+            p_time_no_year = re.sub(r'^\d+年', '', p_time)
+            formatted_time = re.sub(r'(\d+日)', r'\1\n', p_time_no_year)
             ed_ptl.loc[1:, '勤務時段'] = formatted_time
     except: pass
 
-# --- 🎯 單位與指揮官過濾 ---
+# --- 🎯 核心連動修正：強力過濾職稱殘留 ---
 u_m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
 if u_m and len(ed_ptl) > 0:
     full_match = u_m.group(1) 
@@ -224,20 +216,19 @@ if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# --- 6. 預覽 ---
+# --- 6. 預覽 (修正：加入交通快打指揮官欄位) ---
 def get_preview(df_c, df_p, cmdr_n, time_s):
     cmd_h = "".join([f"<tr><td>{str(r['職稱']).replace('\n','<br>')}</td><td>{r['代號']}</td><td>{str(r['姓名']).replace('\n','<br>')}</td><td>{r['任務']}</td></tr>" for _, r in df_c.iterrows()])
     ptl_h = "".join([f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>" for _, r in df_p.iterrows()])
     return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }}</style>
-    <h2 style='text-align:center;'>{UNIT_TITLE} 規劃表</h2><div style='text-align:right;'>指揮官：{cmdr_n}</div><br>
+    <h2 style='text-align:center;'>{UNIT_TITLE} 規劃表</h2><div style='text-align:right;'>勤務時間：{time_s}</div><br>
     <table><tr><th colspan="4">任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>{cmd_h}</table><br>
-    <table><tr><th colspan="5">警 力 佈 署</th></tr><tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>{ptl_h}</table>"""
+    <table><tr><th colspan="5">警 力 佈 署</th></tr><tr><th colspan="5" style="text-align:left;">交通快打指揮官：{cmdr_n}</th></tr><tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>{ptl_h}</table>"""
 
 st.components.v1.html(get_preview(res_cmd, res_ptl, cmdr_input, p_time), height=500, scrolling=True)
 
 # --- 7. 儲存與寄信 ---
 if st.button("💾 同步、寄信並下載 PDF", type="primary"):
-    # 檔名抓取日期
     date_fn = date_match.group(0) if date_match else datetime.now().strftime('%Y%m%d')
     final_filename = f"防制危險駕車勤務規劃表_{date_fn}"
 
