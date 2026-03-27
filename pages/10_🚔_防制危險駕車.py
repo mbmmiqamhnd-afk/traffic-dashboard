@@ -114,6 +114,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
+    # 任務編組
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -125,12 +126,13 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
+    # 警力佈署 (修正：從 r['無線電'] 改為 r['代號'])
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
     for _, r in df_patrol.iterrows():
         if all(str(v).strip() == "" for v in r.values): continue
-        data_ptl.append([Paragraph(br(r['勤務時段']), style_cell), Paragraph(br(r['無線電']), style_cell), Paragraph(br(r['編組']), style_cell), Paragraph(br(r['服勤人員']), style_cell), Paragraph(br(r['任務分工']), style_cell_l)])
+        data_ptl.append([Paragraph(br(r['勤務時段']), style_cell), Paragraph(br(r['代號']), style_cell), Paragraph(br(r['編組']), style_cell), Paragraph(br(r['服勤人員']), style_cell), Paragraph(br(r['任務分工']), style_cell_l)])
 
     t2 = Table(data_ptl, colWidths=[page_width*0.22, page_width*0.13, page_width*0.15, page_width*0.23, page_width*0.27])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
@@ -172,7 +174,8 @@ df_set, df_cmd, df_ptl, err = load_data()
 if err or df_set is None:
     t, cmdr_default = "115年3月6日22時至翌日6時", "石門所副所長林榮裕"
     ed_cmd = pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
-    ed_ptl = pd.DataFrame(columns=["勤務時段", "無線電", "編組", "服勤人員", "任務分工"])
+    # 修正 fallback DataFrame 欄位名稱
+    ed_ptl = pd.DataFrame(columns=["勤務時段", "代號", "編組", "服勤人員", "任務分工"])
 else:
     sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     t = sd.get("plan_time", "")
@@ -209,14 +212,15 @@ if u_m and len(ed_ptl) > 0:
     umap = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
     base = next((v for k, v in umap.items() if k in pu), "隆安")
     
-    # 🎯 單位代號字尾判斷邏輯：
-    # 若包含「所長」或「分隊長」，且不包含「副」，則為 1；其餘皆為 2。
+    # 🎯 單位代號字尾判斷邏輯
     if ("所長" in cmdr_input and "副" not in cmdr_input) or ("分隊長" in cmdr_input and "副" not in cmdr_input):
         suffix = "1"
     else:
         suffix = "2"
         
-    ed_ptl.at[0, '無線電'] = base + suffix
+    # 修正：精準存入「代號」欄位，而非無效的「無線電」欄位
+    if '代號' in ed_ptl.columns:
+        ed_ptl.at[0, '代號'] = base + suffix
 
 st.subheader("3. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).fillna("")
@@ -237,7 +241,8 @@ def get_preview(df_c, df_p, cmdr_n, time_s):
     ptl_rows = []
     for _, r in df_p.iterrows():
         if all(str(v).strip() == "" for v in r.values): continue
-        ptl_rows.append(f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>")
+        # 修正：從 r['無線電'] 改為 r['代號']
+        ptl_rows.append(f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['代號']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>")
     ptl_h = "".join(ptl_rows)
     
     return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }}</style>
