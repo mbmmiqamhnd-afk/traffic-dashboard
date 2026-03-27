@@ -39,19 +39,18 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
-# --- 2. 格式化工具 (強化：時段冒號後強制換行) ---
+# --- 2. 格式化工具 (支援 \ 與 冒號 換行) ---
 def format_staff_only(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
         return ""
     
-    # 統一換行符號
-    s = str(val).replace('\\n', '\n').replace('、', '\n')
+    # 將 \ 或 、 轉為換行符號 \n
+    s = str(val).replace('\\', '\n').replace('、', '\n')
     
-    # 核心邏輯：偵測時段（如 22-02：）後方若緊接文字（姓名），強制插入 \n
-    # 修正重點：確保匹配到冒號後的所有非空字元
+    # 自動偵測：時段（如 22-02：）後方若緊接姓名，強制插入 \n
     s = re.sub(r'(\d{2}[:：]?\d{0,2}\s*-\s*\d{2}[:：]?\d{0,2}[時]?[:：])\s*([^\n\s])', r'\1\n\2', s)
     
-    # 清理多餘空格，確保垂直對齊
+    # 清理每一行開頭空格，確保垂直對齊
     lines = [l.strip() for l in s.split('\n') if l.strip()]
     return '\n'.join(lines)
 
@@ -109,8 +108,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     style_title = ParagraphStyle('T', fontName=font, fontSize=16, alignment=1, spaceAfter=8)
     style_info = ParagraphStyle('I', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
     style_th = ParagraphStyle('H', fontName=font, fontSize=16, alignment=1, leading=22)
-    
-    # 這裡的 leading (行距) 非常重要，設定為 20 確保換行後不重疊
     style_cell = ParagraphStyle('C', fontName=font, fontSize=14, leading=20, alignment=1) 
     style_cell_l = ParagraphStyle('L', fontName=font, fontSize=14, leading=20, alignment=0)
     style_note_hanging = ParagraphStyle('NH', fontName=font, fontSize=14, leading=20, alignment=0, leftIndent=28, firstLineIndent=-28)
@@ -118,17 +115,15 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(Paragraph(f"<b>{UNIT_TITLE}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
-    # 核心修復：PDF 專用換行轉譯
+    # 核心：將 \n 轉為 PDF 認得的 <br/> 標籤，確保寄出的 PDF 同步換行
     def br(txt, bold_time=True):
         if not txt: return ""
-        # 1. 將資料庫或格式化工具產生的 \n 轉為 PDF Paragraph 認得的 <br/>
         s = str(txt).replace('\n', '<br/>')
         if bold_time:
-            # 2. 加粗時段，並確保時段後的冒號後方有換行標籤
             s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
-    # 任務編組
+    # 任務編組表格
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -144,7 +139,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署
+    # 警力佈署表格
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -206,26 +201,17 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
 
-# 核心連動邏輯
-match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
-if match and len(ed_ptl) > 0:
-    y_str, m, d = match.group(1), int(match.group(2)), int(match.group(3))
-    y_out = y_str if y_str else str(datetime.now().year - 1911)
-    if len(ed_ptl) > 1:
-        p_time_no_year = re.sub(r'^\d+年', '', p_time)
-        ed_ptl.loc[1:, '勤務時段'] = re.sub(r'(\d+日)\s*', r'\1\n', p_time_no_year)
-    try:
-        dt_next = datetime(int(y_out) + 1911, m, d) + timedelta(days=1)
-        ed_ptl.at[0, '勤務時段'] = f"{dt_next.month}月{dt_next.day}日\n零時至4時"
-    except: pass
-
+# --- 🎯 核心連動修正：去除職稱殘留 ---
 u_m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
 if u_m and len(ed_ptl) > 0:
-    pu = u_m.group(1) 
+    full_match = u_m.group(1) 
+    # 去除常見職稱關鍵字，只留純單位
+    pu = re.sub(r'(?:副所長|所長|小隊長|分隊長|副隊長|隊長)', '', full_match)
+    
     ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
     umap = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
     base = next((v for k, v in umap.items() if k in pu), "隆安")
-    suffix = "2" if "副" in cmdr_input or "小隊長" in cmdr_input else "1"
+    suffix = "2" if any(kw in cmdr_input for kw in ["副", "小隊長"]) else "1"
     ed_ptl.at[0, '無線電'] = base + suffix
 
 st.subheader("3. 任務編組")
@@ -235,9 +221,8 @@ if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# --- 6. 預覽 (HTML) ---
+# --- 6. 預覽 ---
 def get_preview(df_c, df_p, cmdr_n, time_s):
-    # HTML 本身支援 <br>，直接取代 \n 即可
     cmd_h = "".join([f"<tr><td>{str(r['職稱']).replace('\n','<br>')}</td><td>{r['代號']}</td><td>{str(r['姓名']).replace('\n','<br>')}</td><td>{r['任務']}</td></tr>" for _, r in df_c.iterrows()])
     ptl_h = "".join([f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>" for _, r in df_p.iterrows()])
     return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }}</style>
