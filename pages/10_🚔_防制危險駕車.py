@@ -63,7 +63,7 @@ def get_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10) # 縮短快取時間至 10 秒，確保試算表修改後能快速反映
 def load_data():
     try:
         client = get_client()
@@ -115,7 +115,6 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(Paragraph(f"<b>{UNIT_TITLE}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
-    # 核心：將 \n 轉為 PDF 認得的 <br/> 標籤，確保寄出的 PDF 同步換行
     def br(txt, bold_time=True):
         if not txt: return ""
         s = str(txt).replace('\n', '<br/>')
@@ -123,7 +122,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
-    # 任務編組表格
+    # 任務編組
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -139,7 +138,7 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署表格
+    # 警力佈署
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -201,17 +200,19 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
 
-# --- 🎯 核心連動修正：去除職稱殘留 ---
+# --- 🎯 核心連動修正：強力過濾職稱殘留 ---
 u_m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
 if u_m and len(ed_ptl) > 0:
     full_match = u_m.group(1) 
-    # 去除常見職稱關鍵字，只留純單位
-    pu = re.sub(r'(?:副所長|所長|小隊長|分隊長|副隊長|隊長)', '', full_match)
+    # 第一步：過濾常見組合詞
+    pu = re.sub(r'(副所長|所長|小隊長|分隊長|副隊長|隊長|副所|所副)', '', full_match)
+    # 第二步：二次檢查，避免 Regex 沒抓乾淨殘留單字
+    pu = pu.replace('副', '').replace('長', '')
     
     ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
     umap = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
     base = next((v for k, v in umap.items() if k in pu), "隆安")
-    suffix = "2" if any(kw in cmdr_input for kw in ["副", "小隊長"]) else "1"
+    suffix = "2" if any(kw in cmdr_input for kw in ["副", "小隊長", "所副"]) else "1"
     ed_ptl.at[0, '無線電'] = base + suffix
 
 st.subheader("3. 任務編組")
