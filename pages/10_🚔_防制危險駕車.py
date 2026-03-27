@@ -39,14 +39,22 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
-# --- 2. 格式化工具 ---
+# --- 2. 格式化工具 (時段在前，姓名在後，冒號後強制換行) ---
 def format_staff_only(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: 
         return ""
-    # 統一換行與分隔符號
+    
+    # 1. 統一換行符號與分隔符號
     s = str(val).replace('\\n', '\n').replace('、', '\n')
-    # 核心邏輯：時段在前的自動換行 (偵測時段結束後，若緊接文字則換行)
-    s = re.sub(r'(\d{2}[:：]?\d{0,2}\s*-\s*\d{2}[:：]?\d{0,2}[時]?[:：]?)\s*([^\n\s])', r'\1\n\2', s)
+    
+    # 2. 偵測時段（包含冒號）後方緊接姓名時，強制插入換行 \n
+    # 範例匹配： 22:00-02:00：王小明 -> 22:00-02:00：\n王小明
+    s = re.sub(r'(\d{2}[:：]?\d{0,2}\s*-\s*\d{2}[:：]?\d{0,2}[時]?[:：])\s*([^\n\s])', r'\1\n\2', s)
+    
+    # 3. 補強：若無冒號但有時段結尾，也強制換行
+    s = re.sub(r'(\d{2}[:：]?\d{0,2}\s*-\s*\d{2}[:：]?\d{0,2}[時]?)\s+([^\n\s])', r'\1\n\2', s)
+    
+    # 4. 清理每一行開頭的空格，確保垂直對齊
     lines = [l.strip() for l in s.split('\n') if l.strip()]
     return '\n'.join(lines)
 
@@ -104,21 +112,20 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     style_title = ParagraphStyle('T', fontName=font, fontSize=16, alignment=1, spaceAfter=8)
     style_info = ParagraphStyle('I', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
     style_th = ParagraphStyle('H', fontName=font, fontSize=16, alignment=1, leading=22)
-    style_cell = ParagraphStyle('C', fontName=font, fontSize=14, leading=18, alignment=1) 
-    style_cell_l = ParagraphStyle('L', fontName=font, fontSize=14, leading=18, alignment=0)
+    style_cell = ParagraphStyle('C', fontName=font, fontSize=14, leading=20, alignment=1) 
+    style_cell_l = ParagraphStyle('L', fontName=font, fontSize=14, leading=20, alignment=0)
     style_note_hanging = ParagraphStyle('NH', fontName=font, fontSize=14, leading=20, alignment=0, leftIndent=28, firstLineIndent=-28)
 
     story.append(Paragraph(f"<b>{UNIT_TITLE}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
-    # 修正 PDF 換行處理函式
+    # 修正 PDF 換行處理函式：將 \n 轉為 PDF 認得的 <br/>
     def br(txt, bold_time=True):
         if not txt: return ""
-        # 將資料庫或格式化後的 \n 轉為 PDF 的 <br/>
         s = str(txt).replace('\n', '<br/>')
         if bold_time:
-            # 讓時段部分加粗
-            s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?：?)', r'<b>\1</b>', s)
+            # 時段加粗
+            s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
     # 任務編組
@@ -192,14 +199,15 @@ if err or df_set is None:
     ed_cmd = pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
     ed_ptl = pd.DataFrame(columns=["勤務時段", "無線電", "編組", "服勤人員", "任務分工"])
 else:
-    sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1])); t, cmdr = sd.get("plan_time", ""), sd.get("commander", "")
+    sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
+    t, cmdr = sd.get("plan_time", ""), sd.get("commander", "")
     ed_cmd, ed_ptl = df_cmd, df_ptl
 
 st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr)
 
-# 核心連動邏輯
+# 核心連動邏輯 (時間/指揮官/編組)
 match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
 if match and len(ed_ptl) > 0:
     y_str, m, d = match.group(1), int(match.group(2)), int(match.group(3))
@@ -224,12 +232,11 @@ if u_m and len(ed_ptl) > 0:
 st.subheader("3. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).fillna("")
 st.subheader("4. 警力佈署")
-# 處理服勤人員格式
 if '服勤人員' in ed_ptl.columns: 
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# --- 6. 預覽 ---
+# --- 6. 預覽 (HTML) ---
 def get_preview(df_c, df_p, cmdr_n, time_s):
     cmd_h = "".join([f"<tr><td>{str(r['職稱']).replace('\n','<br>')}</td><td>{r['代號']}</td><td>{str(r['姓名']).replace('\n','<br>')}</td><td>{r['任務']}</td></tr>" for _, r in df_c.iterrows()])
     ptl_h = "".join([f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>" for _, r in df_p.iterrows()])
