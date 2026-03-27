@@ -114,10 +114,12 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
             s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
-    # 任務編組
+    # 任務編組 (自動略過空白列)
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
+        # 如果整列都是空的，就跳過不繪製
+        if all(str(v).strip() == "" for v in r.values): continue
         data_cmd.append([Paragraph(br(r['職稱']), style_cell), Paragraph(br(r['代號']), style_cell), Paragraph(br(r['姓名']), style_cell), Paragraph(br(r['任務']), style_cell_l)])
     
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45])
@@ -125,11 +127,13 @@ def generate_pdf_from_data(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署 (確保包含交通快打指揮官列)
+    # 警力佈署 (自動略過空白列)
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
     for _, r in df_patrol.iterrows():
+        # 如果整列都是空的，就跳過不繪製
+        if all(str(v).strip() == "" for v in r.values): continue
         data_ptl.append([Paragraph(br(r['勤務時段']), style_cell), Paragraph(br(r['無線電']), style_cell), Paragraph(br(r['編組']), style_cell), Paragraph(br(r['服勤人員']), style_cell), Paragraph(br(r['任務分工']), style_cell_l)])
 
     t2 = Table(data_ptl, colWidths=[page_width*0.22, page_width*0.13, page_width*0.15, page_width*0.23, page_width*0.27])
@@ -181,12 +185,10 @@ else:
 
 st.title("🚔 防制危險駕車專案勤務規劃表")
 
-# ====== 這裡重新放回輸入欄位 ======
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr_default)
-# ==============================
 
-# --- 🎯 核心連動邏輯 (勤務時段連動) ---
+# --- 🎯 核心連動邏輯 ---
 date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
 if date_match and len(ed_ptl) > 0:
     try:
@@ -203,7 +205,6 @@ if date_match and len(ed_ptl) > 0:
             ed_ptl.loc[1:, '勤務時段'] = formatted_time
     except: pass
 
-# --- 🎯 核心連動修正：強力過濾職稱殘留 ---
 u_m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
 if u_m and len(ed_ptl) > 0:
     full_match = u_m.group(1) 
@@ -222,10 +223,20 @@ if '服勤人員' in ed_ptl.columns:
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# --- 6. 預覽 (HTML) ---
+# --- 6. 預覽 (修正：過濾預覽畫面的空白列) ---
 def get_preview(df_c, df_p, cmdr_n, time_s):
-    cmd_h = "".join([f"<tr><td>{str(r['職稱']).replace('\n','<br>')}</td><td>{r['代號']}</td><td>{str(r['姓名']).replace('\n','<br>')}</td><td>{r['任務']}</td></tr>" for _, r in df_c.iterrows()])
-    ptl_h = "".join([f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>" for _, r in df_p.iterrows()])
+    cmd_rows = []
+    for _, r in df_c.iterrows():
+        if all(str(v).strip() == "" for v in r.values): continue
+        cmd_rows.append(f"<tr><td>{str(r['職稱']).replace('\n','<br>')}</td><td>{r['代號']}</td><td>{str(r['姓名']).replace('\n','<br>')}</td><td>{r['任務']}</td></tr>")
+    cmd_h = "".join(cmd_rows)
+    
+    ptl_rows = []
+    for _, r in df_p.iterrows():
+        if all(str(v).strip() == "" for v in r.values): continue
+        ptl_rows.append(f"<tr><td>{str(r['勤務時段']).replace('\n','<br>')}</td><td>{r['無線電']}</td><td>{str(r['編組']).replace('\n','<br>')}</td><td>{str(r['服勤人員']).replace('\n','<br>')}</td><td>{r['任務分工']}</td></tr>")
+    ptl_h = "".join(ptl_rows)
+    
     return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }}</style>
     <h2 style='text-align:center;'>{UNIT_TITLE} 規劃表</h2><div style='text-align:right;'>勤務時間：{time_s}</div><br>
     <table><tr><th colspan="4">任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>{cmd_h}</table><br>
