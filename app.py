@@ -374,9 +374,17 @@ def process_major(files):
 
 def process_project(files):
     """🔥 強化專案 (包含智慧判斷：未達100%之倒數兩名標紅)"""
-    f1 = next((f for f in files if "強化" in f.name), None)
-    f2_list = [f for f in files if "r17" in f.name.lower() or "砂石車" in f.name]
     
+    # 🌟 修改 1: 放寬檔名辨識，支援法條報表與自選匯出
+    f1 = next((f for f in files if any(k in f.name for k in ["強化", "法條", "自選匯出"])), None)
+    
+    # 🌟 修改 2: 放寬大型車報表辨識，支援 R17, 砂石, 大貨
+    f2_list = [f for f in files if any(k in f.name.upper() for k in ["R17", "砂石", "大貨"])]
+    
+    if not f1 or not f2_list:
+        st.error("❌ 找不到強化專案的報表，請確認檔名包含「法條/強化/自選匯出」及「砂石/大貨/R17」。")
+        return
+
     def s_read(f, **kwargs):
         f.seek(0)
         if f.name.endswith('.csv'):
@@ -431,8 +439,11 @@ def process_project(files):
     final_rows = []
     for u, tgts in PROJECT_TARGETS.items():
         d15 = get_c(u)
-        u_r = df2[(df2['來源檔名'].str.contains('大隊|交大', na=False)) & (df2['單位'].str.contains('龍潭', na=False))] if u == '交通分隊' else df2[(df2['單位'].apply(get_unit) == u) & (~df2['來源檔名'].str.contains('大隊|交大', na=False))]
+        
+        # 🌟 修改 3: 移除檔名限制，統一交給 map_unit 自動辨識「交通分隊」與各所
+        u_r = df2[df2['單位'].apply(get_unit) == u]
         h_sum = int(u_r['大型車純違規'].sum()) if not u_r.empty else 0
+        
         res = [u]
         for i, cat in enumerate(PROJECT_CATS):
             cnt = d15.get(cat, 0) if cat != "大型車違規" else h_sum
@@ -555,26 +566,21 @@ def process_accident(files):
         gc = gspread.service_account_from_dict(GCP_CREDS)
         sh = gc.open_by_url(GOOGLE_SHEET_URL)
         
-        # 💡 [修正核心] 移除了 "bold": True，且字典中只有 color 設定
         RED_FMT = {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
         BLACK_FMT = {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}}}
 
         for ws_idx, df in zip([2, 3], [a1_res, a2_res]):
             ws = sh.get_worksheet(ws_idx)
-            # 絕對不碰 A1 大標題！
             ws.batch_clear(["A2:G20"]) 
             
-            # 更新表頭 (第二列)
             reqs = []
             for c_idx, c_name in enumerate(df.columns):
                 reqs.append(get_gsheet_rich_text_req(ws.id, 1, c_idx, c_name))
             sh.batch_update({"requests": reqs})
             
-            # 寫入數據
             data_rows = [[int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row] for row in df.values.tolist()]
             ws.update(range_name='A3', values=data_rows)
             
-            # 🌟 極致精準鎖定：只准更新「顏色」，絕對不碰您原本設定的字體、大小、粗體或對齊！
             diff_col = 4 if ws_idx == 2 else 5
             color_reqs = []
             for r_idx, row_vals in enumerate(df.values):
@@ -585,7 +591,6 @@ def process_accident(files):
                     "repeatCell": {
                         "range": {"sheetId": ws.id, "startRowIndex": target_r, "endRowIndex": target_r + 1, "startColumnIndex": diff_col, "endColumnIndex": diff_col + 1},
                         "cell": {"userEnteredFormat": fmt}, 
-                        # 💡 指令面嚴格限制：只允許覆寫 userEnteredFormat.textFormat.foregroundColor
                         "fields": "userEnteredFormat.textFormat.foregroundColor"
                     }
                 })
@@ -620,7 +625,7 @@ if app_mode == "🏠 智慧批次處理中心":
                 if "list" in name or "地點" in name or "科技" in name: cat_files["科技執法"].append(f)
                 elif "stone" in name or "超載" in name: cat_files["超載統計"].append(f)
                 elif "重大" in name: cat_files["重大違規"].append(f)
-                elif "強化" in name or "專案" in name or "砂石車" in name or "r17" in name: cat_files["強化專案"].append(f)
+                elif "強化" in name or "專案" in name or "砂石車" in name or "r17" in name or "法條" in name or "自選匯出" in name: cat_files["強化專案"].append(f)
                 elif "a1" in name or "a2" in name or "事故" in name or "案件統計" in name: cat_files["交通事故"].append(f)
             
             try:
