@@ -85,7 +85,6 @@ def sync_to_specified_sheet(df):
         data_body = df.values.tolist() 
         data_list = [top_row, bottom_row] + data_body
         
-        # 🌟 從 A2 開始寫入，保留 A1 標題
         ws.update(range_name='A2', values=data_list)
         
         if HAS_FORMATTING:
@@ -126,7 +125,7 @@ def sync_to_specified_sheet(df):
         return False
 
 def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
-    """🚑交通事故專用：Google Sheets 標題括號與數字轉紅字 (表頭已恢復原始設定)"""
+    """🚑交通事故專用：Google Sheets 標題括號與數字轉紅字"""
     text = str(text)
     pattern = r'([0-9\(\)\/\-]+)'
     tokens = re.split(pattern, text)
@@ -204,18 +203,6 @@ def process_tech_enforcement(files):
                                    {"startIndex": len("科技執法成效 "), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True, "fontSize": 24}}]}]}],
                 "fields": "userEnteredValue,textFormatRuns"}}]}
         sh.batch_update(reqs)
-        
-    if MY_EMAIL and MY_PASSWORD:
-        msg = MIMEMultipart()
-        msg['From'], msg['To'], msg['Subject'] = MY_EMAIL, TO_EMAIL, f"科技執法統計報告({date_range_str})"
-        msg.attach(MIMEText(f"長官好，科技執法路段排行報表已完成。\n\n統計期間：{date_range_str}\n舉發總件數：{len(df)} 件", 'plain'))
-        part = MIMEApplication(output.getvalue(), Name="Tech_Enforcement.xlsx")
-        part.add_header('Content-Disposition', 'attachment', filename="Tech_Enforcement.xlsx")
-        msg.attach(part)
-        with smtplib.SMTP('smtp.gmail.com', 587) as s:
-            s.starttls()
-            s.login(MY_EMAIL, MY_PASSWORD)
-            s.send_message(msg)
 
 def process_overload(files):
     """🚛 超載違規"""
@@ -274,27 +261,6 @@ def process_overload(files):
         ws.update(range_name='A1', values=[['取締超載違規件數統計表']])
         ws.update(range_name='A2', values=[df_final.columns.tolist()] + df_final.values.tolist())
         ws.update(range_name=f'A{2 + len(df_final) + 1}', values=[[f_plain]])
-        
-    if MY_EMAIL:
-        df_excel_buffer = io.BytesIO()
-        with pd.ExcelWriter(df_excel_buffer, engine='xlsxwriter') as writer:
-            df_final.to_excel(writer, index=False, startrow=1, sheet_name='Sheet1')
-            worksheet = writer.sheets['Sheet1']
-            title_format = writer.book.add_format({'bold': True, 'font_size': 18, 'align': 'center', 'valign': 'vcenter', 'font_color': 'blue'})
-            worksheet.merge_range('A1:G1', '取締超載違規件數統計表', title_format)
-            worksheet.set_column('A:A', 15); worksheet.set_column('B:G', 12)
-            
-        msg = MIMEMultipart()
-        msg['Subject'] = Header(f"🚛 超載報表 - {e_yt} ({prog_str})", 'utf-8').encode()
-        msg['From'], msg['To'] = MY_EMAIL, TO_EMAIL
-        msg.attach(MIMEText("自動產生的超載報表已同步，請查閱附件。", 'plain'))
-        part = MIMEBase('application', 'octet-stream')
-        part.set_payload(df_excel_buffer.getvalue())
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', 'attachment; filename="Overload_Report.xlsx"')
-        msg.attach(part)
-        with smtplib.SMTP('smtp.gmail.com', 587) as s:
-            s.starttls(); s.login(MY_EMAIL, MY_PASSWORD); s.send_message(msg)
 
 def process_major(files):
     """🚨 重大違規"""
@@ -373,7 +339,7 @@ def process_major(files):
             st.write("✅ 雲端格式 (保留原始 A1 標題) 與數據同步完成")
 
 def process_project(files):
-    """🔥 強化專案 (包含智慧判斷：未達100%之倒數兩名標紅)"""
+    """🔥 強化專案 (包含智慧判斷：解決同分並列標紅問題，與自動洗白舊格式)"""
     
     f1 = next((f for f in files if any(k in f.name for k in ["強化", "法條", "自選匯出"])), None)
     f2_list = [f for f in files if any(k in f.name.upper() for k in ["R17", "砂石", "大貨"])]
@@ -484,9 +450,13 @@ def process_project(files):
             
             if valid_rates:
                 valid_rates.sort(key=lambda x: x[1])
-                bottom_2 = valid_rates[:2]
-                for row_idx, rate_val in bottom_2:
-                    if rate_val < 100.0:
+                
+                # 🌟 解決並列問題：找出「第二低的分數」作為基準線
+                threshold = valid_rates[1][1] if len(valid_rates) > 1 else valid_rates[0][1]
+                
+                for row_idx, rate_val in valid_rates:
+                    # 只要分數「小於或等於基準線」，且未達 100%，就全部標紅字 (公平反映所有同分的單位)
+                    if rate_val <= threshold and rate_val < 100.0:
                         red_cells.append((3 + row_idx, rate_col_idx))
 
         reqs = [
@@ -517,7 +487,7 @@ def process_project(files):
             })
 
         ws.spreadsheet.batch_update({"requests": reqs})
-        st.write("✅ 雲端同步完成 (已套用：未達100%之後兩名標示紅字，且自動清除舊格式)")
+        st.write("✅ 雲端同步完成 (已套用：未達100%之後兩名標示紅字，遇同分自動並列標示，且自動清除舊格式)")
 
 def process_accident(files):
     """🚑 交通事故 (極致鎖定：只更新比較欄位的顏色)"""
