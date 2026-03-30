@@ -375,10 +375,7 @@ def process_major(files):
 def process_project(files):
     """🔥 強化專案 (包含智慧判斷：未達100%之倒數兩名標紅)"""
     
-    # 🌟 修改 1: 放寬檔名辨識，支援法條報表與自選匯出
     f1 = next((f for f in files if any(k in f.name for k in ["強化", "法條", "自選匯出"])), None)
-    
-    # 🌟 修改 2: 放寬大型車報表辨識，支援 R17, 砂石, 大貨
     f2_list = [f for f in files if any(k in f.name.upper() for k in ["R17", "砂石", "大貨"])]
     
     if not f1 or not f2_list:
@@ -440,7 +437,6 @@ def process_project(files):
     for u, tgts in PROJECT_TARGETS.items():
         d15 = get_c(u)
         
-        # 🌟 修改 3: 移除檔名限制，統一交給 map_unit 自動辨識「交通分隊」與各所
         u_r = df2[df2['單位'].apply(get_unit) == u]
         h_sum = int(u_r['大型車純違規'].sum()) if not u_r.empty else 0
         
@@ -494,6 +490,14 @@ def process_project(files):
                         red_cells.append((3 + row_idx, rate_col_idx))
 
         reqs = [
+            # 🌟 洗白畫布指令：強制把數據區(第4列到第20列)洗回一般黑色字體
+            {
+                "repeatCell": {
+                    "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": 20, "startColumnIndex": 0, "endColumnIndex": 19},
+                    "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": False}}},
+                    "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"
+                }
+            },
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
             {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
                 "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [
@@ -513,7 +517,7 @@ def process_project(files):
             })
 
         ws.spreadsheet.batch_update({"requests": reqs})
-        st.write("✅ 雲端同步完成 (已套用：未達100%之後兩名標示紅字)")
+        st.write("✅ 雲端同步完成 (已套用：未達100%之後兩名標示紅字，且自動清除舊格式)")
 
 def process_accident(files):
     """🚑 交通事故 (極致鎖定：只更新比較欄位的顏色)"""
@@ -621,7 +625,6 @@ if app_mode == "🏠 智慧批次處理中心":
         else:
             cat_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": []}
             
-            # 🌟 修正處：將所有過濾條件放寬，確保「法條、大貨、砂石」都能被準確捕捉！
             for f in uploads:
                 name = f.name.lower()
                 if any(k in name for k in ["list", "地點", "科技"]): 
