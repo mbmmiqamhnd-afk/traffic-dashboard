@@ -67,7 +67,7 @@ st.markdown("##### 🚀 **自動化流程：** 拖入報表後，系統將自動
 
 all_uploads = None
 
-# 🌟【關鍵修改區】：雙通道接收檔案 🌟
+# 雙通道接收檔案
 if "auto_files_project" in st.session_state and st.session_state["auto_files_project"]:
     st.info("📥 系統已自動載入從「首頁」分配過來的檔案！")
     all_uploads = st.session_state["auto_files_project"]
@@ -87,12 +87,16 @@ else:
 f1_active = None
 f2_active = []
 
+# 🌟【關鍵修改區】：放寬檔名辨識邏輯 🌟
 if all_uploads:
     for f in all_uploads:
-        if "強化" in f.name:
+        # 辨識法條報表 (抓取: 強化、法條、自選匯出)
+        if any(k in f.name for k in ["強化", "法條", "自選匯出"]):
             f1_active = f
             st.success(f"✔️ 已識別法條報表: **{f.name}**")
-        elif "R17" in f.name or "r17" in f.name.lower() or "砂石車" in f.name:
+        
+        # 辨識大型車報表 (抓取: R17、砂石、大貨)
+        elif any(k in f.name.upper() for k in ["R17", "砂石", "大貨"]):
             f2_active.append(f)
             st.success(f"✔️ 已識別大型車報表: **{f.name}**")
 
