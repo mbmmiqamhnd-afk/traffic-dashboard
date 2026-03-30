@@ -620,13 +620,20 @@ if app_mode == "🏠 智慧批次處理中心":
             st.info("💡 若要處理新報表，請重新整理頁面或拖入新檔案。")
         else:
             cat_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": []}
+            
+            # 🌟 修正處：將所有過濾條件放寬，確保「法條、大貨、砂石」都能被準確捕捉！
             for f in uploads:
                 name = f.name.lower()
-                if "list" in name or "地點" in name or "科技" in name: cat_files["科技執法"].append(f)
-                elif "stone" in name or "超載" in name: cat_files["超載統計"].append(f)
-                elif "重大" in name: cat_files["重大違規"].append(f)
-                elif "強化" in name or "專案" in name or "砂石車" in name or "r17" in name or "法條" in name or "自選匯出" in name: cat_files["強化專案"].append(f)
-                elif "a1" in name or "a2" in name or "事故" in name or "案件統計" in name: cat_files["交通事故"].append(f)
+                if any(k in name for k in ["list", "地點", "科技"]): 
+                    cat_files["科技執法"].append(f)
+                elif any(k in name for k in ["stone", "超載"]): 
+                    cat_files["超載統計"].append(f)
+                elif "重大" in name: 
+                    cat_files["重大違規"].append(f)
+                elif any(k in name for k in ["強化", "專案", "砂石", "大貨", "r17", "法條", "自選匯出"]): 
+                    cat_files["強化專案"].append(f)
+                elif any(k in name for k in ["a1", "a2", "事故", "案件統計"]): 
+                    cat_files["交通事故"].append(f)
             
             try:
                 if cat_files["科技執法"]:
