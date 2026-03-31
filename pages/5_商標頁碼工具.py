@@ -33,7 +33,7 @@ def create_pdf_overlay(page_width, page_height, page_num, current_font):
     c.setFillColor(white)
     c.rect(rect_x, rect_y, box_width, box_height, fill=1, stroke=0)
     c.setFillColor(black)
-    c.setFont(current_font if font_path else "Helvetica", 14)
+    c.setFont(current_font, 14)
     c.drawRightString(page_width - 4, 4, text)
     c.save()
     packet.seek(0)
@@ -77,11 +77,21 @@ if uploaded_file and st.button("開始加工"):
         if file_ext == "pdf":
             reader = PdfReader(uploaded_file)
             writer = PdfWriter()
+            
+            # 在處理 PDF 頁面「前」，先註冊好字型
+            pdf_font = "Helvetica" # 預設字型
+            if font_path:
+                try:
+                    pdfmetrics.registerFont(TTFont('CustomFont', font_path))
+                    pdf_font = 'CustomFont'
+                except Exception as font_e:
+                    st.warning(f"字體載入失敗，改用預設字體 (錯誤: {font_e})")
+
+            # 開始處理每一頁
             for i, page in enumerate(reader.pages):
                 w, h = float(page.mediabox.width), float(page.mediabox.height)
-                overlay = create_pdf_overlay(w, h, i+1, "CustomFont" if font_path else "Helvetica")
-                if font_path:
-                    pdfmetrics.registerFont(TTFont('CustomFont', font_path))
+                overlay = create_pdf_overlay(w, h, i+1, pdf_font) 
+                
                 page.merge_page(PdfReader(overlay).pages[0])
                 writer.add_page(page)
             
