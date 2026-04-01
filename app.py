@@ -224,7 +224,6 @@ def process_overload(files):
             df = pd.read_excel(xls, sheet_name=sn, header=None)
             u = None
             for _, r in df.iterrows():
-                # 🛠️ 修復處：強制轉換每一格內容為 str
                 rs = " ".join([str(x) for x in r.values])
                 if "舉發單位：" in rs:
                     m2 = re.search(r"舉發單位：(\S+)", rs)
@@ -258,10 +257,34 @@ def process_overload(files):
 
     if GCP_CREDS:
         gc = gspread.service_account_from_dict(GCP_CREDS)
-        ws = gc.open_by_url(GOOGLE_SHEET_URL).get_worksheet(1)
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        ws = sh.get_worksheet(1)
         ws.update(range_name='A1', values=[['取締超載違規件數統計表']])
         ws.update(range_name='A2', values=[df_final.columns.tolist()] + df_final.values.tolist())
         ws.update(range_name=f'A{2 + len(df_final) + 1}', values=[[f_plain]])
+        
+        # 🌟 針對超載統計表頭進行「括號後半段紅字化」的富文本處理
+        if HAS_FORMATTING:
+            requests = []
+            red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
+            black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
+            
+            for i, col_name in enumerate(df_final.columns):
+                if "(" in col_name:
+                    p_start = col_name.find("(")
+                    requests.append({
+                        "updateCells": {
+                            # row 1 to 2 代表 Google Sheet 的第 2 列 (也就是欄位標題那列)
+                            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
+                            "rows": [{ "values": [{ "textFormatRuns": [
+                                {"startIndex": 0, "format": {"foregroundColor": black_color, "bold": True}},
+                                {"startIndex": p_start, "format": {"foregroundColor": red_color, "bold": True}}
+                            ], "userEnteredValue": {"stringValue": col_name} }] }],
+                            "fields": "userEnteredValue,textFormatRuns"
+                        }
+                    })
+            if requests:
+                sh.batch_update({"requests": requests})
 
 def process_major(files):
     """🚨 重大違規"""
@@ -278,7 +301,6 @@ def process_major(files):
         df = pd.read_excel(xl, sheet_name=next((s for s in xl.sheet_names if sheet_kw in s), xl.sheet_names[0]), header=None)
         dt = ""
         try:
-            # 🛠️ 修復處：擴大搜尋範圍並使用更具彈性的正則表達式抓取期間
             text_block = df.head(10).astype(str).to_string()
             pattern = r'(1\d{2})[/年\-]*([0-1]?[0-9])[/月\-]*([0-3]?[0-9])[日]*\s*[至\-~]\s*(1\d{2})[/年\-]*([0-1]?[0-9])[/月\-]*([0-3]?[0-9])[日]*'
             m = re.search(pattern, text_block)
