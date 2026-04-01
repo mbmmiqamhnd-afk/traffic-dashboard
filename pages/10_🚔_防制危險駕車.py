@@ -260,4 +260,38 @@ res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).f
 
 # 針對使用者剛輸入完的資料，再次強制轉換頓號為換行
 if '服勤人員' in res_ptl.columns:
-    res_
+    res_ptl['服勤人員'] = res_ptl['服勤人員'].apply(format_staff_only)
+
+# --- 6. 預覽 (防呆版) ---
+def get_preview(df_c, df_p, cmdr_n, time_s):
+    cmd_rows = []
+    for _, r in df_c.iterrows():
+        if all(str(v).strip() == "" for v in r.values): continue
+        cmd_rows.append(f"<tr><td>{str(r.get('職稱','')).replace('\n','<br>')}</td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('\n','<br>')}</td><td>{r.get('任務','')}</td></tr>")
+    cmd_h = "".join(cmd_rows)
+    
+    ptl_rows = []
+    for _, r in df_p.iterrows():
+        if all(str(v).strip() == "" for v in r.values): continue
+        ptl_rows.append(f"<tr><td>{str(r.get('勤務時段','')).replace('\n','<br>')}</td><td>{r.get('代號','')}</td><td>{str(r.get('編組','')).replace('\n','<br>')}</td><td>{str(r.get('服勤人員','')).replace('\n','<br>')}</td><td>{r.get('任務分工','')}</td></tr>")
+    ptl_h = "".join(ptl_rows)
+    
+    return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }}</style>
+    <h2 style='text-align:center;'>{UNIT_TITLE} 規劃表</h2><div style='text-align:right;'>勤務時間：{time_s}</div><br>
+    <table><tr><th colspan="4">任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>{cmd_h}</table><br>
+    <table><tr><th colspan="5">警 力 佈 署</th></tr><tr><th colspan="5" style="text-align:left;">交通快打指揮官：{cmdr_n}</th></tr><tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>{ptl_h}</table>"""
+
+st.components.v1.html(get_preview(res_cmd, res_ptl, cmdr_input, p_time), height=500, scrolling=True)
+
+# --- 7. 儲存與寄信 ---
+if st.button("💾 同步、寄信並下載 PDF", type="primary"):
+    date_fn = date_match.group(0) if date_match else datetime.now().strftime('%Y%m%d')
+    final_filename = f"防制危險駕車勤務規劃表_{date_fn}"
+
+    if save_data(p_time, cmdr_input, res_cmd, res_ptl):
+        ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl, final_filename)
+        if ok: st.success(f"✅ 同步成功，郵件「{final_filename}」已寄送！")
+        else: st.error(f"⚠️ 同步成功，但郵件失敗：{mail_err}")
+        
+        pdf_data = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
+        st.download_button("📥 下載 PDF", data=pdf_data, file_name=f"{final_filename}.pdf")
