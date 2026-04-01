@@ -278,9 +278,19 @@ def process_major(files):
         df = pd.read_excel(xl, sheet_name=next((s for s in xl.sheet_names if sheet_kw in s), xl.sheet_names[0]), header=None)
         dt = ""
         try:
-            m = re.search(r'(\d{7})([至\-~])(\d{7})', "".join(df.iloc[2].astype(str)))
-            if m: dt = f"{m.group(1)[3:]}-{m.group(3)[3:]}"
-        except: pass
+            # 🛠️ 修復處：擴大搜尋範圍並使用更具彈性的正則表達式抓取期間
+            text_block = df.head(10).astype(str).to_string()
+            pattern = r'(1\d{2})[/年\-]*([0-1]?[0-9])[/月\-]*([0-3]?[0-9])[日]*\s*[至\-~]\s*(1\d{2})[/年\-]*([0-1]?[0-9])[/月\-]*([0-3]?[0-9])[日]*'
+            m = re.search(pattern, text_block)
+            
+            if m:
+                dt = f"{int(m.group(2)):02d}{int(m.group(3)):02d}-{int(m.group(5)):02d}{int(m.group(6)):02d}"
+            else:
+                m_old = re.search(r'(\d{7})\s*[至\-~]\s*(\d{7})', text_block)
+                if m_old:
+                    dt = f"{m_old.group(1)[3:]}-{m_old.group(2)[3:]}"
+        except: 
+            pass
         
         def get_u(n):
             n = str(n).strip()
