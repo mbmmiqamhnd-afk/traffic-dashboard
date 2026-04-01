@@ -229,7 +229,13 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).f
 st.subheader("4. 警力佈署")
 if '服勤人員' in ed_ptl.columns: 
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
+
+# 取得使用者編輯後的最新表格資料
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
+
+# 針對使用者剛輸入完的資料，再次強制轉換頓號為換行
+if '服勤人員' in res_ptl.columns:
+    res_ptl['服勤人員'] = res_ptl['服勤人員'].apply(format_staff_only)
 
 # --- 6. 預覽 (防呆版) ---
 def get_preview(df_c, df_p, cmdr_n, time_s):
