@@ -79,6 +79,12 @@ def parse_meeting_time(time_str):
         pass
     return "19時30分至20時00分"
 
+def safe_str(val):
+    """安全轉換字串，遇到 NaN 或 None 自動轉為空白"""
+    if pd.isna(val) or val is None or str(val).strip().lower() == "nan":
+        return ""
+    return str(val)
+
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets: return None
@@ -98,10 +104,14 @@ def load_data():
         ws_ptl = sh.worksheet("巡邏組")
         try:
             ws_cp = sh.worksheet("路檢組")
-            df_cp = pd.DataFrame(ws_cp.get_all_records())
+            df_cp = pd.DataFrame(ws_cp.get_all_records()).fillna("")
         except:
             df_cp = None
-        return pd.DataFrame(ws_set.get_all_records()), pd.DataFrame(ws_cmd.get_all_records()), pd.DataFrame(ws_ptl.get_all_records()), df_cp, None
+            
+        return (pd.DataFrame(ws_set.get_all_records()).fillna(""), 
+                pd.DataFrame(ws_cmd.get_all_records()).fillna(""), 
+                pd.DataFrame(ws_ptl.get_all_records()).fillna(""), 
+                df_cp, None)
     except Exception as e: return None, None, None, None, str(e)
 
 def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
@@ -146,18 +156,17 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph(f"{unit}執行{project}規劃表", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
-    # 清理文字換行用的輔助函數
-    def clean(t): return str(t).replace("\n", "<br/>").replace("、", "<br/>")
-    def clean_text_only(t): return str(t).replace("\n", "<br/>")
+    def clean(t): return safe_str(t).replace("\n", "<br/>").replace("、", "<br/>")
+    def clean_text_only(t): return safe_str(t).replace("\n", "<br/>")
 
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
         data_cmd.append([
-            Paragraph(f"<b>{clean_text_only(r.get('職稱',''))}</b>", style_cell), 
-            Paragraph(clean_text_only(r.get('代號','')), style_cell),
-            Paragraph(clean(r.get('姓名','')), style_cell), 
-            Paragraph(clean_text_only(r.get('任務','')), style_cell_left)
+            Paragraph(f"<b>{clean_text_only(r.get('職稱'))}</b>", style_cell), 
+            Paragraph(clean_text_only(r.get('代號')), style_cell),
+            Paragraph(clean(r.get('姓名')), style_cell), 
+            Paragraph(clean_text_only(r.get('任務')), style_cell_left)
         ])
     
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.12, page_width*0.28, page_width*0.45])
@@ -175,13 +184,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph("<b>第一階段：21時至22時30分，機動巡邏</b>", style_middle_block))
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_ptl.iterrows():
-        # 將編組及代號等欄位包入 Paragraph 才能自動換行
         data_ptl.append([
-            Paragraph(clean_text_only(r.get('編組','')), style_cell), 
-            Paragraph(clean_text_only(r.get('無線電','')), style_cell), 
-            Paragraph(clean(r.get('單位','')), style_cell), 
-            Paragraph(clean(r.get('服勤人員','')), style_cell), 
-            Paragraph(clean_text_only(r.get('任務分工','')), style_cell_left)
+            Paragraph(clean_text_only(r.get('編組')), style_cell), 
+            Paragraph(clean_text_only(r.get('無線電')), style_cell), 
+            Paragraph(clean(r.get('單位')), style_cell), 
+            Paragraph(clean(r.get('服勤人員')), style_cell), 
+            Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)
         ])
     
     t2 = Table(data_ptl, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
@@ -195,12 +203,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph("<b>第二階段：22時30分至24時，定點路檢及機動攔檢</b>", style_middle_block))
     data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_cp.iterrows():
-        task_text = f"{clean_text_only(r.get('任務分工',''))}<br/><font color='red' size='11'>*雨天備案：轄區治安要點巡邏。</font>"
+        task_text = f"{clean_text_only(r.get('任務分工'))}<br/><font color='red' size='11'>*雨天備案：轄區治安要點巡邏。</font>"
         data_cp.append([
-            Paragraph(clean_text_only(r.get('編組','')), style_cell), 
-            Paragraph(clean_text_only(r.get('無線電','')), style_cell), 
-            Paragraph(clean(r.get('單位','')), style_cell), 
-            Paragraph(clean(r.get('服勤人員','')), style_cell), 
+            Paragraph(clean_text_only(r.get('編組')), style_cell), 
+            Paragraph(clean_text_only(r.get('無線電')), style_cell), 
+            Paragraph(clean(r.get('單位')), style_cell), 
+            Paragraph(clean(r.get('服勤人員')), style_cell), 
             Paragraph(task_text, style_cell_left)
         ])
     
@@ -278,14 +286,14 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
 def auto_assign_radio_code(df):
     base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
     for idx, row in df.iterrows():
-        unit, person = str(row.get('單位', '')), str(row.get('服勤人員', ''))
+        unit, person = safe_str(row.get('單位')), safe_str(row.get('服勤人員'))
         if not unit: continue
         first_unit = re.split(r'[\n、 ]', unit.strip())[0]
         base_pfx = next((v for k, v in base_prefixes.items() if k in first_unit), "")
         if base_pfx:
             if "副所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}2"
             elif "所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}1"
-            elif not str(row.get('無線電', '')).startswith(f"隆安{base_pfx}"): df.at[idx, '無線電'] = f"隆安{base_pfx}0"
+            elif not safe_str(row.get('無線電')).startswith(f"隆安{base_pfx}"): df.at[idx, '無線電'] = f"隆安{base_pfx}0"
     return df
 
 # 主介面
@@ -305,31 +313,34 @@ p_name = c1.text_input("專案名稱", p)
 p_time = c2.text_input("勤務時間", t)
 
 st.subheader("1. 指揮編組")
-res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
+# 透過 fillna("") 防止編輯器回傳 NaN
+res_cmd_raw = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
+res_cmd = res_cmd_raw.fillna("")
+
 b_info = st.text_area("📢 勤前教育", b, height=70)
 
 st.subheader("2. 勤務編組 (兩階段)")
 tab1, tab2 = st.tabs(["📍 第一階段：機動巡邏", "🚧 第二階段：定點路檢及機動攔檢"])
 with tab1:
     res_ptl_raw = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
-    res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
+    res_ptl = auto_assign_radio_code(res_ptl_raw.fillna(""))
 with tab2:
     res_cp_raw = st.data_editor(ed_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
-    res_cp = auto_assign_radio_code(res_cp_raw.copy())
+    res_cp = auto_assign_radio_code(res_cp_raw.fillna(""))
 
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:12pt;margin:15px 0 15px 20px;line-height:1.6; text-align:left;}</style>"
     html = f"<html>{style}<body><h3 style='text-align:center'>{u}<br>{p_name}</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
     for _, r in res_cmd.iterrows():
-        html += f"<tr><td><b>{str(r.get('職稱','')).replace('\n', '<br>')}</b></td><td>{str(r.get('代號','')).replace('\n', '<br>')}</td><td>{str(r.get('姓名','')).replace('、','<br>').replace('\n','<br>')}</td><td style='text-align:left'>{str(r.get('任務','')).replace('\n', '<br>')}</td></tr>"
+        html += f"<tr><td><b>{safe_str(r.get('職稱')).replace('\n', '<br>')}</b></td><td>{safe_str(r.get('代號')).replace('\n', '<br>')}</td><td>{safe_str(r.get('姓名')).replace('、','<br>').replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務')).replace('\n', '<br>')}</td></tr>"
     html += f"</table><div class='middle-block'><b>📢 勤前教育：</b><br>{str(b_info).replace('\n', '<br>')}</div>"
     
     html += "<h4>第一階段：機動巡邏</h4><table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
     for _, r in res_ptl.iterrows():
-        html += f"<tr><td>{str(r.get('編組','')).replace('\n', '<br>')}</td><td>{str(r.get('無線電','')).replace('\n', '<br>')}</td><td>{str(r.get('單位','')).replace('、','<br>').replace('\n','<br>')}</td><td>{str(r.get('服勤人員','')).replace('、','<br>').replace('\n','<br>')}</td><td style='text-align:left'>{str(r.get('任務分工','')).replace('\n', '<br>')}</td></tr>"
+        html += f"<tr><td>{safe_str(r.get('編組')).replace('\n', '<br>')}</td><td>{safe_str(r.get('無線電')).replace('\n', '<br>')}</td><td>{safe_str(r.get('單位')).replace('、','<br>').replace('\n','<br>')}</td><td>{safe_str(r.get('服勤人員')).replace('、','<br>').replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務分工')).replace('\n', '<br>')}</td></tr>"
     html += "</table><h4>第二階段：定點路檢</h4><table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
     for _, r in res_cp.iterrows():
-        html += f"<tr><td>{str(r.get('編組','')).replace('\n', '<br>')}</td><td>{str(r.get('無線電','')).replace('\n', '<br>')}</td><td>{str(r.get('單位','')).replace('、','<br>').replace('\n','<br>')}</td><td>{str(r.get('服勤人員','')).replace('、','<br>').replace('\n','<br>')}</td><td style='text-align:left'>{str(r.get('任務分工','')).replace('\n', '<br>')}</td></tr>"
+        html += f"<tr><td>{safe_str(r.get('編組')).replace('\n', '<br>')}</td><td>{safe_str(r.get('無線電')).replace('\n', '<br>')}</td><td>{safe_str(r.get('單位')).replace('、','<br>').replace('\n','<br>')}</td><td>{safe_str(r.get('服勤人員')).replace('、','<br>').replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務分工')).replace('\n', '<br>')}</td></tr>"
     return html + "</table></body></html>"
 
 st.markdown("---")
