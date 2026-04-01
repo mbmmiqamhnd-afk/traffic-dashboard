@@ -224,7 +224,8 @@ def process_overload(files):
             df = pd.read_excel(xls, sheet_name=sn, header=None)
             u = None
             for _, r in df.iterrows():
-                rs = " ".join(r.astype(str))
+                # 🛠️ 修復處：強制轉換每一格內容為 str
+                rs = " ".join([str(x) for x in r.values])
                 if "舉發單位：" in rs:
                     m2 = re.search(r"舉發單位：(\S+)", rs)
                     if m2: u = m2.group(1).strip()
