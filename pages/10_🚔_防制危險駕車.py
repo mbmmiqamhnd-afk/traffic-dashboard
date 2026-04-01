@@ -238,13 +238,12 @@ if len(ed_ptl) > 0:
     # 寫入代號
     ed_ptl.at[0, '代號'] = base + suffix
 
-    # 判斷編組單位文字
-    unit_match = re.search(r'([\u4e00-\u9fa5]{2,}(?:派出所|所|分隊|警備隊|隊))', cmdr_input)
+    # 🎯 判斷編組單位文字：精準提取單位全名，保留「所」
+    unit_match = re.search(r'([\u4e00-\u9fa5]+?(?:派出所|所|分隊|警備隊))', cmdr_input)
     if unit_match:
-        raw_unit = unit_match.group(1)
-        # 清理字尾變成簡稱
-        pu = re.sub(r'(派出所|所|警備隊|隊)$', '', raw_unit)
-        if "分隊" in raw_unit: pu = "分隊"
+        pu = unit_match.group(1)
+        # 如果是「某某派出所」，簡化為「某某所」
+        pu = re.sub(r'派出所$', '所', pu)
         ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
 
 st.subheader("3. 任務編組")
@@ -266,13 +265,13 @@ def get_preview(df_c, df_p, cmdr_n, time_s):
     cmd_rows = []
     for _, r in df_c.iterrows():
         if all(str(v).strip() == "" for v in r.values): continue
-        cmd_rows.append(f"<tr><td>{str(r.get('職稱','')).replace('\n','<br>')}</td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('\n','<br>')}</td><td>{r.get('任務','')}</td></tr>")
+        cmd_rows.append(f"<tr><td>{str(r.get('職稱','')).replace('\\n','<br>')}</td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('\\n','<br>')}</td><td>{r.get('任務','')}</td></tr>")
     cmd_h = "".join(cmd_rows)
     
     ptl_rows = []
     for _, r in df_p.iterrows():
         if all(str(v).strip() == "" for v in r.values): continue
-        ptl_rows.append(f"<tr><td>{str(r.get('勤務時段','')).replace('\n','<br>')}</td><td>{r.get('代號','')}</td><td>{str(r.get('編組','')).replace('\n','<br>')}</td><td>{str(r.get('服勤人員','')).replace('\n','<br>')}</td><td>{r.get('任務分工','')}</td></tr>")
+        ptl_rows.append(f"<tr><td>{str(r.get('勤務時段','')).replace('\\n','<br>')}</td><td>{r.get('代號','')}</td><td>{str(r.get('編組','')).replace('\\n','<br>')}</td><td>{str(r.get('服勤人員','')).replace('\\n','<br>')}</td><td>{r.get('任務分工','')}</td></tr>")
     ptl_h = "".join(ptl_rows)
     
     return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }}</style>
