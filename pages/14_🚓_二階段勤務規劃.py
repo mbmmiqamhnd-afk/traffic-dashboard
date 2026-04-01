@@ -153,7 +153,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     )
     style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
 
-    story.append(Paragraph(f"{unit}執行{project}規劃表", style_title))
+    # 修改標題，自動組合單位與專案名稱
+    story.append(Paragraph(f"{unit}執行{project}勤務規劃表", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
     def clean(t): return safe_str(t).replace("\n", "<br/>").replace("、", "<br/>")
@@ -232,6 +233,8 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0) 
     style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
+    
+    # 標題同樣根據單位及專案動態組合
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     meeting_range = parse_meeting_time(time_str)
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
@@ -259,21 +262,27 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
-        msg["From"], msg["To"], msg["Subject"] = sender, sender, f"二階段勤務規劃_{datetime.now().strftime('%m%d')}"
+        msg["From"], msg["To"] = sender, sender
+        # 設定 Email 主旨
+        msg["Subject"] = f"{unit}執行{project}勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
         msg.attach(MIMEText("附件為二階段勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
         
+        # 動態設定附件檔名
+        pdf_plan_name = f"{unit}執行{project}勤務規劃表.pdf"
+        pdf_attendance_name = f"{unit}執行{project}勤前教育會議人員簽到表.pdf"
+
         pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp)
         part1 = MIMEBase("application", "pdf")
         part1.set_payload(pdf1)
         encoders.encode_base64(part1)
-        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote('二階段規劃表.pdf')}")
+        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(pdf_plan_name)}")
         msg.attach(part1)
         
         pdf2 = generate_attendance_pdf(unit, project, time_str, briefing)
         part2 = MIMEBase("application", "pdf")
         part2.set_payload(pdf2)
         encoders.encode_base64(part2)
-        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote('簽到表.pdf')}")
+        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(pdf_attendance_name)}")
         msg.attach(part2)
         
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
@@ -313,7 +322,6 @@ p_name = c1.text_input("專案名稱", p)
 p_time = c2.text_input("勤務時間", t)
 
 st.subheader("1. 指揮編組")
-# 透過 fillna("") 防止編輯器回傳 NaN
 res_cmd_raw = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 res_cmd = res_cmd_raw.fillna("")
 
@@ -330,7 +338,8 @@ with tab2:
 
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:12pt;margin:15px 0 15px 20px;line-height:1.6; text-align:left;}</style>"
-    html = f"<html>{style}<body><h3 style='text-align:center'>{u}<br>{p_name}</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
+    # 這裡的 HTML 標題也一併更新為指定的標題格式
+    html = f"<html>{style}<body><h3 style='text-align:center'>{u}執行{p_name}勤務規劃表</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
     for _, r in res_cmd.iterrows():
         html += f"<tr><td><b>{safe_str(r.get('職稱')).replace('\n', '<br>')}</b></td><td>{safe_str(r.get('代號')).replace('\n', '<br>')}</td><td>{safe_str(r.get('姓名')).replace('、','<br>').replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務')).replace('\n', '<br>')}</td></tr>"
     html += f"</table><div class='middle-block'><b>📢 勤前教育：</b><br>{str(b_info).replace('\n', '<br>')}</div>"
@@ -348,10 +357,16 @@ with st.expander("點擊展開即時預覽"):
     st.components.v1.html(get_html(), height=600, scrolling=True)
 
 col_dl1, col_dl2 = st.columns(2)
+
+# 動態設定下載按鈕的檔名
+download_plan_name = f"{u}執行{p_name}勤務規劃表.pdf"
+download_attendance_name = f"{u}執行{p_name}勤前教育會議人員簽到表.pdf"
+
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
-col_dl1.download_button("📝 下載 1.勤務規劃表", data=pdf_plan, file_name=f"規劃表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
+col_dl1.download_button("📝 下載 1.勤務規劃表", data=pdf_plan, file_name=download_plan_name, use_container_width=True)
+
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
-col_dl2.download_button("🖋️ 下載 2.人員簽到表", data=pdf_attendance, file_name=f"簽到表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
+col_dl2.download_button("🖋️ 下載 2.人員簽到表", data=pdf_attendance, file_name=download_attendance_name, use_container_width=True)
 
 if st.button("💾 同步雲端並發送備份郵件", use_container_width=True):
     with st.spinner("同步中..."):
