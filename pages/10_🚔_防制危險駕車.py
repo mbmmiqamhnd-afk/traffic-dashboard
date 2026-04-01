@@ -246,9 +246,20 @@ if len(ed_ptl) > 0:
         pu = re.sub(r'派出所$', '所', pu)
         ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
 
+# --- 任務編組 ---
 st.subheader("3. 任務編組")
+# 套用換行邏輯到任務編組的「姓名」欄位
+if '姓名' in ed_cmd.columns:
+    ed_cmd['姓名'] = ed_cmd['姓名'].apply(format_staff_only)
+
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).fillna("")
 
+# 編輯後再次套用，確保即時預覽正確
+if '姓名' in res_cmd.columns:
+    res_cmd['姓名'] = res_cmd['姓名'].apply(format_staff_only)
+
+
+# --- 警力佈署 ---
 st.subheader("4. 警力佈署")
 if '服勤人員' in ed_ptl.columns: 
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
