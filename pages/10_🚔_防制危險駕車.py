@@ -170,9 +170,13 @@ def send_report_email(time_str, commander, df_cmd, df_patrol, custom_filename):
 # --- 5. 介面與邏輯 ---
 df_set, df_cmd, df_ptl, err = load_data()
 
-# 🎯 強制防呆：確保欄位名稱正確轉換
-if df_cmd is not None and "無線電" in df_cmd.columns: df_cmd = df_cmd.rename(columns={"無線電": "代號"})
-if df_ptl is not None and "無線電" in df_ptl.columns: df_ptl = df_ptl.rename(columns={"無線電": "代號"})
+# 🎯 強制防呆：確保欄位名稱正確轉換 (加入清除欄位隱藏空白)
+if df_cmd is not None:
+    df_cmd.columns = [str(c).strip() for c in df_cmd.columns]
+    if "無線電" in df_cmd.columns: df_cmd = df_cmd.rename(columns={"無線電": "代號"})
+if df_ptl is not None:
+    df_ptl.columns = [str(c).strip() for c in df_ptl.columns]
+    if "無線電" in df_ptl.columns: df_ptl = df_ptl.rename(columns={"無線電": "代號"})
 
 if err or df_set is None:
     t, cmdr_default = "115年3月6日22時至翌日6時", "石門所副所長林榮裕"
@@ -189,7 +193,15 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr_default)
 
-# --- 🎯 核心連動邏輯 ---
+# --- 🎯 核心連動邏輯 (強效除錯版) ---
+
+# 防呆 1：如果表格是空的，強制作出第一列來接收資料
+if len(ed_ptl) == 0:
+    ed_ptl.loc[0] = ["", "", "", "", ""]
+
+# 重設 Index，確保寫入時一定對準第一列
+ed_ptl = ed_ptl.reset_index(drop=True)
+
 date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
 if date_match and len(ed_ptl) > 0:
     try:
@@ -206,22 +218,35 @@ if date_match and len(ed_ptl) > 0:
             ed_ptl.loc[1:, '勤務時段'] = formatted_time
     except: pass
 
-u_m = re.search(r'([\u4e00-\u9fa5]+(?:所|分隊|分局))', cmdr_input)
-if u_m and len(ed_ptl) > 0:
-    full_match = u_m.group(1) 
-    pu = re.sub(r'(副所長|所長|小隊長|分隊長|副隊長|隊長|副所|所副)', '', full_match).replace('副', '').replace('長', '')
-    ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
-    umap = {"石門": "隆安8", "高平": "隆安9", "聖亭": "隆安5", "龍潭": "隆安6", "中興": "隆安7", "分隊": "隆安99"}
-    base = next((v for k, v in umap.items() if k in pu), "隆安")
+if len(ed_ptl) > 0:
+    # 判斷代號 Base (優先抓出分隊)
+    if "分隊" in cmdr_input: base = "隆安99"
+    elif "石門" in cmdr_input: base = "隆安8"
+    elif "高平" in cmdr_input: base = "隆安9"
+    elif "聖亭" in cmdr_input: base = "隆安5"
+    elif "龍潭" in cmdr_input: base = "隆安6"
+    elif "中興" in cmdr_input: base = "隆安7"
+    else: base = "隆安"
     
-    # 🎯 單位代號字尾判斷邏輯
-    if ("所長" in cmdr_input and "副" not in cmdr_input) or ("分隊長" in cmdr_input and "副" not in cmdr_input):
+    # 判斷代號 Suffix (主官 1，副主官或其他 2)
+    if ("所長" in cmdr_input and "副" not in cmdr_input) or \
+       ("分隊長" in cmdr_input and "副" not in cmdr_input) or \
+       ("隊長" in cmdr_input and "副" not in cmdr_input):
         suffix = "1"
     else:
         suffix = "2"
         
-    # 強制填寫「代號」
+    # 寫入代號
     ed_ptl.at[0, '代號'] = base + suffix
+
+    # 判斷編組單位文字
+    unit_match = re.search(r'([\u4e00-\u9fa5]{2,}(?:派出所|所|分隊|警備隊|隊))', cmdr_input)
+    if unit_match:
+        raw_unit = unit_match.group(1)
+        # 清理字尾變成簡稱
+        pu = re.sub(r'(派出所|所|警備隊|隊)$', '', raw_unit)
+        if "分隊" in raw_unit: pu = "分隊"
+        ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
 
 st.subheader("3. 任務編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).fillna("")
@@ -235,40 +260,4 @@ res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).f
 
 # 針對使用者剛輸入完的資料，再次強制轉換頓號為換行
 if '服勤人員' in res_ptl.columns:
-    res_ptl['服勤人員'] = res_ptl['服勤人員'].apply(format_staff_only)
-
-# --- 6. 預覽 (防呆版) ---
-def get_preview(df_c, df_p, cmdr_n, time_s):
-    cmd_rows = []
-    for _, r in df_c.iterrows():
-        if all(str(v).strip() == "" for v in r.values): continue
-        # 使用 r.get 防止 KeyError
-        cmd_rows.append(f"<tr><td>{str(r.get('職稱','')).replace('\n','<br>')}</td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('\n','<br>')}</td><td>{r.get('任務','')}</td></tr>")
-    cmd_h = "".join(cmd_rows)
-    
-    ptl_rows = []
-    for _, r in df_p.iterrows():
-        if all(str(v).strip() == "" for v in r.values): continue
-        # 使用 r.get 防止 KeyError
-        ptl_rows.append(f"<tr><td>{str(r.get('勤務時段','')).replace('\n','<br>')}</td><td>{r.get('代號','')}</td><td>{str(r.get('編組','')).replace('\n','<br>')}</td><td>{str(r.get('服勤人員','')).replace('\n','<br>')}</td><td>{r.get('任務分工','')}</td></tr>")
-    ptl_h = "".join(ptl_rows)
-    
-    return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }}</style>
-    <h2 style='text-align:center;'>{UNIT_TITLE} 規劃表</h2><div style='text-align:right;'>勤務時間：{time_s}</div><br>
-    <table><tr><th colspan="4">任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>{cmd_h}</table><br>
-    <table><tr><th colspan="5">警 力 佈 署</th></tr><tr><th colspan="5" style="text-align:left;">交通快打指揮官：{cmdr_n}</th></tr><tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>{ptl_h}</table>"""
-
-st.components.v1.html(get_preview(res_cmd, res_ptl, cmdr_input, p_time), height=500, scrolling=True)
-
-# --- 7. 儲存與寄信 ---
-if st.button("💾 同步、寄信並下載 PDF", type="primary"):
-    date_fn = date_match.group(0) if date_match else datetime.now().strftime('%Y%m%d')
-    final_filename = f"防制危險駕車勤務規劃表_{date_fn}"
-
-    if save_data(p_time, cmdr_input, res_cmd, res_ptl):
-        ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, res_ptl, final_filename)
-        if ok: st.success(f"✅ 同步成功，郵件「{final_filename}」已寄送！")
-        else: st.error(f"⚠️ 同步成功，但郵件失敗：{mail_err}")
-        
-        pdf_data = generate_pdf_from_data(p_time, cmdr_input, res_cmd, res_ptl)
-        st.download_button("📥 下載 PDF", data=pdf_data, file_name=f"{final_filename}.pdf")
+    res_
