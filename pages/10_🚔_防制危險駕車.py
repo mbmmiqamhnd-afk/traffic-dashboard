@@ -193,9 +193,9 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr_default)
 
-# --- 🎯 核心連動邏輯 (強效除錯版) ---
+# --- 🎯 核心連動邏輯 ---
 
-# 防呆 1：如果表格是空的，強制作出第一列來接收資料
+# 防呆：如果表格是空的，強制作出第一列來接收資料
 if len(ed_ptl) == 0:
     ed_ptl.loc[0] = ["", "", "", "", ""]
 
@@ -228,10 +228,9 @@ if len(ed_ptl) > 0:
     elif "中興" in cmdr_input: base = "隆安7"
     else: base = "隆安"
     
-    # 判斷代號 Suffix (主官 1，副主官或其他 2)
-    if ("所長" in cmdr_input and "副" not in cmdr_input) or \
-       ("分隊長" in cmdr_input and "副" not in cmdr_input) or \
-       ("隊長" in cmdr_input and "副" not in cmdr_input):
+    # 🎯 精準判斷代號 Suffix (只有所長、分隊長是 1，其餘為 2)
+    if ("所長" in cmdr_input and "副所長" not in cmdr_input) or \
+       ("分隊長" in cmdr_input and "副分隊長" not in cmdr_input):
         suffix = "1"
     else:
         suffix = "2"
