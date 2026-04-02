@@ -129,8 +129,10 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
             except:
                 ws = sh.add_worksheet(title=ws_name, rows="100", cols="20")
             ws.clear()
-            df = df.fillna("")
-            ws.update([df.columns.tolist()] + df.values.tolist())
+            # 存檔前移除全空列並填充空值
+            df_cleaned = df.dropna(how='all').fillna("")
+            if not df_cleaned.empty:
+                ws.update([df_cleaned.columns.tolist()] + df_cleaned.values.tolist())
         load_data.clear()
         return True
     except: return False
@@ -153,13 +155,13 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     )
     style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
 
-    # 修改標題，自動組合單位與專案名稱
     story.append(Paragraph(f"{unit}執行{project}勤務規劃表", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
     def clean(t): return safe_str(t).replace("\n", "<br/>").replace("、", "<br/>")
     def clean_text_only(t): return safe_str(t).replace("\n", "<br/>")
 
+    # 指揮組
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -234,7 +236,6 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0) 
     style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
     
-    # 標題同樣根據單位及專案動態組合
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     meeting_range = parse_meeting_time(time_str)
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
@@ -263,11 +264,9 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
         msg["From"], msg["To"] = sender, sender
-        # 設定 Email 主旨
         msg["Subject"] = f"{unit}執行{project}勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
         msg.attach(MIMEText("附件為二階段勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
         
-        # 動態設定附件檔名
         pdf_plan_name = f"{unit}執行{project}勤務規劃表.pdf"
         pdf_attendance_name = f"{unit}執行{project}勤前教育會議人員簽到表.pdf"
 
@@ -293,6 +292,7 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
 
 # 智慧代號計算
 def auto_assign_radio_code(df):
+    if df.empty: return df
     base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
     for idx, row in df.iterrows():
         unit, person = safe_str(row.get('單位')), safe_str(row.get('服勤人員'))
@@ -305,7 +305,7 @@ def auto_assign_radio_code(df):
             elif not safe_str(row.get('無線電')).startswith(f"隆安{base_pfx}"): df.at[idx, '無線電'] = f"隆安{base_pfx}0"
     return df
 
-# 主介面
+# --- 主程式介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
 if err or df_set is None:
     u, t, p, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF
@@ -323,7 +323,8 @@ p_time = c2.text_input("勤務時間", t)
 
 st.subheader("1. 指揮編組")
 res_cmd_raw = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
-res_cmd = res_cmd_raw.fillna("")
+# 移除空行
+res_cmd = res_cmd_raw.dropna(how='all').fillna("")
 
 b_info = st.text_area("📢 勤前教育", b, height=70)
 
@@ -331,14 +332,15 @@ st.subheader("2. 勤務編組 (兩階段)")
 tab1, tab2 = st.tabs(["📍 第一階段：機動巡邏", "🚧 第二階段：定點路檢及機動攔檢"])
 with tab1:
     res_ptl_raw = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
-    res_ptl = auto_assign_radio_code(res_ptl_raw.fillna(""))
+    # 移除空行後再計算無線電
+    res_ptl = auto_assign_radio_code(res_ptl_raw.dropna(how='all').fillna(""))
 with tab2:
     res_cp_raw = st.data_editor(ed_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
-    res_cp = auto_assign_radio_code(res_cp_raw.fillna(""))
+    # 移除空行後再計算無線電
+    res_cp = auto_assign_radio_code(res_cp_raw.dropna(how='all').fillna(""))
 
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:12pt;margin:15px 0 15px 20px;line-height:1.6; text-align:left;}</style>"
-    # 這裡的 HTML 標題也一併更新為指定的標題格式
     html = f"<html>{style}<body><h3 style='text-align:center'>{u}執行{p_name}勤務規劃表</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
     for _, r in res_cmd.iterrows():
         html += f"<tr><td><b>{safe_str(r.get('職稱')).replace('\n', '<br>')}</b></td><td>{safe_str(r.get('代號')).replace('\n', '<br>')}</td><td>{safe_str(r.get('姓名')).replace('、','<br>').replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務')).replace('\n', '<br>')}</td></tr>"
@@ -358,7 +360,6 @@ with st.expander("點擊展開即時預覽"):
 
 col_dl1, col_dl2 = st.columns(2)
 
-# 動態設定下載按鈕的檔名
 download_plan_name = f"{u}執行{p_name}勤務規劃表.pdf"
 download_attendance_name = f"{u}執行{p_name}勤前教育會議人員簽到表.pdf"
 
