@@ -242,4 +242,148 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=row_heights)
     t.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,-1), font),
-        ('GRID', (0,0),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (0,0), (0,0), 'LEFT'),
+        ('ALIGN', (2,0), (2,0), 'LEFT'),
+        ('ALIGN', (0,1), (0,1), 'LEFT'),
+        ('SPAN', (0,1), (3,1)), 
+        ('BACKGROUND', (0,2), (0,2), colors.whitesmoke),
+        ('BACKGROUND', (2,2), (2,2), colors.whitesmoke),
+    ]))
+    story.append(t)
+
+    story.append(Spacer(1, 5*mm))
+    story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
+
+    doc.build(story)
+    return buf.getvalue()
+
+# --- 4. 寄信功能 ---
+def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl):
+    try:
+        sender = st.secrets["email"]["user"]
+        pwd = st.secrets["email"]["password"]
+        
+        msg = MIMEMultipart()
+        msg["From"], msg["To"] = sender, sender
+        msg["Subject"] = f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
+        msg.attach(MIMEText("附件為最新的勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
+        
+        pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl)
+        part1 = MIMEBase("application", "pdf")
+        part1.set_payload(pdf1)
+        encoders.encode_base64(part1)
+        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote('規劃表.pdf')}")
+        msg.attach(part1)
+        
+        pdf2 = generate_attendance_pdf(unit, project, time_str, briefing)
+        part2 = MIMEBase("application", "pdf")
+        part2.set_payload(pdf2)
+        encoders.encode_base64(part2)
+        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote('簽到表.pdf')}")
+        msg.attach(part2)
+        
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, pwd)
+            server.sendmail(sender, sender, msg.as_string())
+        return True, None
+    except Exception as e: return False, str(e)
+
+# --- 5. 主介面與智慧代號計算邏輯 ---
+st.sidebar.title("🛠️ 雲端設定")
+if st.sidebar.button("初始化/檢查雲端分頁"):
+    init_sheets()
+
+df_set, df_cmd, df_ptl, err = load_data()
+
+# ⚠️ 絕對安全的字典轉換寫法 (防呆保護)
+d = {}
+if df_set is not None and isinstance(df_set, pd.DataFrame) and not df_set.empty and df_set.shape[1] >= 2:
+    try:
+        keys = df_set.iloc[:, 0].astype(str).tolist()
+        vals = df_set.iloc[:, 1].astype(str).tolist()
+        d = dict(zip(keys, vals))
+    except Exception as e:
+        st.sidebar.error(f"讀取設定檔發生錯誤: {e}")
+
+u = d.get("unit_name", DEFAULT_UNIT) if d.get("unit_name") else DEFAULT_UNIT
+t = d.get("plan_full_time", DEFAULT_TIME) if d.get("plan_full_time") else DEFAULT_TIME
+p = d.get("project_name", DEFAULT_PROJ) if d.get("project_name") else DEFAULT_PROJ
+b = d.get("briefing_info", DEFAULT_BRIEF) if d.get("briefing_info") else DEFAULT_BRIEF
+s = d.get("check_station", DEFAULT_STATION) if d.get("check_station") else DEFAULT_STATION
+
+ed_cmd = df_cmd if (df_cmd is not None and not df_cmd.empty) else DEFAULT_CMD.copy()
+ed_ptl = df_ptl if (df_ptl is not None and not df_ptl.empty) else DEFAULT_PTL.copy()
+
+st.title("🚓 專案勤務規劃管理系統")
+c1, c2 = st.columns(2)
+p_name = c1.text_input("專案名稱", p)
+p_time = c2.text_input("勤務時間", t)
+
+st.subheader("1. 指揮編組")
+res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
+
+b_info = st.text_area("📢 勤前教育", b, height=70)
+s_info = st.text_area("🚧 環保局臨時檢驗站開設", s, height=70)
+
+st.subheader("2. 巡邏編組")
+st.info("💡 系統會自動依據「單位」（優先看上方單位）及「服勤人員」計算無線電代號（所長為1、副所長為2）。未標示主副官時將保留您輸入的代號，或自動帶入單位基礎代號。")
+res_ptl_raw = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
+
+def auto_assign_radio_code(df):
+    base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
+    for idx, row in df.iterrows():
+        unit = str(row.get('單位', ''))
+        person = str(row.get('服勤人員', ''))
+        current_radio = str(row.get('無線電', '')).strip()
+        if not unit: continue
+        first_unit = re.split(r'[\n、 ]', unit.strip())[0]
+        base_pfx = ""
+        for k, v in base_prefixes.items():
+            if k in first_unit:
+                base_pfx = v
+                break
+        if base_pfx:
+            if "副所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}2"
+            elif "所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}1"
+            else:
+                if not current_radio.startswith(f"隆安{base_pfx}"): df.at[idx, '無線電'] = f"隆安{base_pfx}0"
+    return df
+
+res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
+
+def get_html():
+    style = "<style>body{font-family:'標楷體';padding:10px;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:12pt;margin:15px 0 15px 20px;line-height:1.6; text-align:left;}</style>"
+    html = f"<html>{style}<body><h3 style='text-align:center'>{u}<br>{p_name}</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
+    for _, r in res_cmd.iterrows():
+        html += f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>"
+    b_html = str(b_info).strip().replace('\n', '<br>')
+    s_html = str(s_info).strip().replace('\n', '<br>')
+    html += f"</table><div class='middle-block'><b>📢 勤前教育：</b><br>{b_html}<br><br><b>🚧 環保局臨時檢驗站開設：</b><br>{s_html}</div>"
+    html += "<table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
+    for _, r in res_ptl.iterrows():
+        html += f"<tr><td style='white-space:nowrap;'>{r.get('編組','')}</td><td style='white-space:nowrap;'>{r.get('無線電','')}</td><td>{str(r.get('單位','')).replace('、','<br>')}</td><td>{str(r.get('服勤人員','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務分工','')}</td></tr>"
+    return html + "</table></body></html>"
+
+st.markdown("---")
+st.subheader("📄 報表下載與同步")
+
+with st.expander("點擊展開即時預覽 (代號已依據所長/副所長自動校正)"):
+    st.components.v1.html(get_html(), height=500, scrolling=True)
+
+col_dl1, col_dl2 = st.columns(2)
+
+pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
+col_dl1.download_button("📝 下載 1.勤務規劃表", data=pdf_plan, file_name=f"規劃表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
+
+pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
+col_dl2.download_button("🖋️ 下載 2.人員簽到表", data=pdf_attendance, file_name=f"簽到表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
+
+if st.button("💾 同步雲端並發送備份郵件 (含兩份 PDF)", use_container_width=True):
+    with st.spinner("同步中..."):
+        save_data(u, p_time, p_name, b_info, s_info, res_cmd, res_ptl)
+        ok, mail_err = send_report_email(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
+        if ok: st.success("✅ 同步成功，規劃表與簽到表已寄至信箱！")
+        else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {mail_err}")
