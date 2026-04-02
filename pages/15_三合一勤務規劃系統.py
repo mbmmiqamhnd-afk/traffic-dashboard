@@ -163,12 +163,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     style_section = ParagraphStyle('Section', fontName=font, fontSize=15, leading=20, alignment=0, spaceAfter=3*mm, spaceBefore=4*mm)
     style_text = ParagraphStyle('Text', fontName=font, fontSize=12, leading=18, alignment=0)
     
-    # 【新增】專為工作重點與法令宣導設計的「凸排」段落樣式
-    # leftIndent(左縮排) 與 firstLineIndent(首行凸出) 配合，達成對齊標號後第一字的效果
+    # 凸排段落樣式
     style_briefing = ParagraphStyle('Briefing', fontName=font, fontSize=12, leading=18, alignment=0, leftIndent=32, firstLineIndent=-32, spaceAfter=2*mm)
     
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=11, leading=16, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=11, leading=16, alignment=0)
+    # 【已修改】表格內容字型大小改為 14，行距改為 18
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
     
     def clean(t): return safe_str(t).replace("\n", "<br/>")
 
@@ -268,7 +268,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Spacer(1, 1*mm))
     story.append(Paragraph("備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。", style_text))
 
-    # 陸、 工作重點與法令宣導 (改用凸排段落樣式渲染)
+    # 陸、 工作重點與法令宣導
     story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
     for line in str(briefing).split('\n'):
         if line.strip():
@@ -357,7 +357,7 @@ else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ)
     
-    # 【強制修復機制】如果雲端的宣導內容不是最新版(太短或沒有包含五大點關鍵字)，則強制更新為完整內容
+    # 強制更新宣導內容
     b = d.get("briefing_info", DEFAULT_BRIEF)
     if "落實三安" not in str(b):
         b = DEFAULT_BRIEF
@@ -372,7 +372,7 @@ else:
     default_stats['loc_2'] = int(d.get("loc_2", 6))
     default_stats['loc_3'] = int(d.get("loc_3", 0))
     
-    # 格式檢查與修復
+    # 格式檢查
     ed_cmd = df_cmd if not df_cmd.empty and "項目" in df_cmd.columns else DEFAULT_CMD.copy()
     
     if not df_ptl.empty and "單位" in df_ptl.columns:
@@ -390,7 +390,7 @@ c1, c2 = st.columns(2)
 p_name = c1.text_input("專案名稱", p)
 p_time = c2.text_input("勤務時間", t)
 
-# === 警力動態加總區塊與地點統計區塊 ===
+# 警力加總與地點統計區塊
 st.subheader("貳、 警力使用與地點統計 (手動微調區)")
 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 c_cmd = col_s1.number_input("業務及督導組 (人)", value=default_stats['cmd'], min_value=0)
@@ -413,7 +413,6 @@ current_stats = {
     'cmd': c_cmd, 'ptl': c_ptl, 'inv': c_inv, 'civ': c_civ, 'total': c_total,
     'b_time': b_time, 'b_loc': b_loc, 'loc_1': loc_1, 'loc_2': loc_2, 'loc_3': loc_3
 }
-st.caption(f"💡 目前總計出勤警力：**{c_total}** 人。數值將自動連動至表格及 PDF。")
 
 st.subheader("參、 督導及其他任務編組表")
 res_cmd_raw = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
@@ -426,18 +425,16 @@ st.subheader("勤務執行編組 (兩階段)")
 tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】擴大臨檢威力掃蕩"])
 
 with tab1:
-    st.caption("💡 取消定點路檢，採取全面機動巡邏。（「組別」欄位已隱藏，系統會自動編號為「第1巡邏組」...）")
+    st.caption("💡 取消定點路檢，採取全面機動巡邏。（系統會自動編號為「第1巡邏組」...）")
     res_ptl_raw = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
     res_ptl = res_ptl_raw.dropna(how='all').fillna("").reset_index(drop=True)
-    # 動態產生 第X巡邏組 插入第一欄
     if not res_ptl.empty:
         res_ptl.insert(0, "組別", [f"第{i+1}巡邏組" for i in range(len(res_ptl))])
 
 with tab2:
-    st.caption("💡 針對治安場所執行威力掃蕩。（「組別」欄位已隱藏，系統會自動編號為「第1臨檢組」...）")
+    st.caption("💡 針對治安場所執行威力掃蕩。（系統會自動編號為「第1臨檢組」...）")
     res_cp_raw = st.data_editor(ed_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     res_cp = res_cp_raw.dropna(how='all').fillna("").reset_index(drop=True)
-    # 動態產生 第X臨檢組 插入第一欄
     if not res_cp.empty:
         res_cp.insert(0, "組別", [f"第{i+1}臨檢組" for i in range(len(res_cp))])
 
@@ -450,7 +447,6 @@ def get_html():
     html += f"<tr><td>{p_time.split(' ')[0]}</td><td>{p_time.split(' ')[1] if ' ' in p_time else '19時至23時'}</td><td>分局長 施宇峰</td><td>如各階段任務編組表</td><td>龍潭區警政聯合辦公大樓廣場</td></tr></table>"
     html += "<div class='middle-block'><b>勤務時程分配：</b><br>19:00 - 19:30：各單位由駐地往分局移動路程。<br>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。</div>"
     
-    # 自動帶入微調的警力與地點數值
     html += "<h4>貳、 警力使用統計表及勤前教育、地點統計</h4><table><tr><th>單位</th><th>業務及督導組</th><th>攔檢與臨檢組</th><th>偵訊組</th><th>小計</th><th>民力</th><th>總計</th></tr>"
     html += f"<tr><td>龍潭分局</td><td>{c_cmd}</td><td>{c_ptl}</td><td>{c_inv}</td><td>{c_cmd+c_ptl+c_inv}</td><td>{c_civ}</td><td>{c_total}</td></tr></table>"
     
@@ -474,18 +470,18 @@ def get_html():
         html += f"<tr><td>{safe_str(r.get('組別')).replace('\n', '<br>')}</td><td>{safe_str(r.get('單位')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('職別/姓名')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務分工')).replace('\n', '<br>')}</td><td style='text-align:left'>{safe_str(r.get('臨檢目標場所')).replace('\n', '<br>')}</td></tr>"
     html += "</table><div class='middle-block'>備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。</div>"
 
-    # HTML 預覽的凸排渲染
+    # HTML 預覽的凸排渲染 (對齊標號後第一字)
     html += f"<h4>陸、 工作重點與法令宣導</h4><div class='middle-block'>"
     for line in str(b_info).split('\n'):
         if line.strip():
-            # 使用 CSS 凸排屬性，自動對齊
-            html += f"<div style='padding-left: 2.5em; text-indent: -2.5em; margin-bottom: 5px;'>{safe_str(line).replace('\n', '<br>')}</div>"
+            # 使用 3em 的凸排空間，確保文字對齊標號（如「一、」）後的第一個字
+            html += f"<div style='padding-left: 3em; text-indent: -3em; margin-bottom: 8px;'>{safe_str(line).replace('\n', '<br>')}</div>"
     html += "</div>"
     
     return html + "</body></html>"
 
 st.markdown("---")
-with st.expander("點擊展開即時預覽 (包含完整六大項段落與地點統計)"):
+with st.expander("點擊展開即時預覽"):
     st.components.v1.html(get_html(), height=800, scrolling=True)
 
 col_dl1, col_dl2 = st.columns(2)
