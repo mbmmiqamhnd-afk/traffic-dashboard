@@ -20,7 +20,6 @@ from reportlab.lib.units import mm
 import re
 
 # --- 1. 頁面設定 ---
-# 已經將網頁分頁標籤修改為與系統一致
 st.set_page_config(page_title="三合一專案勤務規劃系統", layout="wide", page_icon="🚓")
 
 # --- 常數與設定 ---
@@ -155,8 +154,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     def clean(t): return safe_str(t).replace("\n", "<br/>")
 
-    # 大標題
-    story.append(Paragraph(f"<b>{unit}執行 {project} 勤務計畫表</b>", style_title))
+    # 大標題 (修正為勤務規劃表)
+    story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", style_title))
     
     # 壹、 勤務基本資料
     story.append(Paragraph("<b>壹、 勤務基本資料</b>", style_section))
@@ -203,7 +202,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     # 肆、 第一階段
     story.append(Paragraph("<b>肆、【第一階段 20:00 - 23:00】機動攔查任務編組</b>", style_section))
-    story.append(Paragraph("<b>勤務重點：</b>取消定點路檢，採取全面機動巡邏。針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。<br/>（註：本階段機動攔查共6組警力。21時30分起，第1至第4組轉入第二階段執行擴大臨檢；第5、第6組全程獨留於路面，持續執行機動攔查至23時。）", style_text))
+    story.append(Paragraph("<b>勤務重點：</b>取消定點路檢，採取全面機動巡邏。針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。<br/>（註：本階段機動攔查共6組警力。21時30分起，第1至第4組轉入第二階段執行擴大臨檢；第5、第6全程獨留於路面，持續執行機動攔查至23時。）", style_text))
     story.append(Spacer(1, 2*mm))
     
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["組別", "單位", "職別/姓名", "任務分工", "攜行裝備", "巡邏與攔查責任區"]]]
@@ -350,7 +349,8 @@ with tab2:
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;line-height:1.5;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:13pt;margin:15px 0 15px 0;text-align:left;} h3, h4 {margin-top: 25px;}</style>"
     
-    html = f"<html>{style}<body><h2 style='text-align:center'>{u}執行<br>{p_name}<br>勤務計畫表</h2>"
+    # HTML大標題修正為勤務規劃表
+    html = f"<html>{style}<body><h2 style='text-align:center'>{u}執行<br>{p_name}<br>勤務規劃表</h2>"
     
     html += "<h4>壹、 勤務基本資料</h4><table><tr><th>實施日期</th><th>勤務時間</th><th>指揮官</th><th>勤務編組</th><th>聯合稽查站地點</th></tr>"
     html += f"<tr><td>{p_time.split(' ')[0]}</td><td>{p_time.split(' ')[1] if ' ' in p_time else '19時至23時'}</td><td>分局長 施宇峰</td><td>如各階段任務編組表</td><td>龍潭區警政聯合辦公大樓廣場</td></tr></table>"
