@@ -101,19 +101,33 @@ def load_data():
         client = get_client()
         if client is None: return None, None, None, None, "離線模式"
         sh = client.open_by_key(SHEET_ID)
-        ws_set = sh.worksheet("設定")
-        ws_cmd = sh.worksheet("指揮組")
-        ws_ptl = sh.worksheet("巡邏組")
+        
+        # 改為讀取 三合一 專屬工作表，並加入例外處理以防工作表尚未建立
         try:
-            ws_cp = sh.worksheet("路檢臨檢組")
+            ws_set = sh.worksheet("三合一_設定")
+            df_set = pd.DataFrame(ws_set.get_all_records()).fillna("")
+        except:
+            df_set = None
+            
+        try:
+            ws_cmd = sh.worksheet("三合一_指揮組")
+            df_cmd = pd.DataFrame(ws_cmd.get_all_records()).fillna("")
+        except:
+            df_cmd = pd.DataFrame()
+            
+        try:
+            ws_ptl = sh.worksheet("三合一_巡邏組")
+            df_ptl = pd.DataFrame(ws_ptl.get_all_records()).fillna("")
+        except:
+            df_ptl = pd.DataFrame()
+            
+        try:
+            ws_cp = sh.worksheet("三合一_擴大臨檢組")
             df_cp = pd.DataFrame(ws_cp.get_all_records()).fillna("")
         except:
             df_cp = None
             
-        return (pd.DataFrame(ws_set.get_all_records()).fillna(""), 
-                pd.DataFrame(ws_cmd.get_all_records()).fillna(""), 
-                pd.DataFrame(ws_ptl.get_all_records()).fillna(""), 
-                df_cp, None)
+        return df_set, df_cmd, df_ptl, df_cp, None
     except Exception as e: return None, None, None, None, str(e)
 
 def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats):
@@ -121,7 +135,13 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats):
         client = get_client()
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
-        ws_set = sh.worksheet("設定")
+        
+        # 儲存至 三合一 專屬工作表
+        try:
+            ws_set = sh.worksheet("三合一_設定")
+        except:
+            ws_set = sh.add_worksheet(title="三合一_設定", rows="50", cols="5")
+            
         ws_set.clear()
         ws_set.update([["Key", "Value"], 
                        ["unit_name", unit], 
@@ -138,7 +158,8 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats):
                        ["loc_2", str(stats['loc_2'])],
                        ["loc_3", str(stats['loc_3'])]])
         
-        for ws_name, df in [("指揮組", df_cmd), ("巡邏組", df_ptl), ("路檢臨檢組", df_cp)]:
+        # 建立或更新其餘專屬工作表
+        for ws_name, df in [("三合一_指揮組", df_cmd), ("三合一_巡邏組", df_ptl), ("三合一_擴大臨檢組", df_cp)]:
             try:
                 ws = sh.worksheet(ws_name)
             except:
@@ -159,17 +180,13 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     page_width = A4[0] - 24*mm
     story = []
     
-    # 標題樣式
     style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=10)
     style_section = ParagraphStyle('Section', fontName=font, fontSize=15, leading=20, alignment=0, spaceAfter=3*mm, spaceBefore=4*mm)
-    
-    # 表格外的敘述文字 (設定為 12)
     style_text = ParagraphStyle('Text', fontName=font, fontSize=12, leading=18, alignment=0)
     
-    # 凸排段落樣式 (設定為 12)
+    # 凸排段落樣式
     style_briefing = ParagraphStyle('Briefing', fontName=font, fontSize=12, leading=18, alignment=0, leftIndent=32, firstLineIndent=-32, spaceAfter=2*mm)
     
-    # 表格內的文字 (設定為 14)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
     
@@ -442,7 +459,6 @@ with tab2:
         res_cp.insert(0, "組別", [f"第{i+1}臨檢組" for i in range(len(res_cp))])
 
 def get_html():
-    # 【已修改】調整預覽中表格外文字字型大小為 12pt
     style = "<style>body{font-family:'標楷體';padding:10px;line-height:1.5;} th,td{border:1px solid black;padding:6px;font-size:14pt;text-align:center;} .middle-block{font-size:12pt;margin:15px 0 15px 0;text-align:left;} h3, h4 {margin-top: 25px;}</style>"
     
     html = f"<html>{style}<body><h2 style='text-align:center'>{u}執行<br>{p_name}<br>勤務規劃表</h2>"
