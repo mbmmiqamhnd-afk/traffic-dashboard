@@ -20,13 +20,13 @@ from reportlab.lib.units import mm
 import re
 
 # --- 1. 頁面設定 ---
-st.set_page_config(page_title="二階段勤務規劃系統 (專屬版)", layout="wide", page_icon="🚓")
+st.set_page_config(page_title="二階段勤務規劃系統", layout="wide", page_icon="🚓")
 
 # --- 常數與專屬工作表設定 ---
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
-# 定義此應用程式專用的工作表名稱，避免與其他程式衝突
+# ⚠️ 專屬分頁名稱，避免與其他程式衝突
 WS_MAP = {
     "set": "二階段_設定",
     "cmd": "二階段_指揮組",
@@ -83,13 +83,11 @@ def parse_meeting_time(time_str):
             start_hour = int(match.group(1))
             end_hour = start_hour + 1
             return f"{start_hour}時30分至{end_hour}時00分"
-    except:
-        pass
+    except: pass
     return "19時30分至20時00分"
 
 def safe_str(val):
-    if pd.isna(val) or val is None or str(val).strip().lower() == "nan":
-        return ""
+    if pd.isna(val) or val is None or str(val).strip().lower() == "nan": return ""
     return str(val)
 
 @st.cache_resource
@@ -101,7 +99,7 @@ def get_client():
     return gspread.authorize(creds)
 
 def init_sheets():
-    """初始化專用分頁"""
+    """強制建立所需的所有專屬分頁與標題"""
     try:
         client = get_client()
         sh = client.open_by_key(SHEET_ID)
@@ -119,6 +117,7 @@ def init_sheets():
                 sh.add_worksheet(title=ws_name, rows="100", cols="20").update(head)
                 st.sidebar.success(f"➕ 已建立 {ws_name}")
         load_data.clear()
+        st.rerun()
     except Exception as e:
         st.error(f"初始化失敗：{e}")
 
@@ -126,10 +125,9 @@ def init_sheets():
 def load_data():
     try:
         client = get_client()
-        if client is None: return None, None, None, None, "離線模式"
+        if client is None: return None, None, None, None, "權限不足"
         sh = client.open_by_key(SHEET_ID)
         
-        # 讀取指定名稱的工作表
         ws_set = sh.worksheet(WS_MAP["set"])
         ws_cmd = sh.worksheet(WS_MAP["cmd"])
         ws_ptl = sh.worksheet(WS_MAP["ptl"])
@@ -146,12 +144,10 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
         client = get_client()
         sh = client.open_by_key(SHEET_ID)
         
-        # 更新設定
         ws_set = sh.worksheet(WS_MAP["set"])
         ws_set.clear()
         ws_set.update([["Key", "Value"], ["unit_name", unit], ["plan_full_time", time_str], ["project_name", project], ["briefing_info", briefing]])
         
-        # 更新各組資料
         for ws_name, df in [(WS_MAP["cmd"], df_cmd), (WS_MAP["ptl"], df_ptl), (WS_MAP["cp"], df_cp)]:
             ws = sh.worksheet(ws_name)
             ws.clear()
@@ -162,7 +158,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
         return True
     except: return False
 
-# --- PDF / Email 函數 (保持原本邏輯) ---
+# --- PDF 生成與郵件 (省略重複邏輯以節省空間，與前一版相同) ---
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
     font = _get_font()
     buf = io.BytesIO()
@@ -196,7 +192,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph(f"{clean_text_only(briefing)}", style_middle_block))
     story.append(Spacer(1, 6*mm))
 
-    story.append(Paragraph("<b>第一階段：21時至22時30分，機動巡邏</b>", style_middle_block))
+    story.append(Paragraph("<b>第一階段：機動巡邏</b>", style_middle_block))
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_ptl.iterrows():
         data_ptl.append([Paragraph(clean_text_only(r.get('編組')), style_cell), Paragraph(clean_text_only(r.get('無線電')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell), Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)])
@@ -205,7 +201,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(t2)
 
     story.append(Spacer(1, 8*mm))
-    story.append(Paragraph("<b>第二階段：22時30分至24時，定點路檢及機動攔檢</b>", style_middle_block))
+    story.append(Paragraph("<b>第二階段：定點路檢</b>", style_middle_block))
     data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_cp.iterrows():
         task_text = f"{clean_text_only(r.get('任務分工'))}<br/><font color='red' size='11'>*雨天備案：轄區治安要點巡邏。</font>"
@@ -226,8 +222,7 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0) 
-    
-    story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
+    story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
     meeting_range = parse_meeting_time(time_str)
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
     story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
@@ -250,23 +245,20 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
         msg["From"], msg["To"] = sender, sender
-        msg["Subject"] = f"{unit}執行{project}勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
-        msg.attach(MIMEText("附件為二階段勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
-        
-        pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp)
+        msg["Subject"] = f"{unit}執行{project}規劃與簽到表_{datetime.now().strftime('%m%d')}"
+        msg.attach(MIMEText("附件為 PDF。", "plain", "utf-8"))
+        p1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp)
         part1 = MIMEBase("application", "pdf")
-        part1.set_payload(pdf1)
+        part1.set_payload(p1)
         encoders.encode_base64(part1)
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(unit+'規劃表.pdf')}")
         msg.attach(part1)
-        
-        pdf2 = generate_attendance_pdf(unit, project, time_str, briefing)
+        p2 = generate_attendance_pdf(unit, project, time_str, briefing)
         part2 = MIMEBase("application", "pdf")
-        part2.set_payload(pdf2)
+        part2.set_payload(p2)
         encoders.encode_base64(part2)
         part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(unit+'簽到表.pdf')}")
         msg.attach(part2)
-        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
             server.sendmail(sender, sender, msg.as_string())
@@ -293,16 +285,25 @@ if st.sidebar.button("初始化/檢查雲端分頁"):
     init_sheets()
 
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
-if err:
-    st.warning(f"目前讀取不到雲端資料 (錯誤: {err})，使用預設範本。")
+
+# ⚠️ 關鍵防護：檢查 df_set 欄位數量，避免 IndexError
+if err or df_set is None or df_set.shape[1] < 2:
+    if err: st.sidebar.warning(f"雲端尚未就緒: {err}")
     u, t, p, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF
     ed_cmd, ed_ptl, ed_cp = DEFAULT_CMD.copy(), DEFAULT_PTL.copy(), DEFAULT_CHECKPOINT.copy()
 else:
-    d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
-    u, t, p, b = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ), d.get("briefing_info", DEFAULT_BRIEF)
-    ed_cmd, ed_ptl, ed_cp = df_cmd, df_ptl, df_cp
+    try:
+        d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
+        u = d.get("unit_name", DEFAULT_UNIT)
+        t = d.get("plan_full_time", DEFAULT_TIME)
+        p = d.get("project_name", DEFAULT_PROJ)
+        b = d.get("briefing_info", DEFAULT_BRIEF)
+        ed_cmd, ed_ptl, ed_cp = df_cmd, df_ptl, df_cp
+    except:
+        u, t, p, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF
+        ed_cmd, ed_ptl, ed_cp = DEFAULT_CMD.copy(), DEFAULT_PTL.copy(), DEFAULT_CHECKPOINT.copy()
 
-st.title("🚓 二階段專案勤務規劃系統 (龍潭分局版)")
+st.title("🚓 二階段勤務規劃系統 (專屬分頁版)")
 c1, c2 = st.columns(2)
 p_name = c1.text_input("專案名稱", p)
 p_time = c2.text_input("勤務時間", t)
@@ -311,23 +312,23 @@ st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
 b_info = st.text_area("📢 勤前教育", b, height=70)
 
-st.subheader("2. 勤務編組 (兩階段)")
-tab1, tab2 = st.tabs(["📍 第一階段：機動巡邏", "🚧 第二階段：定點路檢及機動攔檢"])
+st.subheader("2. 勤務編組")
+tab1, tab2 = st.tabs(["📍 第一階段：機動巡邏", "🚧 第二階段：定點路檢"])
 with tab1:
-    res_ptl = auto_assign_radio_code(st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True, key="ptl_edit").dropna(how='all').fillna(""))
+    res_ptl = auto_assign_radio_code(st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True, key="ptl_v2").dropna(how='all').fillna(""))
 with tab2:
-    res_cp = auto_assign_radio_code(st.data_editor(ed_cp, num_rows="dynamic", use_container_width=True, key="cp_edit").dropna(how='all').fillna(""))
+    res_cp = auto_assign_radio_code(st.data_editor(ed_cp, num_rows="dynamic", use_container_width=True, key="cp_v2").dropna(how='all').fillna(""))
 
 st.markdown("---")
 col_dl1, col_dl2 = st.columns(2)
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
-col_dl1.download_button("📝 下載 1.勤務規劃表", data=pdf_plan, file_name=f"{u}_{p_name}.pdf", use_container_width=True)
+col_dl1.download_button("📝 下載勤務規劃表", data=pdf_plan, file_name=f"{u}_{p_name}.pdf", use_container_width=True)
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
-col_dl2.download_button("🖋️ 下載 2.人員簽到表", data=pdf_attendance, file_name=f"{u}_簽到表.pdf", use_container_width=True)
+col_dl2.download_button("🖋️ 下載人員簽到表", data=pdf_attendance, file_name=f"{u}_簽到表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端專屬分頁並發送備份郵件", use_container_width=True):
-    with st.spinner("處理中..."):
+    with st.spinner("同步中..."):
         if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp):
             ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
-            if ok: st.success("✅ 同步成功並已寄出郵件！")
+            if ok: st.success("✅ 同步成功！")
             else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {mail_err}")
