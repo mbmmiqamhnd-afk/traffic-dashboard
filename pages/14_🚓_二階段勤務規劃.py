@@ -27,10 +27,11 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
-DEFAULT_TIME    = "113年8月1日20至24時"
+DEFAULT_TIME    = "113年8月1日 20至24時"
 DEFAULT_PROJ    = "0801全市取締酒後駕車暨防制危險駕車及噪音車輛專案"
 DEFAULT_BRIEF   = "於各編組執行前\n地點：現地勤教" 
 
+# 原本的指揮編組架構
 DEFAULT_CMD = pd.DataFrame([
     {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長鄭文銘", "任務": "核定本勤務執行並重點機動督導。"},
     {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長陳孟欣", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
@@ -41,6 +42,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "通訊組", "代號": "隆安", "姓名": "主任游新枝", "任務": "指揮、調度及通報本勤務事宜。"},
 ])
 
+# 原本的第一階段巡邏組架構
 DEFAULT_PTL = pd.DataFrame([
     {"編組": "第一巡邏組", "無線電": "隆安62", "單位": "龍潭所", "服勤人員": "副所長劉重言、警員劉俊德", "任務分工": "於易發生酒駕、危險駕車路段(中豐路等)加強攔檢。"},
     {"編組": "第二巡邏組", "無線電": "隆安52", "單位": "聖亭所", "服勤人員": "副所長曹培翔、警員劉憬霖", "任務分工": "於易發生酒駕、危險駕車路段(聖亭路等)加強攔檢。"},
@@ -49,6 +51,7 @@ DEFAULT_PTL = pd.DataFrame([
     {"編組": "第五巡邏組", "無線電": "隆安93", "單位": "高平所", "服勤人員": "警務佐余志誠、警員王天龍", "任務分工": "於易發生酒駕、危險駕車路段(中豐路高平段等)加強攔檢。"},
 ])
 
+# 原本的第二階段路檢組架構
 DEFAULT_CHECKPOINT = pd.DataFrame([
     {"編組": "第一路檢組", "無線電": "隆安93", "單位": "高平所、石門所", "服勤人員": "警務佐余志誠、警員王天龍、巡佐林偉政、警員陳琦", "任務分工": "路檢：中正路三坑段與美國路口(攔檢往龍潭市區方向車輛)。"},
     {"編組": "第二路檢組", "無線電": "隆安52", "單位": "聖亭所、三和所", "服勤人員": "副所長曹培翔、警員劉憬霖、警員盧建廷", "任務分工": "路檢：中正路三坑段與美國路口(攔檢往龍源路方向車輛)。"},
@@ -80,7 +83,6 @@ def parse_meeting_time(time_str):
     return "19時30分至20時00分"
 
 def safe_str(val):
-    """安全轉換字串，遇到 NaN 或 None 自動轉為空白"""
     if pd.isna(val) or val is None or str(val).strip().lower() == "nan":
         return ""
     return str(val)
@@ -99,19 +101,33 @@ def load_data():
         client = get_client()
         if client is None: return None, None, None, None, "離線模式"
         sh = client.open_by_key(SHEET_ID)
-        ws_set = sh.worksheet("設定")
-        ws_cmd = sh.worksheet("指揮組")
-        ws_ptl = sh.worksheet("巡邏組")
+        
+        # 讀取原本一般專案的工作表名稱
+        try:
+            ws_set = sh.worksheet("設定")
+            df_set = pd.DataFrame(ws_set.get_all_records()).fillna("")
+        except:
+            df_set = None
+            
+        try:
+            ws_cmd = sh.worksheet("指揮組")
+            df_cmd = pd.DataFrame(ws_cmd.get_all_records()).fillna("")
+        except:
+            df_cmd = pd.DataFrame()
+            
+        try:
+            ws_ptl = sh.worksheet("巡邏組")
+            df_ptl = pd.DataFrame(ws_ptl.get_all_records()).fillna("")
+        except:
+            df_ptl = pd.DataFrame()
+            
         try:
             ws_cp = sh.worksheet("路檢組")
             df_cp = pd.DataFrame(ws_cp.get_all_records()).fillna("")
         except:
             df_cp = None
             
-        return (pd.DataFrame(ws_set.get_all_records()).fillna(""), 
-                pd.DataFrame(ws_cmd.get_all_records()).fillna(""), 
-                pd.DataFrame(ws_ptl.get_all_records()).fillna(""), 
-                df_cp, None)
+        return df_set, df_cmd, df_ptl, df_cp, None
     except Exception as e: return None, None, None, None, str(e)
 
 def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
@@ -119,7 +135,12 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
         client = get_client()
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
-        ws_set = sh.worksheet("設定")
+        
+        try:
+            ws_set = sh.worksheet("設定")
+        except:
+            ws_set = sh.add_worksheet(title="設定", rows="50", cols="5")
+            
         ws_set.clear()
         ws_set.update([["Key", "Value"], ["unit_name", unit], ["plan_full_time", time_str], ["project_name", project], ["briefing_info", briefing]])
         
@@ -129,7 +150,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
             except:
                 ws = sh.add_worksheet(title=ws_name, rows="100", cols="20")
             ws.clear()
-            # 存檔前移除全空列並填充空值
             df_cleaned = df.dropna(how='all').fillna("")
             if not df_cleaned.empty:
                 ws.update([df_cleaned.columns.tolist()] + df_cleaned.values.tolist())
@@ -307,14 +327,32 @@ def auto_assign_radio_code(df):
 
 # --- 主程式介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
+
+# 【強迫修復機制】如果雲端資料被三合一污染(欄位變成了'項目')，就強制倒回預設的一般專案架構
 if err or df_set is None:
     u, t, p, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF
     ed_cmd, ed_ptl, ed_cp = DEFAULT_CMD.copy(), DEFAULT_PTL.copy(), DEFAULT_CHECKPOINT.copy()
 else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p, b = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ), d.get("briefing_info", DEFAULT_BRIEF)
-    ed_cmd, ed_ptl = df_cmd, df_ptl
-    ed_cp = df_cp if df_cp is not None and not df_cp.empty else DEFAULT_CHECKPOINT.copy()
+    
+    # 檢查指揮組欄位是否正確 (如果有"項目"代表被三合一蓋掉了，強制還原)
+    if df_cmd.empty or "職稱" not in df_cmd.columns:
+        ed_cmd = DEFAULT_CMD.copy()
+    else:
+        ed_cmd = df_cmd
+        
+    # 檢查巡邏組欄位是否正確
+    if df_ptl.empty or "編組" not in df_ptl.columns or "服勤人員" not in df_ptl.columns:
+        ed_ptl = DEFAULT_PTL.copy()
+    else:
+        ed_ptl = df_ptl
+        
+    # 檢查路檢組欄位是否正確
+    if df_cp is None or df_cp.empty or "服勤人員" not in df_cp.columns:
+        ed_cp = DEFAULT_CHECKPOINT.copy()
+    else:
+        ed_cp = df_cp
 
 st.title("🚓 二階段專案勤務規劃系統")
 c1, c2 = st.columns(2)
@@ -346,10 +384,10 @@ def get_html():
         html += f"<tr><td><b>{safe_str(r.get('職稱')).replace('\n', '<br>')}</b></td><td>{safe_str(r.get('代號')).replace('\n', '<br>')}</td><td>{safe_str(r.get('姓名')).replace('、','<br>').replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務')).replace('\n', '<br>')}</td></tr>"
     html += f"</table><div class='middle-block'><b>📢 勤前教育：</b><br>{str(b_info).replace('\n', '<br>')}</div>"
     
-    html += "<h4>第一階段：機動巡邏</h4><table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
+    html += "<h4>第一階段：21時至22時30分，機動巡邏</h4><table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
     for _, r in res_ptl.iterrows():
         html += f"<tr><td>{safe_str(r.get('編組')).replace('\n', '<br>')}</td><td>{safe_str(r.get('無線電')).replace('\n', '<br>')}</td><td>{safe_str(r.get('單位')).replace('、','<br>').replace('\n','<br>')}</td><td>{safe_str(r.get('服勤人員')).replace('、','<br>').replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務分工')).replace('\n', '<br>')}</td></tr>"
-    html += "</table><h4>第二階段：定點路檢</h4><table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
+    html += "</table><h4>第二階段：22時30分至24時，定點路檢及機動攔檢</h4><table><tr><th>編組</th><th>代號</th><th>單位</th><th>人員</th><th>任務</th></tr>"
     for _, r in res_cp.iterrows():
         html += f"<tr><td>{safe_str(r.get('編組')).replace('\n', '<br>')}</td><td>{safe_str(r.get('無線電')).replace('\n', '<br>')}</td><td>{safe_str(r.get('單位')).replace('、','<br>').replace('\n','<br>')}</td><td>{safe_str(r.get('服勤人員')).replace('、','<br>').replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務分工')).replace('\n', '<br>')}</td></tr>"
     return html + "</table></body></html>"
@@ -373,5 +411,5 @@ if st.button("💾 同步雲端並發送備份郵件", use_container_width=True)
     with st.spinner("同步中..."):
         if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp):
             ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
-            if ok: st.success("✅ 同步成功並已寄出郵件！")
+            if ok: st.success("✅ 同步成功並已寄出郵件！原本的一般專案架構已成功修復。")
             else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {mail_err}")
