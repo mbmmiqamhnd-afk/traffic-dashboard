@@ -131,7 +131,12 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats):
                        ["stats_cmd", str(stats['cmd'])],
                        ["stats_ptl", str(stats['ptl'])],
                        ["stats_inv", str(stats['inv'])],
-                       ["stats_civ", str(stats['civ'])]])
+                       ["stats_civ", str(stats['civ'])],
+                       ["briefing_time", str(stats['b_time'])],
+                       ["briefing_loc", str(stats['b_loc'])],
+                       ["loc_1", str(stats['loc_1'])],
+                       ["loc_2", str(stats['loc_2'])],
+                       ["loc_3", str(stats['loc_3'])]])
         
         for ws_name, df in [("指揮組", df_cmd), ("巡邏組", df_ptl), ("路檢臨檢組", df_cp)]:
             try:
@@ -183,8 +188,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph("<b>勤務時程分配：</b>", style_text))
     story.append(Paragraph("19:00 - 19:30：各單位由駐地往分局移動路程。<br/>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br/>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br/>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。", style_text))
     
-    # 貳、 警力使用統計表
-    story.append(Paragraph("<b>貳、 警力使用統計表</b>", style_section))
+    # 貳、 警力使用統計表與地點統計
+    story.append(Paragraph("<b>貳、 警力使用統計表及勤前教育、地點統計</b>", style_section))
     data_stats = [
         [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>業務及督導組</b>", style_cell), Paragraph("<b>攔檢與臨檢組</b>", style_cell), Paragraph("<b>偵訊組</b>", style_cell), Paragraph("<b>小計</b>", style_cell), Paragraph("<b>民力</b>", style_cell), Paragraph("<b>總計</b>", style_cell)],
         [Paragraph("龍潭分局", style_cell), Paragraph(str(stats['cmd']), style_cell), Paragraph(str(stats['ptl']), style_cell), Paragraph(str(stats['inv']), style_cell), Paragraph(str(stats['cmd']+stats['ptl']+stats['inv']), style_cell), Paragraph(str(stats['civ']), style_cell), Paragraph(str(stats['total']), style_cell)]
@@ -192,6 +197,16 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_stats = Table(data_stats, colWidths=[page_width*0.2, page_width*0.16, page_width*0.16, page_width*0.12, page_width*0.12, page_width*0.12, page_width*0.12])
     t_stats.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_stats)
+    
+    story.append(Spacer(1, 3*mm))
+    
+    data_loc = [
+        [Paragraph("<b>勤前教育時間</b>", style_cell), Paragraph("<b>勤前教育地點</b>", style_cell), Paragraph("<b>臨檢點</b>", style_cell), Paragraph("<b>盤查點</b>", style_cell), Paragraph("<b>聯外道路</b>", style_cell)],
+        [Paragraph(clean(stats['b_time']), style_cell), Paragraph(clean(stats['b_loc']), style_cell), Paragraph(f"{stats['loc_1']}處", style_cell), Paragraph(f"{stats['loc_2']}處", style_cell), Paragraph(f"{stats['loc_3']}處", style_cell)]
+    ]
+    t_loc = Table(data_loc, colWidths=[page_width*0.25, page_width*0.27, page_width*0.16, page_width*0.16, page_width*0.16])
+    t_loc.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+    story.append(t_loc)
 
     # 參、 督導及其他任務編組表
     story.append(Paragraph("<b>參、 督導及其他任務編組表 (19:00 - 23:00)</b>", style_section))
@@ -248,7 +263,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Spacer(1, 1*mm))
     story.append(Paragraph("備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。", style_text))
 
-    # 陸、 工作重點 (確定會被寫入 PDF)
+    # 陸、 工作重點與法令宣導
     story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
     story.append(Paragraph(f"{clean(briefing)}", style_text))
 
@@ -325,8 +340,8 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 # --- 主程式介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
 
-# 讀取預設警力數值
-default_stats = {'cmd': 6, 'ptl': 31, 'inv': 2, 'civ': 0}
+# 讀取預設警力數值及勤教/地點統計
+default_stats = {'cmd': 6, 'ptl': 31, 'inv': 2, 'civ': 0, 'b_time': '19時30分', 'b_loc': '本分局2樓會議室', 'loc_1': 8, 'loc_2': 6, 'loc_3': 0}
 
 if err or df_set is None:
     u, t, p, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF
@@ -335,7 +350,7 @@ else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ)
     
-    # 【強制修復機制】如果雲端的宣導內容不是最新版(太短或沒有包含五大點關鍵字)，則強制更新
+    # 【強制修復機制】如果雲端的宣導內容不是最新版(太短或沒有包含五大點關鍵字)，則強制更新為完整內容
     b = d.get("briefing_info", DEFAULT_BRIEF)
     if "落實三安" not in str(b):
         b = DEFAULT_BRIEF
@@ -344,6 +359,11 @@ else:
     default_stats['ptl'] = int(d.get("stats_ptl", 31))
     default_stats['inv'] = int(d.get("stats_inv", 2))
     default_stats['civ'] = int(d.get("stats_civ", 0))
+    default_stats['b_time'] = d.get("briefing_time", "19時30分")
+    default_stats['b_loc'] = d.get("briefing_loc", "本分局2樓會議室")
+    default_stats['loc_1'] = int(d.get("loc_1", 8))
+    default_stats['loc_2'] = int(d.get("loc_2", 6))
+    default_stats['loc_3'] = int(d.get("loc_3", 0))
     
     # 格式檢查與修復
     ed_cmd = df_cmd if not df_cmd.empty and "項目" in df_cmd.columns else DEFAULT_CMD.copy()
@@ -363,22 +383,36 @@ c1, c2 = st.columns(2)
 p_name = c1.text_input("專案名稱", p)
 p_time = c2.text_input("勤務時間", t)
 
-# === 警力動態加總區塊 ===
-st.subheader("貳、 警力使用統計 (手動微調區)")
+# === 警力動態加總區塊與地點統計區塊 ===
+st.subheader("貳、 警力使用與地點統計 (手動微調區)")
 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 c_cmd = col_s1.number_input("業務及督導組 (人)", value=default_stats['cmd'], min_value=0)
 c_ptl = col_s2.number_input("攔檢與臨檢組 (人)", value=default_stats['ptl'], min_value=0)
 c_inv = col_s3.number_input("偵訊組 (人)", value=default_stats['inv'], min_value=0)
 c_civ = col_s4.number_input("民力 (人)", value=default_stats['civ'], min_value=0)
 c_total = c_cmd + c_ptl + c_inv + c_civ
-current_stats = {'cmd': c_cmd, 'ptl': c_ptl, 'inv': c_inv, 'civ': c_civ, 'total': c_total}
-st.caption(f"💡 目前總計出勤警力：**{c_total}** 人 (您在此輸入的數值將自動完美連動至表格、PDF匯出及網頁預覽)")
+
+st.write("📍 **勤前教育與地點統計**")
+col_b1, col_b2 = st.columns(2)
+b_time = col_b1.text_input("勤前教育時間", default_stats['b_time'])
+b_loc = col_b2.text_input("勤前教育地點", default_stats['b_loc'])
+
+col_l1, col_l2, col_l3 = st.columns(3)
+loc_1 = col_l1.number_input("臨檢點 (處)", value=default_stats['loc_1'], min_value=0)
+loc_2 = col_l2.number_input("盤查點 (處)", value=default_stats['loc_2'], min_value=0)
+loc_3 = col_l3.number_input("聯外道路 (處)", value=default_stats['loc_3'], min_value=0)
+
+current_stats = {
+    'cmd': c_cmd, 'ptl': c_ptl, 'inv': c_inv, 'civ': c_civ, 'total': c_total,
+    'b_time': b_time, 'b_loc': b_loc, 'loc_1': loc_1, 'loc_2': loc_2, 'loc_3': loc_3
+}
+st.caption(f"💡 目前總計出勤警力：**{c_total}** 人。數值將自動連動至表格及 PDF。")
 
 st.subheader("參、 督導及其他任務編組表")
 res_cmd_raw = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 res_cmd = res_cmd_raw.dropna(how='all').fillna("")
 
-# 工作重點與法令宣導 (確保使用者看到的是完整文字)
+# 工作重點與法令宣導
 b_info = st.text_area("陸、 工作重點與法令宣導", b, height=200)
 
 st.subheader("勤務執行編組 (兩階段)")
@@ -409,9 +443,12 @@ def get_html():
     html += f"<tr><td>{p_time.split(' ')[0]}</td><td>{p_time.split(' ')[1] if ' ' in p_time else '19時至23時'}</td><td>分局長 施宇峰</td><td>如各階段任務編組表</td><td>龍潭區警政聯合辦公大樓廣場</td></tr></table>"
     html += "<div class='middle-block'><b>勤務時程分配：</b><br>19:00 - 19:30：各單位由駐地往分局移動路程。<br>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。</div>"
     
-    # 自動帶入微調的數值
-    html += "<h4>貳、 警力使用統計表</h4><table><tr><th>單位</th><th>業務及督導組</th><th>攔檢與臨檢組</th><th>偵訊組</th><th>小計</th><th>民力</th><th>總計</th></tr>"
+    # 自動帶入微調的警力與地點數值
+    html += "<h4>貳、 警力使用統計表及勤前教育、地點統計</h4><table><tr><th>單位</th><th>業務及督導組</th><th>攔檢與臨檢組</th><th>偵訊組</th><th>小計</th><th>民力</th><th>總計</th></tr>"
     html += f"<tr><td>龍潭分局</td><td>{c_cmd}</td><td>{c_ptl}</td><td>{c_inv}</td><td>{c_cmd+c_ptl+c_inv}</td><td>{c_civ}</td><td>{c_total}</td></tr></table>"
+    
+    html += "<table style='margin-top: 15px;'><tr><th>勤前教育時間</th><th>勤前教育地點</th><th>臨檢點</th><th>盤查點</th><th>聯外道路</th></tr>"
+    html += f"<tr><td>{b_time}</td><td>{b_loc}</td><td>{loc_1}處</td><td>{loc_2}處</td><td>{loc_3}處</td></tr></table>"
     
     html += "<h4>參、 督導及其他任務編組表 (19:00 - 23:00)</h4><table><tr><th>項目</th><th>通訊代號</th><th>任務目標</th><th>負責人員</th><th>共同執行人員</th></tr>"
     for _, r in res_cmd.iterrows():
@@ -435,7 +472,7 @@ def get_html():
     return html + "</body></html>"
 
 st.markdown("---")
-with st.expander("點擊展開即時預覽 (包含完整六大項段落)"):
+with st.expander("點擊展開即時預覽 (包含完整六大項段落與地點統計)"):
     st.components.v1.html(get_html(), height=800, scrolling=True)
 
 col_dl1, col_dl2 = st.columns(2)
