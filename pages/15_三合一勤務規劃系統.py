@@ -183,7 +183,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph("<b>勤務時程分配：</b>", style_text))
     story.append(Paragraph("19:00 - 19:30：各單位由駐地往分局移動路程。<br/>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br/>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br/>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。", style_text))
     
-    # 貳、 警力使用統計表
+    # 貳、 警力使用統計表 (讀取動態數值)
     story.append(Paragraph("<b>貳、 警力使用統計表</b>", style_section))
     data_stats = [
         [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>業務及督導組</b>", style_cell), Paragraph("<b>攔檢與臨檢組</b>", style_cell), Paragraph("<b>偵訊組</b>", style_cell), Paragraph("<b>小計</b>", style_cell), Paragraph("<b>民力</b>", style_cell), Paragraph("<b>總計</b>", style_cell)],
@@ -357,8 +357,8 @@ c1, c2 = st.columns(2)
 p_name = c1.text_input("專案名稱", p)
 p_time = c2.text_input("勤務時間", t)
 
-# === 加入警力動態統計區塊 ===
-st.subheader("貳、 警力使用統計")
+# === 加入警力動態加總區塊 ===
+st.subheader("貳、 警力使用統計 (手動微調區)")
 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 c_cmd = col_s1.number_input("業務及督導組 (人)", value=default_stats['cmd'], min_value=0)
 c_ptl = col_s2.number_input("攔檢與臨檢組 (人)", value=default_stats['ptl'], min_value=0)
@@ -366,7 +366,7 @@ c_inv = col_s3.number_input("偵訊組 (人)", value=default_stats['inv'], min_v
 c_civ = col_s4.number_input("民力 (人)", value=default_stats['civ'], min_value=0)
 c_total = c_cmd + c_ptl + c_inv + c_civ
 current_stats = {'cmd': c_cmd, 'ptl': c_ptl, 'inv': c_inv, 'civ': c_civ, 'total': c_total}
-st.caption(f"💡 總計出勤警力：**{c_total}** 人 (此數值將自動連動至表格、PDF匯出及網頁預覽)")
+st.caption(f"💡 目前總計出勤警力：**{c_total}** 人 (您在此輸入的數值將自動完美連動至表格、PDF匯出及網頁預覽)")
 
 st.subheader("參、 督導及其他任務編組表")
 res_cmd_raw = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
@@ -402,7 +402,7 @@ def get_html():
     html += f"<tr><td>{p_time.split(' ')[0]}</td><td>{p_time.split(' ')[1] if ' ' in p_time else '19時至23時'}</td><td>分局長 施宇峰</td><td>如各階段任務編組表</td><td>龍潭區警政聯合辦公大樓廣場</td></tr></table>"
     html += "<div class='middle-block'><b>勤務時程分配：</b><br>19:00 - 19:30：各單位由駐地往分局移動路程。<br>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。</div>"
     
-    # 這裡會讀取 UI 上的警力動態數字
+    # 這裡會自動帶入使用者在 UI 上微調的數值，並自動算出小計與總計
     html += "<h4>貳、 警力使用統計表</h4><table><tr><th>單位</th><th>業務及督導組</th><th>攔檢與臨檢組</th><th>偵訊組</th><th>小計</th><th>民力</th><th>總計</th></tr>"
     html += f"<tr><td>龍潭分局</td><td>{c_cmd}</td><td>{c_ptl}</td><td>{c_inv}</td><td>{c_cmd+c_ptl+c_inv}</td><td>{c_civ}</td><td>{c_total}</td></tr></table>"
     
