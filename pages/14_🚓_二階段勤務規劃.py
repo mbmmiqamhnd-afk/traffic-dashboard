@@ -204,7 +204,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph("<b>第二階段：22時30分至24時，定點路檢及機動攔檢</b>", style_middle_block))
     data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_cp.iterrows():
-        # 取消強制增加雨天備案，保留資料表原本的內容
+        # 移除強制加上雨天備案，保留資料表內的完整內容
         task_text = f"{clean_text_only(r.get('任務分工'))}"
         data_cp.append([Paragraph(clean_text_only(r.get('編組')), style_cell), Paragraph(clean_text_only(r.get('無線電')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell), Paragraph(task_text, style_cell_left)])
     t3 = Table(data_cp, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
@@ -287,21 +287,29 @@ if st.sidebar.button("初始化/檢查雲端分頁"):
 
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
 
-if err or df_set is None or df_set.shape[1] < 2:
-    if err: st.sidebar.warning(f"雲端尚未就緒: {err}")
-    u, t, p, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF
-    ed_cmd, ed_ptl, ed_cp = DEFAULT_CMD.copy(), DEFAULT_PTL.copy(), DEFAULT_CHECKPOINT.copy()
-else:
+if err: 
+    st.sidebar.warning(f"雲端尚未就緒: {err}")
+
+# ⚠️ 絕對安全的字典轉換寫法
+d = {}
+if df_set is not None and isinstance(df_set, pd.DataFrame) and not df_set.empty and df_set.shape[1] >= 2:
     try:
-        d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
-        u = d.get("unit_name", DEFAULT_UNIT)
-        t = d.get("plan_full_time", DEFAULT_TIME)
-        p = d.get("project_name", DEFAULT_PROJ)
-        b = d.get("briefing_info", DEFAULT_BRIEF)
-        ed_cmd, ed_ptl, ed_cp = df_cmd, df_ptl, df_cp
-    except:
-        u, t, p, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF
-        ed_cmd, ed_ptl, ed_cp = DEFAULT_CMD.copy(), DEFAULT_PTL.copy(), DEFAULT_CHECKPOINT.copy()
+        keys = df_set.iloc[:, 0].astype(str).tolist()
+        vals = df_set.iloc[:, 1].astype(str).tolist()
+        d = dict(zip(keys, vals))
+    except Exception as e:
+        st.sidebar.error(f"讀取設定檔發生錯誤: {e}")
+
+# 帶入預設值或雲端值
+u = d.get("unit_name", DEFAULT_UNIT) if d.get("unit_name") else DEFAULT_UNIT
+t = d.get("plan_full_time", DEFAULT_TIME) if d.get("plan_full_time") else DEFAULT_TIME
+p = d.get("project_name", DEFAULT_PROJ) if d.get("project_name") else DEFAULT_PROJ
+b = d.get("briefing_info", DEFAULT_BRIEF) if d.get("briefing_info") else DEFAULT_BRIEF
+
+# 判斷其他表格是否為空
+ed_cmd = df_cmd if (df_cmd is not None and not df_cmd.empty) else DEFAULT_CMD.copy()
+ed_ptl = df_ptl if (df_ptl is not None and not df_ptl.empty) else DEFAULT_PTL.copy()
+ed_cp  = df_cp  if (df_cp is not None and not df_cp.empty) else DEFAULT_CHECKPOINT.copy()
 
 st.title("🚓 二階段勤務規劃系統 (專屬分頁版)")
 c1, c2 = st.columns(2)
