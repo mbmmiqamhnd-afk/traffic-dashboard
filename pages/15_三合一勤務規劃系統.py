@@ -162,6 +162,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=10)
     style_section = ParagraphStyle('Section', fontName=font, fontSize=15, leading=20, alignment=0, spaceAfter=3*mm, spaceBefore=4*mm)
     style_text = ParagraphStyle('Text', fontName=font, fontSize=12, leading=18, alignment=0)
+    
+    # 【新增】專為工作重點與法令宣導設計的「凸排」段落樣式
+    # leftIndent(左縮排) 與 firstLineIndent(首行凸出) 配合，達成對齊標號後第一字的效果
+    style_briefing = ParagraphStyle('Briefing', fontName=font, fontSize=12, leading=18, alignment=0, leftIndent=32, firstLineIndent=-32, spaceAfter=2*mm)
+    
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=11, leading=16, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=11, leading=16, alignment=0)
     
@@ -263,9 +268,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Spacer(1, 1*mm))
     story.append(Paragraph("備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。", style_text))
 
-    # 陸、 工作重點與法令宣導
+    # 陸、 工作重點與法令宣導 (改用凸排段落樣式渲染)
     story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
-    story.append(Paragraph(f"{clean(briefing)}", style_text))
+    for line in str(briefing).split('\n'):
+        if line.strip():
+            story.append(Paragraph(f"{clean(line)}", style_briefing))
 
     doc.build(story)
     return buf.getvalue()
@@ -467,7 +474,13 @@ def get_html():
         html += f"<tr><td>{safe_str(r.get('組別')).replace('\n', '<br>')}</td><td>{safe_str(r.get('單位')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('職別/姓名')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務分工')).replace('\n', '<br>')}</td><td style='text-align:left'>{safe_str(r.get('臨檢目標場所')).replace('\n', '<br>')}</td></tr>"
     html += "</table><div class='middle-block'>備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。</div>"
 
-    html += f"<h4>陸、 工作重點與法令宣導</h4><div class='middle-block'>{str(b_info).replace('\n', '<br>')}</div>"
+    # HTML 預覽的凸排渲染
+    html += f"<h4>陸、 工作重點與法令宣導</h4><div class='middle-block'>"
+    for line in str(b_info).split('\n'):
+        if line.strip():
+            # 使用 CSS 凸排屬性，自動對齊
+            html += f"<div style='padding-left: 2.5em; text-indent: -2.5em; margin-bottom: 5px;'>{safe_str(line).replace('\n', '<br>')}</div>"
+    html += "</div>"
     
     return html + "</body></html>"
 
