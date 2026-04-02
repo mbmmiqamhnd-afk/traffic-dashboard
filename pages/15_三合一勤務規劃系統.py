@@ -44,7 +44,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "稽查站", "通訊代號": "聯合站", "任務目標": "警政大樓廣場聯合稽查警戒", "負責人員": "交通組派遣 2 名", "共同執行人員": "配合環保、監理"},
 ])
 
-# 根據 1150410 專案更新第一階段機動巡邏編組 (移除系統自動產生的組別，由背景動態加回)
+# 第一階段機動巡邏編組
 DEFAULT_PTL = pd.DataFrame([
     {"單位": "聖亭所", "職別/姓名": "所長 鄭榮捷\n警員 詹宗澤", "任務分工": "帶班\n盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
     {"單位": "龍潭所", "職別/姓名": "所長 孫祥愷\n警員 沈庭禾", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "北龍路、中豐路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
@@ -54,7 +54,7 @@ DEFAULT_PTL = pd.DataFrame([
     {"單位": "交分隊", "職別/姓名": "小隊長 林振生\n警員 吳沛軒", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "轄內易發生危駕路段、各聯外道路機動攔查。\n(全程留守機動 20:00-23:00)"},
 ])
 
-# 根據 1150410 專案更新第二階段擴大臨檢編組 (移除系統自動產生的組別，由背景動態加回)
+# 第二階段擴大臨檢編組
 DEFAULT_CHECKPOINT = pd.DataFrame([
     {"單位": "聖亭所\n\n龍潭所\n\n偵查隊", "職別/姓名": "所長 鄭榮捷 警員 詹宗澤\n\n所長 孫祥愷 警員 沈庭禾\n\n偵查佐 賴享宏 警員 張峻銨", "任務分工": "帶班 製作臨檢紀錄\n\n盤查兼蒐證\n\n刑案偵防、社維法 著刑事背心、DV", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nC. 丹陽泰養生館 (中豐路281號)\nD. 溫馨汽車旅館 (中正路457號)\nE. 凱虹汽車旅館 (中正路506號)\n\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
     {"單位": "石門所\n\n高平所\n\n偵查隊", "職別/姓名": "巡佐 林偉政 警員 鄒詠如\n\n警員 邱春松 警員 唐銘聰\n\n偵查隊警員 2名", "任務分工": "帶班 製作臨檢紀錄\n\n大門警戒兼盤查\n\n刑案偵防、社維法", "臨檢目標場所": "F. 憤怒鳥網咖 (中興路269號)\nG. 真情男女養生館 (中興路387號)\nH. 萬紫千紅舒壓館 (中興路491-3號)\n\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
@@ -116,14 +116,22 @@ def load_data():
                 df_cp, None)
     except Exception as e: return None, None, None, None, str(e)
 
-def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
+def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats):
     try:
         client = get_client()
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
         ws_set = sh.worksheet("設定")
         ws_set.clear()
-        ws_set.update([["Key", "Value"], ["unit_name", unit], ["plan_full_time", time_str], ["project_name", project], ["briefing_info", briefing]])
+        ws_set.update([["Key", "Value"], 
+                       ["unit_name", unit], 
+                       ["plan_full_time", time_str], 
+                       ["project_name", project], 
+                       ["briefing_info", briefing],
+                       ["stats_cmd", str(stats['cmd'])],
+                       ["stats_ptl", str(stats['ptl'])],
+                       ["stats_inv", str(stats['inv'])],
+                       ["stats_civ", str(stats['civ'])]])
         
         for ws_name, df in [("指揮組", df_cmd), ("巡邏組", df_ptl), ("路檢臨檢組", df_cp)]:
             try:
@@ -139,7 +147,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
     except: return False
 
 # --- 3. PDF 生成功能 ---
-def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
+def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats):
     font = _get_font()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
@@ -179,7 +187,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph("<b>貳、 警力使用統計表</b>", style_section))
     data_stats = [
         [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>業務及督導組</b>", style_cell), Paragraph("<b>攔檢與臨檢組</b>", style_cell), Paragraph("<b>偵訊組</b>", style_cell), Paragraph("<b>小計</b>", style_cell), Paragraph("<b>民力</b>", style_cell), Paragraph("<b>總計</b>", style_cell)],
-        [Paragraph("龍潭分局", style_cell), Paragraph("6", style_cell), Paragraph("31", style_cell), Paragraph("2", style_cell), Paragraph("39", style_cell), Paragraph("0", style_cell), Paragraph("39", style_cell)]
+        [Paragraph("龍潭分局", style_cell), Paragraph(str(stats['cmd']), style_cell), Paragraph(str(stats['ptl']), style_cell), Paragraph(str(stats['inv']), style_cell), Paragraph(str(stats['cmd']+stats['ptl']+stats['inv']), style_cell), Paragraph(str(stats['civ']), style_cell), Paragraph(str(stats['total']), style_cell)]
     ]
     t_stats = Table(data_stats, colWidths=[page_width*0.2, page_width*0.16, page_width*0.16, page_width*0.12, page_width*0.12, page_width*0.12, page_width*0.12])
     t_stats.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
@@ -282,7 +290,7 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     return buf.getvalue()
 
 # 寄信功能
-def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
+def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
@@ -293,7 +301,7 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
         pdf_plan_name = f"{unit}執行{project}勤務規劃表.pdf"
         pdf_attendance_name = f"{unit}執行{project}勤前教育會議人員簽到表.pdf"
 
-        pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp)
+        pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats)
         part1 = MIMEBase("application", "pdf")
         part1.set_payload(pdf1)
         encoders.encode_base64(part1)
@@ -313,8 +321,12 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
         return True, None
     except Exception as e: return False, str(e)
 
+
 # --- 主程式介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
+
+# 讀取預設警力數值
+default_stats = {'cmd': 6, 'ptl': 31, 'inv': 2, 'civ': 0}
 
 if err or df_set is None:
     u, t, p, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF
@@ -322,11 +334,14 @@ if err or df_set is None:
 else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p, b = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ), d.get("briefing_info", DEFAULT_BRIEF)
+    default_stats['cmd'] = int(d.get("stats_cmd", 6))
+    default_stats['ptl'] = int(d.get("stats_ptl", 31))
+    default_stats['inv'] = int(d.get("stats_inv", 2))
+    default_stats['civ'] = int(d.get("stats_civ", 0))
     
     # 格式檢查與修復
     ed_cmd = df_cmd if not df_cmd.empty and "項目" in df_cmd.columns else DEFAULT_CMD.copy()
     
-    # 若雲端資料包含「組別」，則先在 UI 隱藏該欄位，以便後續自動生成
     if not df_ptl.empty and "單位" in df_ptl.columns:
         ed_ptl = df_ptl.drop(columns=["組別"]) if "組別" in df_ptl.columns else df_ptl
     else:
@@ -342,6 +357,17 @@ c1, c2 = st.columns(2)
 p_name = c1.text_input("專案名稱", p)
 p_time = c2.text_input("勤務時間", t)
 
+# === 加入警力動態統計區塊 ===
+st.subheader("貳、 警力使用統計")
+col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+c_cmd = col_s1.number_input("業務及督導組 (人)", value=default_stats['cmd'], min_value=0)
+c_ptl = col_s2.number_input("攔檢與臨檢組 (人)", value=default_stats['ptl'], min_value=0)
+c_inv = col_s3.number_input("偵訊組 (人)", value=default_stats['inv'], min_value=0)
+c_civ = col_s4.number_input("民力 (人)", value=default_stats['civ'], min_value=0)
+c_total = c_cmd + c_ptl + c_inv + c_civ
+current_stats = {'cmd': c_cmd, 'ptl': c_ptl, 'inv': c_inv, 'civ': c_civ, 'total': c_total}
+st.caption(f"💡 總計出勤警力：**{c_total}** 人 (此數值將自動連動至表格、PDF匯出及網頁預覽)")
+
 st.subheader("參、 督導及其他任務編組表")
 res_cmd_raw = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 res_cmd = res_cmd_raw.dropna(how='all').fillna("")
@@ -352,18 +378,20 @@ st.subheader("勤務執行編組 (兩階段)")
 tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】擴大臨檢威力掃蕩"])
 
 with tab1:
-    st.caption("💡 取消定點路檢，採取全面機動巡邏。（「組別」欄位已為您隱藏，系統會在匯出時自動連號為「第1巡邏組」、「第2巡邏組」...）")
+    st.caption("💡 取消定點路檢，採取全面機動巡邏。（「組別」欄位已隱藏，系統會自動編號為「第1巡邏組」...）")
     res_ptl_raw = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
     res_ptl = res_ptl_raw.dropna(how='all').fillna("").reset_index(drop=True)
     # 動態產生 第X巡邏組 插入第一欄
-    res_ptl.insert(0, "組別", [f"第{i+1}巡邏組" for i in range(len(res_ptl))])
+    if not res_ptl.empty:
+        res_ptl.insert(0, "組別", [f"第{i+1}巡邏組" for i in range(len(res_ptl))])
 
 with tab2:
-    st.caption("💡 針對治安場所執行威力掃蕩。（「組別」欄位已為您隱藏，系統會在匯出時自動連號為「第1臨檢組」、「第2臨檢組」...）")
+    st.caption("💡 針對治安場所執行威力掃蕩。（「組別」欄位已隱藏，系統會自動編號為「第1臨檢組」...）")
     res_cp_raw = st.data_editor(ed_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     res_cp = res_cp_raw.dropna(how='all').fillna("").reset_index(drop=True)
     # 動態產生 第X臨檢組 插入第一欄
-    res_cp.insert(0, "組別", [f"第{i+1}臨檢組" for i in range(len(res_cp))])
+    if not res_cp.empty:
+        res_cp.insert(0, "組別", [f"第{i+1}臨檢組" for i in range(len(res_cp))])
 
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;line-height:1.5;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:13pt;margin:15px 0 15px 0;text-align:left;} h3, h4 {margin-top: 25px;}</style>"
@@ -374,8 +402,9 @@ def get_html():
     html += f"<tr><td>{p_time.split(' ')[0]}</td><td>{p_time.split(' ')[1] if ' ' in p_time else '19時至23時'}</td><td>分局長 施宇峰</td><td>如各階段任務編組表</td><td>龍潭區警政聯合辦公大樓廣場</td></tr></table>"
     html += "<div class='middle-block'><b>勤務時程分配：</b><br>19:00 - 19:30：各單位由駐地往分局移動路程。<br>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。</div>"
     
+    # 這裡會讀取 UI 上的警力動態數字
     html += "<h4>貳、 警力使用統計表</h4><table><tr><th>單位</th><th>業務及督導組</th><th>攔檢與臨檢組</th><th>偵訊組</th><th>小計</th><th>民力</th><th>總計</th></tr>"
-    html += "<tr><td>龍潭分局</td><td>6</td><td>31</td><td>2</td><td>39</td><td>0</td><td>39</td></tr></table>"
+    html += f"<tr><td>龍潭分局</td><td>{c_cmd}</td><td>{c_ptl}</td><td>{c_inv}</td><td>{c_cmd+c_ptl+c_inv}</td><td>{c_civ}</td><td>{c_total}</td></tr></table>"
     
     html += "<h4>參、 督導及其他任務編組表 (19:00 - 23:00)</h4><table><tr><th>項目</th><th>通訊代號</th><th>任務目標</th><th>負責人員</th><th>共同執行人員</th></tr>"
     for _, r in res_cmd.iterrows():
@@ -407,7 +436,7 @@ col_dl1, col_dl2 = st.columns(2)
 download_plan_name = f"{u}執行{p_name}勤務規劃表.pdf"
 download_attendance_name = f"{u}執行{p_name}勤前教育會議人員簽到表.pdf"
 
-pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
+pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats)
 col_dl1.download_button("📝 下載 1.勤務規劃表", data=pdf_plan, file_name=download_plan_name, use_container_width=True)
 
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
@@ -415,7 +444,7 @@ col_dl2.download_button("🖋️ 下載 2.人員簽到表", data=pdf_attendance,
 
 if st.button("💾 同步雲端並發送備份郵件", use_container_width=True):
     with st.spinner("同步中..."):
-        if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp):
-            ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
+        if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats):
+            ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats)
             if ok: st.success("✅ 同步成功並已寄出郵件！")
             else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {mail_err}")
