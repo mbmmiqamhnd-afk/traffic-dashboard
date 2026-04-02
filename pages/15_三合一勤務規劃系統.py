@@ -183,7 +183,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph("<b>勤務時程分配：</b>", style_text))
     story.append(Paragraph("19:00 - 19:30：各單位由駐地往分局移動路程。<br/>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br/>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br/>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。", style_text))
     
-    # 貳、 警力使用統計表 (讀取動態數值)
+    # 貳、 警力使用統計表
     story.append(Paragraph("<b>貳、 警力使用統計表</b>", style_section))
     data_stats = [
         [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>業務及督導組</b>", style_cell), Paragraph("<b>攔檢與臨檢組</b>", style_cell), Paragraph("<b>偵訊組</b>", style_cell), Paragraph("<b>小計</b>", style_cell), Paragraph("<b>民力</b>", style_cell), Paragraph("<b>總計</b>", style_cell)],
@@ -248,8 +248,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Spacer(1, 1*mm))
     story.append(Paragraph("備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。", style_text))
 
-    # 陸、 工作重點
-    story.append(Paragraph("<b>陸、 工作重點與法令宣導 (節錄)</b>", style_section))
+    # 陸、 工作重點 (移除節錄)
+    story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
     story.append(Paragraph(f"{clean(briefing)}", style_text))
 
     doc.build(story)
@@ -372,7 +372,8 @@ st.subheader("參、 督導及其他任務編組表")
 res_cmd_raw = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 res_cmd = res_cmd_raw.dropna(how='all').fillna("")
 
-b_info = st.text_area("陸、 工作重點與法令宣導", b, height=150)
+# 修改 UI 文字區域標題 (移除節錄)
+b_info = st.text_area("陸、 工作重點與法令宣導", b, height=200)
 
 st.subheader("勤務執行編組 (兩階段)")
 tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】擴大臨檢威力掃蕩"])
@@ -423,7 +424,8 @@ def get_html():
         html += f"<tr><td>{safe_str(r.get('組別')).replace('\n', '<br>')}</td><td>{safe_str(r.get('單位')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('職別/姓名')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務分工')).replace('\n', '<br>')}</td><td style='text-align:left'>{safe_str(r.get('臨檢目標場所')).replace('\n', '<br>')}</td></tr>"
     html += "</table><div class='middle-block'>備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。</div>"
 
-    html += f"<h4>陸、 工作重點與法令宣導 (節錄)</h4><div class='middle-block'>{str(b_info).replace('\n', '<br>')}</div>"
+    # HTML 顯示移除(節錄)
+    html += f"<h4>陸、 工作重點與法令宣導</h4><div class='middle-block'>{str(b_info).replace('\n', '<br>')}</div>"
     
     return html + "</body></html>"
 
