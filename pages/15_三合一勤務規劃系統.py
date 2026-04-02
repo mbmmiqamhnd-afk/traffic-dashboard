@@ -46,18 +46,18 @@ DEFAULT_CMD = pd.DataFrame([
 
 # 根據 1150410 專案更新第一階段機動巡邏編組
 DEFAULT_PTL = pd.DataFrame([
-    {"組別": "第1組", "單位": "聖亭所", "職別/姓名": "所長 鄭榮捷\n警員 詹宗澤", "任務分工": "帶班\n盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
-    {"組別": "第2組", "單位": "龍潭所", "職別/姓名": "所長 孫祥愷\n警員 沈庭禾", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "北龍路、中豐路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
-    {"組別": "第3組", "單位": "高平所", "職別/姓名": "警員 邱春松\n警員 唐銘聰", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "東龍路、中豐路沿線機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
-    {"組別": "第4組", "單位": "石門所", "職別/姓名": "巡佐 林偉政\n警員 邹詠如", "任務分工": "帶班\n盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "神龍路、文化路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
-    {"組別": "第5組", "單位": "中興所", "職別/姓名": "所長 董亦文\n警員 徐毓汶", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "中興路、龍新路沿線及治安要點機動攔查。\n(全程留守機動 20:00-23:00)"},
-    {"組別": "第6組", "單位": "交分隊", "職別/姓名": "小隊長 林振生\n警員 吳沛軒", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "轄內易發生危駕路段、各聯外道路機動攔查。\n(全程留守機動 20:00-23:00)"},
+    {"組別": "第1巡邏組", "單位": "聖亭所", "職別/姓名": "所長 鄭榮捷\n警員 詹宗澤", "任務分工": "帶班\n盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
+    {"組別": "第2巡邏組", "單位": "龍潭所", "職別/姓名": "所長 孫祥愷\n警員 沈庭禾", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "北龍路、中豐路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
+    {"組別": "第3巡邏組", "單位": "高平所", "職別/姓名": "警員 邱春松\n警員 唐銘聰", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "東龍路、中豐路沿線機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
+    {"組別": "第4巡邏組", "單位": "石門所", "職別/姓名": "巡佐 林偉政\n警員 鄒詠如", "任務分工": "帶班\n盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "神龍路、文化路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
+    {"組別": "第5巡邏組", "單位": "中興所", "職別/姓名": "所長 董亦文\n警員 徐毓汶", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "中興路、龍新路沿線及治安要點機動攔查。\n(全程留守機動 20:00-23:00)"},
+    {"組別": "第6巡邏組", "單位": "交分隊", "職別/姓名": "小隊長 林振生\n警員 吳沛軒", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "轄內易發生危駕路段、各聯外道路機動攔查。\n(全程留守機動 20:00-23:00)"},
 ])
 
 # 根據 1150410 專案更新第二階段擴大臨檢編組
 DEFAULT_CHECKPOINT = pd.DataFrame([
-    {"組別": "臨檢第1組", "單位": "聖亭所\n\n龍潭所\n\n偵查隊", "職別/姓名": "所長 鄭榮捷 警員 詹宗澤\n\n所長 孫祥愷 警員 沈庭禾\n\n偵查佐 賴享宏 警員 張峻銨", "任務分工": "帶班 製作臨檢紀錄\n\n盤查兼蒐證\n\n刑案偵防、社維法 著刑事背心、DV", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nC. 丹陽泰養生館 (中豐路281號)\nD. 溫馨汽車旅館 (中正路457號)\nE. 凱虹汽車旅館 (中正路506號)\n\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
-    {"組別": "臨檢第2組", "單位": "石門所\n\n高平所\n\n偵查隊", "職別/姓名": "巡佐 林偉政 警員 鄒詠如\n\n警員 邱春松 警員 唐銘聰\n\n偵查隊警員 2名", "任務分工": "帶班 製作臨檢紀錄\n\n大門警戒兼盤查\n\n刑案偵防、社維法", "臨檢目標場所": "F. 憤怒鳥網咖 (中興路269號)\nG. 真情男女養生館 (中興路387號)\nH. 萬紫千紅舒壓館 (中興路491-3號)\n\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
+    {"組別": "第1臨檢組", "單位": "聖亭所\n\n龍潭所\n\n偵查隊", "職別/姓名": "所長 鄭榮捷 警員 詹宗澤\n\n所長 孫祥愷 警員 沈庭禾\n\n偵查佐 賴享宏 警員 張峻銨", "任務分工": "帶班 製作臨檢紀錄\n\n盤查兼蒐證\n\n刑案偵防、社維法 著刑事背心、DV", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nC. 丹陽泰養生館 (中豐路281號)\nD. 溫馨汽車旅館 (中正路457號)\nE. 凱虹汽車旅館 (中正路506號)\n\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
+    {"組別": "第2臨檢組", "單位": "石門所\n\n高平所\n\n偵查隊", "職別/姓名": "巡佐 林偉政 警員 鄒詠如\n\n警員 邱春松 警員 唐銘聰\n\n偵查隊警員 2名", "任務分工": "帶班 製作臨檢紀錄\n\n大門警戒兼盤查\n\n刑案偵防、社維法", "臨檢目標場所": "F. 憤怒鳥網咖 (中興路269號)\nG. 真情男女養生館 (中興路387號)\nH. 萬紫千紅舒壓館 (中興路491-3號)\n\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
 ])
 
 # --- 2. 輔助函數 ---
@@ -202,7 +202,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     # 肆、 第一階段
     story.append(Paragraph("<b>肆、【第一階段 20:00 - 23:00】機動攔查任務編組</b>", style_section))
-    story.append(Paragraph("<b>勤務重點：</b>取消定點路檢，採取全面機動巡邏。針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。<br/>（註：本階段機動攔查共6組警力。21時30分起，第1至第4組轉入第二階段執行擴大臨檢；第5、第6組全程獨留於路面，持續執行機動攔查至23時。）", style_text))
+    story.append(Paragraph("<b>勤務重點：</b>取消定點路檢，採取全面機動巡邏。針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。<br/>（註：本階段機動攔查編組，21時30分起，第1至第4組轉入第二階段執行擴大臨檢；第5、第6組全程獨留於路面，持續執行機動攔查至23時。）", style_text))
     story.append(Spacer(1, 2*mm))
     
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["組別", "單位", "職別/姓名", "任務分工", "攜行裝備", "巡邏與攔查責任區"]]]
@@ -215,7 +215,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             Paragraph(clean(r.get('攜行裝備')), style_cell_left), 
             Paragraph(clean(r.get('巡邏與攔查責任區')), style_cell_left)
         ])
-    t_ptl = Table(data_ptl, colWidths=[page_width*0.1, page_width*0.1, page_width*0.2, page_width*0.15, page_width*0.2, page_width*0.25])
+    t_ptl = Table(data_ptl, colWidths=[page_width*0.12, page_width*0.1, page_width*0.2, page_width*0.15, page_width*0.18, page_width*0.25])
     t_ptl.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_ptl)
 
@@ -313,6 +313,22 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
         return True, None
     except Exception as e: return False, str(e)
 
+# 智慧代號計算與職稱相容修復
+def auto_assign_radio_code(df):
+    if df.empty: return df
+    base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
+    for idx, row in df.iterrows():
+        unit = safe_str(row.get('單位'))
+        person = safe_str(row.get('職別/姓名')) if '職別/姓名' in df.columns else safe_str(row.get('服勤人員'))
+        if not unit: continue
+        first_unit = re.split(r'[\n、 ]', unit.strip())[0]
+        base_pfx = next((v for k, v in base_prefixes.items() if k in first_unit), "")
+        if base_pfx:
+            if "副所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}2"
+            elif "所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}1"
+            elif not safe_str(row.get('無線電')).startswith(f"隆安{base_pfx}"): df.at[idx, '無線電'] = f"隆安{base_pfx}0"
+    return df
+
 # --- 主程式介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
 
@@ -323,21 +339,15 @@ else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p, b = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ), d.get("briefing_info", DEFAULT_BRIEF)
     
-    # 【強制檢查與覆寫機制】避免雲端舊版欄位污染新版格式
-    if df_cmd.empty or "項目" not in df_cmd.columns:
-        ed_cmd = DEFAULT_CMD.copy()
-    else:
-        ed_cmd = df_cmd
+    # 格式檢查
+    if df_cmd.empty or "項目" not in df_cmd.columns: ed_cmd = DEFAULT_CMD.copy()
+    else: ed_cmd = df_cmd
         
-    if df_ptl.empty or "組別" not in df_ptl.columns:
-        ed_ptl = DEFAULT_PTL.copy()
-    else:
-        ed_ptl = df_ptl
+    if df_ptl.empty or "組別" not in df_ptl.columns: ed_ptl = DEFAULT_PTL.copy()
+    else: ed_ptl = df_ptl
         
-    if df_cp is None or df_cp.empty or "臨檢目標場所" not in df_cp.columns:
-        ed_cp = DEFAULT_CHECKPOINT.copy()
-    else:
-        ed_cp = df_cp
+    if df_cp is None or df_cp.empty or "臨檢目標場所" not in df_cp.columns: ed_cp = DEFAULT_CHECKPOINT.copy()
+    else: ed_cp = df_cp
 
 st.title("🚓 三合一專案勤務規劃系統")
 c1, c2 = st.columns(2)
@@ -353,13 +363,25 @@ b_info = st.text_area("陸、 工作重點與法令宣導", b, height=150)
 st.subheader("勤務執行編組 (兩階段)")
 tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】擴大臨檢威力掃蕩"])
 with tab1:
-    st.caption("取消定點路檢，採取全面機動巡邏。")
-    res_ptl_raw = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
+    st.caption("取消定點路檢，採取全面機動巡邏。 (💡「組別」已設為系統自動連號產生，無須手動輸入)")
+    # 使用 column_config 停用組別欄位的手動編輯
+    res_ptl_raw = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor", column_config={"組別": st.column_config.Column(disabled=True)})
     res_ptl = res_ptl_raw.dropna(how='all').fillna("")
+    
+    # 自動填入 第X巡邏組
+    if not res_ptl.empty:
+        res_ptl['組別'] = [f"第{i+1}巡邏組" for i in range(len(res_ptl))]
+        res_ptl = auto_assign_radio_code(res_ptl)
+
 with tab2:
-    st.caption("針對治安場所執行威力掃蕩。")
-    res_cp_raw = st.data_editor(ed_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
+    st.caption("針對治安場所執行威力掃蕩。 (💡「組別」已設為系統自動連號產生，無須手動輸入)")
+    res_cp_raw = st.data_editor(ed_cp, num_rows="dynamic", use_container_width=True, key="cp_editor", column_config={"組別": st.column_config.Column(disabled=True)})
     res_cp = res_cp_raw.dropna(how='all').fillna("")
+    
+    # 自動填入 第X臨檢組
+    if not res_cp.empty:
+        res_cp['組別'] = [f"第{i+1}臨檢組" for i in range(len(res_cp))]
+        res_cp = auto_assign_radio_code(res_cp)
 
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;line-height:1.5;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:13pt;margin:15px 0 15px 0;text-align:left;} h3, h4 {margin-top: 25px;}</style>"
