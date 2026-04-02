@@ -49,7 +49,7 @@ DEFAULT_PTL = pd.DataFrame([
     {"組別": "第1組", "單位": "聖亭所", "職別/姓名": "所長 鄭榮捷\n警員 詹宗澤", "任務分工": "帶班\n盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
     {"組別": "第2組", "單位": "龍潭所", "職別/姓名": "所長 孫祥愷\n警員 沈庭禾", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "北龍路、中豐路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
     {"組別": "第3組", "單位": "高平所", "職別/姓名": "警員 邱春松\n警員 唐銘聰", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "東龍路、中豐路沿線機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
-    {"組別": "第4組", "單位": "石門所", "職別/姓名": "巡佐 林偉政\n警員 鄒詠如", "任務分工": "帶班\n盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "神龍路、文化路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
+    {"組別": "第4組", "單位": "石門所", "職別/姓名": "巡佐 林偉政\n警員 邹詠如", "任務分工": "帶班\n盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "神龍路、文化路周邊及治安要點機動攔查。\n(20:00-21:30機動，後轉臨檢)"},
     {"組別": "第5組", "單位": "中興所", "職別/姓名": "所長 董亦文\n警員 徐毓汶", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "中興路、龍新路沿線及治安要點機動攔查。\n(全程留守機動 20:00-23:00)"},
     {"組別": "第6組", "單位": "交分隊", "職別/姓名": "小隊長 林振生\n警員 吳沛軒", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電\n小電腦、密錄器", "巡邏與攔查責任區": "轄內易發生危駕路段、各聯外道路機動攔查。\n(全程留守機動 20:00-23:00)"},
 ])
@@ -154,7 +154,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     def clean(t): return safe_str(t).replace("\n", "<br/>")
 
-    # 大標題 (修正為勤務規劃表)
+    # 大標題
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", style_title))
     
     # 壹、 勤務基本資料
@@ -202,7 +202,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     # 肆、 第一階段
     story.append(Paragraph("<b>肆、【第一階段 20:00 - 23:00】機動攔查任務編組</b>", style_section))
-    story.append(Paragraph("<b>勤務重點：</b>取消定點路檢，採取全面機動巡邏。針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。<br/>（註：本階段機動攔查共6組警力。21時30分起，第1至第4組轉入第二階段執行擴大臨檢；第5、第6全程獨留於路面，持續執行機動攔查至23時。）", style_text))
+    story.append(Paragraph("<b>勤務重點：</b>取消定點路檢，採取全面機動巡邏。針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。<br/>（註：本階段機動攔查共6組警力。21時30分起，第1至第4組轉入第二階段執行擴大臨檢；第5、第6組全程獨留於路面，持續執行機動攔查至23時。）", style_text))
     story.append(Spacer(1, 2*mm))
     
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["組別", "單位", "職別/姓名", "任務分工", "攜行裝備", "巡邏與攔查責任區"]]]
@@ -315,14 +315,29 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
 
 # --- 主程式介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
+
 if err or df_set is None:
     u, t, p, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF
     ed_cmd, ed_ptl, ed_cp = DEFAULT_CMD.copy(), DEFAULT_PTL.copy(), DEFAULT_CHECKPOINT.copy()
 else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p, b = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ), d.get("briefing_info", DEFAULT_BRIEF)
-    ed_cmd, ed_ptl = df_cmd, df_ptl
-    ed_cp = df_cp if df_cp is not None and not df_cp.empty else DEFAULT_CHECKPOINT.copy()
+    
+    # 【強制檢查與覆寫機制】避免雲端舊版欄位污染新版格式
+    if df_cmd.empty or "項目" not in df_cmd.columns:
+        ed_cmd = DEFAULT_CMD.copy()
+    else:
+        ed_cmd = df_cmd
+        
+    if df_ptl.empty or "組別" not in df_ptl.columns:
+        ed_ptl = DEFAULT_PTL.copy()
+    else:
+        ed_ptl = df_ptl
+        
+    if df_cp is None or df_cp.empty or "臨檢目標場所" not in df_cp.columns:
+        ed_cp = DEFAULT_CHECKPOINT.copy()
+    else:
+        ed_cp = df_cp
 
 st.title("🚓 三合一專案勤務規劃系統")
 c1, c2 = st.columns(2)
@@ -349,7 +364,6 @@ with tab2:
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;line-height:1.5;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:13pt;margin:15px 0 15px 0;text-align:left;} h3, h4 {margin-top: 25px;}</style>"
     
-    # HTML大標題修正為勤務規劃表
     html = f"<html>{style}<body><h2 style='text-align:center'>{u}執行<br>{p_name}<br>勤務規劃表</h2>"
     
     html += "<h4>壹、 勤務基本資料</h4><table><tr><th>實施日期</th><th>勤務時間</th><th>指揮官</th><th>勤務編組</th><th>聯合稽查站地點</th></tr>"
