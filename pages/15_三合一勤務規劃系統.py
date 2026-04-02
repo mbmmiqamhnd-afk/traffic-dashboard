@@ -159,14 +159,17 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     page_width = A4[0] - 24*mm
     story = []
     
+    # 標題樣式
     style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=10)
     style_section = ParagraphStyle('Section', fontName=font, fontSize=15, leading=20, alignment=0, spaceAfter=3*mm, spaceBefore=4*mm)
+    
+    # 表格外的敘述文字 (設定為 12)
     style_text = ParagraphStyle('Text', fontName=font, fontSize=12, leading=18, alignment=0)
     
-    # 凸排段落樣式
+    # 凸排段落樣式 (設定為 12)
     style_briefing = ParagraphStyle('Briefing', fontName=font, fontSize=12, leading=18, alignment=0, leftIndent=32, firstLineIndent=-32, spaceAfter=2*mm)
     
-    # 【已修改】表格內容字型大小改為 14，行距改為 18
+    # 表格內的文字 (設定為 14)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
     
@@ -288,7 +291,7 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0) 
-    style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
+    style_note = ParagraphStyle('Note', fontName=font, fontSize=12, leading=15, alignment=0)
     
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     meeting_range = parse_meeting_time(time_str)
@@ -439,7 +442,8 @@ with tab2:
         res_cp.insert(0, "組別", [f"第{i+1}臨檢組" for i in range(len(res_cp))])
 
 def get_html():
-    style = "<style>body{font-family:'標楷體';padding:10px;line-height:1.5;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:13pt;margin:15px 0 15px 0;text-align:left;} h3, h4 {margin-top: 25px;}</style>"
+    # 【已修改】調整預覽中表格外文字字型大小為 12pt
+    style = "<style>body{font-family:'標楷體';padding:10px;line-height:1.5;} th,td{border:1px solid black;padding:6px;font-size:14pt;text-align:center;} .middle-block{font-size:12pt;margin:15px 0 15px 0;text-align:left;} h3, h4 {margin-top: 25px;}</style>"
     
     html = f"<html>{style}<body><h2 style='text-align:center'>{u}執行<br>{p_name}<br>勤務規劃表</h2>"
     
@@ -470,18 +474,16 @@ def get_html():
         html += f"<tr><td>{safe_str(r.get('組別')).replace('\n', '<br>')}</td><td>{safe_str(r.get('單位')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('職別/姓名')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務分工')).replace('\n', '<br>')}</td><td style='text-align:left'>{safe_str(r.get('臨檢目標場所')).replace('\n', '<br>')}</td></tr>"
     html += "</table><div class='middle-block'>備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。</div>"
 
-    # HTML 預覽的凸排渲染 (對齊標號後第一字)
     html += f"<h4>陸、 工作重點與法令宣導</h4><div class='middle-block'>"
     for line in str(b_info).split('\n'):
         if line.strip():
-            # 使用 3em 的凸排空間，確保文字對齊標號（如「一、」）後的第一個字
             html += f"<div style='padding-left: 3em; text-indent: -3em; margin-bottom: 8px;'>{safe_str(line).replace('\n', '<br>')}</div>"
     html += "</div>"
     
     return html + "</body></html>"
 
 st.markdown("---")
-with st.expander("點擊展開即時預覽"):
+with st.expander("點擊展開即時預覽 (包含完整六大項段落與地點統計)"):
     st.components.v1.html(get_html(), height=800, scrolling=True)
 
 col_dl1, col_dl2 = st.columns(2)
