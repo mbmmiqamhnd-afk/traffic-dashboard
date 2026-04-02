@@ -248,7 +248,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Spacer(1, 1*mm))
     story.append(Paragraph("備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。", style_text))
 
-    # 陸、 工作重點 (移除節錄)
+    # 陸、 工作重點 (確定會被寫入 PDF)
     story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
     story.append(Paragraph(f"{clean(briefing)}", style_text))
 
@@ -333,7 +333,13 @@ if err or df_set is None:
     ed_cmd, ed_ptl, ed_cp = DEFAULT_CMD.copy(), DEFAULT_PTL.copy(), DEFAULT_CHECKPOINT.copy()
 else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
-    u, t, p, b = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ), d.get("briefing_info", DEFAULT_BRIEF)
+    u, t, p = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ)
+    
+    # 【強制修復機制】如果雲端的宣導內容不是最新版(太短或沒有包含五大點關鍵字)，則強制更新
+    b = d.get("briefing_info", DEFAULT_BRIEF)
+    if "落實三安" not in str(b):
+        b = DEFAULT_BRIEF
+        
     default_stats['cmd'] = int(d.get("stats_cmd", 6))
     default_stats['ptl'] = int(d.get("stats_ptl", 31))
     default_stats['inv'] = int(d.get("stats_inv", 2))
@@ -357,7 +363,7 @@ c1, c2 = st.columns(2)
 p_name = c1.text_input("專案名稱", p)
 p_time = c2.text_input("勤務時間", t)
 
-# === 加入警力動態加總區塊 ===
+# === 警力動態加總區塊 ===
 st.subheader("貳、 警力使用統計 (手動微調區)")
 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 c_cmd = col_s1.number_input("業務及督導組 (人)", value=default_stats['cmd'], min_value=0)
@@ -372,7 +378,7 @@ st.subheader("參、 督導及其他任務編組表")
 res_cmd_raw = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 res_cmd = res_cmd_raw.dropna(how='all').fillna("")
 
-# 修改 UI 文字區域標題 (移除節錄)
+# 工作重點與法令宣導 (確保使用者看到的是完整文字)
 b_info = st.text_area("陸、 工作重點與法令宣導", b, height=200)
 
 st.subheader("勤務執行編組 (兩階段)")
@@ -403,7 +409,7 @@ def get_html():
     html += f"<tr><td>{p_time.split(' ')[0]}</td><td>{p_time.split(' ')[1] if ' ' in p_time else '19時至23時'}</td><td>分局長 施宇峰</td><td>如各階段任務編組表</td><td>龍潭區警政聯合辦公大樓廣場</td></tr></table>"
     html += "<div class='middle-block'><b>勤務時程分配：</b><br>19:00 - 19:30：各單位由駐地往分局移動路程。<br>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。</div>"
     
-    # 這裡會自動帶入使用者在 UI 上微調的數值，並自動算出小計與總計
+    # 自動帶入微調的數值
     html += "<h4>貳、 警力使用統計表</h4><table><tr><th>單位</th><th>業務及督導組</th><th>攔檢與臨檢組</th><th>偵訊組</th><th>小計</th><th>民力</th><th>總計</th></tr>"
     html += f"<tr><td>龍潭分局</td><td>{c_cmd}</td><td>{c_ptl}</td><td>{c_inv}</td><td>{c_cmd+c_ptl+c_inv}</td><td>{c_civ}</td><td>{c_total}</td></tr></table>"
     
@@ -424,7 +430,6 @@ def get_html():
         html += f"<tr><td>{safe_str(r.get('組別')).replace('\n', '<br>')}</td><td>{safe_str(r.get('單位')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('職別/姓名')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務分工')).replace('\n', '<br>')}</td><td style='text-align:left'>{safe_str(r.get('臨檢目標場所')).replace('\n', '<br>')}</td></tr>"
     html += "</table><div class='middle-block'>備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。</div>"
 
-    # HTML 顯示移除(節錄)
     html += f"<h4>陸、 工作重點與法令宣導</h4><div class='middle-block'>{str(b_info).replace('\n', '<br>')}</div>"
     
     return html + "</body></html>"
