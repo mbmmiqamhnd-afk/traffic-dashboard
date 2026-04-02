@@ -20,7 +20,8 @@ from reportlab.lib.units import mm
 import re
 
 # --- 1. 頁面設定 ---
-st.set_page_config(page_title="二階段勤務規劃系統", layout="wide", page_icon="🚓")
+# 已經將網頁分頁標籤修改為與系統一致
+st.set_page_config(page_title="三合一專案勤務規劃系統", layout="wide", page_icon="🚓")
 
 # --- 常數與設定 ---
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
