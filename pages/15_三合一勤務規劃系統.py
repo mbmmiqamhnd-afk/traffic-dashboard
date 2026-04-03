@@ -197,15 +197,21 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     # 壹、 勤務基本資料
     story.append(Paragraph("<b>壹、 勤務基本資料</b>", style_section))
+    
+    date_str = clean(time_str.split(" ")[0] if " " in time_str else "115年4月10日")
+    time_str_only = clean(time_str.split(" ")[1] if " " in time_str else "19時至23時")
+    
     data_basic = [
         [Paragraph("<b>實施日期</b>", style_cell), Paragraph("<b>勤務時間</b>", style_cell), Paragraph("<b>指揮官</b>", style_cell), Paragraph("<b>勤務編組</b>", style_cell), Paragraph("<b>聯合稽查站地點</b>", style_cell)],
-        [Paragraph(clean(time_str.split(" ")[0] if " " in time_str else "115年4月10日"), style_cell),
-         Paragraph(clean(time_str.split(" ")[1] if " " in time_str else "19時至23時"), style_cell),
+        # 使用 <nobr> 標籤強制 PDF 不換行
+        [Paragraph(f"<nobr>{date_str}</nobr>", style_cell),
+         Paragraph(f"<nobr>{time_str_only}</nobr>", style_cell),
          Paragraph("分局長 施宇峰", style_cell),
          Paragraph("如各階段任務編組表", style_cell),
          Paragraph("龍潭區警政聯合辦公大樓廣場", style_cell)]
     ]
-    t_basic = Table(data_basic, colWidths=[page_width*0.15, page_width*0.15, page_width*0.2, page_width*0.2, page_width*0.3])
+    # 微調欄寬比例 (把日期與時間欄寬從 0.15 加大到 0.2，避免字體被擠壓)
+    t_basic = Table(data_basic, colWidths=[page_width*0.2, page_width*0.2, page_width*0.18, page_width*0.18, page_width*0.24])
     t_basic.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_basic)
     
@@ -478,7 +484,8 @@ def get_html():
     html = f"<html>{style}<body><h2 style='text-align:center'>{u}執行<br>{p_name}<br>勤務規劃表</h2>"
     
     html += "<h4>壹、 勤務基本資料</h4><table><tr><th>實施日期</th><th>勤務時間</th><th>指揮官</th><th>勤務編組</th><th>聯合稽查站地點</th></tr>"
-    html += f"<tr><td>{p_time.split(' ')[0]}</td><td>{p_time.split(' ')[1] if ' ' in p_time else '19時至23時'}</td><td>分局長 施宇峰</td><td>如各階段任務編組表</td><td>龍潭區警政聯合辦公大樓廣場</td></tr></table>"
+    # 加入 style='white-space: nowrap;' 強制網頁不換行
+    html += f"<tr><td style='white-space: nowrap;'>{p_time.split(' ')[0]}</td><td style='white-space: nowrap;'>{p_time.split(' ')[1] if ' ' in p_time else '19時至23時'}</td><td>分局長 施宇峰</td><td>如各階段任務編組表</td><td>龍潭區警政聯合辦公大樓廣場</td></tr></table>"
     html += "<div class='middle-block'><b>勤務時程分配：</b><br>19:00 - 19:30：各單位由駐地往分局移動路程。<br>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。</div>"
     
     html += "<h4>貳、 警力使用統計表及勤前教育、地點統計</h4><table><tr><th>單位</th><th>業務及督導組</th><th>攔檢與臨檢組</th><th>偵訊組</th><th>小計</th><th>民力</th><th>總計</th></tr>"
