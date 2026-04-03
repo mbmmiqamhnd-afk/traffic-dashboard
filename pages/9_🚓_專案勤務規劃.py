@@ -143,8 +143,7 @@ A4_SIZE = (float(595.275), float(841.890))
 def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     font = _get_font()
     buf = io.BytesIO()
-    margin_lr = float(12 * mm)
-    margin_tb = float(15 * mm)
+    margin_lr, margin_tb = float(12 * mm), float(15 * mm)
     doc = SimpleDocTemplate(buf, pagesize=A4_SIZE, leftMargin=margin_lr, rightMargin=margin_lr, topMargin=margin_tb, bottomMargin=margin_tb)
     page_width = A4_SIZE[0] - (2 * margin_lr)
     story = []
@@ -196,11 +195,14 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     page_width = A4_SIZE[0] - (2 * margin_lr)
     story = []
 
-    # ✅ 表格字型大小設定為 14
+    # ✅ 設定字型大小為 14 點 (Point)，並加大 Leading (行距) 以免重疊
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8, wordWrap='CJK')
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0, wordWrap='CJK')
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1, wordWrap='CJK')
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0, wordWrap='CJK')
+    
+    # 段落樣式強制設定為 14
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=20, alignment=0, wordWrap='CJK')
+    
     style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0, wordWrap='CJK')
 
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
@@ -211,24 +213,46 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     story.append(Paragraph(f"地點：{loc}", style_top_info))
     story.append(Spacer(1, 3*mm))
 
+    # 表格內的所有文字都包裝在 Paragraph 裡，以確保應用 style_cell
     table_data = [
         [Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""],
         [Paragraph("副分局長：", style_cell_left), "", "", ""],
-        [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]
+        [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), 
+         Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]
     ]
-    rows = [("交通組", "中興派出所"), ("勤務指揮中心", "石門派出所"), ("督察組", "高平派出所"), ("聖亭派出所", "三和派出所"), ("龍潭派出所", "龍潭交通分隊")]
-    for l, r in rows: table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
+    
+    rows = [
+        ("交通組", "中興派出所"), 
+        ("勤務指揮中心", "石門派出所"), 
+        ("督察組", "高平派出所"), 
+        ("聖亭派出所", "三和派出所"), 
+        ("龍潭派出所", "龍潭交通分隊")
+    ]
+    for l, r in rows:
+        table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
 
-    row_heights = [18*mm, 18*mm, 10*mm] + [25*mm] * len(rows) # 加大行高給予簽名空間
+    # 調高列高：簽到列設定為 25mm，確保簽名空間足夠且文字置中
+    row_heights = [18*mm, 18*mm, 12*mm] + [25*mm] * len(rows)
+
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=row_heights)
+    
     t.setStyle(TableStyle([
-        ('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('ALIGN', (0,0), (0,0), 'LEFT'), ('ALIGN', (2,0), (2,0), 'LEFT'),
-        ('ALIGN', (0,1), (0,1), 'LEFT'), ('SPAN', (0,1), (3,1)), ('BACKGROUND', (0,2), (3,2), colors.whitesmoke)
+        ('FONTNAME', (0,0), (-1,-1), font),
+        ('FONTSIZE', (0,0), (-1,-1), 14), # ✅ 表格樣式再次強制設定為 14
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (0,0), (0,0), 'LEFT'),  # 分局長靠左
+        ('ALIGN', (2,0), (2,0), 'LEFT'),  # 上級督導靠左
+        ('ALIGN', (0,1), (0,1), 'LEFT'),  # 副分局長靠左
+        ('SPAN', (0,1), (3,1)),           # 副分局長跨欄
+        ('BACKGROUND', (0,2), (3,2), colors.whitesmoke) # 標題灰色背景
     ]))
+    
     story.append(t)
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
+    
     doc.build(story)
     return buf.getvalue()
 
@@ -239,14 +263,23 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
         msg = MIMEMultipart()
         msg["From"], msg["To"], msg["Subject"] = sender, sender, f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
         msg.attach(MIMEText("附件為最新的勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
-        for pdf_func, name in [(generate_pdf_from_data, '規劃表.pdf'), (generate_attendance_pdf, '簽到表.pdf')]:
-            args = (unit, project, time_str, briefing, station, df_cmd, df_ptl) if pdf_func == generate_pdf_from_data else (unit, project, time_str, briefing)
-            data = pdf_func(*args)
-            part = MIMEBase("application", "pdf")
-            part.set_payload(data)
-            encoders.encode_base64(part)
-            part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(name)}")
-            msg.attach(part)
+        
+        # 規劃表
+        p1 = generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl)
+        part1 = MIMEBase("application", "pdf")
+        part1.set_payload(p1)
+        encoders.encode_base64(part1)
+        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote('規劃表.pdf')}")
+        msg.attach(part1)
+        
+        # 簽到表
+        p2 = generate_attendance_pdf(unit, project, time_str, briefing)
+        part2 = MIMEBase("application", "pdf")
+        part2.set_payload(p2)
+        encoders.encode_base64(part2)
+        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote('簽到表.pdf')}")
+        msg.attach(part2)
+
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
             server.sendmail(sender, sender, msg.as_string())
@@ -274,7 +307,6 @@ st.title("🚓 專案勤務規劃管理系統")
 c1, c2 = st.columns(2)
 p_raw, p_time = c1.text_input("專案名稱", p), c2.text_input("勤務時間", t)
 
-# 處理日期前綴
 match = re.search(r"(\d+)月(\d+)日", p_time)
 if match:
     prefix = f"{str(match.group(1)).zfill(2)}{str(match.group(2)).zfill(2)}"
