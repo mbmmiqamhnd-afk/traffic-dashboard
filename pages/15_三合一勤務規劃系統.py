@@ -31,7 +31,7 @@ DEFAULT_TIME    = "115年4月10日 19時至23時"
 DEFAULT_PROJ    = "0410取締酒後駕車暨監警環聯合稽查及擴大臨檢 三合一專案"
 DEFAULT_BRIEF   = "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，落實「人犯戒護安全、案件程序安全、執法者及民眾安全」。\n二、 臨檢合法性：警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所，進行臨檢前應對當事人告以實施事由，便衣人員並應出示證件（依《警察職權行使法》第6條）。\n三、 攔停規範：機動攔檢對於已發生危害或易生危害之交通工具，得予以攔停；若有異常舉動而合理懷疑其將有危害行為時，得要求接受酒精濃度測試（依《警察職權行使法》第8條）。\n四、 全程蒐證：執行各項干涉、取締、處理糾紛及爭議性勤務（含噪音車引導與酒測），務必全程連續錄音或錄影。\n五、 異議處理：民眾對警察行使職權表示異議，認為無理由者得繼續執行，但經請求時應將異議之理由製作紀錄交付之（依《警察職權行使法》第29條）。"
 
-# 根據專案更新指揮編組 (已加入保安民防組)
+# 根據專案更新指揮編組
 DEFAULT_CMD = pd.DataFrame([
     {"項目": "指揮官", "通訊代號": "隆安 1 號", "任務目標": "勤務核定並重點機動督導", "負責人員": "分局長 施宇峰", "共同執行人員": "巡官 郭勝隆"},
     {"項目": "副指揮官", "通訊代號": "隆安 2 號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 何憶雯", "共同執行人員": "警務佐 曾威仁"},
@@ -103,7 +103,6 @@ def load_data():
         if client is None: return None, None, None, None, "離線模式"
         sh = client.open_by_key(SHEET_ID)
         
-        # 改為讀取 三合一 專屬工作表，並加入例外處理以防工作表尚未建立
         try:
             ws_set = sh.worksheet("三合一_設定")
             df_set = pd.DataFrame(ws_set.get_all_records()).fillna("")
@@ -137,7 +136,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats):
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
         
-        # 儲存至 三合一 專屬工作表
         try:
             ws_set = sh.worksheet("三合一_設定")
         except:
@@ -159,7 +157,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats):
                        ["loc_2", str(stats['loc_2'])],
                        ["loc_3", str(stats['loc_3'])]])
         
-        # 建立或更新其餘專屬工作表
         for ws_name, df in [("三合一_指揮組", df_cmd), ("三合一_巡邏組", df_ptl), ("三合一_擴大臨檢組", df_cp)]:
             try:
                 ws = sh.worksheet(ws_name)
@@ -185,7 +182,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     style_section = ParagraphStyle('Section', fontName=font, fontSize=15, leading=20, alignment=0, spaceAfter=3*mm, spaceBefore=4*mm)
     style_text = ParagraphStyle('Text', fontName=font, fontSize=12, leading=18, alignment=0)
     
-    # 凸排段落樣式
     style_briefing = ParagraphStyle('Briefing', fontName=font, fontSize=12, leading=18, alignment=0, leftIndent=32, firstLineIndent=-32, spaceAfter=2*mm)
     
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
@@ -193,10 +189,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     def clean(t): return safe_str(t).replace("\n", "<br/>")
 
-    # 大標題
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", style_title))
     
-    # 壹、 勤務基本資料
     story.append(Paragraph("<b>壹、 勤務基本資料</b>", style_section))
     
     date_str = clean(time_str.split(" ")[0] if " " in time_str else "115年4月10日")
@@ -218,7 +212,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph("<b>勤務時程分配：</b>", style_text))
     story.append(Paragraph("19:00 - 19:30：各單位整理裝備及由駐地往分局移動路程。<br/>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br/>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br/>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。", style_text))
     
-    # 貳、 警力使用統計表與地點統計
     story.append(Paragraph("<b>貳、 警力使用統計表及勤前教育、地點統計</b>", style_section))
     data_stats = [
         [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>業務及督導組</b>", style_cell), Paragraph("<b>攔檢與臨檢組</b>", style_cell), Paragraph("<b>偵訊組</b>", style_cell), Paragraph("<b>小計</b>", style_cell), Paragraph("<b>民力</b>", style_cell), Paragraph("<b>總計</b>", style_cell)],
@@ -238,7 +231,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_loc.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_loc)
 
-    # 參、 督導及其他任務編組表
     story.append(Paragraph("<b>參、 督導及其他任務編組表 (19:00 - 23:00)</b>", style_section))
     data_cmd = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["項目", "通訊代號", "任務目標", "負責人員", "共同執行人員"]]]
     for _, r in df_cmd.iterrows():
@@ -253,7 +245,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
     
-    # 肆、 第一階段
     story.append(Paragraph("<b>肆、【第一階段 20:00 - 23:00】機動攔查任務編組</b>", style_section))
     story.append(Paragraph("<b>勤務重點：</b>取消定點路檢，採取全面機動巡邏。針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。<br/>（註：本階段機動攔查共6組警力。21時30分起，第1至第4組轉入第二階段執行擴大臨檢；第5、第6組全程獨留於路面，持續執行機動攔查至23時。）", style_text))
     story.append(Spacer(1, 2*mm))
@@ -272,7 +263,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_ptl.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_ptl)
 
-    # 伍、 第二階段
     story.append(Paragraph("<b>伍、【第二階段 21:30 - 23:00】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph("<b>勤務重點：</b>由第一階段之第1至第4組機動警力，會合偵查隊專案人員，於21時20分前集結完畢，21時30分準時進入目標場所執行威力掃蕩。", style_text))
     story.append(Spacer(1, 2*mm))
@@ -293,26 +283,22 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Spacer(1, 1*mm))
     story.append(Paragraph("備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。", style_text))
 
-    # 陸、 工作重點與法令宣導
     story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
     for line in str(briefing).split('\n'):
         if line.strip():
             story.append(Paragraph(f"{clean(line)}", style_briefing))
 
-    # --- 加入頁碼的自訂函數 ---
     def add_page_number(canvas, doc):
         canvas.saveState()
         canvas.setFont(font, 11)
         page_number_text = f"- {canvas.getPageNumber()} -"
-        # 置中顯示頁碼：A4 寬度的一半，距離底部 10 mm
         canvas.drawCentredString(A4[0] / 2.0, 10 * mm, page_number_text)
         canvas.restoreState()
 
-    # 將畫頁碼的函數綁定到每一頁
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     return buf.getvalue()
 
-# 簽到表
+# --- 簽到表生成函數 (已新增行政組及保安民防組) ---
 def generate_attendance_pdf(unit, project, time_str, briefing):
     font = _get_font()
     buf = io.BytesIO()
@@ -331,12 +317,28 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     story.append(Paragraph(f"時間：{date_part} {meeting_range}", style_top_info))
     story.append(Paragraph(f"地點：本分局2樓會議室", style_top_info))
     story.append(Spacer(1, 3*mm))
+    
+    # 頂部簽核區
     table_data = [[Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""],
                   [Paragraph("副分局長：", style_cell_left), "", "", ""],
                   [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
-    rows = [("交通組", "中興派出所"), ("勤務指揮中心", "石門派出所"), ("督察組", "高平派出所"), ("偵查隊", "三和派出所"), ("龍潭派出所", "龍潭交通分隊"), ("聖亭派出所", "")]
-    for l, r in rows: table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[18*mm, 18*mm, 10*mm] + [26*mm]*len(rows))
+    
+    # 單位列表：新增行政組、保安民防組
+    rows = [("交通組", "中興派出所"), 
+            ("勤務指揮中心", "石門派出所"), 
+            ("督察組", "高平派出所"), 
+            ("保安民防組", "行政組"),  # 新增列
+            ("偵查隊", "三和派出所"), 
+            ("龍潭派出所", "龍潭交通分隊"), 
+            ("聖亭派出所", "")]
+    
+    for l, r in rows: 
+        table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
+    
+    # 動態計算行高，確保排版美觀 (總共 3 標題列 + len(rows) 單位列)
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], 
+              rowHeights=[18*mm, 18*mm, 10*mm] + [22*mm]*len(rows))
+              
     t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                            ('ALIGN', (0,0), (0,0), 'LEFT'), ('ALIGN', (2,0), (2,0), 'LEFT'), ('ALIGN', (0,1), (0,1), 'LEFT'), ('SPAN', (0,1), (3,1)),
                            ('BACKGROUND', (0,2), (0,2), colors.whitesmoke), ('BACKGROUND', (2,2), (2,2), colors.whitesmoke)]))
@@ -382,7 +384,6 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 # --- 主程式介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
 
-# 讀取預設警力數值及勤教/地點統計
 default_stats = {'cmd': 6, 'ptl': 31, 'inv': 2, 'civ': 0, 'b_time': '19時30分', 'b_loc': '本分局2樓會議室', 'loc_1': 8, 'loc_2': 6, 'loc_3': 0}
 
 if err or df_set is None:
@@ -392,7 +393,6 @@ else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ)
     
-    # 強制更新宣導內容
     b = d.get("briefing_info", DEFAULT_BRIEF)
     if "落實三安" not in str(b):
         b = DEFAULT_BRIEF
@@ -407,7 +407,6 @@ else:
     default_stats['loc_2'] = int(d.get("loc_2", 6))
     default_stats['loc_3'] = int(d.get("loc_3", 0))
     
-    # 格式檢查
     ed_cmd = df_cmd if not df_cmd.empty and "項目" in df_cmd.columns else DEFAULT_CMD.copy()
     
     if not df_ptl.empty and "單位" in df_ptl.columns:
@@ -423,23 +422,17 @@ else:
 st.title("🚓 三合一專案勤務規劃系統")
 c1, c2 = st.columns(2)
 
-# 先渲染右側的勤務時間輸入框，獲取最新的時間數值
 p_time = c2.text_input("勤務時間", t)
 
-# 擷取月份與日期 (忽略年)
 date_match = re.search(r"(\d+)月(\d+)日", p_time)
 if date_match:
-    m = date_match.group(1).zfill(2) # 自動補零至2碼
-    d = date_match.group(2).zfill(2) # 自動補零至2碼
+    m = date_match.group(1).zfill(2)
+    d = date_match.group(2).zfill(2)
     new_prefix = f"{m}{d}"
-    
-    # 將專案名稱最前面的數字替換為 4 碼 (MMDD)
     p = re.sub(r"^\d+", new_prefix, p)
 
-# 再渲染左側的專案名稱輸入框，帶入更新後的預設值 p
 p_name = c1.text_input("專案名稱", p)
 
-# 警力加總與地點統計區塊
 st.subheader("貳、 警力使用與地點統計 (手動微調區)")
 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 c_cmd = col_s1.number_input("業務及督導組 (人)", value=default_stats['cmd'], min_value=0)
@@ -467,7 +460,6 @@ st.subheader("參、 督導及其他任務編組表")
 res_cmd_raw = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 res_cmd = res_cmd_raw.dropna(how='all').fillna("")
 
-# 工作重點與法令宣導
 b_info = st.text_area("陸、 工作重點與法令宣導", b, height=200)
 
 st.subheader("勤務執行編組 (兩階段)")
@@ -489,46 +481,37 @@ with tab2:
 
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;line-height:1.5;} th,td{border:1px solid black;padding:6px;font-size:14pt;text-align:center;} .middle-block{font-size:12pt;margin:15px 0 15px 0;text-align:left;} h3, h4 {margin-top: 25px;}</style>"
-    
     html = f"<html>{style}<body><h2 style='text-align:center'>{u}執行<br>{p_name}<br>勤務規劃表</h2>"
-    
     html += "<h4>壹、 勤務基本資料</h4><table><tr><th>實施日期</th><th>勤務時間</th><th>指揮官</th><th>勤務編組</th><th>聯合稽查站地點</th></tr>"
     html += f"<tr><td style='white-space: nowrap;'>{p_time.split(' ')[0]}</td><td style='white-space: nowrap;'>{p_time.split(' ')[1] if ' ' in p_time else '19時至23時'}</td><td>分局長 施宇峰</td><td>如各階段任務編組表</td><td>龍潭區警政聯合辦公大樓廣場</td></tr></table>"
     html += "<div class='middle-block'><b>勤務時程分配：</b><br>19:00 - 19:30：各單位整理裝備及由駐地往分局移動路程。<br>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。</div>"
-    
     html += "<h4>貳、 警力使用統計表及勤前教育、地點統計</h4><table><tr><th>單位</th><th>業務及督導組</th><th>攔檢與臨檢組</th><th>偵訊組</th><th>小計</th><th>民力</th><th>總計</th></tr>"
     html += f"<tr><td>龍潭分局</td><td>{c_cmd}</td><td>{c_ptl}</td><td>{c_inv}</td><td>{c_cmd+c_ptl+c_inv}</td><td>{c_civ}</td><td>{c_total}</td></tr></table>"
-    
     html += "<table style='margin-top: 15px;'><tr><th>勤前教育時間</th><th>勤前教育地點</th><th>臨檢點</th><th>盤查點</th><th>聯外道路</th></tr>"
     html += f"<tr><td>{b_time}</td><td>{b_loc}</td><td>{loc_1}處</td><td>{loc_2}處</td><td>{loc_3}處</td></tr></table>"
-    
     html += "<h4>參、 督導及其他任務編組表 (19:00 - 23:00)</h4><table><tr><th>項目</th><th>通訊代號</th><th>任務目標</th><th>負責人員</th><th>共同執行人員</th></tr>"
     for _, r in res_cmd.iterrows():
         html += f"<tr><td>{safe_str(r.get('項目')).replace('\n', '<br>')}</td><td>{safe_str(r.get('通訊代號')).replace('\n', '<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務目標')).replace('\n','<br>')}</td><td>{safe_str(r.get('負責人員')).replace('\n', '<br>')}</td><td>{safe_str(r.get('共同執行人員')).replace('\n', '<br>')}</td></tr>"
     html += "</table>"
-    
     html += "<h4>肆、【第一階段 20:00 - 23:00】機動攔查任務編組</h4><div class='middle-block'><b>勤務重點：</b>取消定點路檢，採取全面機動巡邏。針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。<br>（註：本階段機動攔查共6組警力。21時30分起，第1至第4組轉入第二階段執行擴大臨檢；第5、第6組全程獨留於路面，持續執行機動攔查至23時。）</div>"
     html += "<table><tr><th>組別</th><th>單位</th><th>職別/姓名</th><th>任務分工</th><th>攜行裝備</th><th>巡邏與攔查責任區</th></tr>"
     for _, r in res_ptl.iterrows():
         html += f"<tr><td>{safe_str(r.get('組別')).replace('\n', '<br>')}</td><td>{safe_str(r.get('單位')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('職別/姓名')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務分工')).replace('\n', '<br>')}</td><td style='text-align:left'>{safe_str(r.get('攜行裝備')).replace('\n', '<br>')}</td><td style='text-align:left'>{safe_str(r.get('巡邏與攔查責任區')).replace('\n', '<br>')}</td></tr>"
     html += "</table>"
-    
     html += "<h4>伍、【第二階段 21:30 - 23:00】擴大臨檢任務編組</h4><div class='middle-block'><b>勤務重點：</b>由第一階段之第1至第4組機動警力，會合偵查隊專案人員，於21時20分前集結完畢，21時30分準時進入目標場所執行威力掃蕩。</div>"
     html += "<table><tr><th>組別</th><th>單位</th><th>職別/姓名</th><th>任務分工</th><th>臨檢目標場所</th></tr>"
     for _, r in res_cp.iterrows():
         html += f"<tr><td>{safe_str(r.get('組別')).replace('\n', '<br>')}</td><td>{safe_str(r.get('單位')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('職別/姓名')).replace('\n','<br>')}</td><td style='text-align:left'>{safe_str(r.get('任務分工')).replace('\n', '<br>')}</td><td style='text-align:left'>{safe_str(r.get('臨檢目標場所')).replace('\n', '<br>')}</td></tr>"
     html += "</table><div class='middle-block'>備註：臨檢完畢後若有剩餘時間，於各所轄內治安熱點、涉毒區段加強巡守，以防制刑案發生。</div>"
-
     html += f"<h4>陸、 工作重點與法令宣導</h4><div class='middle-block'>"
     for line in str(b_info).split('\n'):
         if line.strip():
             html += f"<div style='padding-left: 3em; text-indent: -3em; margin-bottom: 8px;'>{safe_str(line).replace('\n', '<br>')}</div>"
-    html += "</div>"
-    
-    return html + "</body></html>"
+    html += "</div></body></html>"
+    return html
 
 st.markdown("---")
-with st.expander("點擊展開即時預覽 (包含完整六大項段落與地點統計)"):
+with st.expander("點擊展開即時預覽"):
     st.components.v1.html(get_html(), height=800, scrolling=True)
 
 col_dl1, col_dl2 = st.columns(2)
