@@ -151,7 +151,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
 
     style_title        = ParagraphStyle('Title',       fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8,   wordWrap='CJK')
     style_info         = ParagraphStyle('Info',        fontName=font, fontSize=12, alignment=2, spaceAfter=10,              wordWrap='CJK')
-    # ✅ 表格內文字型統一改為 14
     style_cell         = ParagraphStyle('Cell',        fontName=font, fontSize=14, leading=20, alignment=1,                 wordWrap='CJK')
     style_cell_left    = ParagraphStyle('CellLeft',    fontName=font, fontSize=14, leading=20, alignment=0,                 wordWrap='CJK')
     style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm,
@@ -173,7 +172,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
             Paragraph(clean(r.get('任務','')), style_cell_left)
         ])
 
-    t1 = Table(data_cmd, colWidths=[page_width*0.14, page_width*0.14, page_width*0.27, page_width*0.45], repeatRows=2)
+    # ✅ 將姓名欄比例拉大為 35%，任務欄縮小至 37%，讓姓名欄有更多空間不換行
+    t1 = Table(data_cmd, colWidths=[page_width*0.14, page_width*0.14, page_width*0.35, page_width*0.37], repeatRows=2)
     t1.setStyle(TableStyle([
         ('FONTNAME',   (0,0), (-1,-1), font),
         ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
@@ -205,7 +205,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     t2 = Table(data_ptl, colWidths=[page_width*0.14, page_width*0.14, page_width*0.16, page_width*0.20, page_width*0.36], repeatRows=1)
     t2.setStyle(TableStyle([
         ('FONTNAME',   (0,0), (-1,-1), font),
-        # ✅ 巡邏組 FONTSIZE 同步改為 14
         ('FONTSIZE',   (0,0), (-1,-1), 14),
         ('ALIGN',      (0,1), (1,-1),  'CENTER'),
         ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
@@ -226,7 +225,6 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
 
     style_title    = ParagraphStyle('Title',    fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8, wordWrap='CJK')
     style_top_info = ParagraphStyle('TopInfo',  fontName=font, fontSize=12, leading=18, alignment=0,              wordWrap='CJK')
-    # ✅ 簽到表表格字型同樣維持 14
     style_cell     = ParagraphStyle('Cell',     fontName=font, fontSize=14, leading=24, alignment=1,              wordWrap='CJK')
     style_cell_left= ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0,              wordWrap='CJK')
     style_note     = ParagraphStyle('Note',     fontName=font, fontSize=11, leading=15, alignment=0,              wordWrap='CJK')
