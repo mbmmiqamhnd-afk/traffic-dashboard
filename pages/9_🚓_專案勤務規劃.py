@@ -35,7 +35,7 @@ WS_MAP = {
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年3月28日19至23時"
 DEFAULT_PROJ    = "0328「全市取締酒後駕車與防制危險駕車及噪音車輛」合併「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
-DEFAULT_BRIEF   = "19時30分於分局二樓會議室召開"
+DEFAULT_BRIEF   = "19時30分於分局二樓會議室召召開"
 DEFAULT_STATION = "時間:20時至23時\n地點:桃園市龍潭區中正路269號(龍星國民小學)大門口"
 
 DEFAULT_CMD = pd.DataFrame([
@@ -159,11 +159,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story = []
 
     style_title        = ParagraphStyle('Title',       fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8,   wordWrap='CJK')
-    style_info         = ParagraphStyle('Info',        fontName=font, fontSize=12, alignment=2, spaceAfter=10,              wordWrap='CJK')
+    style_info         = ParagraphStyle('Info',        fontName=font, fontSize=12, alignment=2, spaceAfter=10,             wordWrap='CJK')
     style_cell         = ParagraphStyle('Cell',        fontName=font, fontSize=14, leading=20, alignment=1,                 wordWrap='CJK')
     style_cell_left    = ParagraphStyle('CellLeft',    fontName=font, fontSize=14, leading=20, alignment=0,                 wordWrap='CJK')
     style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm,
-                                        alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0,                              wordWrap='CJK')
+                                        alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0,                             wordWrap='CJK')
     style_table_title  = ParagraphStyle('TTitle',      fontName=font, fontSize=16, alignment=1, leading=22,                 wordWrap='CJK')
 
     story.append(Paragraph(f"{unit}{project}勤務規劃表", style_title))
@@ -232,10 +232,10 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     story = []
 
     style_title    = ParagraphStyle('Title',    fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8, wordWrap='CJK')
-    style_top_info = ParagraphStyle('TopInfo',  fontName=font, fontSize=12, leading=18, alignment=0,              wordWrap='CJK')
-    style_cell     = ParagraphStyle('Cell',     fontName=font, fontSize=14, leading=24, alignment=1,              wordWrap='CJK')
-    style_cell_left= ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0,              wordWrap='CJK')
-    style_note     = ParagraphStyle('Note',     fontName=font, fontSize=11, leading=15, alignment=0,              wordWrap='CJK')
+    style_top_info = ParagraphStyle('TopInfo',  fontName=font, fontSize=12, leading=18, alignment=0,               wordWrap='CJK')
+    style_cell     = ParagraphStyle('Cell',     fontName=font, fontSize=14, leading=24, alignment=1,               wordWrap='CJK')
+    style_cell_left= ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0,               wordWrap='CJK')
+    style_note     = ParagraphStyle('Note',     fontName=font, fontSize=11, leading=15, alignment=0,               wordWrap='CJK')
 
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     meeting_range = parse_meeting_time(time_str)
@@ -250,7 +250,16 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
         [Paragraph("副分局長：", style_cell_left), "", "", ""],
         [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]
     ]
-    rows = [("交通組", "中興派出所"), ("勤務指揮中心", "石門派出所"), ("督察組", "高平派出所"), ("聖亭派出所", "三和派出所"), ("龍潭派出所", "龍潭交通分隊")]
+    
+    # --- ✅ 已修改：將「勤務指揮中心」移到「督察組」下方 ---
+    rows = [
+        ("交通組", "中興派出所"), 
+        ("督察組", "石門派出所"), 
+        ("勤務指揮中心", "高平派出所"), 
+        ("聖亭派出所", "三和派出所"), 
+        ("龍潭派出所", "龍潭交通分隊")
+    ]
+    
     for l, r in rows:
         table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
 
@@ -281,7 +290,6 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
         msg["From"], msg["To"], msg["Subject"] = sender, sender, f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
         msg.attach(MIMEText("附件為最新的勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
         
-        # ✅ 動態生成與標題一致的檔案名稱
         plan_filename = f"{unit}{project}勤務規劃表.pdf"
         
         for pdf_func, name in [(generate_pdf_from_data, plan_filename), (generate_attendance_pdf, '簽到表.pdf')]:
@@ -350,7 +358,6 @@ res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
 st.markdown("---")
 col_dl1, col_dl2 = st.columns(2)
 
-# ✅ 將網頁下載的檔名也改為與標題一致
 plan_filename = f"{u}{p_name}勤務規劃表.pdf"
 
 col_dl1.download_button("📝 下載 1.勤務規劃表", data=generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl), file_name=plan_filename, use_container_width=True)
