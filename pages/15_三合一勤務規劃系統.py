@@ -217,7 +217,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     story.append(Spacer(1, 2*mm))
     story.append(Paragraph("<b>勤務時程分配：</b>", style_text))
-    story.append(Paragraph("19:00 - 19:30：各單位由駐地往分局移動路程。<br/>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br/>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br/>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。", style_text))
+    # 更新移動路程文字
+    story.append(Paragraph("19:00 - 19:30：各單位整理裝備及由駐地往分局移動路程。<br/>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br/>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br/>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。", style_text))
     
     # 貳、 警力使用統計表與地點統計
     story.append(Paragraph("<b>貳、 警力使用統計表及勤前教育、地點統計</b>", style_section))
@@ -486,7 +487,8 @@ def get_html():
     html += "<h4>壹、 勤務基本資料</h4><table><tr><th>實施日期</th><th>勤務時間</th><th>指揮官</th><th>勤務編組</th><th>聯合稽查站地點</th></tr>"
     # 加入 style='white-space: nowrap;' 強制網頁不換行
     html += f"<tr><td style='white-space: nowrap;'>{p_time.split(' ')[0]}</td><td style='white-space: nowrap;'>{p_time.split(' ')[1] if ' ' in p_time else '19時至23時'}</td><td>分局長 施宇峰</td><td>如各階段任務編組表</td><td>龍潭區警政聯合辦公大樓廣場</td></tr></table>"
-    html += "<div class='middle-block'><b>勤務時程分配：</b><br>19:00 - 19:30：各單位由駐地往分局移動路程。<br>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。</div>"
+    # 更新移動路程文字
+    html += "<div class='middle-block'><b>勤務時程分配：</b><br>19:00 - 19:30：各單位整理裝備及由駐地往分局移動路程。<br>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。</div>"
     
     html += "<h4>貳、 警力使用統計表及勤前教育、地點統計</h4><table><tr><th>單位</th><th>業務及督導組</th><th>攔檢與臨檢組</th><th>偵訊組</th><th>小計</th><th>民力</th><th>總計</th></tr>"
     html += f"<tr><td>龍潭分局</td><td>{c_cmd}</td><td>{c_ptl}</td><td>{c_inv}</td><td>{c_cmd+c_ptl+c_inv}</td><td>{c_civ}</td><td>{c_total}</td></tr></table>"
