@@ -298,7 +298,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     return buf.getvalue()
 
-# --- 簽到表生成函數 (更新行政組、內外勤排版) ---
+# --- 簽到表生成函數 (已調整右欄為：聖亭/龍潭/中興/石門/高平/三和/分隊) ---
 def generate_attendance_pdf(unit, project, time_str, briefing):
     font = _get_font()
     buf = io.BytesIO()
@@ -322,19 +322,21 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
                   [Paragraph("副分局長：", style_cell_left), "", "", ""],
                   [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
     
-    # 重新編排邏輯：左側放內勤，右側放外勤，並將行政組緊接於交通組下方
+    # 依照指定順序與上下位置排列
     rows = [
-        ("交通組", "龍潭派出所"), 
-        ("行政組", "聖亭派出所"), 
+        ("交通組", "聖亭派出所"), 
+        ("行政組", "龍潭派出所"), 
         ("督察組", "中興派出所"), 
         ("保安民防組", "石門派出所"),  
-        ("偵查隊", "高平派出所"), 
-        ("勤務指揮中心", "三和派出所"), 
-        ("龍潭交通分隊", "")
+        ("勤務指揮中心", "高平派出所"), 
+        ("偵查隊", "三和派出所"), 
+        ("", "龍潭交通分隊")
     ]
     
     for l, r in rows: 
-        table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
+        left_p = Paragraph(l, style_cell) if l else ""
+        right_p = Paragraph(r, style_cell) if r else ""
+        table_data.append([left_p, "", right_p, ""])
     
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], 
               rowHeights=[18*mm, 18*mm, 10*mm] + [22*mm]*len(rows))
