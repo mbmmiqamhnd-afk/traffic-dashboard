@@ -298,7 +298,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     return buf.getvalue()
 
-# --- 簽到表生成函數 (已新增行政組及保安民防組) ---
+# --- 簽到表生成函數 (更新行政組、內外勤排版) ---
 def generate_attendance_pdf(unit, project, time_str, briefing):
     font = _get_font()
     buf = io.BytesIO()
@@ -318,24 +318,24 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     story.append(Paragraph(f"地點：本分局2樓會議室", style_top_info))
     story.append(Spacer(1, 3*mm))
     
-    # 頂部簽核區
     table_data = [[Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""],
                   [Paragraph("副分局長：", style_cell_left), "", "", ""],
                   [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
     
-    # 單位列表：新增行政組、保安民防組
-    rows = [("交通組", "中興派出所"), 
-            ("勤務指揮中心", "石門派出所"), 
-            ("督察組", "高平派出所"), 
-            ("保安民防組", "行政組"),  # 新增列
-            ("偵查隊", "三和派出所"), 
-            ("龍潭派出所", "龍潭交通分隊"), 
-            ("聖亭派出所", "")]
+    # 重新編排邏輯：左側放內勤，右側放外勤，並將行政組緊接於交通組下方
+    rows = [
+        ("交通組", "龍潭派出所"), 
+        ("行政組", "聖亭派出所"), 
+        ("督察組", "中興派出所"), 
+        ("保安民防組", "石門派出所"),  
+        ("偵查隊", "高平派出所"), 
+        ("勤務指揮中心", "三和派出所"), 
+        ("龍潭交通分隊", "")
+    ]
     
     for l, r in rows: 
         table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
     
-    # 動態計算行高，確保排版美觀 (總共 3 標題列 + len(rows) 單位列)
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], 
               rowHeights=[18*mm, 18*mm, 10*mm] + [22*mm]*len(rows))
               
