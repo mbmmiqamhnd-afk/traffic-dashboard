@@ -279,37 +279,55 @@ def auto_assign_radio_code(df):
             elif not safe_str(row.get('無線電')).startswith(f"隆安{base_pfx}"): df.at[idx, '無線電'] = f"隆安{base_pfx}0"
     return df
 
-# 🌟 新增：智慧連動對齊演算法
+# 🌟 新增：智慧連動對齊演算法 (完美修正版)
 def sync_personnel_data(df_ptl, df_cp):
-    """拆解第一階段單位，並將人員精準映射至第二階段（自動去除重複名單）"""
+    """拆解第一階段單位，並將人員精準映射至第二階段（支援換行與空白，並自動去除重複）"""
     if df_ptl.empty or df_cp.empty: return df_cp
+    
+    # 強化的分隔符號：支援 頓號、逗號、全半形空白、換行(\n)、斜線
+    split_pattern = r'[、,，\s/]+'
     
     # 1. 拆解第一階段的單位名稱，建立 mapping 字典
     p_dict = {}
     for _, row in df_ptl.iterrows():
         unit_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
-        units = re.split(r'[、, 　]', unit_str) # 支援頓號、逗號、全形空白切割
-        person = str(row.get('服勤人員', '')).strip()
+        units = re.split(split_pattern, unit_str.strip())
+        
+        persons_str = str(row.get('服勤人員', '')).strip()
+        # 提前把人員也獨立拆開
+        current_persons = []
+        for p in re.split(split_pattern, persons_str):
+            p = p.strip()
+            if p and p not in current_persons:
+                current_persons.append(p)
+        
         for u in units:
             u = u.strip()
-            if u: p_dict[u] = person
+            if u:
+                # 若字典裡沒有這個單位，先建立空陣列
+                if u not in p_dict:
+                    p_dict[u] = []
+                # 把人員「累加」進去，避免被覆蓋
+                for p in current_persons:
+                    if p not in p_dict[u]:
+                        p_dict[u].append(p)
             
     # 2. 依照第二階段的單位進行組合
     df_cp_new = df_cp.copy()
     for idx, row in df_cp_new.iterrows():
         unit_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
-        units_cp = re.split(r'[、, 　]', unit_str)
+        units_cp = re.split(split_pattern, unit_str.strip())
+        
         combined = []
         for u in units_cp:
             u = u.strip()
-            if u in p_dict and p_dict[u]:
-                # 將找出來的人名再次切割，避免重複添加
-                for p in re.split(r'[、, 　]', p_dict[u]):
-                    p = p.strip()
-                    if p and p not in combined: 
+            # 把第一階段累積的人員名單全部倒出來
+            if u in p_dict:
+                for p in p_dict[u]:
+                    if p not in combined: 
                         combined.append(p)
         
-        # 若有組合出人員，則複寫進欄位中
+        # 若有組合出人員，則複寫進欄位中 (統一用頓號組合)
         if combined:
             df_cp_new.at[idx, '服勤人員'] = "、".join(combined)
             
