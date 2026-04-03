@@ -279,55 +279,90 @@ def auto_assign_radio_code(df):
             elif not safe_str(row.get('無線電')).startswith(f"隆安{base_pfx}"): df.at[idx, '無線電'] = f"隆安{base_pfx}0"
     return df
 
-# 🌟 新增：智慧連動對齊演算法 (完美修正版)
+# 🌟 核心修正：位置順序智慧對齊演算法
 def sync_personnel_data(df_ptl, df_cp):
-    """拆解第一階段單位，並將人員精準映射至第二階段（支援換行與空白，並自動去除重複）"""
+    """拆解第一階段單位，並將人員精準映射至第二階段（支援順序對齊與前綴對齊）"""
     if df_ptl.empty or df_cp.empty: return df_cp
     
-    # 強化的分隔符號：支援 頓號、逗號、全半形空白、換行(\n)、斜線
     split_pattern = r'[、,，\s/]+'
-    
-    # 1. 拆解第一階段的單位名稱，建立 mapping 字典
     p_dict = {}
+    
+    # 步驟 1：聰明地拆解第一階段的名單
     for _, row in df_ptl.iterrows():
         unit_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
-        units = re.split(split_pattern, unit_str.strip())
+        units = [u.strip() for u in re.split(split_pattern, unit_str) if u.strip()]
         
         persons_str = str(row.get('服勤人員', '')).strip()
-        # 提前把人員也獨立拆開
-        current_persons = []
-        for p in re.split(split_pattern, persons_str):
-            p = p.strip()
-            if p and p not in current_persons:
-                current_persons.append(p)
+        current_persons = [p.strip() for p in re.split(split_pattern, persons_str) if p.strip()]
         
         for u in units:
-            u = u.strip()
-            if u:
-                # 若字典裡沒有這個單位，先建立空陣列
-                if u not in p_dict:
-                    p_dict[u] = []
-                # 把人員「累加」進去，避免被覆蓋
-                for p in current_persons:
-                    if p not in p_dict[u]:
-                        p_dict[u].append(p)
+            if u not in p_dict: p_dict[u] = []
             
-    # 2. 依照第二階段的單位進行組合
+        if not current_persons:
+            continue
+            
+        # 情況一：這格只有一個單位，毫無懸念全部歸給它
+        if len(units) == 1:
+            u = units[0]
+            for p in current_persons:
+                if p not in p_dict[u]: p_dict[u].append(p)
+        else:
+            # 情況二：這格有兩個以上單位 (例如 高平所、三和所)，啟動智慧對齊
+            has_prefix = False
+            for p in current_persons:
+                for u in units:
+                    if u[:2] in p: # 檢查是否手動打了前綴，例如 "高平-張三"
+                        has_prefix = True
+                        break
+                if has_prefix: break
+                
+            if has_prefix:
+                # 使用者有打前綴 -> 依照關鍵字指派
+                for p in current_persons:
+                    assigned = False
+                    for u in units:
+                        if u[:2] in p:
+                            clean_p = p.replace(u[:2], "").replace("-", "").replace(":", "").strip()
+                            if not clean_p: clean_p = p
+                            if clean_p not in p_dict[u]: p_dict[u].append(clean_p)
+                            assigned = True
+                    if not assigned: # 有些人沒加前綴，保守分給全部
+                        for u in units:
+                            if p not in p_dict[u]: p_dict[u].append(p)
+            else:
+                # 使用者順著打字 (例如 張三、李四) -> 採用「位置順序對齊」平分
+                M = len(current_persons)
+                N = len(units)
+                
+                if M >= N:
+                    base = M // N
+                    remainder = M % N
+                    idx = 0
+                    for i, u in enumerate(units):
+                        count = base + (1 if i < remainder else 0)
+                        for _ in range(count):
+                            if idx < M:
+                                p = current_persons[idx]
+                                if p not in p_dict[u]: p_dict[u].append(p)
+                                idx += 1
+                else:
+                    # 人數異常少於單位數，防呆設定兩邊都給
+                    for u in units:
+                        for p in current_persons:
+                            if p not in p_dict[u]: p_dict[u].append(p)
+                            
+    # 步驟 2：把分好的名單，按第二階段的組裝方式合體
     df_cp_new = df_cp.copy()
     for idx, row in df_cp_new.iterrows():
         unit_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
-        units_cp = re.split(split_pattern, unit_str.strip())
+        units_cp = [u.strip() for u in re.split(split_pattern, unit_str) if u.strip()]
         
         combined = []
         for u in units_cp:
-            u = u.strip()
-            # 把第一階段累積的人員名單全部倒出來
             if u in p_dict:
                 for p in p_dict[u]:
-                    if p not in combined: 
-                        combined.append(p)
-        
-        # 若有組合出人員，則複寫進欄位中 (統一用頓號組合)
+                    if p not in combined: combined.append(p)
+                    
         if combined:
             df_cp_new.at[idx, '服勤人員'] = "、".join(combined)
             
