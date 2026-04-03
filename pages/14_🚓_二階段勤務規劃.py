@@ -1,342 +1,775 @@
 import streamlit as st
 import pandas as pd
+import io
+import os
+import glob
+import re
 import gspread
-from google.oauth2.service_account import Credentials
-from datetime import datetime
-import smtplib, io, os
-import urllib.parse as _ul
+import smtplib
+import calendar
+import traceback
+from datetime import datetime, timedelta, date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
+from email.mime.application import MIMEApplication
 from email import encoders
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.units import mm
-import re
+from email.header import Header
+from pdf2image import convert_from_bytes
+from pptx import Presentation
 
-# --- 1. 頁面設定 ---
-st.set_page_config(page_title="二階段勤務規劃系統", layout="wide", page_icon="🚓")
+# ==========================================
+# 0. 系統初始化與格式套件
+# ==========================================
+st.set_page_config(page_title="龍潭分局交通智慧戰情室", page_icon="🚓", layout="wide")
 
-# --- 常數與專屬工作表設定 ---
-SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
-SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+try:
+    from gspread_formatting import *
+    HAS_FORMATTING = True
+except ImportError:
+    HAS_FORMATTING = False
 
-WS_MAP = {
-    "set": "二階段_設定",
-    "cmd": "二階段_指揮組",
-    "ptl": "二階段_巡邏組",
-    "cp":  "二階段_路檢組"
+# ==========================================
+# 1. 全局常數與設定區
+# ==========================================
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
+TO_EMAIL = "mbmmiqamhnd@gmail.com"
+
+try:
+    MY_EMAIL = st.secrets.get("email", {}).get("user", "")
+    MY_PASSWORD = st.secrets.get("email", {}).get("password", "")
+    GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
+except:
+    MY_EMAIL, MY_PASSWORD, GCP_CREDS = "", "", None
+
+# --- [重大違規常數] ---
+MAJOR_UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
+MAJOR_TARGETS = {'聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 6006}
+MAJOR_FOOTNOTE = "重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」"
+
+# --- [超載統計常數] ---
+OVERLOAD_TARGETS = {'聖亭所': 20, '龍潭所': 27, '中興所': 20, '石門所': 16, '高平所': 14, '三和所': 8, '警備隊': 0, '交通分隊': 22}
+OVERLOAD_UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'}
+OVERLOAD_UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
+
+# --- [強化專案常數] ---
+PROJECT_NAME = "強化交通安全執法專案勤務取締件數統計表"
+PROJECT_TARGETS = {
+    '聖亭所': [5, 115, 5, 16, 7, 10], '龍潭所': [6, 145, 7, 20, 9, 12],
+    '中興所': [5, 115, 5, 16, 7, 10], '石門所': [3, 80, 4, 11, 5, 7],
+    '高平所': [3, 80, 4, 11, 5, 7], '三和所': [2, 40, 2, 6, 2, 5],
+    '交通分隊': [5, 115, 4, 16, 6, 8], '交通組': [0, 0, 0, 0, 0, 0], '警備隊': [0, 0, 0, 0, 0, 0]
+}
+PROJECT_CATS = ["酒後駕車", "闖紅燈", "嚴重超速", "車不讓人", "行人違規", "大型車違規"]
+PROJECT_LAW_MAP = {
+    "酒後駕車": ["35條", "73條2項", "73條3項"], 
+    "闖紅燈": ["53條"], 
+    "嚴重超速": ["43條", "40條"],  
+    "車不讓人": ["44條", "48條"], 
+    "行人違規": ["78條"]
 }
 
-# 根據 0408 專案更新預設值
-DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
-DEFAULT_TIME    = "115年4月8日20至24時"
-DEFAULT_PROJ    = "0408全國同步擴大取締酒後駕車與防制危險駕車及噪音車輛專案勤務"
-DEFAULT_BRIEF   = "20時30分於分局二樓會議室召開" 
-
-DEFAULT_CMD = pd.DataFrame([
-    {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導"},
-    {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-    {"職稱": "副指揮官", "代號": "隆安3", "姓名": "副分局長蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-    {"職稱": "上級督導官", "代號": "建興", "姓名": "駐區督察 孫三陽", "任務": "重點機動督導"},
-    {"職稱": "督導組", "代號": "隆安6", "姓名": "督察組組長黃長旗\n督察組督察員 黃中彥\n督察組警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律"},
-    {"職稱": "指導組", "代號": "隆安684", "姓名": "督察組教官郭文義", "任務": "指導各編組勤務執行及狀況處置"},
-    {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "交通組組長 楊孟竟\n交通組警務員盧冠仁\n交通組警務員李峯甫\n交通組巡官郭勝隆\n交通組巡官羅千金\n交通組警員吳享運\n勤指中心警員張庭溱\n(代理人:巡官陳鵬翔)", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
-    {"職稱": "通訊組", "代號": "隆安", "姓名": "行政組警務佐曾威仁\n人事室警員陳明祥\n主任蔡奇青\n執勤官李文章\n執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜"},
-])
-
-DEFAULT_PTL = pd.DataFrame([
-    {"編組": "第一巡邏組", "無線電": "隆安50", "單位": "聖亭所", "服勤人員": "", "任務分工": "巡邏:\n於易發生酒駕、危險駕車路段(中豐路、中豐路中山段、中豐路上林段、大昌路一段、中正路)加強攔檢。"},
-    {"編組": "第二巡邏組", "無線電": "隆安60", "單位": "龍潭所", "服勤人員": "", "任務分工": "巡邏:\n於易發生酒駕、危險駕車路段(聖亭路、聖亭路八德段、干城路、龍平路、湧光路、工五路)加強攔檢。"},
-    {"編組": "第三巡邏組", "無線電": "隆安70", "單位": "中興所", "服勤人員": "", "任務分工": "巡邏:\n於易發生酒駕、危險駕車路段(北龍路、中興路、福龍路、武漢路、自由街、民主街)加強攔檢"},
-    {"編組": "第四巡邏組", "無線電": "隆安80", "單位": "石門所", "服勤人員": "", "任務分工": "巡邏:\n於易發生酒駕、危險駕車路段(大昌路二段、中正路上華段、中正路三林段、中正路佳安段、中正路三坑段、龍源路大平段、文化路)加強攔檢"},
-    {"編組": "第五巡邏組", "無線電": "隆安90", "單位": "高平所、三和所", "服勤人員": "", "任務分工": "巡邏:\n於易發生酒駕、危險駕車路段(中豐路高平段、中原路、龍源路、楊銅路反及龍新路三和段至三水段)加強攔檢。"},
-    {"編組": "第六巡邏組", "無線電": "隆安990", "單位": "龍潭交通分隊", "服勤人員": "", "任務分工": "巡邏:\n於易發生酒駕、危險駕車路段(中豐路高平段、中原路、龍源路、工五路)加強攔檢。"},
-])
-
-DEFAULT_CHECKPOINT = pd.DataFrame([
-    {"編組": "第一路檢組", "無線電": "隆安70", "單位": "中興所、高平所", "服勤人員": "", "任務分工": "路檢:中正路三坑段與美國路口(攔檢往龍潭市區方向車輛)\n*雨天備案:轄區治安要點巡邏"},
-    {"編組": "第二路檢組", "無線電": "隆安50", "單位": "聖亭所、三和所", "服勤人員": "", "任務分工": "路檢:中正路三坑段與美國路口(攔檢往龍源路方向車輛)。\n*雨天備案:轄區治安要點巡邏。"},
-    {"編組": "第一機動攔檢組", "無線電": "隆安990", "單位": "交通分隊", "服勤人員": "", "任務分工": "攔截圍捕:於中正路三坑段適當地點,機動攔檢迴轉規避車輛。\n*雨天備案:轄區治安要點巡邏。"},
-    {"編組": "第二機動攔檢組", "無線電": "隆安60", "單位": "龍潭所", "服勤人員": "", "任務分工": "路檢:於中正路三坑段適當地點,機動攔檢迴轉規避車輛。\n*雨天備案:轄區治安要點巡邏。"},
-    {"編組": "第三機動攔檢組", "無線電": "隆安80", "單位": "石門所", "服勤人員": "", "任務分工": "攔截圍捕:於美國路文化路來回梭巡,機動攔檢迴轉規避車輛\n*雨天備案:轄區治安要點巡邏"},
-])
-
-# --- 2. 輔助函數 ---
-def _get_font():
-    fname = "kaiu"
-    if fname in pdfmetrics.getRegisteredFontNames(): return fname
-    font_paths = ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf", "/usr/share/fonts/truetype/custom/kaiu.ttf"]
-    for p in font_paths:
-        if os.path.exists(p):
-            pdfmetrics.registerFont(TTFont(fname, p))
-            return fname
-    return "Helvetica"
-
-def parse_meeting_time(time_str):
+# ==========================================
+# 2. 恢復原廠設定的格式化邏輯 (絕對不動 A1)
+# ==========================================
+def sync_to_specified_sheet(df):
+    """🚨重大違規專用：保留 A1 總標題，僅從 A2 開始更新，並針對第二列表頭作黑紅分離"""
     try:
-        match = re.search(r"(\d+)至", time_str)
-        if match:
-            start_hour = int(match.group(1))
-            end_hour = start_hour + 1
-            return f"{start_hour}時30分至{end_hour}時00分"
-    except: pass
-    return "19時30分至20時00分"
-
-def safe_str(val):
-    if pd.isna(val) or val is None or str(val).strip().lower() == "nan": return ""
-    return str(val)
-
-@st.cache_resource
-def get_client():
-    if "gcp_service_account" not in st.secrets: return None
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    return gspread.authorize(creds)
-
-def init_sheets():
-    try:
-        client = get_client()
-        sh = client.open_by_key(SHEET_ID)
-        headers = {
-            WS_MAP["set"]: [["Key", "Value"]],
-            WS_MAP["cmd"]: [["職稱", "代號", "姓名", "任務"]],
-            WS_MAP["ptl"]: [["編組", "無線電", "單位", "服勤人員", "任務分工"]],
-            WS_MAP["cp"]:  [["編組", "無線電", "單位", "服勤人員", "任務分工"]]
-        }
-        for ws_name, head in headers.items():
-            try:
-                sh.worksheet(ws_name)
-                st.sidebar.info(f"✔ {ws_name} 已存在")
-            except:
-                sh.add_worksheet(title=ws_name, rows="100", cols="20").update(head)
-                st.sidebar.success(f"➕ 已建立 {ws_name}")
-        load_data.clear()
-        st.rerun()
-    except Exception as e:
-        st.error(f"初始化失敗：{e}")
-
-@st.cache_data(ttl=10)
-def load_data():
-    try:
-        client = get_client()
-        if client is None: return None, None, None, None, "權限不足"
-        sh = client.open_by_key(SHEET_ID)
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        ws = sh.get_worksheet(0)
         
-        ws_set = sh.worksheet(WS_MAP["set"])
-        ws_cmd = sh.worksheet(WS_MAP["cmd"])
-        ws_ptl = sh.worksheet(WS_MAP["ptl"])
-        ws_cp  = sh.worksheet(WS_MAP["cp"])
+        col_tuples = df.columns.tolist()
+        top_row = [t[0] for t in col_tuples]
+        bottom_row = [t[1] for t in col_tuples]
+        data_body = df.values.tolist() 
+        data_list = [top_row, bottom_row] + data_body
+        
+        ws.update(range_name='A2', values=data_list)
+        
+        if HAS_FORMATTING:
+            data_rows_end_idx = len(data_list) + 1
+            red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
+            black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             
-        return (pd.DataFrame(ws_set.get_all_records()).fillna(""), 
-                pd.DataFrame(ws_cmd.get_all_records()).fillna(""), 
-                pd.DataFrame(ws_ptl.get_all_records()).fillna(""), 
-                pd.DataFrame(ws_cp.get_all_records()).fillna(""), None)
-    except Exception as e: return None, None, None, None, str(e)
+            requests = []
+            for i, text in enumerate(top_row):
+                if "(" in text:
+                    p_start = text.find("(")
+                    requests.append({
+                        "updateCells": {
+                            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
+                            "rows": [{ "values": [{ "textFormatRuns": [
+                                {"startIndex": 0, "format": {"foregroundColor": black_color}},
+                                {"startIndex": p_start, "format": {"foregroundColor": red_color}}
+                            ], "userEnteredValue": {"stringValue": text} }] }],
+                            "fields": "userEnteredValue,textFormatRuns"
+                        }
+                    })
 
-def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
-    try:
-        client = get_client()
-        sh = client.open_by_key(SHEET_ID)
-        
-        ws_set = sh.worksheet(WS_MAP["set"])
-        ws_set.clear()
-        ws_set.update([["Key", "Value"], ["unit_name", unit], ["plan_full_time", time_str], ["project_name", project], ["briefing_info", briefing]])
-        
-        for ws_name, df in [(WS_MAP["cmd"], df_cmd), (WS_MAP["ptl"], df_ptl), (WS_MAP["cp"], df_cp)]:
-            ws = sh.worksheet(ws_name)
-            ws.clear()
-            df_cleaned = df.dropna(how='all').fillna("")
-            if not df_cleaned.empty:
-                ws.update([df_cleaned.columns.tolist()] + df_cleaned.values.tolist())
-        load_data.clear()
+            requests.append({
+                "addConditionalFormatRule": {
+                    "rule": {
+                        "ranges": [{"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": data_rows_end_idx - 1, "startColumnIndex": 7, "endColumnIndex": 8}],
+                        "booleanRule": {
+                            "condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": "0"}]},
+                            "format": {"textFormat": {"foregroundColor": red_color}}
+                        }
+                    }, "index": 0
+                }
+            })
+            sh.batch_update({"requests": requests})
         return True
-    except: return False
-
-def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
-    font = _get_font()
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
-    page_width = A4[0] - 24*mm
-    story = []
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8)
-    style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
-    style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm, alignment=TA_LEFT, leftIndent=5*mm)
-    style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
-
-    story.append(Paragraph(f"{unit}執行{project}勤務規劃表", style_title))
-    story.append(Paragraph(f"勤務時間：{time_str}", style_info))
-    
-    def clean(t): return safe_str(t).replace("\n", "<br/>").replace("、", "<br/>")
-    def clean_text_only(t): return safe_str(t).replace("\n", "<br/>")
-
-    data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
-                [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
-    for _, r in df_cmd.iterrows():
-        data_cmd.append([Paragraph(f"<b>{clean_text_only(r.get('職稱'))}</b>", style_cell), Paragraph(clean_text_only(r.get('代號')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean_text_only(r.get('任務')), style_cell_left)])
-    
-    t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.12, page_width*0.28, page_width*0.45])
-    t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('SPAN',(0,0),(-1,0)),('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
-    story.append(t1)
-    
-    story.append(Spacer(1, 6*mm))
-    story.append(Paragraph("<b>📢 勤前教育：</b>", style_middle_block))
-    story.append(Paragraph(f"{clean_text_only(briefing)}", style_middle_block))
-    story.append(Spacer(1, 6*mm))
-
-    story.append(Paragraph("<b>第一階段：21時至22時30分，機動巡邏</b>", style_middle_block))
-    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
-    for _, r in df_ptl.iterrows():
-        data_ptl.append([Paragraph(clean_text_only(r.get('編組')), style_cell), Paragraph(clean_text_only(r.get('無線電')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell), Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)])
-    t2 = Table(data_ptl, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
-    t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
-    story.append(t2)
-
-    story.append(Spacer(1, 8*mm))
-    story.append(Paragraph("<b>第二階段：22時30分至24時，定點路檢及機動攔檢</b>", style_middle_block))
-    data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
-    for _, r in df_cp.iterrows():
-        # 移除強制加上雨天備案，保留資料表內的完整內容
-        task_text = f"{clean_text_only(r.get('任務分工'))}"
-        data_cp.append([Paragraph(clean_text_only(r.get('編組')), style_cell), Paragraph(clean_text_only(r.get('無線電')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell), Paragraph(task_text, style_cell_left)])
-    t3 = Table(data_cp, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
-    t3.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
-    story.append(t3)
-    doc.build(story)
-    return buf.getvalue()
-
-def generate_attendance_pdf(unit, project, time_str, briefing):
-    font = _get_font()
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
-    page_width = A4[0] - 30*mm
-    story = []
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
-    style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0) 
-    story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
-    meeting_range = parse_meeting_time(time_str)
-    date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
-    story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
-    loc = str(briefing).strip() if "於" not in str(briefing) else str(briefing).strip().split("於")[1]
-    story.append(Paragraph(f"地點：{loc}", style_top_info))
-    story.append(Spacer(1, 3*mm))
-    table_data = [[Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""],
-                  [Paragraph("副分局長：", style_cell_left), "", "", ""],
-                  [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
-    rows = [("交通組", "中興派出所"), ("勤務指揮中心", "石門派出所"), ("督察組", "高平派出所"), ("聖亭派出所", "三和派出所"), ("龍潭派出所", "龍潭交通分隊")]
-    for l, r in rows: table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[18*mm, 18*mm, 10*mm] + [26*mm]*len(rows))
-    t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('SPAN', (0,1), (3,1))]))
-    story.append(t)
-    doc.build(story)
-    return buf.getvalue()
-
-def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
-    try:
-        sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
-        msg = MIMEMultipart()
-        msg["From"], msg["To"] = sender, sender
-        msg["Subject"] = f"{unit}執行{project}規劃與簽到表_{datetime.now().strftime('%m%d')}"
-        msg.attach(MIMEText("附件為 PDF。", "plain", "utf-8"))
-        p1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp)
-        part1 = MIMEBase("application", "pdf")
-        part1.set_payload(p1)
-        encoders.encode_base64(part1)
-        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(unit+'規劃表.pdf')}")
-        msg.attach(part1)
-        p2 = generate_attendance_pdf(unit, project, time_str, briefing)
-        part2 = MIMEBase("application", "pdf")
-        part2.set_payload(p2)
-        encoders.encode_base64(part2)
-        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(unit+'簽到表.pdf')}")
-        msg.attach(part2)
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender, pwd)
-            server.sendmail(sender, sender, msg.as_string())
-        return True, None
-    except Exception as e: return False, str(e)
-
-def auto_assign_radio_code(df):
-    if df.empty: return df
-    base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
-    for idx, row in df.iterrows():
-        unit, person = safe_str(row.get('單位')), safe_str(row.get('服勤人員'))
-        if not unit: continue
-        first_unit = re.split(r'[\n、 ]', unit.strip())[0]
-        base_pfx = next((v for k, v in base_prefixes.items() if k in first_unit), "")
-        if base_pfx:
-            if "副所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}2"
-            elif "所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}1"
-            elif not safe_str(row.get('無線電')).startswith(f"隆安{base_pfx}"): df.at[idx, '無線電'] = f"隆安{base_pfx}0"
-    return df
-
-# --- 3. 主程式介面 ---
-st.sidebar.title("🛠️ 雲端設定")
-if st.sidebar.button("初始化/檢查雲端分頁"):
-    init_sheets()
-
-df_set, df_cmd, df_ptl, df_cp, err = load_data()
-
-if err: 
-    st.sidebar.warning(f"雲端尚未就緒: {err}")
-
-# ⚠️ 絕對安全的字典轉換寫法
-d = {}
-if df_set is not None and isinstance(df_set, pd.DataFrame) and not df_set.empty and df_set.shape[1] >= 2:
-    try:
-        keys = df_set.iloc[:, 0].astype(str).tolist()
-        vals = df_set.iloc[:, 1].astype(str).tolist()
-        d = dict(zip(keys, vals))
     except Exception as e:
-        st.sidebar.error(f"讀取設定檔發生錯誤: {e}")
+        st.error(f"同步出錯：{e}")
+        return False
 
-# 帶入預設值或雲端值
-u = d.get("unit_name", DEFAULT_UNIT) if d.get("unit_name") else DEFAULT_UNIT
-t = d.get("plan_full_time", DEFAULT_TIME) if d.get("plan_full_time") else DEFAULT_TIME
-p = d.get("project_name", DEFAULT_PROJ) if d.get("project_name") else DEFAULT_PROJ
-b = d.get("briefing_info", DEFAULT_BRIEF) if d.get("briefing_info") else DEFAULT_BRIEF
+def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
+    """🚑交通事故專用：Google Sheets 標題括號與數字轉紅字"""
+    text = str(text)
+    pattern = r'([0-9\(\)\/\-]+)'
+    tokens = re.split(pattern, text)
+    runs = []
+    current_pos = 0
+    for token in tokens:
+        if not token: continue
+        color = {"red": 1.0, "green": 0.0, "blue": 0.0} if re.match(pattern, token) else {"red": 0.0, "green": 0.0, "blue": 0.0}
+        runs.append({"startIndex": current_pos, "format": {"foregroundColor": color, "bold": True}})
+        current_pos += len(token)
+    return {
+        "updateCells": {
+            "rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}],
+            "fields": "userEnteredValue,textFormatRuns",
+            "range": {"sheetId": sheet_id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1, "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1}
+        }
+    }
 
-# 判斷其他表格是否為空
-ed_cmd = df_cmd if (df_cmd is not None and not df_cmd.empty) else DEFAULT_CMD.copy()
-ed_ptl = df_ptl if (df_ptl is not None and not df_ptl.empty) else DEFAULT_PTL.copy()
-ed_cp  = df_cp  if (df_cp is not None and not df_cp.empty) else DEFAULT_CHECKPOINT.copy()
+# ==========================================
+# 3. 業務邏輯處理
+# ==========================================
 
-st.title("🚓 二階段勤務規劃系統 (專屬分頁版)")
-c1, c2 = st.columns(2)
-p_name = c1.text_input("專案名稱", p)
-p_time = c2.text_input("勤務時間", t)
+def process_tech_enforcement(files):
+    """📸 科技執法"""
+    f = files[0]
+    f.seek(0)
+    df = pd.read_csv(f, encoding='cp950') if f.name.endswith('.csv') else pd.read_excel(f)
+    df.columns = [str(c).strip() for c in df.columns]
+    
+    loc_col = next((c for c in df.columns if c in ['違規地點', '路口名稱', '地點']), None)
+    if not loc_col:
+        st.error("❌ 找不到『地點』相關欄位！")
+        return
+        
+    df[loc_col] = df[loc_col].astype(str).str.replace('桃園市', '').str.replace('龍潭區', '').str.strip()
+    yesterday = datetime.now() - timedelta(days=1)
+    date_range_str = f"{yesterday.year - 1911}年1月1日至{yesterday.year - 1911}年{yesterday.month}月{yesterday.day}日"
+    
+    loc_summary = df[loc_col].value_counts().head(10).reset_index()
+    loc_summary.columns = ['路段名稱', '舉發件數']
+    
+    st.write("📊 **科技執法路段排行：**")
+    st.dataframe(loc_summary, hide_index=True)
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        workbook, ws = writer.book, writer.book.add_worksheet('科技執法成效統計')
+        ws.write_rich_string('A1', workbook.add_format({'bold': True, 'font_size': 24, 'color': 'blue'}), '科技執法成效 ', 
+                             workbook.add_format({'bold': True, 'font_size': 24, 'color': 'red'}), f'({date_range_str})')
+        ws.write('A2', '統計期間', workbook.add_format({'align': 'center', 'border': 1}))
+        ws.write('B2', date_range_str, workbook.add_format({'border': 1, 'color': 'red', 'align': 'center'}))
+        header_fmt = workbook.add_format({'bg_color': '#F2F2F2', 'border': 1, 'bold': True, 'align': 'center'})
+        data_fmt = workbook.add_format({'border': 1, 'align': 'center'})
+        ws.write('A3', '路口名稱', header_fmt); ws.write('B3', '舉發件數', header_fmt)
+        
+        for i, row in loc_summary.iterrows():
+            ws.write(i+3, 0, row['路段名稱'], data_fmt); ws.write(i+3, 1, row['舉發件數'], data_fmt)
+        ws.write(len(loc_summary)+3, 0, '舉發總數', workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFFCC', 'align': 'center'}))
+        ws.write(len(loc_summary)+3, 1, len(df), workbook.add_format({'bold': True, 'border': 1, 'bg_color': '#FFFFCC', 'align': 'center'}))
+        
+        chart = workbook.add_chart({'type': 'bar'})
+        chart.add_series({'name': '舉發件數', 'categories': ['科技執法成效統計', 3, 0, len(loc_summary)+2, 0], 'values': ['科技執法成效統計', 3, 1, len(loc_summary)+2, 1], 'data_labels': {'value': True}})
+        ws.insert_chart('D2', chart, {'x_scale': 1.5, 'y_scale': 1.5})
+        
+    if GCP_CREDS:
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        ws = sh.worksheet("科技執法-路段排行") if "科技執法-路段排行" in [s.title for s in sh.worksheets()] else sh.add_worksheet(title="科技執法-路段排行", rows="100", cols="20")
+        ws.clear()
+        title_text = f"科技執法成效 ({date_range_str})"
+        ws.update(range_name='A1', values=[[title_text, ""], ["路段名稱", "舉發件數"]] + loc_summary.values.tolist() + [["舉發總數", len(df)]])
+        reqs = {"requests": [{"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
+                "rows": [{"values": [{"userEnteredValue": {"stringValue": title_text},
+                "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 24}},
+                                   {"startIndex": len("科技執法成效 "), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True, "fontSize": 24}}]}]}],
+                "fields": "userEnteredValue,textFormatRuns"}}]}
+        sh.batch_update(reqs)
 
-st.subheader("1. 指揮編組")
-res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
-b_info = st.text_area("📢 勤前教育", b, height=70)
+def process_overload(files):
+    """🚛 超載違規"""
+    f_wk, f_yt, f_ly = None, None, None
+    for f in files:
+        if "(1)" in f.name: f_yt = f
+        elif "(2)" in f.name: f_ly = f
+        else: f_wk = f
+        
+    def parse_rpt(f):
+        f.seek(0)
+        counts, s, e = {}, "0000000", "0000000"
+        text_block = pd.read_excel(f, header=None, nrows=15).to_string()
+        m = re.search(r'(\d{3,7}).*至\s*(\d{3,7})', text_block)
+        if m: s, e = m.group(1), m.group(2)
+        f.seek(0)
+        xls = pd.ExcelFile(f)
+        for sn in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=sn, header=None)
+            u = None
+            for _, r in df.iterrows():
+                rs = " ".join([str(x) for x in r.values])
+                if "舉發單位：" in rs:
+                    m2 = re.search(r"舉發單位：(\S+)", rs)
+                    if m2: u = m2.group(1).strip()
+                if "總計" in rs and u:
+                    nums = [float(str(x).replace(',','')) for x in r if str(x).replace('.','',1).isdigit()]
+                    if nums:
+                        short = OVERLOAD_UNIT_MAP.get(u, u)
+                        if short in OVERLOAD_UNIT_ORDER: counts[short] = counts.get(short, 0) + int(nums[-1])
+                        u = None
+        return counts, s, e
 
-st.subheader("2. 勤務編組")
-tab1, tab2 = st.tabs(["📍 第一階段：機動巡邏", "🚧 第二階段：定點路檢"])
-with tab1:
-    res_ptl = auto_assign_radio_code(st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True, key="ptl_v2").dropna(how='all').fillna(""))
-with tab2:
-    res_cp = auto_assign_radio_code(st.data_editor(ed_cp, num_rows="dynamic", use_container_width=True, key="cp_v2").dropna(how='all').fillna(""))
+    d_wk, s_wk, e_wk = parse_rpt(f_wk); d_yt, s_yt, e_yt = parse_rpt(f_yt); d_ly, s_ly, e_ly = parse_rpt(f_ly)
+    raw_wk, raw_yt, raw_ly = f"本期 ({s_wk[-4:]}~{e_wk[-4:]})", f"本年累計 ({s_yt[-4:]}~{e_yt[-4:]})", f"去年累計 ({s_ly[-4:]}~{e_ly[-4:]})"
+    
+    body = []
+    for u in OVERLOAD_UNIT_ORDER:
+        yv, tv = d_yt.get(u, 0), OVERLOAD_TARGETS.get(u, 0)
+        body.append({'統計期間': u, raw_wk: d_wk.get(u, 0), raw_yt: yv, raw_ly: d_ly.get(u, 0), '本年與去年同期比較': yv - d_ly.get(u, 0), '目標值': tv, '達成率': f"{yv/tv:.0%}" if tv > 0 else "—"})
+    df_body = pd.DataFrame(body)
+    sum_v = df_body[df_body['統計期間'] != '警備隊'][[raw_wk, raw_yt, raw_ly, '目標值']].sum()
+    total_row = pd.DataFrame([{'統計期間': '合計', raw_wk: sum_v[raw_wk], raw_yt: sum_v[raw_yt], raw_ly: sum_v[raw_ly], '本年與去年同期比較': sum_v[raw_yt] - sum_v[raw_ly], '目標值': sum_v['目標值'], '達成率': f"{sum_v[raw_yt]/sum_v['目標值']:.0%}" if sum_v['目標值'] > 0 else "0%"}])
+    df_final = pd.concat([total_row, df_body], ignore_index=True)
+    
+    st.write("📊 **超載統計結果：**")
+    st.dataframe(df_final, hide_index=True)
 
-st.markdown("---")
-col_dl1, col_dl2 = st.columns(2)
-pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
-col_dl1.download_button("📝 下載勤務規劃表", data=pdf_plan, file_name=f"{u}_{p_name}.pdf", use_container_width=True)
-pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
-col_dl2.download_button("🖋️ 下載人員簽到表", data=pdf_attendance, file_name=f"{u}_簽到表.pdf", use_container_width=True)
+    y, m, d = int(e_yt[:3])+1911, int(e_yt[3:5]), int(e_yt[5:])
+    prog_str = f"{((date(y, m, d) - date(y, 1, 1)).days + 1) / (366 if calendar.isleap(y) else 365):.1%}"
+    f_plain = f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，統計截至 {e_yt[:3]}年{e_yt[3:5]}月{e_yt[5:]}日 (入案日期)應達成率為{prog_str}"
 
-if st.button("💾 同步雲端專屬分頁並發送備份郵件", use_container_width=True):
-    with st.spinner("同步中..."):
-        if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp):
-            ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
-            if ok: st.success("✅ 同步成功！")
-            else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {mail_err}")
+    if GCP_CREDS:
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        ws = sh.get_worksheet(1)
+        ws.update(range_name='A1', values=[['取締超載違規件數統計表']])
+        ws.update(range_name='A2', values=[df_final.columns.tolist()] + df_final.values.tolist())
+        ws.update(range_name=f'A{2 + len(df_final) + 1}', values=[[f_plain]])
+        
+        if HAS_FORMATTING:
+            requests = []
+            red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
+            black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
+            
+            for i, col_name in enumerate(df_final.columns):
+                if "(" in col_name:
+                    p_start = col_name.find("(")
+                    requests.append({
+                        "updateCells": {
+                            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
+                            "rows": [{ "values": [{ "textFormatRuns": [
+                                {"startIndex": 0, "format": {"foregroundColor": black_color, "bold": True}},
+                                {"startIndex": p_start, "format": {"foregroundColor": red_color, "bold": True}}
+                            ], "userEnteredValue": {"stringValue": col_name} }] }],
+                            "fields": "userEnteredValue,textFormatRuns"
+                        }
+                    })
+            if requests:
+                sh.batch_update({"requests": requests})
+
+def process_major(files):
+    """🚨 重大違規"""
+    f_period, f_year = None, None
+    for f in files:
+        if "(1)" in f.name: f_year = f
+        else: f_period = f
+    if not f_year: f_year = files[1]
+    if not f_period: f_period = files[0]
+
+    def parse_ex(f, sheet_kw, cols):
+        f.seek(0)
+        xl = pd.ExcelFile(f)
+        df = pd.read_excel(xl, sheet_name=next((s for s in xl.sheet_names if sheet_kw in s), xl.sheet_names[0]), header=None)
+        dt = ""
+        try:
+            text_block = df.head(10).astype(str).to_string()
+            pattern = r'(1\d{2})[/年\-]*([0-1]?[0-9])[/月\-]*([0-3]?[0-9])[日]*\s*[至\-~]\s*(1\d{2})[/年\-]*([0-1]?[0-9])[/月\-]*([0-3]?[0-9])[日]*'
+            m = re.search(pattern, text_block)
+            
+            if m:
+                dt = f"{int(m.group(2)):02d}{int(m.group(3)):02d}-{int(m.group(5)):02d}{int(m.group(6)):02d}"
+            else:
+                m_old = re.search(r'(\d{7})\s*[至\-~]\s*(\d{7})', text_block)
+                if m_old:
+                    dt = f"{m_old.group(1)[3:]}-{m_old.group(2)[3:]}"
+        except: 
+            pass
+        
+        def get_u(n):
+            n = str(n).strip()
+            if '分隊' in n: return '交通分隊'
+            if '科技' in n or '交通組' in n: return '科技執法'
+            if '警備' in n: return '警備隊'
+            for k in ['聖亭', '龍潭', '中興', '石門', '高平', '三和']:
+                if k in n: return k + '所'
+            return None
+            
+        def clean_val(v):
+            if pd.isna(v) or str(v).strip().lower() == 'nan': return 0
+            try: return int(float(str(v).replace(',', '').strip() or 0))
+            except: return 0
+
+        udata = {}
+        for _, r in df.iterrows():
+            u = get_u(r.iloc[0])
+            if u and "合計" not in str(r.iloc[0]):
+                udata[u] = {'stop': clean_val(r.iloc[cols[0]]), 'cit': clean_val(r.iloc[cols[1]])}
+        return udata, dt
+
+    d_wk, date_w = parse_ex(f_period, "重點違規統計表", [15, 16])
+    d_year, date_y = parse_ex(f_year, "(1)", [15, 16])
+    d_last, _ = parse_ex(f_year, "(1)", [18, 19])
+
+    rows = []
+    t = {k: 0 for k in ['ws', 'wc', 'ys', 'yc', 'ls', 'lc', 'diff', 'tgt']}
+    for u in MAJOR_UNIT_ORDER:
+        w, y, l = d_wk.get(u, {'stop':0, 'cit':0}), d_year.get(u, {'stop':0, 'cit':0}), d_last.get(u, {'stop':0, 'cit':0})
+        ys_sum, ls_sum = y['stop'] + y['cit'], l['stop'] + l['cit']
+        tgt = MAJOR_TARGETS.get(u, 0)
+        diff = int(ys_sum - ls_sum)
+        rate = f"{(ys_sum/tgt):.1%}" if tgt > 0 else "0%"
+        if u != '警備隊':
+            t['diff'] += diff; t['tgt'] += tgt
+        rows.append([u, w['stop'], w['cit'], y['stop'], y['cit'], l['stop'], l['cit'], diff if u != '警備隊' else "—", tgt, rate if u != '警備隊' else "—"])
+        t['ws']+=w['stop']; t['wc']+=w['cit']; t['ys']+=y['stop']; t['yc']+=y['cit']; t['ls']+=l['stop']; t['lc']+=l['cit']
+
+    total_rate = f"{((t['ys']+t['yc'])/t['tgt']):.1%}" if t['tgt']>0 else "0%"
+    rows.insert(0, ['合計', t['ws'], t['wc'], t['ys'], t['yc'], t['ls'], t['lc'], t['diff'], t['tgt'], total_rate])
+    rows.append([MAJOR_FOOTNOTE] + [""] * 9)
+    
+    label_w = f"本期({date_w})" if date_w else "本期"
+    label_y = f"本年累計({date_y})" if date_y else "本年累計"
+    label_l = f"去年累計({date_y})" if date_y else "去年累計" 
+    
+    header_top = ['統計期間', label_w, label_w, label_y, label_y, label_l, label_l, '本年與去年同期比較', '目標值', '達成率']
+    header_bottom = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
+    
+    df_final = pd.DataFrame(rows, columns=pd.MultiIndex.from_arrays([header_top, header_bottom]))
+    st.write("📊 **重大違規統計結果：**")
+    st.dataframe(df_final, use_container_width=True)
+
+    if GCP_CREDS:
+        if sync_to_specified_sheet(df_final):
+            st.write("✅ 雲端格式 (保留原始 A1 標題) 與數據同步完成")
+
+def process_project(files):
+    """🔥 強化專案"""
+    
+    f1 = next((f for f in files if any(k in f.name for k in ["強化", "法條", "自選匯出"])), None)
+    f2_list = [f for f in files if any(k in f.name.upper() for k in ["R17", "砂石", "大貨"])]
+    
+    if not f1 or not f2_list:
+        st.error("❌ 找不到強化專案的報表，請確認檔名包含「法條/強化/自選匯出」及「砂石/大貨/R17」。")
+        return
+
+    def s_read(f, **kwargs):
+        f.seek(0)
+        if f.name.endswith('.csv'):
+            try: return pd.read_csv(f, **kwargs)
+            except: 
+                f.seek(0); return pd.read_csv(f, encoding='cp950', **kwargs)
+        return pd.read_excel(f, **kwargs)
+
+    date_str = "未知期間"
+    df1_h = s_read(f1, nrows=10, header=None)
+    for _, r in df1_h.iterrows():
+        for c in r.values:
+            if '統計期間' in str(c):
+                m = re.search(r'([0-9年月日\-至\s]+)', str(c).replace('(入案日)', '').split('：')[-1].split(':')[-1].strip())
+                if m: date_str = m.group(1).replace('115', '').strip()
+
+    def m_uniq(df):
+        cols = pd.Series(df.columns.map(str))
+        for d in cols[cols.duplicated()].unique(): cols[cols == d] = [f"{d}_{i}" if i!=0 else d for i in range(sum(cols == d))]
+        df.columns = cols; return df
+        
+    df1 = m_uniq(s_read(f1, skiprows=3)).reset_index(drop=True)
+    df2_all = []
+    for f in f2_list:
+        df_t = s_read(f, header=None)
+        h_idx = next((i for i, r in df_t.head(30).iterrows() if '單位' in [str(x).strip() for x in r.values] and '舉發總數' in [str(x).strip() for x in r.values]), None)
+        if h_idx is not None:
+            df_c = df_t.iloc[h_idx+1:].copy()
+            df_c.columns = [str(x).strip() for x in df_t.iloc[h_idx].values]
+            df_c = m_uniq(df_c).reset_index(drop=True)
+            df_c['來源檔名'] = str(f.name)
+            df2_all.append(df_c)
+            
+    df2 = pd.concat(df2_all, ignore_index=True)
+    for c in ['舉發總數', '違反管制規定', '其他違規']: df2[c] = pd.to_numeric(df2.get(c, 0), errors='coerce').fillna(0)
+    df2['大型車純違規'] = (df2['舉發總數'] - df2['違反管制規定'] - df2['其他違規']).clip(lower=0)
+
+    def get_unit(raw):
+        raw = str(raw).strip()
+        if '交通分隊' in raw: return '交通分隊' if '龍潭' in raw or not any(x in raw for x in ['楊梅','大溪','平鎮','中壢','八德','蘆竹','龜山','大園','桃園']) else None
+        if '交通組' in raw: return '交通組'
+        if '警備隊' in raw: return '警備隊'
+        for k in ['聖亭', '中興', '石門', '高平', '三和']: 
+            if k in raw: return k + '所'
+        if '龍潭派出所' in raw or raw in ['龍潭', '龍潭所']: return '龍潭所'
+        return None
+
+    def get_c(unit):
+        r = df1[df1.get('單位', pd.Series()).apply(get_unit) == unit]
+        return {cat: int(r[[c for c in df1.columns if any(k in str(c) for k in PROJECT_LAW_MAP.get(cat, []))]].sum().sum()) if not r.empty else 0 for cat in PROJECT_CATS[:5]}
+
+    final_rows = []
+    for u, tgts in PROJECT_TARGETS.items():
+        d15 = get_c(u)
+        
+        u_r = df2[df2['單位'].apply(get_unit) == u]
+        h_sum = int(u_r['大型車純違規'].sum()) if not u_r.empty else 0
+        
+        res = [u]
+        for i, cat in enumerate(PROJECT_CATS):
+            cnt = d15.get(cat, 0) if cat != "大型車違規" else h_sum
+            res.extend([cnt, tgts[i], f"{(cnt/tgts[i]*100):.1f}%" if tgts[i] > 0 else "0.0%"])
+        final_rows.append(res)
+
+    headers = ["單位"] + [f"{cat}_{x}" for cat in PROJECT_CATS for x in ["取締件數", "目標值", "達成率"]]
+    df_f = pd.DataFrame(final_rows, columns=headers)
+    
+    t_row = ["合計"]
+    for i in range(1, len(headers), 3):
+        cs, ts = df_f.iloc[:, i].sum(), df_f.iloc[:, i+1].sum()
+        t_row.extend([int(cs), int(ts), f"{(cs/ts*100):.1f}%" if ts > 0 else "0.0%"])
+    df_f = pd.concat([pd.DataFrame([t_row], columns=headers), df_f], ignore_index=True)
+    
+    st.write(f"📊 **{PROJECT_NAME} 統計結果：**")
+    st.dataframe(df_f, hide_index=True)
+
+    if GCP_CREDS:
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        ws = gc.open_by_url(GOOGLE_SHEET_URL).worksheet(PROJECT_NAME)
+        full_t = f"{PROJECT_NAME} (統計期間：{date_str})"
+        ws.clear()
+        ws.update(range_name='A1', values=[[full_t] + [""] * 18, [""] + [c for c in PROJECT_CATS for _ in range(3)], ["單位"] + ["取締件數", "目標值", "達成率"] * 6] + df_f.values.tolist())
+        
+        red_cells = []
+        for c_idx, cat in enumerate(PROJECT_CATS):
+            rate_col_idx = 3 + c_idx * 3
+            valid_rates = []
+            
+            for row_idx, row in df_f.iterrows():
+                unit = row['單位']
+                if unit in ['合計', '警備隊', '交通組']: continue
+                
+                target_val = row[f"{cat}_目標值"]
+                if target_val > 0:
+                    rate_str = row[f"{cat}_達成率"]
+                    try:
+                        rate_val = float(str(rate_str).replace('%', ''))
+                        valid_rates.append((row_idx, rate_val))
+                    except: pass
+            
+            if valid_rates:
+                valid_rates.sort(key=lambda x: x[1])
+                threshold = valid_rates[1][1] if len(valid_rates) > 1 else valid_rates[0][1]
+                
+                for row_idx, rate_val in valid_rates:
+                    if rate_val <= threshold and rate_val < 100.0:
+                        red_cells.append((3 + row_idx, rate_col_idx))
+
+        reqs = [
+            {
+                "repeatCell": {
+                    "range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": 20, "startColumnIndex": 0, "endColumnIndex": 19},
+                    "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": False}}},
+                    "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"
+                }
+            },
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
+            {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
+                "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [
+                {"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 16}},
+                {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True, "fontSize": 16}}]}]}], "fields": "userEnteredValue,textFormatRuns"}},
+            {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}}, "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"}}
+        ]
+        
+        red_format = {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True}}
+        for r, c in red_cells:
+            reqs.append({
+                "repeatCell": {
+                    "range": {"sheetId": ws.id, "startRowIndex": r, "endRowIndex": r+1, "startColumnIndex": c, "endColumnIndex": c+1},
+                    "cell": {"userEnteredFormat": red_format},
+                    "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"
+                }
+            })
+
+        ws.spreadsheet.batch_update({"requests": reqs})
+        st.write("✅ 雲端同步完成 (已套用：未達100%之後兩名標示紅字，遇同分自動並列標示，且自動清除舊格式)")
+
+def process_accident(files):
+    """🚑 交通事故"""
+    meta = []
+    for f in files:
+        f.seek(0)
+        df_raw = pd.read_csv(f, header=None) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
+        dates = re.findall(r'(\d{3})[./](\d{1,2})[./](\d{1,2})', str(df_raw.iloc[:5, :5].values))
+        if len(dates) >= 2:
+            df_raw[0] = df_raw[0].astype(str)
+            df_data = df_raw[df_raw[0].str.contains("所|總計|合計", na=False)].rename(columns={0: "Station", 5: "A1_Deaths", 9: "A2_Injuries"})
+            for c in ["A1_Deaths", "A2_Injuries"]: df_data[c] = pd.to_numeric(df_data[c].astype(str).str.replace(",", ""), errors='coerce').fillna(0)
+            df_data['Station_Short'] = df_data['Station'].str.replace('派出所', '所').str.replace('總計', '合計').str.strip()
+            
+            meta.append({'df': df_data, 'year': int(dates[1][0]), 'start_day': int(dates[0][1])*100 + int(dates[0][2]), 
+                         'range': f"{int(dates[0][1]):02d}{int(dates[0][2]):02d}-{int(dates[1][1]):02d}{int(dates[1][2]):02d}", 'is_cumu': (int(dates[0][1]) == 1 and int(dates[0][2]) == 1)})
+                         
+    this_year = max(m['year'] for m in meta)
+    f_lst = sorted([f for f in meta if f['year'] < this_year], key=lambda x: x['year'])[-1]
+    f_cur = next(f for f in meta if f['year'] == this_year and f['is_cumu'])
+    period_files = sorted([f for f in meta if f['year'] == this_year and not f['is_cumu']], key=lambda x: x['start_day'])
+    f_prev, f_wk = period_files[0], period_files[1]
+
+    labels = {"wk": f_wk['range'], "prev": f_prev['range'], "cur": f_cur['range'], "lst": f_lst['range']}
+    stations = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
+    
+    def bld_tbl(c_name, is_a2=False):
+        m = pd.merge(f_wk['df'][['Station_Short', c_name]], f_prev['df'][['Station_Short', c_name]], on='Station_Short', suffixes=('_wk', '_prev'))
+        m = pd.merge(pd.merge(m, f_cur['df'][['Station_Short', c_name]].rename(columns={c_name: c_name+'_cur'}), on='Station_Short'), f_lst['df'][['Station_Short', c_name]].rename(columns={c_name: c_name+'_lst'}), on='Station_Short')
+        m = m[m['Station_Short'].isin(stations)].copy()
+        m['Station_Short'] = pd.Categorical(m['Station_Short'], categories=stations, ordered=True)
+        m = pd.concat([pd.DataFrame([dict(m.select_dtypes(include='number').sum().to_dict(), Station_Short='合計')]), m.sort_values('Station_Short')], ignore_index=True)
+        m['Diff'] = m[c_name+'_cur'] - m[c_name+'_lst']
+        if is_a2:
+            m['Pct'] = m.apply(lambda x: f"{(x['Diff']/x[c_name+'_lst']):.2%}" if x[c_name+'_lst'] != 0 else "0.00%", axis=1)
+            res = m[['Station_Short', c_name+'_wk', c_name+'_prev', c_name+'_cur', c_name+'_lst', 'Diff', 'Pct']]
+            res.columns = ['統計期間', f'本期({labels["wk"]})', f'前期({labels["prev"]})', f'本年累計({labels["cur"]})', f'去年累計({labels["lst"]})', '本年與去年同期比較', '增減比例']
+        else:
+            res = m[['Station_Short', c_name+'_wk', c_name+'_cur', c_name+'_lst', 'Diff']]
+            res.columns = ['統計期間', f'本期({labels["wk"]})', f'本年累計({labels["cur"]})', f'去年累計({labels["lst"]})', '本年與去年同期比較']
+        return res
+
+    a1_res, a2_res = bld_tbl('A1_Deaths'), bld_tbl('A2_Injuries', True)
+    
+    c1, c2 = st.columns(2)
+    c1.write("📊 **A1 死亡人數統計**"); c1.dataframe(a1_res, hide_index=True)
+    c2.write("📊 **A2 受傷人數統計**"); c2.dataframe(a2_res, hide_index=True)
+
+    if GCP_CREDS:
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        
+        RED_FMT = {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
+        BLACK_FMT = {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}}}
+
+        for ws_idx, df in zip([2, 3], [a1_res, a2_res]):
+            ws = sh.get_worksheet(ws_idx)
+            ws.batch_clear(["A2:G20"]) 
+            
+            reqs = []
+            for c_idx, c_name in enumerate(df.columns):
+                reqs.append(get_gsheet_rich_text_req(ws.id, 1, c_idx, c_name))
+            sh.batch_update({"requests": reqs})
+            
+            data_rows = [[int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row] for row in df.values.tolist()]
+            ws.update(range_name='A3', values=data_rows)
+            
+            diff_col = 4 if ws_idx == 2 else 5
+            color_reqs = []
+            for r_idx, row_vals in enumerate(df.values):
+                val = row_vals[diff_col]
+                target_r = 2 + r_idx 
+                fmt = RED_FMT if isinstance(val, (int, float)) and val > 0 else BLACK_FMT
+                color_reqs.append({
+                    "repeatCell": {
+                        "range": {"sheetId": ws.id, "startRowIndex": target_r, "endRowIndex": target_r + 1, "startColumnIndex": diff_col, "endColumnIndex": diff_col + 1},
+                        "cell": {"userEnteredFormat": fmt}, 
+                        "fields": "userEnteredFormat.textFormat.foregroundColor"
+                    }
+                })
+            sh.batch_update({"requests": color_reqs})
+            
+        st.write("✅ 交通事故雲端已更新（完美套用：僅正值紅字，其餘試算表格式皆保留原廠設定）")
+
+# ==========================================
+# 4. 戰情室首頁與排程器
+# ==========================================
+with st.sidebar:
+    st.title("🚓 龍潭分局戰情室")
+    app_mode = st.selectbox("功能模組", [
+        "🏠 智慧批次處理中心", 
+        "✍️ 網頁直填：服勤派工", 
+        "📂 PDF 轉 PPTX 工具"
+    ])
+
+if app_mode == "🏠 智慧批次處理中心":
+    st.header("📈 交通數據全自動批次處理中心")
+    st.info("💡 請將所需報表全選後，直接拖曳至下方區域即可自動處理。")
+    
+    uploads = st.file_uploader("📂 拖入所有報表檔案", type=["xlsx", "csv", "xls"], accept_multiple_files=True)
+    st.divider()
+    st.subheader("🚀 啟動全自動批次作業")
+    
+    if uploads:
+        file_hash = sum([f.size for f in uploads]) + len(uploads)
+        if st.session_state.get("last_processed_hash") == file_hash:
+            st.success("✅ 目前上傳的檔案皆已全自動處理完畢！")
+            st.info("💡 若要處理新報表，請重新整理頁面或拖入新檔案。")
+        else:
+            cat_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": []}
+            
+            for f in uploads:
+                name = f.name.lower()
+                if any(k in name for k in ["list", "地點", "科技"]): 
+                    cat_files["科技執法"].append(f)
+                elif any(k in name for k in ["stone", "超載"]): 
+                    cat_files["超載統計"].append(f)
+                elif "重大" in name: 
+                    cat_files["重大違規"].append(f)
+                elif any(k in name for k in ["強化", "專案", "砂石", "大貨", "r17", "法條", "自選匯出"]): 
+                    cat_files["強化專案"].append(f)
+                elif any(k in name for k in ["a1", "a2", "事故", "案件統計"]): 
+                    cat_files["交通事故"].append(f)
+            
+            try:
+                if cat_files["科技執法"]:
+                    with st.status(f"📸 自動處理【科技執法】({len(cat_files['科技執法'])} 份)...", expanded=True) as status:
+                        process_tech_enforcement(cat_files["科技執法"])
+                        status.update(label="✅ 科技執法處理完成！", state="complete")
+                        
+                if cat_files["超載統計"]:
+                    with st.status(f"🚛 自動處理【超載統計】({len(cat_files['超載統計'])} 份)...", expanded=True) as status:
+                        process_overload(cat_files["超載統計"])
+                        status.update(label="✅ 超載統計處理完成！", state="complete")
+                        
+                if cat_files["重大違規"]:
+                    with st.status(f"🚨 自動處理【重大交通違規】({len(cat_files['重大違規'])} 份)...", expanded=True) as status:
+                        process_major(cat_files["重大違規"])
+                        status.update(label="✅ 重大交通違規處理完成！", state="complete")
+                        
+                if cat_files["強化專案"]:
+                    with st.status(f"🔥 自動處理【強化交通安全專案】({len(cat_files['強化專案'])} 份)...", expanded=True) as status:
+                        process_project(cat_files["強化專案"])
+                        status.update(label="✅ 強化交通安全專案處理完成！", state="complete")
+                        
+                if cat_files["交通事故"]:
+                    with st.status(f"🚑 自動處理【交通事故】({len(cat_files['交通事故'])} 份)...", expanded=True) as status:
+                        process_accident(cat_files["交通事故"])
+                        status.update(label="✅ 交通事故處理完成！", state="complete")
+                
+                st.session_state["last_processed_hash"] = file_hash
+                st.balloons()
+                
+            except Exception as e:
+                st.error(f"⚠️ 批次處理發生例外錯誤：{e}")
+                st.write(traceback.format_exc())
+
+# ==========================================
+# 🌟 全新連動模組：網頁直填 服勤派工
+# ==========================================
+elif app_mode == "✍️ 網頁直填：服勤派工":
+    st.header("✍️ 勤務人員派工表 (自動連動對齊)")
+    st.info("💡 提示：只需在第一階段輸入人員，系統會自動將人員對齊帶入第二階段！若第二階段有人員異動，您依然可以單獨修改。")
+
+    units = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
+
+    if "stage1_roster" not in st.session_state:
+        st.session_state.stage1_roster = pd.DataFrame({
+            "單位": units,
+            "第一階段人員 (機動巡邏)": [""] * len(units)
+        })
+
+    st.subheader("🚓 第一階段：機動巡邏")
+    edited_stage1 = st.data_editor(
+        st.session_state.stage1_roster,
+        use_container_width=True,
+        hide_index=True,
+        key="editor_stage1",
+        column_config={
+            "單位": st.column_config.TextColumn("單位", disabled=True),
+            "第一階段人員 (機動巡邏)": st.column_config.TextColumn("輸入服勤人員 (例: 王小明、李大華)")
+        }
+    )
+
+    # 建立單位與人員的 Mapping 字典
+    personnel_mapping = dict(zip(edited_stage1["單位"], edited_stage1["第一階段人員 (機動巡邏)"]))
+
+    st.subheader("🛑 第二階段：定點路檢")
+    stage2_df = pd.DataFrame({"單位": units})
+    
+    # 核心：使用 map 自動把第一階段的人員對齊帶入
+    stage2_df["第二階段人員 (定點路檢)"] = stage2_df["單位"].map(personnel_mapping)
+
+    edited_stage2 = st.data_editor(
+        stage2_df,
+        use_container_width=True,
+        hide_index=True,
+        key="editor_stage2",
+        column_config={
+            "單位": st.column_config.TextColumn("單位", disabled=True),
+            "第二階段人員 (定點路檢)": st.column_config.TextColumn("自動帶入 (可手動微調)")
+        }
+    )
+
+    st.divider()
+    if st.button("🚀 確認無誤並同步至雲端表格", use_container_width=True):
+        with st.spinner("正在同步至 Google Sheets..."):
+            try:
+                # 合併兩張表
+                final_df = pd.merge(edited_stage1, edited_stage2, on="單位")
+                # 將完全空白的地方替換成 "無排班"
+                final_df = final_df.replace(r'^\s*$', '無排班', regex=True)
+
+                if GCP_CREDS:
+                    gc = gspread.service_account_from_dict(GCP_CREDS)
+                    sh = gc.open_by_url(GOOGLE_SHEET_URL)
+                    
+                    ws_title = "服勤表"
+                    try:
+                        ws = sh.worksheet(ws_title)
+                    except gspread.exceptions.WorksheetNotFound:
+                        ws = sh.add_worksheet(title=ws_title, rows="20", cols="5")
+                        
+                    ws.clear()
+                    # 寫入資料
+                    ws.update(range_name='A1', values=[final_df.columns.tolist()] + final_df.values.tolist())
+                    
+                    # 更新暫存狀態
+                    st.session_state.stage1_roster = edited_stage1 
+                    st.success("✅ 派工名單已成功連動並同步至雲端戰情看板！")
+                    st.dataframe(final_df, hide_index=True)
+                    st.balloons()
+                else:
+                    st.warning("⚠️ 尚未設定 Google 憑證，僅在網頁端顯示合併結果。")
+                    st.dataframe(final_df, hide_index=True)
+                    
+            except Exception as e:
+                st.error(f"同步出錯：{e}")
+                st.write(traceback.format_exc())
+
+elif app_mode == "📂 PDF 轉 PPTX 工具":
+    st.header("📂 PDF 行政文書轉 PPTX 簡報")
+    pdf_file = st.file_uploader("上傳 PDF 檔案", type=["pdf"])
+    if pdf_file and st.button("🚀 開始轉換"):
+        with st.spinner("轉換中..."):
+            try:
+                images, prs = convert_from_bytes(pdf_file.read(), dpi=200), Presentation()
+                for img in images:
+                    slide = prs.slides.add_slide(prs.slide_layouts[6])
+                    img_byte_arr = io.BytesIO()
+                    img.save(img_byte_arr, format='PNG')
+                    slide.shapes.add_picture(io.BytesIO(img_byte_arr.getvalue()), 0, 0, width=prs.slide_width, height=prs.slide_height)
+                pptx_io = io.BytesIO()
+                prs.save(pptx_io)
+                st.success("✅ 轉換完成！")
+                st.download_button("📥 下載 PPTX", data=pptx_io.getvalue(), file_name=f"{pdf_file.name.replace('.pdf', '')}_轉換.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+            except Exception as e:
+                st.error(f"錯誤：{e}")
