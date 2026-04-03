@@ -140,14 +140,12 @@ def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
 # --- 3. PDF 生成功能 ---
 A4_SIZE = (float(595.275), float(841.890))
 
-# 繪製頁尾頁碼的回呼函數
 def add_page_number(canvas, doc):
     canvas.saveState()
     font_name = _get_font()
-    canvas.setFont(font_name, 11)  # 設定頁碼字型與大小
+    canvas.setFont(font_name, 11)
     page_num = canvas.getPageNumber()
     text = f"- 第 {page_num} 頁 -"
-    # 畫在 A4 寬度正中間，距離底部 10mm 的位置
     canvas.drawCentredString(A4_SIZE[0] / 2.0, 10 * mm, text)
     canvas.restoreState()
 
@@ -222,8 +220,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
         ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
     ]))
     story.append(t2)
-    
-    # ✅ 只有勤務規劃表傳入 add_page_number 函數
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     return buf.getvalue()
 
@@ -274,8 +270,6 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     story.append(t)
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
-    
-    # ✅ 移除簽到表的頁碼參數，恢復一般建立方式
     doc.build(story)
     return buf.getvalue()
 
@@ -286,7 +280,11 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
         msg = MIMEMultipart()
         msg["From"], msg["To"], msg["Subject"] = sender, sender, f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
         msg.attach(MIMEText("附件為最新的勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
-        for pdf_func, name in [(generate_pdf_from_data, '規劃表.pdf'), (generate_attendance_pdf, '簽到表.pdf')]:
+        
+        # ✅ 動態生成與標題一致的檔案名稱
+        plan_filename = f"{unit}{project}勤務規劃表.pdf"
+        
+        for pdf_func, name in [(generate_pdf_from_data, plan_filename), (generate_attendance_pdf, '簽到表.pdf')]:
             args = (unit, project, time_str, briefing, station, df_cmd, df_ptl) if pdf_func == generate_pdf_from_data else (unit, project, time_str, briefing)
             data = pdf_func(*args)
             part = MIMEBase("application", "pdf")
@@ -351,7 +349,11 @@ res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
 
 st.markdown("---")
 col_dl1, col_dl2 = st.columns(2)
-col_dl1.download_button("📝 下載 1.勤務規劃表", data=generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl), file_name=f"規劃表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
+
+# ✅ 將網頁下載的檔名也改為與標題一致
+plan_filename = f"{u}{p_name}勤務規劃表.pdf"
+
+col_dl1.download_button("📝 下載 1.勤務規劃表", data=generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl), file_name=plan_filename, use_container_width=True)
 col_dl2.download_button("🖋️ 下載 2.人員簽到表", data=generate_attendance_pdf(u, p_name, p_time, b_info), file_name=f"簽到表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送備份郵件", use_container_width=True):
