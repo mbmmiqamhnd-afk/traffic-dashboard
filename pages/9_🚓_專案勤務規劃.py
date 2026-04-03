@@ -143,16 +143,20 @@ A4_SIZE = (float(595.275), float(841.890))
 def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     font = _get_font()
     buf = io.BytesIO()
-    margin_lr, margin_tb = float(12 * mm), float(15 * mm)
+    margin_lr = float(12 * mm)
+    margin_tb = float(15 * mm)
     doc = SimpleDocTemplate(buf, pagesize=A4_SIZE, leftMargin=margin_lr, rightMargin=margin_lr, topMargin=margin_tb, bottomMargin=margin_tb)
     page_width = A4_SIZE[0] - (2 * margin_lr)
     story = []
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8, wordWrap='CJK')
-    style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10, wordWrap='CJK')
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=12, leading=16, alignment=1, wordWrap='CJK')
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=16, alignment=0, wordWrap='CJK')
-    style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm, alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0, wordWrap='CJK')
-    style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22, wordWrap='CJK')
+
+    style_title        = ParagraphStyle('Title',       fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8,   wordWrap='CJK')
+    style_info         = ParagraphStyle('Info',        fontName=font, fontSize=12, alignment=2, spaceAfter=10,              wordWrap='CJK')
+    # ✅ 表格內文字型統一改為 14
+    style_cell         = ParagraphStyle('Cell',        fontName=font, fontSize=14, leading=20, alignment=1,                 wordWrap='CJK')
+    style_cell_left    = ParagraphStyle('CellLeft',    fontName=font, fontSize=14, leading=20, alignment=0,                 wordWrap='CJK')
+    style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm,
+                                        alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0,                              wordWrap='CJK')
+    style_table_title  = ParagraphStyle('TTitle',      fontName=font, fontSize=16, alignment=1, leading=22,                 wordWrap='CJK')
 
     story.append(Paragraph(f"{unit}{project}勤務規劃表", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
@@ -162,27 +166,52 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
-        data_cmd.append([Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell), Paragraph(clean(r.get('代號','')), style_cell), Paragraph(clean(r.get('姓名','')), style_cell), Paragraph(clean(r.get('任務','')), style_cell_left)])
+        data_cmd.append([
+            Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell),
+            Paragraph(clean(r.get('代號','')), style_cell),
+            Paragraph(clean(r.get('姓名','')), style_cell),
+            Paragraph(clean(r.get('任務','')), style_cell_left)
+        ])
 
     t1 = Table(data_cmd, colWidths=[page_width*0.14, page_width*0.14, page_width*0.27, page_width*0.45], repeatRows=2)
-    t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+    t1.setStyle(TableStyle([
+        ('FONTNAME',   (0,0), (-1,-1), font),
+        ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
+        ('SPAN',       (0,0), (-1,0)),
+        ('BACKGROUND', (0,0), (-1,1),  colors.HexColor('#f2f2f2')),
+        ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+    ]))
     story.append(t1)
 
     story.append(Spacer(1, 6*mm))
     story.append(Paragraph("<b>📢 勤前教育：</b>", style_middle_block))
-    story.append(Paragraph(f"{str(briefing).strip().replace('\n', '<br/>')}", style_middle_block))
+    story.append(Paragraph(str(briefing).strip().replace('\n', '<br/>'), style_middle_block))
     story.append(Spacer(1, 2*mm))
     story.append(Paragraph("<b>🚧 環保局臨時檢驗站開設：</b>", style_middle_block))
-    story.append(Paragraph(f"{str(station).strip().replace('\n', '<br/>')}", style_middle_block))
+    story.append(Paragraph(str(station).strip().replace('\n', '<br/>'), style_middle_block))
     story.append(Spacer(1, 6*mm))
 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_ptl.iterrows():
-        task = f"{r.get('任務分工','')}<br/><font color='blue' size='11'>*雨備方案：各治安要點巡邏。</font>"
-        data_ptl.append([Paragraph(clean(r.get('編組','')), style_cell), Paragraph(clean(r.get('無線電','')), style_cell), Paragraph(clean(r.get('單位','')), style_cell), Paragraph(clean(r.get('服勤人員','')), style_cell), Paragraph(task, style_cell_left)])
+        task = f"{r.get('任務分工','')}<br/><font color='blue' size='12'>*雨備方案：各治安要點巡邏。</font>"
+        data_ptl.append([
+            Paragraph(clean(r.get('編組','')), style_cell),
+            Paragraph(clean(r.get('無線電','')), style_cell),
+            Paragraph(clean(r.get('單位','')), style_cell),
+            Paragraph(clean(r.get('服勤人員','')), style_cell),
+            Paragraph(task, style_cell_left)
+        ])
 
     t2 = Table(data_ptl, colWidths=[page_width*0.14, page_width*0.14, page_width*0.16, page_width*0.20, page_width*0.36], repeatRows=1)
-    t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('FONTSIZE',(0,0),(-1,-1),12),('ALIGN',(0,1),(1,-1),'CENTER'), ('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+    t2.setStyle(TableStyle([
+        ('FONTNAME',   (0,0), (-1,-1), font),
+        # ✅ 巡邏組 FONTSIZE 同步改為 14
+        ('FONTSIZE',   (0,0), (-1,-1), 14),
+        ('ALIGN',      (0,1), (1,-1),  'CENTER'),
+        ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
+        ('BACKGROUND', (0,0), (-1,0),  colors.HexColor('#f2f2f2')),
+        ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+    ]))
     story.append(t2)
     doc.build(story)
     return buf.getvalue()
@@ -195,15 +224,12 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     page_width = A4_SIZE[0] - (2 * margin_lr)
     story = []
 
-    # ✅ 設定字型大小為 14 點 (Point)，並加大 Leading (行距) 以免重疊
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8, wordWrap='CJK')
-    style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0, wordWrap='CJK')
-    
-    # 段落樣式強制設定為 14
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=20, alignment=0, wordWrap='CJK')
-    
-    style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0, wordWrap='CJK')
+    style_title    = ParagraphStyle('Title',    fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8, wordWrap='CJK')
+    style_top_info = ParagraphStyle('TopInfo',  fontName=font, fontSize=12, leading=18, alignment=0,              wordWrap='CJK')
+    # ✅ 簽到表表格字型同樣維持 14
+    style_cell     = ParagraphStyle('Cell',     fontName=font, fontSize=14, leading=24, alignment=1,              wordWrap='CJK')
+    style_cell_left= ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0,              wordWrap='CJK')
+    style_note     = ParagraphStyle('Note',     fontName=font, fontSize=11, leading=15, alignment=0,              wordWrap='CJK')
 
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     meeting_range = parse_meeting_time(time_str)
@@ -213,46 +239,31 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     story.append(Paragraph(f"地點：{loc}", style_top_info))
     story.append(Spacer(1, 3*mm))
 
-    # 表格內的所有文字都包裝在 Paragraph 裡，以確保應用 style_cell
     table_data = [
         [Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""],
         [Paragraph("副分局長：", style_cell_left), "", "", ""],
-        [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), 
-         Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]
+        [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]
     ]
-    
-    rows = [
-        ("交通組", "中興派出所"), 
-        ("勤務指揮中心", "石門派出所"), 
-        ("督察組", "高平派出所"), 
-        ("聖亭派出所", "三和派出所"), 
-        ("龍潭派出所", "龍潭交通分隊")
-    ]
+    rows = [("交通組", "中興派出所"), ("勤務指揮中心", "石門派出所"), ("督察組", "高平派出所"), ("聖亭派出所", "三和派出所"), ("龍潭派出所", "龍潭交通分隊")]
     for l, r in rows:
         table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
 
-    # 調高列高：簽到列設定為 25mm，確保簽名空間足夠且文字置中
-    row_heights = [18*mm, 18*mm, 12*mm] + [25*mm] * len(rows)
-
+    row_heights = [18*mm, 18*mm, 10*mm] + [25*mm] * len(rows)
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=row_heights)
-    
     t.setStyle(TableStyle([
-        ('FONTNAME', (0,0), (-1,-1), font),
-        ('FONTSIZE', (0,0), (-1,-1), 14), # ✅ 表格樣式再次強制設定為 14
-        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('ALIGN', (0,0), (0,0), 'LEFT'),  # 分局長靠左
-        ('ALIGN', (2,0), (2,0), 'LEFT'),  # 上級督導靠左
-        ('ALIGN', (0,1), (0,1), 'LEFT'),  # 副分局長靠左
-        ('SPAN', (0,1), (3,1)),           # 副分局長跨欄
-        ('BACKGROUND', (0,2), (3,2), colors.whitesmoke) # 標題灰色背景
+        ('FONTNAME',   (0,0), (-1,-1), font),
+        ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
+        ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN',      (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN',      (0,0), (0,0),   'LEFT'),
+        ('ALIGN',      (2,0), (2,0),   'LEFT'),
+        ('ALIGN',      (0,1), (0,1),   'LEFT'),
+        ('SPAN',       (0,1), (3,1)),
+        ('BACKGROUND', (0,2), (3,2),   colors.whitesmoke),
     ]))
-    
     story.append(t)
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
-    
     doc.build(story)
     return buf.getvalue()
 
@@ -263,23 +274,14 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
         msg = MIMEMultipart()
         msg["From"], msg["To"], msg["Subject"] = sender, sender, f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
         msg.attach(MIMEText("附件為最新的勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
-        
-        # 規劃表
-        p1 = generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl)
-        part1 = MIMEBase("application", "pdf")
-        part1.set_payload(p1)
-        encoders.encode_base64(part1)
-        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote('規劃表.pdf')}")
-        msg.attach(part1)
-        
-        # 簽到表
-        p2 = generate_attendance_pdf(unit, project, time_str, briefing)
-        part2 = MIMEBase("application", "pdf")
-        part2.set_payload(p2)
-        encoders.encode_base64(part2)
-        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote('簽到表.pdf')}")
-        msg.attach(part2)
-
+        for pdf_func, name in [(generate_pdf_from_data, '規劃表.pdf'), (generate_attendance_pdf, '簽到表.pdf')]:
+            args = (unit, project, time_str, briefing, station, df_cmd, df_ptl) if pdf_func == generate_pdf_from_data else (unit, project, time_str, briefing)
+            data = pdf_func(*args)
+            part = MIMEBase("application", "pdf")
+            part.set_payload(data)
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(name)}")
+            msg.attach(part)
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
             server.sendmail(sender, sender, msg.as_string())
@@ -307,11 +309,13 @@ st.title("🚓 專案勤務規劃管理系統")
 c1, c2 = st.columns(2)
 p_raw, p_time = c1.text_input("專案名稱", p), c2.text_input("勤務時間", t)
 
+# ✅ 修復：避免變數名稱與 reportlab 的 mm 單位衝突
 match = re.search(r"(\d+)月(\d+)日", p_time)
 if match:
     prefix = f"{str(match.group(1)).zfill(2)}{str(match.group(2)).zfill(2)}"
     p_name = f"{prefix}{p_raw[4:]}" if re.match(r"^\d{4}", p_raw) else f"{prefix}{p_raw}"
-else: p_name = p_raw
+else:
+    p_name = p_raw
 
 st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(df_cmd if df_cmd is not None and not df_cmd.empty else DEFAULT_CMD.copy(), num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
@@ -331,6 +335,7 @@ def auto_assign_radio_code(df):
             elif "所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}1"
             elif not str(row.get('無線電','')).startswith(f"隆安{base_pfx}"): df.at[idx, '無線電'] = f"隆安{base_pfx}0"
     return df
+
 res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
 
 st.markdown("---")
