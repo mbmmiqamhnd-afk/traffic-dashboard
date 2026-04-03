@@ -141,7 +141,7 @@ def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
     except: return False
 
 # --- 3. PDF 生成功能 ---
-A4_SIZE = (595.275, 841.890)
+A4_SIZE = (float(595.275), float(841.890))
 
 def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     font = _get_font()
@@ -161,11 +161,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     page_width = A4_SIZE[0] - (2 * margin_lr)
     story = []
     
-    # 🌟 核心修復：所有的 ParagraphStyle 都加上 wordWrap='CJK'，確保中文長字串不會撐破表格！
+    # 🌟 核心修復：將表格內文的 fontSize 統一調降為 12，給予中英文字符充足的喘息空間
     style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8, wordWrap='CJK')
     style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10, wordWrap='CJK')
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1, wordWrap='CJK')
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0, wordWrap='CJK')
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=12, leading=16, alignment=1, wordWrap='CJK')
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=16, alignment=0, wordWrap='CJK')
     style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm, alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0, wordWrap='CJK')
     style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22, wordWrap='CJK')
 
@@ -177,10 +177,16 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
-        data_cmd.append([Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell), Paragraph(str(r.get('代號','')), style_cell),
-                         Paragraph(clean(r.get('姓名','')), style_cell), Paragraph(str(r.get('任務','')), style_cell_left)])
+        # 🌟 將所有欄位（包含任務與代號）全面套用 clean 處理
+        data_cmd.append([
+            Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell), 
+            Paragraph(clean(r.get('代號','')), style_cell),
+            Paragraph(clean(r.get('姓名','')), style_cell), 
+            Paragraph(clean(r.get('任務','')), style_cell_left)
+        ])
     
-    t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.12, page_width*0.28, page_width*0.45])
+    # 🌟 重新調配比例，讓前面字數較少的欄位稍微加寬一點，並加上 repeatRows=2 允許跨頁表頭
+    t1 = Table(data_cmd, colWidths=[page_width*0.14, page_width*0.14, page_width*0.27, page_width*0.45], repeatRows=2)
     t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('SPAN',(0,0),(-1,0)),
                             ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t1)
@@ -200,7 +206,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     for _, r in df_ptl.iterrows():
         task = f"{r.get('任務分工','')}<br/><font color='blue' size='11'>*雨備方案：各治安要點巡邏。</font>"
         
-        # 🌟 核心修復 2：將所有文字嚴格包裹在 Paragraph 中
         data_ptl.append([
             Paragraph(clean(r.get('編組','')), style_cell), 
             Paragraph(clean(r.get('無線電','')), style_cell), 
@@ -209,8 +214,9 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
             Paragraph(task, style_cell_left)
         ])
     
-    t2 = Table(data_ptl, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
-    t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('FONTSIZE',(0,0),(-1,-1),14),('ALIGN',(0,1),(1,-1),'CENTER'),
+    # 🌟 同樣調整巡邏組的比例與加上 repeatRows=1
+    t2 = Table(data_ptl, colWidths=[page_width*0.14, page_width*0.14, page_width*0.16, page_width*0.20, page_width*0.36], repeatRows=1)
+    t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('FONTSIZE',(0,0),(-1,-1),12),('ALIGN',(0,1),(1,-1),'CENTER'),
                             ('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t2)
     doc.build(story)
@@ -234,7 +240,6 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     page_width = A4_SIZE[0] - (2 * margin_lr)
     story = []
 
-    # 🌟 這裡也加上 wordWrap='CJK' 保障
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8, wordWrap='CJK')
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0, wordWrap='CJK')
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1, wordWrap='CJK')
