@@ -26,14 +26,12 @@ st.set_page_config(page_title="雲端勤務規劃系統", layout="wide", page_ic
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
-# ⚠️ 專屬分頁名稱，與其他系統隔離
 WS_MAP = {
     "set": "專案_設定",
     "cmd": "專案_指揮組",
     "ptl": "專案_巡邏組"
 }
 
-# 最新匯入的資料預設值
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年3月28日19至23時"
 DEFAULT_PROJ    = "0328「全市取締酒後駕車與防制危險駕車及噪音車輛」合併「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
@@ -90,7 +88,6 @@ def get_client():
     return gspread.authorize(creds)
 
 def init_sheets():
-    """強制建立所需的所有專屬分頁與標題"""
     try:
         client = get_client()
         sh = client.open_by_key(SHEET_ID)
@@ -158,7 +155,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm, alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0)
     style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
 
-    story.append(Paragraph(f"{unit}執行{project}規劃表", style_title))
+    # ⭐ 這裡修改了規劃表的 PDF 標題格式為：專案名稱 + 勤務規劃表
+    story.append(Paragraph(f"{unit}{project}勤務規劃表", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
     def clean(t): return str(t).replace("\n", "<br/>").replace("、", "<br/>")
@@ -297,13 +295,6 @@ st.sidebar.title("🛠️ 雲端設定")
 if st.sidebar.button("初始化/檢查雲端分頁"):
     init_sheets()
 
-# ⭐ 新增：強制重置按鈕，讓您一鍵覆蓋舊的雲端資料
-if st.sidebar.button("⚠️ 強制重置為最新專案資料 (覆蓋雲端)"):
-    with st.spinner("重置中..."):
-        save_data(DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF, DEFAULT_STATION, DEFAULT_CMD, DEFAULT_PTL)
-        st.cache_data.clear()
-        st.rerun()
-
 df_set, df_cmd, df_ptl, err = load_data()
 
 d = {}
@@ -363,7 +354,10 @@ res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
 
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:12pt;margin:15px 0 15px 20px;line-height:1.6; text-align:left;}</style>"
-    html = f"<html>{style}<body><h3 style='text-align:center'>{u}<br>{p_name}</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
+    
+    # ⭐ 這裡修改了網頁預覽的標題格式為：專案名稱 + 勤務規劃表
+    html = f"<html>{style}<body><h3 style='text-align:center'>{u}<br>{p_name}勤務規劃表</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
+    
     for _, r in res_cmd.iterrows():
         html += f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>"
     b_html = str(b_info).strip().replace('\n', '<br>')
