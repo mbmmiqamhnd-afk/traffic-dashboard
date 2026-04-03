@@ -35,7 +35,7 @@ WS_MAP = {
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年3月28日19至23時"
 DEFAULT_PROJ    = "0328「全市取締酒後駕車與防制危險駕車及噪音車輛」合併「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
-DEFAULT_BRIEF   = "19時30分於分局二樓會議室召召開"
+DEFAULT_BRIEF   = "19時30分於分局二樓會議室召開"
 DEFAULT_STATION = "時間:20時至23時\n地點:桃園市龍潭區中正路269號(龍星國民小學)大門口"
 
 DEFAULT_CMD = pd.DataFrame([
@@ -251,7 +251,7 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
         [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]
     ]
     
-    # --- ✅ 已修改：將「勤務指揮中心」移到「督察組」下方 ---
+    # --- 調整後的單位順序：督察組在上，勤指中心在下 ---
     rows = [
         ("交通組", "中興派出所"), 
         ("督察組", "石門派出所"), 
