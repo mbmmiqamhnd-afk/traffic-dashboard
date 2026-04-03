@@ -31,7 +31,7 @@ DEFAULT_TIME    = "115年4月10日 19時至23時"
 DEFAULT_PROJ    = "0410取締酒後駕車暨監警環聯合稽查及擴大臨檢 三合一專案"
 DEFAULT_BRIEF   = "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，落實「人犯戒護安全、案件程序安全、執法者及民眾安全」。\n二、 臨檢合法性：警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所，進行臨檢前應對當事人告以實施事由，便衣人員並應出示證件（依《警察職權行使法》第6條）。\n三、 攔停規範：機動攔檢對於已發生危害或易生危害之交通工具，得予以攔停；若有異常舉動而合理懷疑其將有危害行為時，得要求接受酒精濃度測試（依《警察職權行使法》第8條）。\n四、 全程蒐證：執行各項干涉、取締、處理糾紛及爭議性勤務（含噪音車引導與酒測），務必全程連續錄音或錄影。\n五、 異議處理：民眾對警察行使職權表示異議，認為無理由者得繼續執行，但經請求時應將異議之理由製作紀錄交付之（依《警察職權行使法》第29條）。"
 
-# 根據專案更新指揮編組
+# 根據專案更新指揮編組 (已加入保安民防組)
 DEFAULT_CMD = pd.DataFrame([
     {"項目": "指揮官", "通訊代號": "隆安 1 號", "任務目標": "勤務核定並重點機動督導", "負責人員": "分局長 施宇峰", "共同執行人員": "巡官 郭勝隆"},
     {"項目": "副指揮官", "通訊代號": "隆安 2 號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 何憶雯", "共同執行人員": "警務佐 曾威仁"},
@@ -204,21 +204,18 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     data_basic = [
         [Paragraph("<b>實施日期</b>", style_cell), Paragraph("<b>勤務時間</b>", style_cell), Paragraph("<b>指揮官</b>", style_cell), Paragraph("<b>勤務編組</b>", style_cell), Paragraph("<b>聯合稽查站地點</b>", style_cell)],
-        # 使用 <nobr> 標籤強制 PDF 不換行
         [Paragraph(f"<nobr>{date_str}</nobr>", style_cell),
          Paragraph(f"<nobr>{time_str_only}</nobr>", style_cell),
          Paragraph("分局長 施宇峰", style_cell),
          Paragraph("如各階段任務編組表", style_cell),
          Paragraph("龍潭區警政聯合辦公大樓廣場", style_cell)]
     ]
-    # 微調欄寬比例 (把日期與時間欄寬從 0.15 加大到 0.2，避免字體被擠壓)
     t_basic = Table(data_basic, colWidths=[page_width*0.2, page_width*0.2, page_width*0.18, page_width*0.18, page_width*0.24])
     t_basic.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_basic)
     
     story.append(Spacer(1, 2*mm))
     story.append(Paragraph("<b>勤務時程分配：</b>", style_text))
-    # 更新移動路程文字
     story.append(Paragraph("19:00 - 19:30：各單位整理裝備及由駐地往分局移動路程。<br/>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br/>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br/>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。", style_text))
     
     # 貳、 警力使用統計表與地點統計
@@ -302,7 +299,17 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         if line.strip():
             story.append(Paragraph(f"{clean(line)}", style_briefing))
 
-    doc.build(story)
+    # --- 加入頁碼的自訂函數 ---
+    def add_page_number(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 11)
+        page_number_text = f"- {canvas.getPageNumber()} -"
+        # 置中顯示頁碼：A4 寬度的一半，距離底部 10 mm
+        canvas.drawCentredString(A4[0] / 2.0, 10 * mm, page_number_text)
+        canvas.restoreState()
+
+    # 將畫頁碼的函數綁定到每一頁
+    doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     return buf.getvalue()
 
 # 簽到表
@@ -486,9 +493,7 @@ def get_html():
     html = f"<html>{style}<body><h2 style='text-align:center'>{u}執行<br>{p_name}<br>勤務規劃表</h2>"
     
     html += "<h4>壹、 勤務基本資料</h4><table><tr><th>實施日期</th><th>勤務時間</th><th>指揮官</th><th>勤務編組</th><th>聯合稽查站地點</th></tr>"
-    # 加入 style='white-space: nowrap;' 強制網頁不換行
     html += f"<tr><td style='white-space: nowrap;'>{p_time.split(' ')[0]}</td><td style='white-space: nowrap;'>{p_time.split(' ')[1] if ' ' in p_time else '19時至23時'}</td><td>分局長 施宇峰</td><td>如各階段任務編組表</td><td>龍潭區警政聯合辦公大樓廣場</td></tr></table>"
-    # 更新移動路程文字
     html += "<div class='middle-block'><b>勤務時程分配：</b><br>19:00 - 19:30：各單位整理裝備及由駐地往分局移動路程。<br>19:30 - 20:00：勤前教育（地點：本分局2樓會議室）。<br>20:00 - 23:00：第一階段（機動攔查與聯合稽查）。<br>21:30 - 23:00：第二階段（擴大臨檢威力掃蕩）。</div>"
     
     html += "<h4>貳、 警力使用統計表及勤前教育、地點統計</h4><table><tr><th>單位</th><th>業務及督導組</th><th>攔檢與臨檢組</th><th>偵訊組</th><th>小計</th><th>民力</th><th>總計</th></tr>"
