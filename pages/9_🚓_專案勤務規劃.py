@@ -140,6 +140,17 @@ def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
 # --- 3. PDF 生成功能 ---
 A4_SIZE = (float(595.275), float(841.890))
 
+# 繪製頁尾頁碼的回呼函數
+def add_page_number(canvas, doc):
+    canvas.saveState()
+    font_name = _get_font()
+    canvas.setFont(font_name, 11)  # 設定頁碼字型與大小
+    page_num = canvas.getPageNumber()
+    text = f"- 第 {page_num} 頁 -"
+    # 畫在 A4 寬度正中間，距離底部 10mm 的位置
+    canvas.drawCentredString(A4_SIZE[0] / 2.0, 10 * mm, text)
+    canvas.restoreState()
+
 def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     font = _get_font()
     buf = io.BytesIO()
@@ -172,7 +183,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
             Paragraph(clean(r.get('任務','')), style_cell_left)
         ])
 
-    # ✅ 將姓名欄比例拉大為 35%，任務欄縮小至 37%，讓姓名欄有更多空間不換行
     t1 = Table(data_cmd, colWidths=[page_width*0.14, page_width*0.14, page_width*0.35, page_width*0.37], repeatRows=2)
     t1.setStyle(TableStyle([
         ('FONTNAME',   (0,0), (-1,-1), font),
@@ -212,7 +222,9 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
         ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
     ]))
     story.append(t2)
-    doc.build(story)
+    
+    # ✅ 只有勤務規劃表傳入 add_page_number 函數
+    doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     return buf.getvalue()
 
 def generate_attendance_pdf(unit, project, time_str, briefing):
@@ -262,6 +274,8 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     story.append(t)
     story.append(Spacer(1, 5*mm))
     story.append(Paragraph("備註：請將行動電話調整為靜音。", style_note))
+    
+    # ✅ 移除簽到表的頁碼參數，恢復一般建立方式
     doc.build(story)
     return buf.getvalue()
 
@@ -307,7 +321,6 @@ st.title("🚓 專案勤務規劃管理系統")
 c1, c2 = st.columns(2)
 p_raw, p_time = c1.text_input("專案名稱", p), c2.text_input("勤務時間", t)
 
-# ✅ 修復：避免變數名稱與 reportlab 的 mm 單位衝突
 match = re.search(r"(\d+)月(\d+)日", p_time)
 if match:
     prefix = f"{str(match.group(1)).zfill(2)}{str(match.group(2)).zfill(2)}"
