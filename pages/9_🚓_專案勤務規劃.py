@@ -141,14 +141,12 @@ def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
     except: return False
 
 # --- 3. PDF 生成功能 ---
-# 🌟 強制宣告 A4 尺寸為浮點數，避開 ReportLab 底層的型態誤判
 A4_SIZE = (595.275, 841.890)
 
 def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     font = _get_font()
     buf = io.BytesIO()
     
-    # 強制轉換為 float
     margin_lr = float(12 * mm)
     margin_tb = float(15 * mm)
     
@@ -163,14 +161,14 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     page_width = A4_SIZE[0] - (2 * margin_lr)
     story = []
     
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8)
-    style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
-    style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm, alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0)
-    style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
+    # 🌟 核心修復：所有的 ParagraphStyle 都加上 wordWrap='CJK'，確保中文長字串不會撐破表格！
+    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8, wordWrap='CJK')
+    style_info = ParagraphStyle('Info', fontName=font, fontSize=12, alignment=2, spaceAfter=10, wordWrap='CJK')
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1, wordWrap='CJK')
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0, wordWrap='CJK')
+    style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm, alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0, wordWrap='CJK')
+    style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22, wordWrap='CJK')
 
-    # 標題格式：單位 + 專案名稱 + 勤務規劃表
     story.append(Paragraph(f"{unit}{project}勤務規劃表", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
@@ -201,8 +199,15 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_ptl.iterrows():
         task = f"{r.get('任務分工','')}<br/><font color='blue' size='11'>*雨備方案：各治安要點巡邏。</font>"
-        data_ptl.append([str(r.get('編組','')), str(r.get('無線電','')), Paragraph(clean(r.get('單位','')), style_cell), 
-                         Paragraph(clean(r.get('服勤人員','')), style_cell), Paragraph(task, style_cell_left)])
+        
+        # 🌟 核心修復 2：將所有文字嚴格包裹在 Paragraph 中
+        data_ptl.append([
+            Paragraph(clean(r.get('編組','')), style_cell), 
+            Paragraph(clean(r.get('無線電','')), style_cell), 
+            Paragraph(clean(r.get('單位','')), style_cell), 
+            Paragraph(clean(r.get('服勤人員','')), style_cell), 
+            Paragraph(task, style_cell_left)
+        ])
     
     t2 = Table(data_ptl, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('FONTSIZE',(0,0),(-1,-1),14),('ALIGN',(0,1),(1,-1),'CENTER'),
@@ -229,11 +234,12 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     page_width = A4_SIZE[0] - (2 * margin_lr)
     story = []
 
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8)
-    style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0) 
-    style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0)
+    # 🌟 這裡也加上 wordWrap='CJK' 保障
+    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8, wordWrap='CJK')
+    style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0, wordWrap='CJK')
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1, wordWrap='CJK')
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0, wordWrap='CJK') 
+    style_note = ParagraphStyle('Note', fontName=font, fontSize=11, leading=15, alignment=0, wordWrap='CJK')
 
     story.append(Paragraph(f"{unit}執行{project}勤前教育會議人員簽到表", style_title))
     
