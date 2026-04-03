@@ -155,7 +155,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm, alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0)
     style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
 
-    # ⭐ 這裡修改了規劃表的 PDF 標題格式為：專案名稱 + 勤務規劃表
     story.append(Paragraph(f"{unit}{project}勤務規劃表", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
@@ -295,6 +294,12 @@ st.sidebar.title("🛠️ 雲端設定")
 if st.sidebar.button("初始化/檢查雲端分頁"):
     init_sheets()
 
+if st.sidebar.button("⚠️ 強制重置為最新專案資料 (覆蓋雲端)"):
+    with st.spinner("重置中..."):
+        save_data(DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF, DEFAULT_STATION, DEFAULT_CMD, DEFAULT_PTL)
+        st.cache_data.clear()
+        st.rerun()
+
 df_set, df_cmd, df_ptl, err = load_data()
 
 d = {}
@@ -317,8 +322,28 @@ ed_ptl = df_ptl if (df_ptl is not None and not df_ptl.empty) else DEFAULT_PTL.co
 
 st.title("🚓 專案勤務規劃管理系統")
 c1, c2 = st.columns(2)
-p_name = c1.text_input("專案名稱", p)
+
+# ⭐ 這裡將專案名稱改為 p_name_raw，以便我們稍後進行加工處理
+p_name_raw = c1.text_input("專案名稱", p)
 p_time = c2.text_input("勤務時間", t)
+
+# 🌟 核心連動邏輯：從「勤務時間」擷取月份與日期，然後覆蓋「專案名稱」的前 4 碼
+match = re.search(r"(\d+)月(\d+)日", p_time)
+if match:
+    # zfill(2) 會確保不足兩位的數字自動補 0（例如: 3月 -> 03）
+    mm = str(match.group(1)).zfill(2)
+    dd = str(match.group(2)).zfill(2)
+    date_prefix = f"{mm}{dd}"
+    
+    # 如果目前的專案名稱開頭已經有 4 個數字，就把那 4 個數字替換掉
+    if re.match(r"^\d{4}", p_name_raw):
+        p_name = f"{date_prefix}{p_name_raw[4:]}"
+    # 如果開頭沒有 4 個數字（例如被手滑刪除了），就直接加在最前面
+    else:
+        p_name = f"{date_prefix}{p_name_raw}"
+else:
+    # 如果輸入的「勤務時間」抓不到月跟日，就保持原本的專案名稱
+    p_name = p_name_raw
 
 st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
@@ -355,7 +380,7 @@ res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
 def get_html():
     style = "<style>body{font-family:'標楷體';padding:10px;} th,td{border:1px solid black;padding:6px;font-size:12pt;text-align:center;} .middle-block{font-size:12pt;margin:15px 0 15px 20px;line-height:1.6; text-align:left;}</style>"
     
-    # ⭐ 這裡修改了網頁預覽的標題格式為：專案名稱 + 勤務規劃表
+    # 這裡使用的 p_name 已經是經過日期轉換處理後的名稱了！
     html = f"<html>{style}<body><h3 style='text-align:center'>{u}<br>{p_name}勤務規劃表</h3><div style='text-align:right'><b>時間：{p_time}</b></div><table><tr><th colspan='4'>任 務 編 組</th></tr>"
     
     for _, r in res_cmd.iterrows():
