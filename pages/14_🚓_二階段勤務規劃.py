@@ -100,7 +100,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
         return True
     except: return False
 
-# --- PDF 相關函數 (略，保持原始邏輯) ---
+# --- PDF 相關函數 ---
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
     font = _get_font()
     buf = io.BytesIO()
@@ -113,10 +113,13 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
     style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm, alignment=TA_LEFT, leftIndent=5*mm)
     style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22)
+    
     story.append(Paragraph(f"{unit}執行{project}勤務規劃表", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
+    
     def clean(t): return safe_str(t).replace("\n", "<br/>").replace("、", "<br/>")
     def clean_text_only(t): return safe_str(t).replace("\n", "<br/>")
+    
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -169,6 +172,7 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     doc.build(story)
     return buf.getvalue()
 
+# 🌟 發信函數更新：讓附件檔名與規劃表標題一致
 def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
@@ -176,19 +180,26 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
         msg["From"], msg["To"] = sender, sender
         msg["Subject"] = f"{unit}執行{project}規劃與簽到表_{datetime.now().strftime('%m%d')}"
         msg.attach(MIMEText("附件為最新 PDF 規劃文件。", "plain", "utf-8"))
+        
+        # 建立與標題一致的檔名
+        plan_filename = f"{unit}執行{project}勤務規劃表.pdf"
+        attendance_filename = f"{unit}執行{project}簽到表.pdf"
+        
         p1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp)
         part1 = MIMEBase("application", "pdf"); part1.set_payload(p1); encoders.encode_base64(part1)
-        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(unit+'規劃表.pdf')}"); msg.attach(part1)
+        # 使用 quote 處理中文檔名編碼
+        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(plan_filename)}"); msg.attach(part1)
+        
         p2 = generate_attendance_pdf(unit, project, time_str, briefing)
         part2 = MIMEBase("application", "pdf"); part2.set_payload(p2); encoders.encode_base64(part2)
-        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(unit+'簽到表.pdf')}"); msg.attach(part2)
+        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(attendance_filename)}"); msg.attach(part2)
+        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd); server.sendmail(sender, sender, msg.as_string())
         return True, None
     except Exception as e: return False, str(e)
 
-# --- 核心邏輯修正區 ---
-
+# --- 核心邏輯區 ---
 def auto_assign_radio_code(df):
     if df.empty: return df
     base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
@@ -204,24 +215,18 @@ def auto_assign_radio_code(df):
             else: df.at[idx, '無線電'] = f"隆安{base_pfx}0"
     return df
 
-# 🌟 修正 KeyError 的同步函數
 def sync_personnel_data(df_ptl, df_cp):
     if df_ptl.empty or df_cp.empty: return df_cp
     split_pattern = r'[、,，\s/]+'
     p_dict = {}
-    
-    # 步驟 1：建立人員字典
     for _, row in df_ptl.iterrows():
         unit_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
         units = [u.strip() for u in re.split(split_pattern, unit_str) if u.strip()]
         persons_str = str(row.get('服勤人員', '')).strip()
         current_persons = [p.strip() for p in re.split(split_pattern, persons_str) if p.strip()]
-        
         for u in units:
             if u not in p_dict: p_dict[u] = []
             if not current_persons: continue
-            
-            # 分派邏輯
             if len(units) == 1:
                 for p in current_persons:
                     if p not in p_dict[u]: p_dict[u].append(p)
@@ -234,7 +239,6 @@ def sync_personnel_data(df_ptl, df_cp):
                         for _ in range(count):
                             if cur_idx < M:
                                 p = current_persons[cur_idx]
-                                # 這裡加上安全檢查
                                 if uk not in p_dict: p_dict[uk] = []
                                 if p not in p_dict[uk]: p_dict[uk].append(p)
                                 cur_idx += 1
@@ -243,22 +247,16 @@ def sync_personnel_data(df_ptl, df_cp):
                         if uk not in p_dict: p_dict[uk] = []
                         for p in current_persons:
                             if p not in p_dict[uk]: p_dict[uk].append(p)
-
-    # 步驟 2：映射到第二階段
     df_cp_new = df_cp.copy()
     for idx, row in df_cp_new.iterrows():
         u_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
         u_list = [u.strip() for u in re.split(split_pattern, u_str) if u.strip()]
         combined = []
         for u in u_list:
-            # 🌟 關鍵修正：使用 .get() 避免 KeyError
             persons_from_dict = p_dict.get(u, [])
             for p in persons_from_dict:
                 if p not in combined: combined.append(p)
-        
-        if combined:
-            df_cp_new.at[idx, '服勤人員'] = "、".join(combined)
-            
+        if combined: df_cp_new.at[idx, '服勤人員'] = "、".join(combined)
     return df_cp_new
 
 # --- 3. 主程式介面 ---
@@ -287,10 +285,8 @@ with tab1:
 
 with tab2:
     if st.button("🔄 一鍵自動帶入第一階段人員"):
-        # 這裡現在會安全執行，不再 KeyError
         st.session_state["synced_cp"] = sync_personnel_data(res_ptl, df_cp)
         st.rerun()
-    
     current_cp = st.session_state.get("synced_cp", df_cp)
     res_cp = auto_assign_radio_code(st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor"))
 
@@ -299,12 +295,12 @@ pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, r
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
 
 col_dl1, col_dl2 = st.columns(2)
-col_dl1.download_button("📝 下載規劃表", data=pdf_plan, file_name=f"{u}_規劃表.pdf", use_container_width=True)
-col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_name=f"{u}_簽到表.pdf", use_container_width=True)
+col_dl1.download_button("📝 下載規劃表", data=pdf_plan, file_name=f"{u}執行{p_name}勤務規劃表.pdf", use_container_width=True)
+col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_name=f"{u}執行{p_name}簽到表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True):
     with st.spinner("處理中..."):
         if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp):
             ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
-            if ok: st.success("✅ 同步與發信成功！")
+            if ok: st.success("✅ 同步與發信成功！附件檔名已同步更新。")
             else: st.error(f"❌ 發信失敗: {mail_err}")
