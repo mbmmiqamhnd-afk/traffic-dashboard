@@ -12,12 +12,6 @@ from datetime import datetime, timedelta, date
 # ==========================================
 st.set_page_config(page_title="龍潭分局交通智慧戰情室", page_icon="🚓", layout="wide")
 
-try:
-    from gspread_formatting import *
-    HAS_FORMATTING = True
-except ImportError:
-    HAS_FORMATTING = False
-
 # ==========================================
 # 1. 全局常數與設定
 # ==========================================
@@ -41,13 +35,11 @@ def get_robust_date(df):
     🛠️ 修正版：專抓 7 位數民國日期並取後 4 碼 (MMDD)
     """
     try:
-        # 讀取前 10 列並轉為字串
         text_block = df.head(10).astype(str).to_string()
-        # 清除換行、空格、全形標點
-        text_block = re.sub(r'[\s\n\t：:：]', '', text_block)
+        # 清除所有空格與特殊標點，只留數字
+        text_block = re.sub(r'[^0-9]', '', text_block)
         
         # 尋找 1 開頭的 7 位數字 (例如 1150401)
-        # 模式：1XX(年)XX(月)XX(日)
         date_matches = re.findall(r'1\d{6}', text_block)
         
         if len(date_matches) >= 2:
@@ -55,14 +47,6 @@ def get_robust_date(df):
             start_mmdd = date_matches[0][-4:]
             end_mmdd = date_matches[-1][-4:]
             return f"{start_mmdd}-{end_mmdd}"
-        
-        # 備援模式：若含有斜線或橫線 (115/04/01)
-        slashed_matches = re.findall(r'1\d{2}[/.-](\d{1,2})[/.-](\d{1,2})', text_block)
-        if len(slashed_matches) >= 2:
-            start_mmdd = f"{int(slashed_matches[0][0]):02d}{int(slashed_matches[0][1]):02d}"
-            end_mmdd = f"{int(slashed_matches[-1][0]):02d}{int(slashed_matches[-1][1]):02d}"
-            return f"{start_mmdd}-{end_mmdd}"
-            
         return "" 
     except:
         return ""
@@ -107,7 +91,8 @@ def process_major_module(files):
     f_wk, f_year = sorted_files[0], sorted_files[1]
     
     # 若檔名(1)放錯邊則手動修正
-    if "(1)" in f_wk.name: f_wk, f_year = f_year, f_wk
+    if "(1)" in f_wk.name: 
+        f_wk, f_year = f_year, f_wk
 
     # 數據與日期擷取
     d_wk, date_wk = parse_major_data(f_wk, "重點違規", [15, 16])
@@ -131,13 +116,17 @@ def process_major_module(files):
         rate = f"{(y_total/tgt):.1%}" if tgt > 0 else "0%"
         
         if u != '警備隊':
-            summary['diff'] += diff; summary['tgt'] += tgt
+            summary['diff'] += diff
+            summary['tgt'] += tgt
             
         table_rows.append([u, w_data['stop'], w_data['cit'], y_data['stop'], y_data['cit'], l_data['stop'], l_data['cit'], diff if u != '警備隊' else "—", tgt, rate if u != '警備隊' else "—"])
         
-        summary['ws'] += w_data['stop']; summary['wc'] += w_data['cit']
-        summary['ys'] += y_data['stop']; summary['yc'] += y_data['cit']
-        summary['ls'] += l_data['stop']; summary['lc'] += l_data['cit']
+        summary['ws'] += w_data['stop']
+        summary['wc'] += w_data['cit']
+        summary['ys'] += y_data['stop']
+        summary['yc'] += y_data['cit']
+        summary['ls'] += l_data['stop']
+        summary['lc'] += l_data['cit']
 
     # 合計列
     total_rate = f"{((summary['ys']+summary['yc'])/summary['tgt']):.1%}" if summary['tgt'] > 0 else "0%"
@@ -152,4 +141,43 @@ def process_major_module(files):
     header_1 = ['統計期間', h_wk, h_wk, h_yr, h_yr, h_ls, h_ls, '本年與去年同期比較', '目標值', '達成率']
     header_2 = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
     
-    df_result = pd.DataFrame(table_rows, columns=pd.MultiIndex.from_arrays([header
+    # 修正 SyntaxError 的地方
+    df_result = pd.DataFrame(table_rows, columns=pd.MultiIndex.from_arrays([header_1, header_2]))
+    
+    st.subheader("📊 重大交通違規自動化統計報表")
+    st.dataframe(df_result, use_container_width=True)
+
+    if GCP_CREDS:
+        if push_to_gsheet(df_result):
+            st.success(f"✅ 雲端同步完成！(期間識別：{date_wk})")
+
+def push_to_gsheet(df):
+    """推送到 Google Sheets"""
+    try:
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        ws = sh.get_worksheet(0)
+        
+        titles = df.columns.tolist()
+        data = [[t[0] for t in titles], [t[1] for t in titles]] + df.values.tolist()
+        ws.update(range_name='A2', values=data)
+        return True
+    except Exception as e:
+        st.error(f"雲端同步失敗：{e}")
+        return False
+
+# ==========================================
+# 3. Streamlit 介面
+# ==========================================
+st.title("🚓 龍潭分局交通智慧戰情室")
+st.markdown("---")
+
+uploaded_files = st.file_uploader("📂 請上傳重大違規相關報表", type=["xlsx", "xls"], accept_multiple_files=True)
+
+if uploaded_files:
+    if st.button("🚀 啟動數據處理"):
+        target_files = [f for f in uploaded_files if any(k in f.name for k in ["重大", "重點"])]
+        if target_files:
+            process_major_module(target_files)
+        else:
+            st.warning("找不到重大違規報表檔案。")
