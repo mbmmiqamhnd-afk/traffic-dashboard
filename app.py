@@ -3,99 +3,255 @@ import pandas as pd
 import io
 import re
 import gspread
+import calendar
 import traceback
+from datetime import datetime, timedelta, date
+from pdf2image import convert_from_bytes
+from pptx import Presentation
 
 # ==========================================
-# 0. 系統初始化
+# 0. 系統初始化與格式套件
 # ==========================================
 st.set_page_config(page_title="龍潭分局交通智慧戰情室", page_icon="🚓", layout="wide")
 
+try:
+    from gspread_formatting import *
+    HAS_FORMATTING = True
+except ImportError:
+    HAS_FORMATTING = False
+
 # ==========================================
-# 1. 全局常數與設定
+# 1. 全局常數與設定區
 # ==========================================
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 
 try:
+    MY_EMAIL = st.secrets.get("email", {}).get("user", "")
+    MY_PASSWORD = st.secrets.get("email", {}).get("password", "")
     GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
 except:
-    GCP_CREDS = None
+    MY_EMAIL, MY_PASSWORD, GCP_CREDS = "", "", None
 
+# --- [重大違規常數] ---
 MAJOR_UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
 MAJOR_TARGETS = {'聖亭所': 1941, '龍潭所': 2588, '中興所': 1941, '石門所': 1479, '高平所': 1294, '三和所': 339, '交通分隊': 2526, '警備隊': 0, '科技執法': 6006}
 MAJOR_FOOTNOTE = "重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」"
 
+# --- [超載統計常數] ---
+OVERLOAD_TARGETS = {'聖亭所': 20, '龍潭所': 27, '中興所': 20, '石門所': 16, '高平所': 14, '三和所': 8, '警備隊': 0, '交通分隊': 22}
+OVERLOAD_UNIT_MAP = {'聖亭派出所': '聖亭所', '龍潭派出所': '龍潭所', '中興派出所': '中興所', '石門派出所': '石門所', '高平派出所': '高平所', '三和派出所': '三和所', '警備隊': '警備隊', '龍潭交通分隊': '交通分隊'}
+OVERLOAD_UNIT_ORDER = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
+
+# --- [強化專案常數] ---
+PROJECT_NAME = "強化交通安全執法專案勤務取締件數統計表"
+PROJECT_TARGETS = {
+    '聖亭所': [5, 115, 5, 16, 7, 10], '龍潭所': [6, 145, 7, 20, 9, 12],
+    '中興所': [5, 115, 5, 16, 7, 10], '石門所': [3, 80, 4, 11, 5, 7],
+    '高平所': [3, 80, 4, 11, 5, 7], '三和所': [2, 40, 2, 6, 2, 5],
+    '交通分隊': [5, 115, 4, 16, 6, 8], '交通組': [0, 0, 0, 0, 0, 0], '警備隊': [0, 0, 0, 0, 0, 0]
+}
+PROJECT_CATS = ["酒後駕車", "闖紅燈", "嚴重超速", "車不讓人", "行人違規", "大型車違規"]
+PROJECT_LAW_MAP = {
+    "酒後駕車": ["35條", "73條2項", "73條3項"], 
+    "闖紅燈": ["53條"], 
+    "嚴重超速": ["43條", "40條"],  
+    "車不讓人": ["44條", "48條"], 
+    "行人違規": ["78條"]
+}
+
 # ==========================================
-# 2. 核心組件：重大違規處理
+# 2. 輔助工具區
+# ==========================================
+def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
+    """🚑交通事故專用：Google Sheets 標題括號與數字轉紅字"""
+    text = str(text)
+    pattern = r'([0-9\(\)\/\-]+)'
+    tokens = re.split(pattern, text)
+    runs = []
+    current_pos = 0
+    for token in tokens:
+        if not token: continue
+        color = {"red": 1.0, "green": 0.0, "blue": 0.0} if re.match(pattern, token) else {"red": 0.0, "green": 0.0, "blue": 0.0}
+        runs.append({"startIndex": current_pos, "format": {"foregroundColor": color, "bold": True}})
+        current_pos += len(token)
+    return {
+        "updateCells": {
+            "rows": [{"values": [{"userEnteredValue": {"stringValue": text}, "textFormatRuns": runs}]}],
+            "fields": "userEnteredValue,textFormatRuns",
+            "range": {"sheetId": sheet_id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1, "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1}
+        }
+    }
+
+# ==========================================
+# 3. 業務邏輯處理區
 # ==========================================
 
-def get_robust_date(df):
-    """🚀 日期擷取：讀取原始儲存格"""
-    try:
-        raw_cells = [str(val) for val in df.head(10).values.flatten() if pd.notna(val)]
-        full_text = "".join(raw_cells)
-        clean_text = re.sub(r'\s+', '', full_text)
-        
-        match = re.search(r'1\d{2}(\d{4})[至\-~]1\d{2}(\d{4})', clean_text)
-        if match:
-            return f"{match.group(1)}-{match.group(2)}"
-        
-        dates = re.findall(r'(?<!\d)1\d{6}(?!\d)', clean_text)
-        if len(dates) >= 2:
-            return f"{dates[0][-4:]}-{dates[1][-4:]}"
-            
-        return ""
-    except Exception as e:
-        return ""
-
-def parse_major_data(f, sheet_kw, col_pair):
-    """解析單一檔案數據"""
+# ----------------- [1. 科技執法] -----------------
+def process_tech_enforcement(files):
+    """📸 科技執法"""
+    f = files[0]
     f.seek(0)
-    xl = pd.ExcelFile(f)
-    sn = next((s for s in xl.sheet_names if sheet_kw in s), xl.sheet_names[0])
-    df = pd.read_excel(xl, sheet_name=sn, header=None)
+    df = pd.read_csv(f, encoding='cp950') if f.name.endswith('.csv') else pd.read_excel(f)
+    df.columns = [str(c).strip() for c in df.columns]
     
-    dt_str = get_robust_date(df)
+    loc_col = next((c for c in df.columns if c in ['違規地點', '路口名稱', '地點']), None)
+    if not loc_col:
+        st.error("❌ 找不到『地點』相關欄位！")
+        return
+        
+    df[loc_col] = df[loc_col].astype(str).str.replace('桃園市', '').str.replace('龍潭區', '').str.strip()
+    yesterday = datetime.now() - timedelta(days=1)
+    date_range_str = f"{yesterday.year - 1911}年1月1日至{yesterday.year - 1911}年{yesterday.month}月{yesterday.day}日"
     
-    def clean_unit(n):
-        n = str(n).strip()
-        if '分隊' in n: return '交通分隊'
-        if any(k in n for k in ['科技', '交通組']): return '科技執法'
-        if '警備' in n: return '警備隊'
-        for k in ['聖亭', '龍潭', '中興', '石門', '高平', '三和']:
-            if k in n: return k + '所'
-        return None
+    loc_summary = df[loc_col].value_counts().head(10).reset_index()
+    loc_summary.columns = ['路段名稱', '舉發件數']
+    
+    st.write("📊 **科技執法路段排行：**")
+    st.dataframe(loc_summary, hide_index=True)
+    
+    if GCP_CREDS:
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        ws_name = "科技執法-路段排行"
+        ws = sh.worksheet(ws_name) if ws_name in [s.title for s in sh.worksheets()] else sh.add_worksheet(title=ws_name, rows="100", cols="20")
+        ws.clear()
+        title_text = f"科技執法成效 ({date_range_str})"
+        ws.update(range_name='A1', values=[[title_text, ""], ["路段名稱", "舉發件數"]] + loc_summary.values.tolist() + [["舉發總數", len(df)]])
+        
+        reqs = {"requests": [{"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
+                "rows": [{"values": [{"userEnteredValue": {"stringValue": title_text},
+                "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 24}},
+                                   {"startIndex": len("科技執法成效 "), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True, "fontSize": 24}}]}]}],
+                "fields": "userEnteredValue,textFormatRuns"}}]}
+        sh.batch_update(reqs)
 
-    def to_i(v):
-        try: return int(float(str(v).replace(',', '').strip()))
-        except: return 0
+# ----------------- [2. 超載統計] -----------------
+def process_overload(files):
+    """🚛 超載違規"""
+    f_wk, f_yt, f_ly = None, None, None
+    for f in files:
+        if "(1)" in f.name: f_yt = f
+        elif "(2)" in f.name: f_ly = f
+        else: f_wk = f
+        
+    def parse_rpt(f):
+        if not f: return {}, "0000000", "0000000"
+        f.seek(0)
+        counts, s, e = {}, "0000000", "0000000"
+        text_block = pd.read_excel(f, header=None, nrows=15).to_string()
+        m = re.search(r'(\d{3,7}).*至\s*(\d{3,7})', text_block)
+        if m: s, e = m.group(1), m.group(2)
+        f.seek(0)
+        xls = pd.ExcelFile(f)
+        for sn in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=sn, header=None)
+            u = None
+            for _, r in df.iterrows():
+                rs = " ".join([str(x) for x in r.values])
+                if "舉發單位：" in rs:
+                    m2 = re.search(r"舉發單位：(\S+)", rs)
+                    if m2: u = m2.group(1).strip()
+                if "總計" in rs and u:
+                    nums = [float(str(x).replace(',','')) for x in r if str(x).replace('.','',1).isdigit()]
+                    if nums:
+                        short = OVERLOAD_UNIT_MAP.get(u, u)
+                        if short in OVERLOAD_UNIT_ORDER: counts[short] = counts.get(short, 0) + int(nums[-1])
+                        u = None
+        return counts, s, e
 
-    res = {}
-    for _, r in df.iterrows():
-        u = clean_unit(r.iloc[0])
-        if u and "合計" not in str(r.iloc[0]):
-            res[u] = {'stop': to_i(r.iloc[col_pair[0]]), 'cit': to_i(r.iloc[col_pair[1]])}
-    return res, dt_str
+    d_wk, s_wk, e_wk = parse_rpt(f_wk); d_yt, s_yt, e_yt = parse_rpt(f_yt); d_ly, s_ly, e_ly = parse_rpt(f_ly)
+    raw_wk, raw_yt, raw_ly = f"本期 ({s_wk[-4:]}~{e_wk[-4:]})", f"本年累計 ({s_yt[-4:]}~{e_yt[-4:]})", f"去年累計 ({s_ly[-4:]}~{e_ly[-4:]})"
+    
+    body = []
+    for u in OVERLOAD_UNIT_ORDER:
+        yv, tv = d_yt.get(u, 0), OVERLOAD_TARGETS.get(u, 0)
+        body.append({'統計期間': u, raw_wk: d_wk.get(u, 0), raw_yt: yv, raw_ly: d_ly.get(u, 0), '本年與去年同期比較': yv - d_ly.get(u, 0), '目標值': tv, '達成率': f"{yv/tv:.0%}" if tv > 0 else "—"})
+    df_body = pd.DataFrame(body)
+    sum_v = df_body[df_body['統計期間'] != '警備隊'][[raw_wk, raw_yt, raw_ly, '目標值']].sum()
+    total_row = pd.DataFrame([{'統計期間': '合計', raw_wk: sum_v[raw_wk], raw_yt: sum_v[raw_yt], raw_ly: sum_v[raw_ly], '本年與去年同期比較': sum_v[raw_yt] - sum_v[raw_ly], '目標值': sum_v['目標值'], '達成率': f"{sum_v[raw_yt]/sum_v['目標值']:.0%}" if sum_v['目標值'] > 0 else "0%"}])
+    df_final = pd.concat([total_row, df_body], ignore_index=True)
+    
+    st.write("📊 **超載統計結果：**")
+    st.dataframe(df_final, hide_index=True)
 
-def process_major_module(files):
-    """重大違規處理主邏輯"""
+    if GCP_CREDS:
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        ws = sh.get_worksheet(1)
+        ws.update(range_name='A1', values=[['取締超載違規件數統計表']])
+        ws.update(range_name='A2', values=[df_final.columns.tolist()] + df_final.values.tolist())
+        
+        # 標題紅字
+        requests = []
+        for i, col_name in enumerate(df_final.columns):
+            if "(" in col_name:
+                p_start = col_name.find("(")
+                requests.append({
+                    "updateCells": {
+                        "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
+                        "rows": [{ "values": [{ "textFormatRuns": [
+                            {"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": True}},
+                            {"startIndex": p_start, "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True}}
+                        ], "userEnteredValue": {"stringValue": col_name} }] }],
+                        "fields": "userEnteredValue,textFormatRuns"
+                    }
+                })
+        if requests: sh.batch_update({"requests": requests})
+
+# ----------------- [3. 重大交通違規 (完美修正版)] -----------------
+def process_major(files):
+    """🚨 重大違規 (包含精準抓日期、修復同步、原生分色)"""
     if len(files) < 2:
-        st.error("❌ 錯誤：請確認是否上傳『本期(週)』與『(1)累計』報表。")
+        st.error("❌ 需要至少上傳『本期』與『(1)累計』報表才能進行重大違規比對。")
         return
 
-    # 檔案識別 (大者為累計)
+    # 分流與排序
     sorted_files = sorted(files, key=lambda x: x.size)
     f_wk, f_year = sorted_files[0], sorted_files[1]
-    
-    # 手動防呆歸位
-    if "(1)" in f_wk.name: 
-        f_wk, f_year = f_year, f_wk
+    if "(1)" in f_wk.name: f_wk, f_year = f_year, f_wk
 
-    # 數據與日期擷取
+    def get_robust_date(df):
+        try:
+            raw_cells = [str(val) for val in df.head(10).values.flatten() if pd.notna(val)]
+            clean_text = re.sub(r'\s+', '', "".join(raw_cells))
+            match = re.search(r'1\d{2}(\d{4})[至\-~]1\d{2}(\d{4})', clean_text)
+            if match: return f"{match.group(1)}-{match.group(2)}"
+            dates = re.findall(r'(?<!\d)1\d{6}(?!\d)', clean_text)
+            if len(dates) >= 2: return f"{dates[0][-4:]}-{dates[1][-4:]}"
+            return ""
+        except: return ""
+
+    def parse_major_data(f, sheet_kw, col_pair):
+        f.seek(0)
+        xl = pd.ExcelFile(f)
+        sn = next((s for s in xl.sheet_names if sheet_kw in s), xl.sheet_names[0])
+        df = pd.read_excel(xl, sheet_name=sn, header=None)
+        dt_str = get_robust_date(df)
+        
+        def clean_unit(n):
+            n = str(n).strip()
+            if '分隊' in n: return '交通分隊'
+            if any(k in n for k in ['科技', '交通組']): return '科技執法'
+            if '警備' in n: return '警備隊'
+            for k in ['聖亭', '龍潭', '中興', '石門', '高平', '三和']:
+                if k in n: return k + '所'
+            return None
+
+        def to_i(v):
+            try: return int(float(str(v).replace(',', '').strip()))
+            except: return 0
+
+        res = {}
+        for _, r in df.iterrows():
+            u = clean_unit(r.iloc[0])
+            if u and "合計" not in str(r.iloc[0]):
+                res[u] = {'stop': to_i(r.iloc[col_pair[0]]), 'cit': to_i(r.iloc[col_pair[1]])}
+        return res, dt_str
+
     d_wk, date_wk = parse_major_data(f_wk, "重點違規", [15, 16])
     d_year, date_yr = parse_major_data(f_year, "(1)", [15, 16])
     d_last, _ = parse_major_data(f_year, "(1)", [18, 19])
 
-    # 建立表格
     table_rows = []
     summary = {k: 0 for k in ['ws', 'wc', 'ys', 'yc', 'ls', 'lc', 'diff', 'tgt']}
     
@@ -116,19 +272,14 @@ def process_major_module(files):
             
         table_rows.append([u, w_data['stop'], w_data['cit'], y_data['stop'], y_data['cit'], l_data['stop'], l_data['cit'], diff if u != '警備隊' else "—", tgt, rate if u != '警備隊' else "—"])
         
-        summary['ws'] += w_data['stop']
-        summary['wc'] += w_data['cit']
-        summary['ys'] += y_data['stop']
-        summary['yc'] += y_data['cit']
-        summary['ls'] += l_data['stop']
-        summary['lc'] += l_data['cit']
+        summary['ws'] += w_data['stop']; summary['wc'] += w_data['cit']
+        summary['ys'] += y_data['stop']; summary['yc'] += y_data['cit']
+        summary['ls'] += l_data['stop']; summary['lc'] += l_data['cit']
 
-    # 合計列
     total_rate = f"{((summary['ys']+summary['yc'])/summary['tgt']):.1%}" if summary['tgt'] > 0 else "0%"
     table_rows.insert(0, ['合計', summary['ws'], summary['wc'], summary['ys'], summary['yc'], summary['ls'], summary['lc'], summary['diff'], summary['tgt'], total_rate])
     table_rows.append([MAJOR_FOOTNOTE] + [""] * 9)
     
-    # 組合標題
     h_wk = f"本期({date_wk})" if date_wk else "本期"
     h_yr = f"本年累計({date_yr})" if date_yr else "本年累計"
     h_ls = f"去年累計({date_yr})" if date_yr else "去年累計"
@@ -137,97 +288,351 @@ def process_major_module(files):
     header_2 = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
     
     df_result = pd.DataFrame(table_rows, columns=pd.MultiIndex.from_arrays([header_1, header_2]))
-    
-    st.subheader("📊 重大交通違規自動化統計報表")
+    st.write("📊 **重大違規統計結果：**")
     st.dataframe(df_result, use_container_width=True)
 
     if GCP_CREDS:
-        if push_to_gsheet(df_result):
-            st.success(f"✅ 雲端同步與分色成功！(抓取期間：{date_wk})")
+        try:
+            gc = gspread.service_account_from_dict(GCP_CREDS)
+            sh = gc.open_by_url(GOOGLE_SHEET_URL)
+            ws = sh.get_worksheet(0)
+            
+            titles = df_result.columns.tolist()
+            top_row = [t[0] for t in titles]
+            bottom_row = [t[1] for t in titles]
+            data_body = df_result.values.tolist()
+            data_list = [top_row, bottom_row] + data_body
+            ws.update(range_name='A2', values=data_list)
+            
+            # 原生分色 API
+            red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
+            black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
+            requests = []
+            
+            # 1. 括號紅字
+            for i, text in enumerate(top_row):
+                if "(" in text:
+                    p_start = text.find("(")
+                    requests.append({
+                        "updateCells": {
+                            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
+                            "rows": [{ "values": [{ "textFormatRuns": [
+                                {"startIndex": 0, "format": {"foregroundColor": black_color, "bold": True}},
+                                {"startIndex": p_start, "format": {"foregroundColor": red_color, "bold": True}}
+                            ], "userEnteredValue": {"stringValue": text} }] }],
+                            "fields": "userEnteredValue,textFormatRuns"
+                        }
+                    })
 
-def push_to_gsheet(df):
-    """🌟 終極分色版：強制寫入原生 API 格式化設定"""
-    try:
-        gc = gspread.service_account_from_dict(GCP_CREDS)
-        sh = gc.open_by_url(GOOGLE_SHEET_URL)
-        ws = sh.get_worksheet(0)
-        
-        # 準備資料
-        titles = df.columns.tolist()
-        top_row = [t[0] for t in titles]
-        bottom_row = [t[1] for t in titles]
-        data_body = df.values.tolist()
-        data_list = [top_row, bottom_row] + data_body
-        
-        # 寫入數據
-        ws.update(range_name='A2', values=data_list)
-        
-        # ==========================================
-        # 🌟 Google Sheets 原生分色引擎
-        # ==========================================
-        red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
-        black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
-        
-        requests = []
-        
-        # 🎯 任務 1：處理表頭「括號與日期」紅字
-        for i, text in enumerate(top_row):
-            if "(" in text:
-                p_start = text.find("(")
+            # 2. 負數紅字
+            red_fmt = {"textFormat": {"foregroundColor": red_color}}
+            black_fmt = {"textFormat": {"foregroundColor": black_color}}
+            for r_idx, row_vals in enumerate(data_body):
+                val = row_vals[7]
+                target_row = 3 + r_idx
+                is_negative = isinstance(val, (int, float)) and val < 0
+                fmt = red_fmt if is_negative else black_fmt
                 requests.append({
-                    "updateCells": {
-                        # Google Sheets 從 RowIndex 1 起算是第二列 (A2所在列)
-                        "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
-                        "rows": [{ "values": [{ "textFormatRuns": [
-                            {"startIndex": 0, "format": {"foregroundColor": black_color, "bold": True}},
-                            {"startIndex": p_start, "format": {"foregroundColor": red_color, "bold": True}}
-                        ], "userEnteredValue": {"stringValue": text} }] }],
-                        "fields": "userEnteredValue,textFormatRuns"
+                    "repeatCell": {
+                        "range": {"sheetId": ws.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 7, "endColumnIndex": 8},
+                        "cell": {"userEnteredFormat": fmt},
+                        "fields": "userEnteredFormat.textFormat.foregroundColor"
                     }
                 })
+                
+            if requests:
+                sh.batch_update({"requests": requests})
+            st.write("✅ 重大違規雲端格式與數據同步完成")
+        except Exception as e:
+            st.error(f"雲端同步出錯：{e}")
 
-        # 🎯 任務 2：處理「本年與去年同期比較」紅字 (數值小於 0 者標紅)
-        # 逐列檢查，繞過不穩定的條件格式，直接上色
-        red_fmt = {"textFormat": {"foregroundColor": red_color}}
-        black_fmt = {"textFormat": {"foregroundColor": black_color}}
+# ----------------- [4. 強化專案] -----------------
+def process_project(files):
+    """🔥 強化專案"""
+    f1 = next((f for f in files if any(k in f.name for k in ["強化", "法條", "自選匯出"])), None)
+    f2_list = [f for f in files if any(k in f.name.upper() for k in ["R17", "砂石", "大貨"])]
+    
+    if not f1 or not f2_list:
+        st.error("❌ 找不到強化專案報表！需包含法條與R17大型車資料。")
+        return
+
+    def s_read(f, **kwargs):
+        f.seek(0)
+        if f.name.endswith('.csv'):
+            try: return pd.read_csv(f, **kwargs)
+            except: 
+                f.seek(0); return pd.read_csv(f, encoding='cp950', **kwargs)
+        return pd.read_excel(f, **kwargs)
+
+    date_str = "未知期間"
+    df1_h = s_read(f1, nrows=10, header=None)
+    for _, r in df1_h.iterrows():
+        for c in r.values:
+            if '統計期間' in str(c):
+                m = re.search(r'([0-9年月日\-至\s]+)', str(c).replace('(入案日)', '').split('：')[-1].split(':')[-1].strip())
+                if m: date_str = m.group(1).replace('115', '').strip()
+
+    def m_uniq(df):
+        cols = pd.Series(df.columns.map(str))
+        for d in cols[cols.duplicated()].unique(): cols[cols == d] = [f"{d}_{i}" if i!=0 else d for i in range(sum(cols == d))]
+        df.columns = cols; return df
         
-        for r_idx, row_vals in enumerate(data_body):
-            val = row_vals[7]  # Index 7 是本年與去年比較欄位
-            target_row = 3 + r_idx  # 數據從 RowIndex 3 (Google Sheets 第 4 列) 開始
+    df1 = m_uniq(s_read(f1, skiprows=3)).reset_index(drop=True)
+    df2_all = []
+    for f in f2_list:
+        df_t = s_read(f, header=None)
+        h_idx = next((i for i, r in df_t.head(30).iterrows() if '單位' in [str(x).strip() for x in r.values] and '舉發總數' in [str(x).strip() for x in r.values]), None)
+        if h_idx is not None:
+            df_c = df_t.iloc[h_idx+1:].copy()
+            df_c.columns = [str(x).strip() for x in df_t.iloc[h_idx].values]
+            df_c = m_uniq(df_c).reset_index(drop=True)
+            df_c['來源檔名'] = str(f.name)
+            df2_all.append(df_c)
             
-            # 判斷是否為數字且小於 0
-            is_negative = isinstance(val, (int, float)) and val < 0
-            fmt = red_fmt if is_negative else black_fmt
-            
-            requests.append({
-                "repeatCell": {
-                    "range": {"sheetId": ws.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 7, "endColumnIndex": 8},
-                    "cell": {"userEnteredFormat": fmt},
-                    "fields": "userEnteredFormat.textFormat.foregroundColor"
-                }
-            })
-            
-        # 批次送出分色請求
-        if requests:
-            sh.batch_update({"requests": requests})
-            
-        return True
-    except Exception as e:
-        st.error(f"雲端分色失敗：{e}")
-        return False
+    df2 = pd.concat(df2_all, ignore_index=True)
+    for c in ['舉發總數', '違反管制規定', '其他違規']: df2[c] = pd.to_numeric(df2.get(c, 0), errors='coerce').fillna(0)
+    df2['大型車純違規'] = (df2['舉發總數'] - df2['違反管制規定'] - df2['其他違規']).clip(lower=0)
 
-# ==========================================
-# 3. Streamlit 介面
-# ==========================================
-st.title("🚓 龍潭分局交通智慧戰情室")
-st.markdown("---")
+    def get_unit(raw):
+        raw = str(raw).strip()
+        if '交通分隊' in raw: return '交通分隊' if '龍潭' in raw or not any(x in raw for x in ['楊梅','大溪','平鎮','中壢','八德','蘆竹','龜山','大園','桃園']) else None
+        if '交通組' in raw: return '交通組'
+        if '警備隊' in raw: return '警備隊'
+        for k in ['聖亭', '中興', '石門', '高平', '三和']: 
+            if k in raw: return k + '所'
+        if '龍潭派出所' in raw or raw in ['龍潭', '龍潭所']: return '龍潭所'
+        return None
 
-uploaded_files = st.file_uploader("📂 請上傳報表檔案", type=["xlsx", "xls"], accept_multiple_files=True)
+    def get_c(unit):
+        r = df1[df1.get('單位', pd.Series()).apply(get_unit) == unit]
+        return {cat: int(r[[c for c in df1.columns if any(k in str(c) for k in PROJECT_LAW_MAP.get(cat, []))]].sum().sum()) if not r.empty else 0 for cat in PROJECT_CATS[:5]}
 
-if uploaded_files:
-    if st.button("🚀 執行數據分析"):
-        target_files = [f for f in uploaded_files if any(k in f.name for k in ["重大", "重點"])]
-        if target_files:
-            process_major_module(target_files)
+    final_rows = []
+    for u, tgts in PROJECT_TARGETS.items():
+        d15 = get_c(u)
+        u_r = df2[df2['單位'].apply(get_unit) == u]
+        h_sum = int(u_r['大型車純違規'].sum()) if not u_r.empty else 0
+        
+        res = [u]
+        for i, cat in enumerate(PROJECT_CATS):
+            cnt = d15.get(cat, 0) if cat != "大型車違規" else h_sum
+            res.extend([cnt, tgts[i], f"{(cnt/tgts[i]*100):.1f}%" if tgts[i] > 0 else "0.0%"])
+        final_rows.append(res)
+
+    headers = ["單位"] + [f"{cat}_{x}" for cat in PROJECT_CATS for x in ["取締件數", "目標值", "達成率"]]
+    df_f = pd.DataFrame(final_rows, columns=headers)
+    
+    t_row = ["合計"]
+    for i in range(1, len(headers), 3):
+        cs, ts = df_f.iloc[:, i].sum(), df_f.iloc[:, i+1].sum()
+        t_row.extend([int(cs), int(ts), f"{(cs/ts*100):.1f}%" if ts > 0 else "0.0%"])
+    df_f = pd.concat([pd.DataFrame([t_row], columns=headers), df_f], ignore_index=True)
+    
+    st.write(f"📊 **{PROJECT_NAME} 統計結果：**")
+    st.dataframe(df_f, hide_index=True)
+
+    if GCP_CREDS:
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        ws = gc.open_by_url(GOOGLE_SHEET_URL).worksheet(PROJECT_NAME)
+        full_t = f"{PROJECT_NAME} (統計期間：{date_str})"
+        ws.clear()
+        ws.update(range_name='A1', values=[[full_t] + [""] * 18, [""] + [c for c in PROJECT_CATS for _ in range(3)], ["單位"] + ["取締件數", "目標值", "達成率"] * 6] + df_f.values.tolist())
+        
+        red_cells = []
+        for c_idx, cat in enumerate(PROJECT_CATS):
+            rate_col_idx = 3 + c_idx * 3
+            valid_rates = []
+            for row_idx, row in df_f.iterrows():
+                unit = row['單位']
+                if unit in ['合計', '警備隊', '交通組']: continue
+                target_val = row[f"{cat}_目標值"]
+                if target_val > 0:
+                    try:
+                        rate_val = float(str(row[f"{cat}_達成率"]).replace('%', ''))
+                        valid_rates.append((row_idx, rate_val))
+                    except: pass
+            
+            if valid_rates:
+                valid_rates.sort(key=lambda x: x[1])
+                threshold = valid_rates[1][1] if len(valid_rates) > 1 else valid_rates[0][1]
+                for row_idx, rate_val in valid_rates:
+                    if rate_val <= threshold and rate_val < 100.0:
+                        red_cells.append((3 + row_idx, rate_col_idx))
+
+        reqs = [
+            {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": 20, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": False}}}, "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"}},
+            {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
+            {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 16}}, {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True, "fontSize": 16}}]}]}], "fields": "userEnteredValue,textFormatRuns"}},
+            {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}}, "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"}}
+        ]
+        
+        red_format = {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True}}
+        for r, c in red_cells:
+            reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r, "endRowIndex": r+1, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": red_format}, "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"}})
+
+        ws.spreadsheet.batch_update({"requests": reqs})
+        st.write("✅ 強化專案雲端同步完成 (未達100%自動標示紅字)")
+
+# ----------------- [5. 交通事故] -----------------
+def process_accident(files):
+    """🚑 交通事故"""
+    meta = []
+    for f in files:
+        f.seek(0)
+        df_raw = pd.read_csv(f, header=None) if f.name.endswith('.csv') else pd.read_excel(f, header=None)
+        dates = re.findall(r'(\d{3})[./](\d{1,2})[./](\d{1,2})', str(df_raw.iloc[:5, :5].values))
+        if len(dates) >= 2:
+            df_raw[0] = df_raw[0].astype(str)
+            df_data = df_raw[df_raw[0].str.contains("所|總計|合計", na=False)].rename(columns={0: "Station", 5: "A1_Deaths", 9: "A2_Injuries"})
+            for c in ["A1_Deaths", "A2_Injuries"]: df_data[c] = pd.to_numeric(df_data[c].astype(str).str.replace(",", ""), errors='coerce').fillna(0)
+            df_data['Station_Short'] = df_data['Station'].str.replace('派出所', '所').str.replace('總計', '合計').str.strip()
+            meta.append({'df': df_data, 'year': int(dates[1][0]), 'start_day': int(dates[0][1])*100 + int(dates[0][2]), 
+                         'range': f"{int(dates[0][1]):02d}{int(dates[0][2]):02d}-{int(dates[1][1]):02d}{int(dates[1][2]):02d}", 'is_cumu': (int(dates[0][1]) == 1 and int(dates[0][2]) == 1)})
+                         
+    this_year = max(m['year'] for m in meta)
+    f_lst = sorted([f for f in meta if f['year'] < this_year], key=lambda x: x['year'])[-1]
+    f_cur = next(f for f in meta if f['year'] == this_year and f['is_cumu'])
+    period_files = sorted([f for f in meta if f['year'] == this_year and not f['is_cumu']], key=lambda x: x['start_day'])
+    f_prev, f_wk = period_files[0], period_files[1]
+
+    labels = {"wk": f_wk['range'], "prev": f_prev['range'], "cur": f_cur['range'], "lst": f_lst['range']}
+    stations = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所']
+    
+    def bld_tbl(c_name, is_a2=False):
+        m = pd.merge(f_wk['df'][['Station_Short', c_name]], f_prev['df'][['Station_Short', c_name]], on='Station_Short', suffixes=('_wk', '_prev'))
+        m = pd.merge(pd.merge(m, f_cur['df'][['Station_Short', c_name]].rename(columns={c_name: c_name+'_cur'}), on='Station_Short'), f_lst['df'][['Station_Short', c_name]].rename(columns={c_name: c_name+'_lst'}), on='Station_Short')
+        m = m[m['Station_Short'].isin(stations)].copy()
+        m['Station_Short'] = pd.Categorical(m['Station_Short'], categories=stations, ordered=True)
+        m = pd.concat([pd.DataFrame([dict(m.select_dtypes(include='number').sum().to_dict(), Station_Short='合計')]), m.sort_values('Station_Short')], ignore_index=True)
+        m['Diff'] = m[c_name+'_cur'] - m[c_name+'_lst']
+        if is_a2:
+            m['Pct'] = m.apply(lambda x: f"{(x['Diff']/x[c_name+'_lst']):.2%}" if x[c_name+'_lst'] != 0 else "0.00%", axis=1)
+            res = m[['Station_Short', c_name+'_wk', c_name+'_prev', c_name+'_cur', c_name+'_lst', 'Diff', 'Pct']]
+            res.columns = ['統計期間', f'本期({labels["wk"]})', f'前期({labels["prev"]})', f'本年累計({labels["cur"]})', f'去年累計({labels["lst"]})', '本年與去年同期比較', '增減比例']
         else:
-            st.warning("⚠️ 找不到名稱包含『重大』或『重點』的報表檔案。")
+            res = m[['Station_Short', c_name+'_wk', c_name+'_cur', c_name+'_lst', 'Diff']]
+            res.columns = ['統計期間', f'本期({labels["wk"]})', f'本年累計({labels["cur"]})', f'去年累計({labels["lst"]})', '本年與去年同期比較']
+        return res
+
+    a1_res, a2_res = bld_tbl('A1_Deaths'), bld_tbl('A2_Injuries', True)
+    
+    c1, c2 = st.columns(2)
+    c1.write("📊 **A1 死亡人數統計**"); c1.dataframe(a1_res, hide_index=True)
+    c2.write("📊 **A2 受傷人數統計**"); c2.dataframe(a2_res, hide_index=True)
+
+    if GCP_CREDS:
+        gc = gspread.service_account_from_dict(GCP_CREDS)
+        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+        RED_FMT = {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
+        BLACK_FMT = {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}}}
+
+        for ws_idx, df in zip([2, 3], [a1_res, a2_res]):
+            ws = sh.get_worksheet(ws_idx)
+            ws.batch_clear(["A2:G20"]) 
+            
+            reqs = []
+            for c_idx, c_name in enumerate(df.columns):
+                reqs.append(get_gsheet_rich_text_req(ws.id, 1, c_idx, c_name))
+            sh.batch_update({"requests": reqs})
+            
+            data_rows = [[int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else x for x in row] for row in df.values.tolist()]
+            ws.update(range_name='A3', values=data_rows)
+            
+            diff_col = 4 if ws_idx == 2 else 5
+            color_reqs = []
+            for r_idx, row_vals in enumerate(df.values):
+                val = row_vals[diff_col]
+                target_r = 2 + r_idx 
+                fmt = RED_FMT if isinstance(val, (int, float)) and val > 0 else BLACK_FMT
+                color_reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": target_r, "endRowIndex": target_r + 1, "startColumnIndex": diff_col, "endColumnIndex": diff_col + 1}, "cell": {"userEnteredFormat": fmt}, "fields": "userEnteredFormat.textFormat.foregroundColor"}})
+            sh.batch_update({"requests": color_reqs})
+            
+        st.write("✅ 交通事故雲端已更新")
+
+# ==========================================
+# 4. 戰情室首頁與排程器 (自動分流架構)
+# ==========================================
+with st.sidebar:
+    st.title("🚓 龍潭分局戰情室")
+    app_mode = st.selectbox("功能模組", ["🏠 智慧批次處理中心", "📂 PDF 轉 PPTX 工具"])
+
+if app_mode == "🏠 智慧批次處理中心":
+    st.header("📈 交通數據全自動批次處理中心")
+    st.info("💡 請將所需報表全選後，直接拖曳至下方區域即可自動分流處理。")
+    
+    uploads = st.file_uploader("📂 拖入所有報表檔案", type=["xlsx", "csv", "xls"], accept_multiple_files=True)
+    st.divider()
+    st.subheader("🚀 啟動全自動批次作業")
+    
+    if uploads:
+        file_hash = sum([f.size for f in uploads]) + len(uploads)
+        if st.session_state.get("last_processed_hash") == file_hash:
+            st.success("✅ 目前上傳的檔案皆已全自動處理完畢！")
+            st.info("💡 若要處理新報表，請重新整理頁面或拖入新檔案。")
+        else:
+            cat_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": []}
+            
+            for f in uploads:
+                name = f.name.lower()
+                if any(k in name for k in ["list", "地點", "科技"]): 
+                    cat_files["科技執法"].append(f)
+                elif any(k in name for k in ["stone", "超載"]): 
+                    cat_files["超載統計"].append(f)
+                elif any(k in name for k in ["重大", "重點"]): 
+                    cat_files["重大違規"].append(f)
+                elif any(k in name for k in ["強化", "專案", "砂石", "大貨", "r17", "法條", "自選匯出"]): 
+                    cat_files["強化專案"].append(f)
+                elif any(k in name for k in ["a1", "a2", "事故", "案件統計"]): 
+                    cat_files["交通事故"].append(f)
+            
+            try:
+                if cat_files["科技執法"]:
+                    with st.status(f"📸 自動處理【科技執法】({len(cat_files['科技執法'])} 份)...", expanded=True) as status:
+                        process_tech_enforcement(cat_files["科技執法"])
+                        status.update(label="✅ 科技執法處理完成！", state="complete")
+                        
+                if cat_files["超載統計"]:
+                    with st.status(f"🚛 自動處理【超載統計】({len(cat_files['超載統計'])} 份)...", expanded=True) as status:
+                        process_overload(cat_files["超載統計"])
+                        status.update(label="✅ 超載統計處理完成！", state="complete")
+                        
+                if cat_files["重大違規"]:
+                    with st.status(f"🚨 自動處理【重大交通違規】({len(cat_files['重大違規'])} 份)...", expanded=True) as status:
+                        process_major(cat_files["重大違規"])
+                        status.update(label="✅ 重大交通違規處理完成！", state="complete")
+                        
+                if cat_files["強化專案"]:
+                    with st.status(f"🔥 自動處理【強化交通安全專案】({len(cat_files['強化專案'])} 份)...", expanded=True) as status:
+                        process_project(cat_files["強化專案"])
+                        status.update(label="✅ 強化交通安全專案處理完成！", state="complete")
+                        
+                if cat_files["交通事故"]:
+                    with st.status(f"🚑 自動處理【交通事故】({len(cat_files['交通事故'])} 份)...", expanded=True) as status:
+                        process_accident(cat_files["交通事故"])
+                        status.update(label="✅ 交通事故處理完成！", state="complete")
+                
+                st.session_state["last_processed_hash"] = file_hash
+                st.balloons()
+                
+            except Exception as e:
+                st.error(f"⚠️ 批次處理發生例外錯誤：{e}")
+                st.write(traceback.format_exc())
+
+elif app_mode == "📂 PDF 轉 PPTX 工具":
+    st.header("📂 PDF 行政文書轉 PPTX 簡報")
+    pdf_file = st.file_uploader("上傳 PDF 檔案", type=["pdf"])
+    if pdf_file and st.button("🚀 開始轉換"):
+        with st.spinner("轉換中..."):
+            try:
+                images, prs = convert_from_bytes(pdf_file.read(), dpi=200), Presentation()
+                for img in images:
+                    slide = prs.slides.add_slide(prs.slide_layouts[6])
+                    img_byte_arr = io.BytesIO()
+                    img.save(img_byte_arr, format='PNG')
+                    slide.shapes.add_picture(io.BytesIO(img_byte_arr.getvalue()), 0, 0, width=prs.slide_width, height=prs.slide_height)
+                pptx_io = io.BytesIO()
+                prs.save(pptx_io)
+                st.success("✅ 轉換完成！")
+                st.download_button("📥 下載 PPTX", data=pptx_io.getvalue(), file_name=f"{pdf_file.name.replace('.pdf', '')}_轉換.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+            except Exception as e:
+                st.error(f"錯誤：{e}")
