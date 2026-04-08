@@ -63,6 +63,15 @@ def safe_str(val):
     if pd.isna(val) or val is None or str(val).strip().lower() == "nan": return ""
     return str(val)
 
+# --- 頁碼繪製函數 ---
+def draw_page_number(canvas, doc):
+    """在頁面底部中央繪製頁碼"""
+    page_num = canvas.getPageNumber()
+    text = f"- 第 {page_num} 頁 -"
+    canvas.setFont(_get_font(), 10)
+    # A4 寬度為 210mm，中央即為 105mm
+    canvas.drawCentredString(105 * mm, 10 * mm, text)
+
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets: return None
@@ -141,7 +150,9 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         data_cp.append([Paragraph(clean_text_only(r.get('編組')), style_cell), Paragraph(clean_text_only(r.get('無線電')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell), Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)])
     t3 = Table(data_cp, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
     t3.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')])); story.append(t3)
-    doc.build(story)
+    
+    # 建立 PDF 並加入頁碼
+    doc.build(story, onFirstPage=draw_page_number, onLaterPages=draw_page_number)
     return buf.getvalue()
 
 def generate_attendance_pdf(unit, project, time_str, briefing):
@@ -169,10 +180,12 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[18*mm, 18*mm, 10*mm] + [26*mm]*len(rows))
     t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('SPAN', (0,1), (3,1))]))
     story.append(t)
-    doc.build(story)
+    
+    # 建立 PDF 並加入頁碼
+    doc.build(story, onFirstPage=draw_page_number, onLaterPages=draw_page_number)
     return buf.getvalue()
 
-# 🌟 發信函數更新：讓附件檔名與規劃表標題一致
+# 發信函數
 def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
@@ -181,13 +194,11 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
         msg["Subject"] = f"{unit}執行{project}規劃與簽到表_{datetime.now().strftime('%m%d')}"
         msg.attach(MIMEText("附件為最新 PDF 規劃文件。", "plain", "utf-8"))
         
-        # 建立與標題一致的檔名
         plan_filename = f"{unit}執行{project}勤務規劃表.pdf"
         attendance_filename = f"{unit}執行{project}簽到表.pdf"
         
         p1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp)
         part1 = MIMEBase("application", "pdf"); part1.set_payload(p1); encoders.encode_base64(part1)
-        # 使用 quote 處理中文檔名編碼
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(plan_filename)}"); msg.attach(part1)
         
         p2 = generate_attendance_pdf(unit, project, time_str, briefing)
@@ -302,5 +313,5 @@ if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True
     with st.spinner("處理中..."):
         if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp):
             ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
-            if ok: st.success("✅ 同步與發信成功！附件檔名已同步更新。")
+            if ok: st.success("✅ 同步與發信成功！附件檔名與頁碼已同步更新。")
             else: st.error(f"❌ 發信失敗: {mail_err}")
