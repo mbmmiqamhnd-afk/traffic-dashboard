@@ -184,7 +184,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
     
-    # --- 肆、 第一階段 (精準配置：單位容納3字，組別容納3字) ---
+    # --- 肆、 第一階段 (精準配置：單位 12%、組別 10%) ---
     story.append(Paragraph("<b>肆、【第一階段】機動攔查任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text)) 
     story.append(Spacer(1, 1*mm))
@@ -192,9 +192,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     for _, r in df_ptl.iterrows():
         data_ptl.append([Paragraph(clean(r.get('組別')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell_left), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('攜行裝備')), style_cell_left), Paragraph(clean(r.get('巡邏與攔查責任區')), style_cell_left)])
     
-    # 組別(0.08)與單位(0.08)完美對稱，剛好放入 3 個中文字。
-    # 剩下的空間大舉保留給服勤人員(0.24)與任務分工(0.24)
-    t_ptl = Table(data_ptl, colWidths=[page_width*0.08, page_width*0.08, page_width*0.24, page_width*0.24, page_width*0.14, page_width*0.22])
+    # 單位分配 12% (保證 3 字不換行)，組別 10% (保證 3 字不換行)。
+    t_ptl = Table(data_ptl, colWidths=[page_width*0.10, page_width*0.12, page_width*0.21, page_width*0.22, page_width*0.15, page_width*0.20])
     t_ptl.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_ptl)
 
@@ -206,8 +205,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     for _, r in df_cp.iterrows():
         data_cp.append([Paragraph(clean(r.get('組別')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell_left), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('臨檢目標場所')), style_cell_left)])
     
-    # 同理調整，讓各欄位獲得最大發展空間
-    t_cp = Table(data_cp, colWidths=[page_width*0.08, page_width*0.08, page_width*0.27, page_width*0.27, page_width*0.3])
+    t_cp = Table(data_cp, colWidths=[page_width*0.10, page_width*0.12, page_width*0.24, page_width*0.24, page_width*0.30])
     t_cp.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cp)
     
@@ -330,7 +328,7 @@ with tab2:
 
 st.markdown("---")
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats, cur_ptl_focus, cur_cp_focus)
-st.download_button("📝 下載 14pt 規劃表 (組別單位均3字)", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
+st.download_button("📝 下載 14pt 規劃表 (單位保證3字)", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
     if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats, cur_ptl_focus, cur_cp_focus):
