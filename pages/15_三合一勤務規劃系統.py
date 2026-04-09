@@ -209,7 +209,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
 
 
 # =====================================================================
-# --- 專案簽到表 (更新：縮減表格行高以容納於一頁) ---
+# --- 專案簽到表 (更新：行高適度放大至完美填滿單頁高度) ---
 # =====================================================================
 def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
@@ -258,8 +258,8 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     for l, r in rows: 
         table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
         
-    # ⚠️ 這裡將每列高度從 25*mm 縮減為 18*mm，保證表格不會被擠到第二頁
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[12*mm] + [18*mm]*len(rows))
+    # ⚠️ 這裡將每列高度從 18*mm 放大為 24*mm，完美向下延伸且不換頁
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[12*mm] + [24*mm]*len(rows))
     t.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,-1), font), 
         ('GRID', (0,0), (-1,-1), 0.5, colors.black), 
@@ -366,7 +366,7 @@ pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, r
 col_dl1.download_button("📝 下載勤務規劃表", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
 
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, current_stats)
-col_dl2.download_button("🖋️ 下載簽到表 (已調整行高至一頁)", data=pdf_attendance, file_name=f"{u}簽到表.pdf", use_container_width=True)
+col_dl2.download_button("🖋️ 下載簽到表 (已放大行高至頁尾)", data=pdf_attendance, file_name=f"{u}簽到表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
     if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats, cur_ptl_focus, cur_cp_focus):
