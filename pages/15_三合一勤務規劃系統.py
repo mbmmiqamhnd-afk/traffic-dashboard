@@ -20,7 +20,7 @@ from reportlab.lib.units import mm
 import re
 
 # --- 1. 頁面設定 ---
-st.set_page_config(page_title="三合一專案勤務規劃系統", layout="wide", page_icon="🚓")
+st.set_page_config(page_title="專案勤務規劃系統", layout="wide", page_icon="🚓")
 
 # --- 常數與設定 ---
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
@@ -126,7 +126,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         return True
     except: return False
 
-# --- 3. PDF 生成功能 ---
+# --- 3. 勤務規劃表 PDF 生成功能 ---
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     font = _get_font()
     buf = io.BytesIO()
@@ -207,7 +207,10 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
-# --- 專案簽到表 (更新：單位順序與排列) ---
+
+# =====================================================================
+# --- 專案簽到表 (⚠️ 本次全面重構，精準對齊上傳 PDF) ---
+# =====================================================================
 def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
     buf = io.BytesIO()
@@ -215,46 +218,56 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     page_width = A4[0] - 30*mm
     story = []
     
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=26, alignment=1, spaceAfter=12)
-    style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm)
+    # 段落樣式：補足 leading 避免上下文字擠在一起
+    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=12)
+    style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=22, spaceAfter=1*mm)
+    style_sig = ParagraphStyle('Sig', fontName=font, fontSize=14, leading=22)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=20, alignment=0)
     
+    # 標題
     story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
     
+    # 時間與地點動態擷取，完全依照 PDF 的緊湊格式 (無多餘空格)
     date_part = time_str.split(' ')[0] if ' ' in time_str else "115年4月11日"
     story.append(Paragraph(f"時間:{date_part}{stats['b_time']}", style_info))
     story.append(Paragraph(f"地點:{stats['b_loc']}召開", style_info))
-    story.append(Spacer(1, 3*mm))
+    story.append(Spacer(1, 6*mm))
     
+    # ⚠️ 修正重點 1：長官簽章區「解除格線」，改為獨立的無框表格
+    sig_data = [
+        [Paragraph("分局長:", style_sig), Paragraph("上級督導:", style_sig)],
+        [Paragraph("副分局長:", style_sig), ""]
+    ]
+    t_sig = Table(sig_data, colWidths=[page_width*0.5, page_width*0.5])
+    t_sig.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    story.append(t_sig)
+    story.append(Spacer(1, 4*mm))
+    
+    # ⚠️ 修正重點 2：精準還原 5 列單位的排列順序
     table_data = [
-        [Paragraph("分局長:", style_cell_left), "", Paragraph("上級督導:", style_cell_left), ""],
-        [Paragraph("副分局長:", style_cell_left), "", "", ""],
         [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]
     ]
-    
-    # 依照指示：派出所全部在右側，左側依次為交通組、督察組、行政組、保安民防組、勤務指揮中心、偵查隊
     rows = [
-        ("交通組", "聖亭派出所"),
-        ("督察組", "龍潭派出所"),
-        ("行政組", "中興派出所"),
-        ("保安民防組", "石門派出所"),
-        ("勤務指揮中心", "高平派出所"),
-        ("偵查隊", "三和派出所"),
-        ("", "龍潭交通分隊")
+        ("交通組", "中興派出所"),
+        ("勤務指揮中心", "石門派出所"),
+        ("督察組", "高平派出所"),
+        ("聖亭派出所", "三和派出所"),
+        ("龍潭派出所", "龍潭交通分隊")
     ]
+    
     for l, r in rows: 
         table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
         
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[18*mm, 18*mm, 12*mm] + [25*mm]*len(rows))
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[12*mm] + [25*mm]*len(rows))
     t.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,-1), font), 
         ('GRID', (0,0), (-1,-1), 0.5, colors.black), 
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('BACKGROUND', (0,2), (3,2), colors.whitesmoke)
+        ('BACKGROUND', (0,0), (3,0), colors.whitesmoke) # 標題列加一點底色更美觀
     ]))
     story.append(t)
     
+    # 頁碼處理
     def add_footer(canvas, doc):
         canvas.saveState()
         canvas.setFont(font, 12)
@@ -264,6 +277,7 @@ def generate_attendance_pdf(unit, project, time_str, stats):
 
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
+
 
 def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     try:
@@ -293,6 +307,7 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 
 # --- Streamlit 介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
+# 已將預設值更新為 0411 專案參數
 default_stats = {'cmd': 6, 'ptl': 31, 'inv': 2, 'civ': 0, 'b_time': '18時30分至19時00分', 'b_loc': '分局二樓會議室', 'loc_1': 8, 'loc_2': 6, 'loc_3': 0}
 p_ptl_focus, p_cp_focus = DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS
 
@@ -310,14 +325,14 @@ else:
     ed_cp = df_cp.drop(columns=["組別"]) if df_cp is not None and not df_cp.empty and "組別" in df_cp.columns else (df_cp if df_cp is not None and not df_cp.empty else DEFAULT_CHECKPOINT.copy())
     if ed_cp is not None and "職別/姓名" in ed_cp.columns: ed_cp = ed_cp.rename(columns={"職別/姓名": "服勤人員"})
 
-st.title("🚓 三合一專案勤務規劃系統")
+st.title("🚓 專案勤務規劃系統")
 c1, c2 = st.columns(2)
 p_time = c2.text_input("勤務時間", t)
 date_match = re.search(r"(\d+)月(\d+)日", p_time)
 if date_match:
     m, d_str = date_match.group(1).zfill(2), date_match.group(2).zfill(2)
     p = re.sub(r"^\d+", f"{m}{d_str}", p)
-p_name = c1.text_input("專案名稱", p)
+p_name = c1.text_input("專案名稱 (注意雲端快取)", p)
 
 st.subheader("貳、 警力統計及地點統計")
 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
@@ -352,7 +367,7 @@ pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, r
 col_dl1.download_button("📝 下載勤務規劃表", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
 
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, current_stats)
-col_dl2.download_button("🖋️ 下載簽到表 (已更新順序)", data=pdf_attendance, file_name=f"{u}簽到表.pdf", use_container_width=True)
+col_dl2.download_button("🖋️ 下載簽到表 (已修正簽核區無框)", data=pdf_attendance, file_name=f"{u}簽到表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
     if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats, cur_ptl_focus, cur_cp_focus):
