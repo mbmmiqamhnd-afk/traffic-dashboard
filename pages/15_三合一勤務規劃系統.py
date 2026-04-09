@@ -143,7 +143,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     page_width = A4[0] - 20*mm
     story = []
     
-    # 字體大小設定：標題 18pt，其餘全為 14pt
     style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8)
     style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, alignment=0, spaceAfter=2*mm, spaceBefore=4*mm)
     style_text = ParagraphStyle('Text', fontName=font, fontSize=14, leading=20, alignment=0)
@@ -152,7 +151,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     def clean(t): return safe_str(t).replace("\n", "<br/>")
 
-    # 標題與壹
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", style_title))
     story.append(Paragraph("<b>壹、 勤務基本資料</b>", style_section))
     date_str = clean(time_str.split(" ")[0] if " " in time_str else "115年4月10日")
@@ -162,7 +160,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_basic.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_basic)
     
-    # 貳
     story.append(Paragraph("<b>貳、 警力統計及地點統計</b>", style_section))
     data_stats = [[Paragraph("<b>單位</b>", style_cell), Paragraph("<b>督導組</b>", style_cell), Paragraph("<b>攔臨組</b>", style_cell), Paragraph("<b>偵訊組</b>", style_cell), Paragraph("<b>小計</b>", style_cell), Paragraph("<b>民力</b>", style_cell), Paragraph("<b>總計</b>", style_cell)], [Paragraph("龍潭分局", style_cell), Paragraph(str(stats['cmd']), style_cell), Paragraph(str(stats['ptl']), style_cell), Paragraph(str(stats['inv']), style_cell), Paragraph(str(stats['cmd']+stats['ptl']+stats['inv']), style_cell), Paragraph(str(stats['civ']), style_cell), Paragraph(str(stats['total']), style_cell)]]
     t_stats = Table(data_stats, colWidths=[page_width*0.16, page_width*0.14, page_width*0.14, page_width*0.14, page_width*0.14, page_width*0.14, page_width*0.14])
@@ -175,7 +172,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_loc.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_loc)
 
-    # 參
     story.append(Paragraph("<b>參、 督導及其他任務編組表 (19:00 - 23:00)</b>", style_section))
     data_cmd = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["項目", "通訊代號", "任務目標", "負責人員", "共同人員"]]]
     for _, r in df_cmd.iterrows():
@@ -184,7 +180,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
     
-    # --- 肆、 第一階段 (精準配置：單位 12%、組別 10%) ---
+    # --- 肆、 第一階段 ---
     story.append(Paragraph("<b>肆、【第一階段】機動攔查任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text)) 
     story.append(Spacer(1, 1*mm))
@@ -192,8 +188,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     for _, r in df_ptl.iterrows():
         data_ptl.append([Paragraph(clean(r.get('組別')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell_left), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('攜行裝備')), style_cell_left), Paragraph(clean(r.get('巡邏與攔查責任區')), style_cell_left)])
     
-    # 單位分配 12% (保證 3 字不換行)，組別 10% (保證 3 字不換行)。
-    t_ptl = Table(data_ptl, colWidths=[page_width*0.10, page_width*0.12, page_width*0.21, page_width*0.22, page_width*0.15, page_width*0.20])
+    # 組別調至 0.11 (確保能完整容納"第1巡邏組")，單位維持 0.12，服勤人員0.20，分工0.21
+    t_ptl = Table(data_ptl, colWidths=[page_width*0.11, page_width*0.12, page_width*0.20, page_width*0.21, page_width*0.16, page_width*0.20])
     t_ptl.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_ptl)
 
@@ -205,7 +201,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     for _, r in df_cp.iterrows():
         data_cp.append([Paragraph(clean(r.get('組別')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell_left), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('臨檢目標場所')), style_cell_left)])
     
-    t_cp = Table(data_cp, colWidths=[page_width*0.10, page_width*0.12, page_width*0.24, page_width*0.24, page_width*0.30])
+    # 組別調至 0.11 (確保能完整容納"第1臨檢組")，單位 0.12，服勤人員 0.24，分工 0.24
+    t_cp = Table(data_cp, colWidths=[page_width*0.11, page_width*0.12, page_width*0.24, page_width*0.24, page_width*0.29])
     t_cp.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cp)
     
@@ -321,14 +318,16 @@ st.subheader("勤務執行編組 (兩階段)")
 tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】擴大臨檢"])
 with tab1:
     res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor").dropna(how='all').fillna("").reset_index(drop=True)
-    if not res_ptl.empty: res_ptl.insert(0, "組別", [f"第{i+1}組" for i in range(len(res_ptl))])
+    # 更新：自動產生「第X巡邏組」
+    if not res_ptl.empty: res_ptl.insert(0, "組別", [f"第{i+1}巡邏組" for i in range(len(res_ptl))])
 with tab2:
     res_cp = st.data_editor(ed_cp, num_rows="dynamic", use_container_width=True, key="cp_editor").dropna(how='all').fillna("").reset_index(drop=True)
-    if not res_cp.empty: res_cp.insert(0, "組別", [f"第{i+1}組" for i in range(len(res_cp))])
+    # 更新：自動產生「第X臨檢組」
+    if not res_cp.empty: res_cp.insert(0, "組別", [f"第{i+1}臨檢組" for i in range(len(res_cp))])
 
 st.markdown("---")
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats, cur_ptl_focus, cur_cp_focus)
-st.download_button("📝 下載 14pt 規劃表 (單位保證3字)", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
+st.download_button("📝 下載勤務規劃表", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
     if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats, cur_ptl_focus, cur_cp_focus):
