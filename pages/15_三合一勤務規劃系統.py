@@ -209,7 +209,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
 
 
 # =====================================================================
-# --- 專案簽到表 (⚠️ 本次全面重構，精準對齊上傳 PDF) ---
+# --- 專案簽到表 (更新：單位分佈，左組室/右派出所) ---
 # =====================================================================
 def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
@@ -218,22 +218,19 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     page_width = A4[0] - 30*mm
     story = []
     
-    # 段落樣式：補足 leading 避免上下文字擠在一起
     style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=12)
     style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=22, spaceAfter=1*mm)
     style_sig = ParagraphStyle('Sig', fontName=font, fontSize=14, leading=22)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1)
     
-    # 標題
     story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
     
-    # 時間與地點動態擷取，完全依照 PDF 的緊湊格式 (無多餘空格)
     date_part = time_str.split(' ')[0] if ' ' in time_str else "115年4月11日"
     story.append(Paragraph(f"時間:{date_part}{stats['b_time']}", style_info))
     story.append(Paragraph(f"地點:{stats['b_loc']}召開", style_info))
     story.append(Spacer(1, 6*mm))
     
-    # ⚠️ 修正重點 1：長官簽章區「解除格線」，改為獨立的無框表格
+    # 頂部簽核區 (無格線)
     sig_data = [
         [Paragraph("分局長:", style_sig), Paragraph("上級督導:", style_sig)],
         [Paragraph("副分局長:", style_sig), ""]
@@ -243,16 +240,20 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     story.append(t_sig)
     story.append(Spacer(1, 4*mm))
     
-    # ⚠️ 修正重點 2：精準還原 5 列單位的排列順序
+    # 簽到單位區
     table_data = [
         [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]
     ]
+    
+    # 依照最新指示：左邊依序為各組室與隊，右邊全為派出所與分隊
     rows = [
-        ("交通組", "中興派出所"),
-        ("勤務指揮中心", "石門派出所"),
-        ("督察組", "高平派出所"),
-        ("聖亭派出所", "三和派出所"),
-        ("龍潭派出所", "龍潭交通分隊")
+        ("交通組", "聖亭派出所"),
+        ("督察組", "龍潭派出所"),
+        ("行政組", "中興派出所"),
+        ("保安民防組", "石門派出所"),
+        ("勤務指揮中心", "高平派出所"),
+        ("偵查隊", "三和派出所"),
+        ("", "龍潭交通分隊")
     ]
     
     for l, r in rows: 
@@ -263,11 +264,10 @@ def generate_attendance_pdf(unit, project, time_str, stats):
         ('FONTNAME', (0,0), (-1,-1), font), 
         ('GRID', (0,0), (-1,-1), 0.5, colors.black), 
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('BACKGROUND', (0,0), (3,0), colors.whitesmoke) # 標題列加一點底色更美觀
+        ('BACKGROUND', (0,0), (3,0), colors.whitesmoke)
     ]))
     story.append(t)
     
-    # 頁碼處理
     def add_footer(canvas, doc):
         canvas.saveState()
         canvas.setFont(font, 12)
@@ -307,7 +307,6 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 
 # --- Streamlit 介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
-# 已將預設值更新為 0411 專案參數
 default_stats = {'cmd': 6, 'ptl': 31, 'inv': 2, 'civ': 0, 'b_time': '18時30分至19時00分', 'b_loc': '分局二樓會議室', 'loc_1': 8, 'loc_2': 6, 'loc_3': 0}
 p_ptl_focus, p_cp_focus = DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS
 
@@ -367,7 +366,7 @@ pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, r
 col_dl1.download_button("📝 下載勤務規劃表", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
 
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, current_stats)
-col_dl2.download_button("🖋️ 下載簽到表 (已修正簽核區無框)", data=pdf_attendance, file_name=f"{u}簽到表.pdf", use_container_width=True)
+col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_name=f"{u}簽到表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
     if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats, cur_ptl_focus, cur_cp_focus):
