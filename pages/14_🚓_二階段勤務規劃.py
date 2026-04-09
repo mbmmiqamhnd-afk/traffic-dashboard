@@ -37,6 +37,8 @@ DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年4月8日20至24時"
 DEFAULT_PROJ    = "0408全國同步擴大取締酒後駕車與防制危險駕車及噪音車輛專案勤務"
 DEFAULT_BRIEF   = "20時30分於分局二樓會議室召開" 
+DEFAULT_P1_DESC = "第一階段：21時至22時30分，機動巡邏"
+DEFAULT_P2_DESC = "第二階段：22時30分至24時，定點路檢及機動攔檢"
 
 # --- 2. 輔助函數 ---
 def _get_font():
@@ -63,13 +65,10 @@ def safe_str(val):
     if pd.isna(val) or val is None or str(val).strip().lower() == "nan": return ""
     return str(val)
 
-# --- 頁碼繪製函數 ---
 def draw_page_number(canvas, doc):
-    """在頁面底部中央繪製頁碼"""
     page_num = canvas.getPageNumber()
     text = f"- 第 {page_num} 頁 -"
     canvas.setFont(_get_font(), 10)
-    # A4 寬度為 210mm，中央即為 105mm
     canvas.drawCentredString(105 * mm, 10 * mm, text)
 
 @st.cache_resource
@@ -92,13 +91,21 @@ def load_data():
                 pd.DataFrame(sh.worksheet(WS_MAP["cp"]).get_all_records()).fillna(""), None)
     except Exception as e: return None, None, None, None, str(e)
 
-def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
+def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc):
     try:
         client = get_client()
         sh = client.open_by_key(SHEET_ID)
         ws_set = sh.worksheet(WS_MAP["set"])
         ws_set.clear()
-        ws_set.update([["Key", "Value"], ["unit_name", unit], ["plan_full_time", time_str], ["project_name", project], ["briefing_info", briefing]])
+        ws_set.update([
+            ["Key", "Value"], 
+            ["unit_name", unit], 
+            ["plan_full_time", time_str], 
+            ["project_name", project], 
+            ["briefing_info", briefing],
+            ["phase1_desc", p1_desc],
+            ["phase2_desc", p2_desc]
+        ])
         for ws_name, df in [(WS_MAP["cmd"], df_cmd), (WS_MAP["ptl"], df_ptl), (WS_MAP["cp"], df_cp)]:
             ws = sh.worksheet(ws_name)
             ws.clear()
@@ -110,7 +117,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp):
     except: return False
 
 # --- PDF 相關函數 ---
-def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
+def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc):
     font = _get_font()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
@@ -129,6 +136,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     def clean(t): return safe_str(t).replace("\n", "<br/>").replace("、", "<br/>")
     def clean_text_only(t): return safe_str(t).replace("\n", "<br/>")
     
+    # 指揮組
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -136,22 +144,27 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.12, page_width*0.28, page_width*0.45])
     t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('SPAN',(0,0),(-1,0)),('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t1)
+    
     story.append(Spacer(1, 6*mm)); story.append(Paragraph("<b>📢 勤前教育：</b>", style_middle_block)); story.append(Paragraph(f"{clean_text_only(briefing)}", style_middle_block)); story.append(Spacer(1, 6*mm))
-    story.append(Paragraph("<b>第一階段：21時至22時30分，機動巡邏</b>", style_middle_block))
+    
+    # 第一階段
+    story.append(Paragraph(f"<b>{p1_desc}</b>", style_middle_block))
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_ptl.iterrows():
         data_ptl.append([Paragraph(clean_text_only(r.get('編組')), style_cell), Paragraph(clean_text_only(r.get('無線電')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell), Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)])
     t2 = Table(data_ptl, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')])); story.append(t2)
+    
     story.append(Spacer(1, 8*mm))
-    story.append(Paragraph("<b>第二階段：22時30分至24時，定點路檢及機動攔檢</b>", style_middle_block))
+    
+    # 第二階段
+    story.append(Paragraph(f"<b>{p2_desc}</b>", style_middle_block))
     data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_cp.iterrows():
         data_cp.append([Paragraph(clean_text_only(r.get('編組')), style_cell), Paragraph(clean_text_only(r.get('無線電')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell), Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)])
     t3 = Table(data_cp, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
     t3.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')])); story.append(t3)
     
-    # 建立 PDF 並加入頁碼
     doc.build(story, onFirstPage=draw_page_number, onLaterPages=draw_page_number)
     return buf.getvalue()
 
@@ -180,13 +193,10 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[18*mm, 18*mm, 10*mm] + [26*mm]*len(rows))
     t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('SPAN', (0,1), (3,1))]))
     story.append(t)
-    
-    # 建立 PDF 並加入頁碼
     doc.build(story, onFirstPage=draw_page_number, onLaterPages=draw_page_number)
     return buf.getvalue()
 
-# 發信函數
-def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
+def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
@@ -197,7 +207,7 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp):
         plan_filename = f"{unit}執行{project}勤務規劃表.pdf"
         attendance_filename = f"{unit}執行{project}簽到表.pdf"
         
-        p1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp)
+        p1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc)
         part1 = MIMEBase("application", "pdf"); part1.set_payload(p1); encoders.encode_base64(part1)
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(plan_filename)}"); msg.attach(part1)
         
@@ -278,23 +288,33 @@ u = d.get("unit_name", DEFAULT_UNIT)
 t = d.get("plan_full_time", DEFAULT_TIME)
 p = d.get("project_name", DEFAULT_PROJ)
 b = d.get("briefing_info", DEFAULT_BRIEF)
+p1_d = d.get("phase1_desc", DEFAULT_P1_DESC)
+p2_d = d.get("phase2_desc", DEFAULT_P2_DESC)
 
 st.title("🚓 二階段勤務規劃系統")
 c1, c2 = st.columns(2)
 p_name = c1.text_input("專案名稱", p)
 p_time = c2.text_input("勤務時間", t)
 
+# --- 階段說明手動更改區 ---
+st.subheader("⚙️ 階段標題與說明")
+cc1, cc2 = st.columns(2)
+phase1_desc = cc1.text_input("第一階段標題說明", p1_d)
+phase2_desc = cc2.text_input("第二階段標題說明", p2_d)
+
 st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(df_cmd if not df_cmd.empty else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"]), num_rows="dynamic", use_container_width=True)
 b_info = st.text_area("📢 勤前教育", b, height=70)
 
 st.subheader("2. 勤務編組")
-tab1, tab2 = st.tabs(["📍 第一階段：機動巡邏", "🚧 第二階段：定點路檢"])
+tab1, tab2 = st.tabs(["📍 第一階段", "🚧 第二階段"])
 
 with tab1:
+    st.info(f"當前標題：{phase1_desc}")
     res_ptl = auto_assign_radio_code(st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor"))
 
 with tab2:
+    st.info(f"當前標題：{phase2_desc}")
     if st.button("🔄 一鍵自動帶入第一階段人員"):
         st.session_state["synced_cp"] = sync_personnel_data(res_ptl, df_cp)
         st.rerun()
@@ -302,7 +322,8 @@ with tab2:
     res_cp = auto_assign_radio_code(st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor"))
 
 st.markdown("---")
-pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
+# 生成 PDF 時帶入手動修改後的階段說明
+pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
 
 col_dl1, col_dl2 = st.columns(2)
@@ -311,7 +332,7 @@ col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_nam
 
 if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True):
     with st.spinner("處理中..."):
-        if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp):
-            ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp)
-            if ok: st.success("✅ 同步與發信成功！附件檔名與頁碼已同步更新。")
+        if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc):
+            ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
+            if ok: st.success("✅ 同步與發信成功！標題說明已同步儲存。")
             else: st.error(f"❌ 發信失敗: {mail_err}")
