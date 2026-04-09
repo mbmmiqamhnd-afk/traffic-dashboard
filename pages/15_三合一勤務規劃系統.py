@@ -27,8 +27,8 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
-DEFAULT_TIME    = "115年4月10日 19時至23時"
-DEFAULT_PROJ    = "0410取締酒後駕車暨監警環聯合稽查及擴大臨檢 三合一專案"
+DEFAULT_TIME    = "115年4月11日 19時至23時"
+DEFAULT_PROJ    = "0411取締酒後駕車與防制危險駕車及噪音車輛專案"
 DEFAULT_BRIEF   = "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，落實「人犯戒護安全、案件程序安全、執法者及民眾安全」。\n二、 臨檢合法性：警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所，進行臨檢前應對當事人告以實施事由，便衣人員並應出示證件（依《警察職權行使法》第6條）。\n三、 攔停規範：機動攔檢對於已發生危害或易生危害之交通工具，得予以攔停；若有異常舉動而合理懷疑其將有危害行為時，得要求接受酒精濃度測試（依《警察職權行使法》第8條）。\n四、 全程蒐證：執行各項干涉、取締、處理糾紛及爭議性勤務（含噪音車引導與酒測），務必全程連續錄音或錄影。\n五、 異議處理：民眾對警察行使職權表示異議，認為無理由者得繼續執行，但經請求時應將異議之理由製作紀錄交付之（依《警察職權行使法》第29條）。"
 
 DEFAULT_PTL_FOCUS = "取消定點路檢，採取全面機動巡邏。針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。\n（註：本階段機動攔查共6組警力。21時30分起，第1至第4組轉入第二階段執行擴大臨檢；第5、第6組全程獨留於路面，持續執行機動攔查至23時。）"
@@ -69,15 +69,6 @@ def _get_font():
             pdfmetrics.registerFont(TTFont(fname, p))
             return fname
     return "Helvetica"
-
-def parse_meeting_time(time_str):
-    try:
-        match = re.search(r"(\d+)至", time_str)
-        if match:
-            start_hour = int(match.group(1))
-            return f"{start_hour}時30分至{start_hour+1}時00分"
-    except: pass
-    return "19時30分至20時00分"
 
 def safe_str(val):
     if pd.isna(val) or val is None or str(val).strip().lower() == "nan": return ""
@@ -135,7 +126,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         return True
     except: return False
 
-# --- 3. PDF 生成功能 ---
+# --- 3. PDF 生成功能 (維持前次完美的 14pt 佈局) ---
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     font = _get_font()
     buf = io.BytesIO()
@@ -143,7 +134,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     page_width = A4[0] - 20*mm
     story = []
     
-    # 修正重點：為字體樣式補上充裕的 leading (行距)，防止多行時字體擠在一起
     style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=8)
     style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, alignment=0, spaceAfter=2*mm, spaceBefore=4*mm)
     style_text = ParagraphStyle('Text', fontName=font, fontSize=14, leading=20, alignment=0)
@@ -154,7 +144,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
 
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", style_title))
     story.append(Paragraph("<b>壹、 勤務基本資料</b>", style_section))
-    date_str = clean(time_str.split(" ")[0] if " " in time_str else "115年4月10日")
+    date_str = clean(time_str.split(" ")[0] if " " in time_str else "115年4月11日")
     time_str_only = clean(time_str.split(" ")[1] if " " in time_str else "19時至23時")
     data_basic = [[Paragraph("<b>實施日期</b>", style_cell), Paragraph("<b>勤務時間</b>", style_cell), Paragraph("<b>指揮官</b>", style_cell), Paragraph("<b>勤務編組</b>", style_cell), Paragraph("<b>聯合稽查站地點</b>", style_cell)], [Paragraph(f"<nobr>{date_str}</nobr>", style_cell), Paragraph(f"<nobr>{time_str_only}</nobr>", style_cell), Paragraph("分局長 施宇峰", style_cell), Paragraph("如各階段任務編組表", style_cell), Paragraph("龍潭區警政聯合辦公大樓廣場", style_cell)]]
     t_basic = Table(data_basic, colWidths=[page_width*0.18, page_width*0.2, page_width*0.18, page_width*0.18, page_width*0.26])
@@ -217,31 +207,65 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
-# --- 簽到表 ---
-def generate_attendance_pdf(unit, project, time_str, briefing):
+# --- 全新重構的：專案簽到表 ---
+def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
     page_width = A4[0] - 30*mm
     story = []
     
-    # 修正重點：簽到表的標題也加上 leading=24 確保換行不重疊
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=24, alignment=1, spaceAfter=12)
-    style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=20)
+    # 加入了足夠的 leading 避免上下文字擠壓
+    style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=26, alignment=1, spaceAfter=12)
+    style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1)
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=20, alignment=0)
     
+    # 標題
     story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
-    story.append(Paragraph(f"時間：{time_str.split(' ')[0]} {parse_meeting_time(time_str)}", style_info))
+    
+    # 時間與地點動態擷取，格式完整對齊您的範本
+    date_part = time_str.split(' ')[0] if ' ' in time_str else "115年4月11日"
+    story.append(Paragraph(f"時間:{date_part}{stats['b_time']}", style_info))
+    story.append(Paragraph(f"地點:{stats['b_loc']}召開", style_info))
     story.append(Spacer(1, 3*mm))
     
-    table_data = [[Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
-    rows = [("交通組", "聖亭派出所"), ("行政組", "龍潭派出所"), ("督察組", "中興派出所"), ("保安民防組", "石門派出所"), ("偵查隊", "高平派出所"), ("", "龍潭交通分隊")]
-    for l, r in rows: table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
+    # 建構長官簽章區與單位簽到區
+    table_data = [
+        [Paragraph("分局長:", style_cell_left), "", Paragraph("上級督導:", style_cell_left), ""],
+        [Paragraph("副分局長:", style_cell_left), "", "", ""],
+        [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]
+    ]
     
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[10*mm] + [25*mm]*len(rows))
-    t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+    # 完全比照您提供的單位順序佈局
+    rows = [
+        ("交通組", "中興派出所"),
+        ("勤務指揮中心", "石門派出所"),
+        ("督察組", "高平派出所"),
+        ("聖亭派出所", "三和派出所"),
+        ("龍潭派出所", "龍潭交通分隊")
+    ]
+    for l, r in rows: 
+        table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
+        
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[18*mm, 18*mm, 12*mm] + [25*mm]*len(rows))
+    t.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), font), 
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black), 
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BACKGROUND', (0,2), (3,2), colors.whitesmoke) # 讓欄位標題稍微明顯
+    ]))
     story.append(t)
-    doc.build(story)
+    
+    # 頁首頁尾格式對齊
+    def add_footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 12)
+        page_num_text = f"-第{canvas.getPageNumber()}頁-"
+        canvas.drawCentredString(A4[0]/2.0, 10*mm, page_num_text)
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
 def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
@@ -257,7 +281,9 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
         encoders.encode_base64(part1)
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(f'{unit}規劃表.pdf')}")
         msg.attach(part1)
-        pdf2 = generate_attendance_pdf(unit, project, time_str, briefing)
+        
+        # 修正此處的呼叫，傳入 stats
+        pdf2 = generate_attendance_pdf(unit, project, time_str, stats)
         part2 = MIMEBase("application", "pdf")
         part2.set_payload(pdf2)
         encoders.encode_base64(part2)
@@ -271,7 +297,8 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 
 # --- Streamlit 介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
-default_stats = {'cmd': 6, 'ptl': 31, 'inv': 2, 'civ': 0, 'b_time': '19時30分', 'b_loc': '本分局2樓會議室', 'loc_1': 8, 'loc_2': 6, 'loc_3': 0}
+# 更新了預設時間以符合您所提供的報表格式需求
+default_stats = {'cmd': 6, 'ptl': 31, 'inv': 2, 'civ': 0, 'b_time': '18時30分至19時00分', 'b_loc': '分局二樓會議室', 'loc_1': 8, 'loc_2': 6, 'loc_3': 0}
 p_ptl_focus, p_cp_focus = DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS
 
 if err or df_set is None:
@@ -281,7 +308,7 @@ else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p, b = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ), d.get("briefing_info", DEFAULT_BRIEF)
     p_ptl_focus, p_cp_focus = d.get("ptl_focus", DEFAULT_PTL_FOCUS), d.get("cp_focus", DEFAULT_CP_FOCUS)
-    default_stats.update({'cmd': int(d.get("stats_cmd", 6)), 'ptl': int(d.get("stats_ptl", 31)), 'inv': int(d.get("stats_inv", 2)), 'civ': int(d.get("stats_civ", 0)), 'b_time': d.get("briefing_time", "19時30分"), 'b_loc': d.get("briefing_loc", "本分局2樓會議室"), 'loc_1': int(d.get("loc_1", 8)), 'loc_2': int(d.get("loc_2", 6)), 'loc_3': int(d.get("loc_3", 0))})
+    default_stats.update({'cmd': int(d.get("stats_cmd", 6)), 'ptl': int(d.get("stats_ptl", 31)), 'inv': int(d.get("stats_inv", 2)), 'civ': int(d.get("stats_civ", 0)), 'b_time': d.get("briefing_time", "18時30分至19時00分"), 'b_loc': d.get("briefing_loc", "分局二樓會議室"), 'loc_1': int(d.get("loc_1", 8)), 'loc_2': int(d.get("loc_2", 6)), 'loc_3': int(d.get("loc_3", 0))})
     ed_cmd = df_cmd if not df_cmd.empty else DEFAULT_CMD.copy()
     ed_ptl = df_ptl.drop(columns=["組別"]) if not df_ptl.empty and "組別" in df_ptl.columns else (df_ptl if not df_ptl.empty else DEFAULT_PTL.copy())
     if "職別/姓名" in ed_ptl.columns: ed_ptl = ed_ptl.rename(columns={"職別/姓名": "服勤人員"})
@@ -302,6 +329,7 @@ col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 c_cmd, c_ptl, c_inv, c_civ = col_s1.number_input("督導組", value=default_stats['cmd']), col_s2.number_input("攔臨組", value=default_stats['ptl']), col_s3.number_input("偵訊組", value=default_stats['inv']), col_s4.number_input("民力", value=default_stats['civ'])
 c_total = c_cmd + c_ptl + c_inv + c_civ
 col_b1, col_b2 = st.columns(2)
+# 這邊的勤前時間與地點，已經與簽到表完全連動
 b_time, b_loc = col_b1.text_input("勤前時間", default_stats['b_time']), col_b2.text_input("勤前地點", default_stats['b_loc'])
 col_l1, col_l2, col_l3 = st.columns(3)
 loc_1, loc_2, loc_3 = col_l1.number_input("臨檢點", value=default_stats['loc_1']), col_l2.number_input("盤查點", value=default_stats['loc_2']), col_l3.number_input("聯外道路", value=default_stats['loc_3'])
@@ -324,8 +352,13 @@ with tab2:
     if not res_cp.empty: res_cp.insert(0, "組別", [f"第{i+1}臨檢組" for i in range(len(res_cp))])
 
 st.markdown("---")
+col_dl1, col_dl2 = st.columns(2)
+
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats, cur_ptl_focus, cur_cp_focus)
-st.download_button("📝 下載 14pt 規劃表", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
+col_dl1.download_button("📝 下載勤務規劃表", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
+
+pdf_attendance = generate_attendance_pdf(u, p_name, p_time, current_stats)
+col_dl2.download_button("🖋️ 下載簽到表 (已更新格式)", data=pdf_attendance, file_name=f"{u}簽到表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
     if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats, cur_ptl_focus, cur_cp_focus):
