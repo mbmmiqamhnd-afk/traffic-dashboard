@@ -179,7 +179,6 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0) 
     
-    # --- 修正處：將標題改為 執行{project}勤務簽到表 ---
     story.append(Paragraph(f"{unit}執行{project}勤務簽到表", style_title))
     
     meeting_range = parse_meeting_time(time_str)
@@ -193,7 +192,14 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
                   [Paragraph("副分局長：", style_cell_left), "", "", ""],
                   [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
     
-    rows = [("交通組", "中興派出所"), ("勤務指揮中心", "石門派出所"), ("督察組", "高平派出所"), ("聖亭派出所", "三和派出所"), ("龍潭派出所", "龍潭交通分隊")]
+    # --- 調整單位順序：督察組在交通組之下，勤務指揮中心之上 ---
+    rows = [
+        ("交通組", "中興派出所"), 
+        ("督察組", "石門派出所"), 
+        ("勤務指揮中心", "高平派出所"), 
+        ("聖亭派出所", "三和派出所"), 
+        ("龍潭派出所", "龍潭交通分隊")
+    ]
     for l, r in rows: table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[18*mm, 18*mm, 10*mm] + [26*mm]*len(rows))
     t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('SPAN', (0,1), (3,1))]))
@@ -327,7 +333,6 @@ with tab2:
     res_cp = auto_assign_radio_code(st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor"))
 
 st.markdown("---")
-# 生成 PDF 時帶入手動修改後的階段說明
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
 
@@ -339,5 +344,5 @@ if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True
     with st.spinner("處理中..."):
         if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc):
             ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
-            if ok: st.success("✅ 同步與發信成功！標題說明已同步儲存。")
+            if ok: st.success("✅ 同步與發信成功！標題說明與單位順序已同步處理。")
             else: st.error(f"❌ 發信失敗: {mail_err}")
