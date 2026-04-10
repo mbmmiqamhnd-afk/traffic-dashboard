@@ -178,16 +178,21 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0) 
-    story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
+    
+    # --- 修正處：將標題改為 執行{project}勤務簽到表 ---
+    story.append(Paragraph(f"{unit}執行{project}勤務簽到表", style_title))
+    
     meeting_range = parse_meeting_time(time_str)
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
     story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
     loc = str(briefing).strip() if "於" not in str(briefing) else str(briefing).strip().split("於")[1]
     story.append(Paragraph(f"地點：{loc}", style_top_info))
     story.append(Spacer(1, 3*mm))
+    
     table_data = [[Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""],
                   [Paragraph("副分局長：", style_cell_left), "", "", ""],
                   [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
+    
     rows = [("交通組", "中興派出所"), ("勤務指揮中心", "石門派出所"), ("督察組", "高平派出所"), ("聖亭派出所", "三和派出所"), ("龍潭派出所", "龍潭交通分隊")]
     for l, r in rows: table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[18*mm, 18*mm, 10*mm] + [26*mm]*len(rows))
@@ -205,7 +210,7 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
         msg.attach(MIMEText("附件為最新 PDF 規劃文件。", "plain", "utf-8"))
         
         plan_filename = f"{unit}執行{project}勤務規劃表.pdf"
-        attendance_filename = f"{unit}執行{project}簽到表.pdf"
+        attendance_filename = f"{unit}執行{project}勤務簽到表.pdf"
         
         p1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc)
         part1 = MIMEBase("application", "pdf"); part1.set_payload(p1); encoders.encode_base64(part1)
@@ -328,7 +333,7 @@ pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
 
 col_dl1, col_dl2 = st.columns(2)
 col_dl1.download_button("📝 下載規劃表", data=pdf_plan, file_name=f"{u}執行{p_name}勤務規劃表.pdf", use_container_width=True)
-col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_name=f"{u}執行{p_name}簽到表.pdf", use_container_width=True)
+col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_name=f"{u}執行{p_name}勤務簽到表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True):
     with st.spinner("處理中..."):
