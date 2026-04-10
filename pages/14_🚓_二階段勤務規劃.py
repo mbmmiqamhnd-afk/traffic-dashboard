@@ -51,6 +51,13 @@ def _get_font():
             return fname
     return "Helvetica"
 
+def clean_df(df):
+    """核心修正：移除 DataFrame 中所有欄位皆為空值、NaN 或僅含空格的列"""
+    if df.empty: return df
+    # 將空字串或純空格取代為 NaN，然後刪除整行皆為 NaN 的列
+    cleaned = df.replace(r'^\s*$', pd.NA, regex=True).dropna(how='all').fillna("")
+    return cleaned
+
 def parse_meeting_time(time_str):
     try:
         match = re.search(r"(\d+)至", time_str)
@@ -109,7 +116,8 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
         for ws_name, df in [(WS_MAP["cmd"], df_cmd), (WS_MAP["ptl"], df_ptl), (WS_MAP["cp"], df_cp)]:
             ws = sh.worksheet(ws_name)
             ws.clear()
-            df_cleaned = df.dropna(how='all').fillna("")
+            # 儲存前過濾掉空白列
+            df_cleaned = clean_df(df)
             if not df_cleaned.empty:
                 ws.update([df_cleaned.columns.tolist()] + df_cleaned.values.tolist())
         st.cache_data.clear()
@@ -136,7 +144,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     def clean(t): return safe_str(t).replace("\n", "<br/>").replace("、", "<br/>")
     def clean_text_only(t): return safe_str(t).replace("\n", "<br/>")
     
-    # 指揮組
+    # 指揮組 (過濾空白)
+    df_cmd = clean_df(df_cmd)
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -147,17 +156,19 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     story.append(Spacer(1, 6*mm)); story.append(Paragraph("<b>📢 勤前教育：</b>", style_middle_block)); story.append(Paragraph(f"{clean_text_only(briefing)}", style_middle_block)); story.append(Spacer(1, 6*mm))
     
-    # 第一階段
+    # 第一階段 (過濾空白)
+    df_ptl = clean_df(df_ptl)
     story.append(Paragraph(f"<b>{p1_desc}</b>", style_middle_block))
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_ptl.iterrows():
-        data_ptl.append([Paragraph(clean_text_only(r.get('編組')), style_cell), Paragraph(clean_text_only(r.get('無線電')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell), Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)])
+        data_ptl.append([Paragraph(clean_text_only(r.get('編組')), style_cell), Paragraph(clean_text_only(r.get('無線電')), style_cell), Paragraph(clean((r.get('單位'))), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell), Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)])
     t2 = Table(data_ptl, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')])); story.append(t2)
     
     story.append(Spacer(1, 8*mm))
     
-    # 第二階段
+    # 第二階段 (過濾空白)
+    df_cp = clean_df(df_cp)
     story.append(Paragraph(f"<b>{p2_desc}</b>", style_middle_block))
     data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_cp.iterrows():
@@ -192,7 +203,6 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
                   [Paragraph("副分局長：", style_cell_left), "", "", ""],
                   [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
     
-    # --- 調整單位順序：督察組在交通組之下，勤務指揮中心之上 ---
     rows = [
         ("交通組", "中興派出所"), 
         ("督察組", "石門派出所"), 
@@ -248,6 +258,7 @@ def auto_assign_radio_code(df):
     return df
 
 def sync_personnel_data(df_ptl, df_cp):
+    df_ptl = clean_df(df_ptl)
     if df_ptl.empty or df_cp.empty: return df_cp
     split_pattern = r'[、,，\s/]+'
     p_dict = {}
@@ -307,7 +318,6 @@ c1, c2 = st.columns(2)
 p_name = c1.text_input("專案名稱", p)
 p_time = c2.text_input("勤務時間", t)
 
-# --- 階段說明手動更改區 ---
 st.subheader("⚙️ 階段標題與說明")
 cc1, cc2 = st.columns(2)
 phase1_desc = cc1.text_input("第一階段標題說明", p1_d)
@@ -333,7 +343,8 @@ with tab2:
     res_cp = auto_assign_radio_code(st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor"))
 
 st.markdown("---")
-pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
+# 生成 PDF 時即時過濾掉資料編輯器中的空白列
+pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, clean_df(res_cmd), clean_df(res_ptl), clean_df(res_cp), phase1_desc, phase2_desc)
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
 
 col_dl1, col_dl2 = st.columns(2)
@@ -342,6 +353,7 @@ col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_nam
 
 if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True):
     with st.spinner("處理中..."):
+        # save_data 內已包含 clean_df 邏輯
         if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc):
             ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
             if ok: st.success("✅ 同步與發信成功！標題說明與單位順序已同步處理。")
