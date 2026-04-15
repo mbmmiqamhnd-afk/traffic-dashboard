@@ -540,7 +540,7 @@ def process_accident(files):
 def process_jing_tao(files):
     """
     靜桃計畫大執法專案統計
-    修正重點：累計的最晚日期強制與本期的最晚日期同步 (end_dt)。
+    修正重點：將欄位標題轉換為雙層表頭(MultiIndex)，區分「日期區間」與「時段」。
     """
     df = None
 
@@ -669,18 +669,15 @@ def process_jing_tao(files):
     col_22_label = col_22 if col_22 else "22-6時"
     col_06_label = col_06 if col_06 else "6-22時"
 
-    headers = [
-        '統計期間',
-        f'本期({period_str})\n{col_22_label}',
-        f'本期({period_str})\n{col_06_label}',
-        f'累計{cumu_str}\n{col_22_label}',
-        f'累計{cumu_str}\n{col_06_label}',
-        '總計'
-    ]
-    df_res = pd.DataFrame(results, columns=headers)
+    # 建立雙層表頭 (MultiIndex)
+    header_1 = ['統計期間', f'本期({period_str})', f'本期({period_str})', f'累計{cumu_str}', f'累計{cumu_str}', '總計']
+    header_2 = ['', col_22_label, col_06_label, col_22_label, col_06_label, '']
+    
+    df_res = pd.DataFrame(results, columns=pd.MultiIndex.from_arrays([header_1, header_2]))
 
     st.write("📊 **「靜桃計畫」大執法專案統計表：**")
-    st.dataframe(df_res, hide_index=True)
+    # Streamlit 原生支援顯示 MultiIndex，use_container_width 能讓版面自動展開更好看
+    st.dataframe(df_res, use_container_width=True)
 
     if GCP_CREDS:
         try:
@@ -691,18 +688,37 @@ def process_jing_tao(files):
             ws = sh.worksheet(ws_name) if ws_name in existing else sh.add_worksheet(title=ws_name, rows="30", cols="10")
 
             ws.clear()
+            
+            # 將雙層表頭拆解為兩列文字準備寫入 Google Sheets
+            titles = df_res.columns.tolist()
+            top_row = [t[0] for t in titles]
+            bottom_row = [t[1] for t in titles]
+            data_body = df_res.values.tolist()
+            
             ws.update(range_name='A1', values=[['「靜桃計畫」大執法專案統計表']])
-            ws.update(range_name='A2', values=[df_res.columns.tolist()] + df_res.values.tolist())
+            ws.update(range_name='A2', values=[top_row, bottom_row] + data_body)
 
-            reqs = [{
-                "repeatCell": {
-                    "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 6},
-                    "cell": {"userEnteredFormat": {"textFormat": {"bold": True}, "horizontalAlignment": "CENTER"}},
-                    "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment"
-                }
-            }]
+            # 加入 Google Sheets 自動合併儲存格與置中的排版設定
+            reqs = [
+                # 標題大字跨欄置中 (A1:F1)
+                {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 6}, "mergeType": "MERGE_ALL"}},
+                # 統計期間跨列置中 (A2:A3)
+                {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
+                # 本期跨欄置中 (B2:C2)
+                {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
+                # 累計跨欄置中 (D2:E2)
+                {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 3, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
+                # 總計跨列置中 (F2:F3)
+                {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 5, "endColumnIndex": 6}, "mergeType": "MERGE_ALL"}},
+                # 將所有表頭 (第一、二、三列) 設定為粗體且垂直/水平置中
+                {"repeatCell": {
+                    "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 6},
+                    "cell": {"userEnteredFormat": {"textFormat": {"bold": True}, "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+                    "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"
+                }}
+            ]
             sh.batch_update({"requests": reqs})
-            st.write("✅ 靜桃計畫數據已同步至 Google Sheets")
+            st.write("✅ 靜桃計畫數據已同步至 Google Sheets（並完成自動排版）")
         except Exception as e:
             st.error(f"雲端同步出錯：{e}")
             st.write(traceback.format_exc())
