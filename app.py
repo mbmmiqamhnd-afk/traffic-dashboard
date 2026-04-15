@@ -198,14 +198,13 @@ def process_overload(files):
                 })
         if requests: sh.batch_update({"requests": requests})
 
-# ----------------- [3. 重大交通違規 (完美修正版)] -----------------
+# ----------------- [3. 重大交通違規] -----------------
 def process_major(files):
-    """🚨 重大違規 (包含精準抓日期、修復同步、原生分色)"""
+    """🚨 重大違規"""
     if len(files) < 2:
         st.error("❌ 需要至少上傳『本期』與『(1)累計』報表才能進行重大違規比對。")
         return
 
-    # 分流與排序
     sorted_files = sorted(files, key=lambda x: x.size)
     f_wk, f_year = sorted_files[0], sorted_files[1]
     if "(1)" in f_wk.name: f_wk, f_year = f_year, f_wk
@@ -304,12 +303,10 @@ def process_major(files):
             data_list = [top_row, bottom_row] + data_body
             ws.update(range_name='A2', values=data_list)
             
-            # 原生分色 API
             red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             requests = []
             
-            # 1. 括號紅字
             for i, text in enumerate(top_row):
                 if "(" in text:
                     p_start = text.find("(")
@@ -324,7 +321,6 @@ def process_major(files):
                         }
                     })
 
-            # 2. 負數紅字
             red_fmt = {"textFormat": {"foregroundColor": red_color}}
             black_fmt = {"textFormat": {"foregroundColor": black_color}}
             for r_idx, row_vals in enumerate(data_body):
@@ -549,6 +545,93 @@ def process_accident(files):
             
         st.write("✅ 交通事故雲端已更新")
 
+# ----------------- [6. 靜桃計畫] -----------------
+def process_jing_tao(files):
+    """🤫 靜桃計畫大執法專案統計"""
+    f = files[0]
+    f.seek(0)
+    try:
+        df = pd.read_csv(f, encoding='utf-8')
+    except:
+        f.seek(0)
+        df = pd.read_csv(f, encoding='cp950')
+        
+    def parse_roc_date(date_str):
+        if pd.isna(date_str): return pd.NaT
+        parts = str(date_str).split('/')
+        if len(parts) == 3:
+            try:
+                return pd.Timestamp(year=int(parts[0])+1911, month=int(parts[1]), day=int(parts[2]))
+            except: return pd.NaT
+        return pd.NaT
+
+    if '通報日期' not in df.columns:
+        st.error("❌ 找不到『通報日期』欄位，請確認上傳的靜桃清冊格式是否正確！")
+        return
+
+    df['date'] = df['通報日期'].apply(parse_roc_date)
+    
+    # 計算本期區間 (以昨日為基準，往前推 7 天)
+    today = datetime.now()
+    end_date = today - timedelta(days=1)
+    start_date = end_date - timedelta(days=6)
+    period_str = f"{start_date.strftime('%m%d')}-{end_date.strftime('%m%d')}"
+    
+    df_period = df[(df['date'] >= start_date) & (df['date'] <= end_date)]
+    
+    def get_counts(data):
+        c_22_06 = data['22-06'].notna().sum() if '22-06' in data.columns else 0
+        c_06_22 = data['06-22'].notna().sum() if '06-22' in data.columns else 0
+        return c_22_06, c_06_22
+
+    stations = ['聖亭', '龍潭', '中興', '石門', '高平', '三和', '警備', '交通']
+    station_names = ['聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
+    
+    results = []
+    t_p_22, t_p_06, t_a_22, t_a_06 = 0, 0, 0, 0
+    
+    for st_kw, s_name in zip(stations, station_names):
+        st_data = df[df['所別'].astype(str).str.contains(st_kw, na=False)] if '所別' in df.columns else pd.DataFrame()
+        st_period = df_period[df_period['所別'].astype(str).str.contains(st_kw, na=False)] if '所別' in df_period.columns else pd.DataFrame()
+        
+        p_22, p_06 = get_counts(st_period)
+        a_22, a_06 = get_counts(st_data)
+        total = a_22 + a_06
+        
+        results.append([s_name, p_22, p_06, a_22, a_06, total])
+        
+        t_p_22 += p_22; t_p_06 += p_06
+        t_a_22 += a_22; t_a_06 += a_06
+
+    t_total = t_a_22 + t_a_06
+    results.insert(0, ['合計', t_p_22, t_p_06, t_a_22, t_a_06, t_total])
+    
+    headers = ['單位', f'本期({period_str})\n22-6時', f'本期({period_str})\n6-22時', '累計\n22-6時', '累計\n6-22時', '總計']
+    df_res = pd.DataFrame(results, columns=headers)
+    
+    st.write(f"📊 **「靜桃計畫」大執法專案統計表：**")
+    st.dataframe(df_res, hide_index=True)
+    
+    if GCP_CREDS:
+        try:
+            gc = gspread.service_account_from_dict(GCP_CREDS)
+            sh = gc.open_by_url(GOOGLE_SHEET_URL)
+            ws_name = "靜桃計畫"
+            ws = sh.worksheet(ws_name) if ws_name in [s.title for s in sh.worksheets()] else sh.add_worksheet(title=ws_name, rows="30", cols="10")
+            
+            ws.clear()
+            ws.update(range_name='A1', values=[['「靜桃計畫」大執法專案統計表']])
+            ws.update(range_name='A2', values=[df_res.columns.tolist()] + df_res.values.tolist())
+            
+            reqs = [{"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 6},
+                                    "cell": {"userEnteredFormat": {"textFormat": {"bold": True}, "horizontalAlignment": "CENTER"}}, 
+                                    "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment"}}]
+            sh.batch_update({"requests": reqs})
+            st.write("✅ 靜桃計畫數據已同步至 Google Sheets")
+        except Exception as e:
+            st.error(f"雲端同步出錯：{e}")
+
+
 # ==========================================
 # 4. 戰情室首頁與排程器 (自動分流架構)
 # ==========================================
@@ -570,7 +653,8 @@ if app_mode == "🏠 智慧批次處理中心":
             st.success("✅ 目前上傳的檔案皆已全自動處理完畢！")
             st.info("💡 若要處理新報表，請重新整理頁面或拖入新檔案。")
         else:
-            cat_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": []}
+            # 這裡加入了靜桃計畫的分流清單
+            cat_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": [], "靜桃計畫": []}
             
             for f in uploads:
                 name = f.name.lower()
@@ -584,6 +668,9 @@ if app_mode == "🏠 智慧批次處理中心":
                     cat_files["強化專案"].append(f)
                 elif any(k in name for k in ["a1", "a2", "事故", "案件統計"]): 
                     cat_files["交通事故"].append(f)
+                # 判斷靜桃計畫的關鍵字
+                elif any(k in name for k in ["靜桃", "噪音", "改裝車"]): 
+                    cat_files["靜桃計畫"].append(f)
             
             try:
                 if cat_files["科技執法"]:
@@ -610,6 +697,12 @@ if app_mode == "🏠 智慧批次處理中心":
                     with st.status(f"🚑 自動處理【交通事故】({len(cat_files['交通事故'])} 份)...", expanded=True) as status:
                         process_accident(cat_files["交通事故"])
                         status.update(label="✅ 交通事故處理完成！", state="complete")
+
+                # 新增的靜桃計畫處理流程
+                if cat_files["靜桃計畫"]:
+                    with st.status(f"🤫 自動處理【靜桃計畫】({len(cat_files['靜桃計畫'])} 份)...", expanded=True) as status:
+                        process_jing_tao(cat_files["靜桃計畫"])
+                        status.update(label="✅ 靜桃計畫處理完成！", state="complete")
                 
                 st.session_state["last_processed_hash"] = file_hash
                 st.balloons()
