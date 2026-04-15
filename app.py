@@ -540,7 +540,7 @@ def process_accident(files):
 def process_jing_tao(files):
     """
     靜桃計畫大執法專案統計
-    修正重點：將欄位標題轉換為雙層表頭(MultiIndex)，區分「日期區間」與「時段」。
+    修正重點：為雙層表頭(MultiIndex)實作雙色(黑紅)格式化寫入
     """
     df = None
 
@@ -676,7 +676,6 @@ def process_jing_tao(files):
     df_res = pd.DataFrame(results, columns=pd.MultiIndex.from_arrays([header_1, header_2]))
 
     st.write("📊 **「靜桃計畫」大執法專案統計表：**")
-    # Streamlit 原生支援顯示 MultiIndex，use_container_width 能讓版面自動展開更好看
     st.dataframe(df_res, use_container_width=True)
 
     if GCP_CREDS:
@@ -717,8 +716,27 @@ def process_jing_tao(files):
                     "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"
                 }}
             ]
+
+            # --- 新增：動態分色格式化 (Rich Text Format) ---
+            black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
+            red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
+            
+            for i, text in enumerate(top_row):
+                if "(" in text:
+                    p_start = text.find("(")
+                    reqs.append({
+                        "updateCells": {
+                            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
+                            "rows": [{ "values": [{ "textFormatRuns": [
+                                {"startIndex": 0, "format": {"foregroundColor": black_color, "bold": True}},
+                                {"startIndex": p_start, "format": {"foregroundColor": red_color, "bold": True}}
+                            ], "userEnteredValue": {"stringValue": text} }] }],
+                            "fields": "userEnteredValue,textFormatRuns"
+                        }
+                    })
+
             sh.batch_update({"requests": reqs})
-            st.write("✅ 靜桃計畫數據已同步至 Google Sheets（並完成自動排版）")
+            st.write("✅ 靜桃計畫數據已同步至 Google Sheets（並完成自動排版與雙色處理）")
         except Exception as e:
             st.error(f"雲端同步出錯：{e}")
             st.write(traceback.format_exc())
