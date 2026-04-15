@@ -668,7 +668,7 @@ def process_jing_tao(files):
     col_06_label = col_06 if col_06 else "6-22時"
 
     headers = [
-        '單位',
+        '統計期間',  # <--- 修改此處
         f'本期({period_str})\n{col_22_label}',
         f'本期({period_str})\n{col_06_label}',
         f'累計\n{col_22_label}',
