@@ -633,6 +633,15 @@ def process_jing_tao(files):
 
     df_period = df[(df['_date'] >= start_dt) & (df['_date'] <= end_dt)]
 
+    # 累計區間：抓取資料表中的最小與最大日期
+    valid_dates = df['_date'].dropna()
+    if not valid_dates.empty:
+        min_dt = valid_dates.min()
+        max_dt = valid_dates.max()
+        cumu_str = f"({min_dt.year - 1911}{min_dt.strftime('%m%d')}-{max_dt.year - 1911}{max_dt.strftime('%m%d')})"
+    else:
+        cumu_str = ""
+
     def count_v(data, col):
         if col is None or col not in data.columns: return 0
         return data[col].astype(str).str.strip().str.upper().str.contains(r'^V$', regex=True, na=False).sum()
@@ -668,11 +677,11 @@ def process_jing_tao(files):
     col_06_label = col_06 if col_06 else "6-22時"
 
     headers = [
-        '統計期間',  # <--- 修改此處
+        '統計期間',
         f'本期({period_str})\n{col_22_label}',
         f'本期({period_str})\n{col_06_label}',
-        f'累計\n{col_22_label}',
-        f'累計\n{col_06_label}',
+        f'累計{cumu_str}\n{col_22_label}',
+        f'累計{cumu_str}\n{col_06_label}',
         '總計'
     ]
     df_res = pd.DataFrame(results, columns=headers)
