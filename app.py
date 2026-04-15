@@ -548,14 +548,53 @@ def process_accident(files):
 # ----------------- [6. 靜桃計畫] -----------------
 def process_jing_tao(files):
     """🤫 靜桃計畫大執法專案統計"""
-    f = files[0]
-    f.seek(0)
-    try:
-        df = pd.read_csv(f, encoding='utf-8')
-    except:
+    
+    # 1. 智慧尋找包含「通報日期」的正確檔案與強健讀取機制
+    df = None
+    for f in files:
         f.seek(0)
-        df = pd.read_csv(f, encoding='cp950')
-        
+        try:
+            temp_df = pd.read_csv(f, encoding='utf-8', nrows=15)
+        except:
+            f.seek(0)
+            try: temp_df = pd.read_csv(f, encoding='cp950', nrows=15)
+            except: continue
+            
+        if '通報日期' in temp_df.to_string():
+            f.seek(0)
+            try: df = pd.read_csv(f, encoding='utf-8')
+            except pd.errors.ParserError:  
+                f.seek(0)
+                df = pd.read_csv(f, encoding='utf-8', skiprows=1)
+            except:
+                f.seek(0)
+                try: df = pd.read_csv(f, encoding='cp950')
+                except:
+                    f.seek(0)
+                    df = pd.read_csv(f, encoding='cp950', skiprows=1)
+            break
+            
+    if df is None:
+        st.error("❌ 找不到包含『通報日期』的清冊檔案！請確認上傳的檔案中包含完整的靜桃明細表(如: 靜桃.csv)。")
+        return
+
+    # 清理欄位名稱前後空白
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # 2. 處理第一行是大標題，導致真實欄位跑到底下的情況
+    if '通報日期' not in df.columns:
+        for idx, row in df.head(10).iterrows():
+            row_vals = [str(x).strip() for x in row.values]
+            if '通報日期' in row_vals:
+                df.columns = row_vals
+                df = df.iloc[idx+1:].reset_index(drop=True)
+                break
+                
+    if '通報日期' not in df.columns:
+        st.error("❌ 找不到『通報日期』欄位，請確認上傳的靜桃清冊格式是否正確！")
+        return
+
+    # 3. 民國年日期轉換邏輯
     def parse_roc_date(date_str):
         if pd.isna(date_str): return pd.NaT
         parts = str(date_str).split('/')
@@ -564,10 +603,6 @@ def process_jing_tao(files):
                 return pd.Timestamp(year=int(parts[0])+1911, month=int(parts[1]), day=int(parts[2]))
             except: return pd.NaT
         return pd.NaT
-
-    if '通報日期' not in df.columns:
-        st.error("❌ 找不到『通報日期』欄位，請確認上傳的靜桃清冊格式是否正確！")
-        return
 
     df['date'] = df['通報日期'].apply(parse_roc_date)
     
@@ -653,7 +688,6 @@ if app_mode == "🏠 智慧批次處理中心":
             st.success("✅ 目前上傳的檔案皆已全自動處理完畢！")
             st.info("💡 若要處理新報表，請重新整理頁面或拖入新檔案。")
         else:
-            # 這裡加入了靜桃計畫的分流清單
             cat_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": [], "靜桃計畫": []}
             
             for f in uploads:
@@ -668,7 +702,6 @@ if app_mode == "🏠 智慧批次處理中心":
                     cat_files["強化專案"].append(f)
                 elif any(k in name for k in ["a1", "a2", "事故", "案件統計"]): 
                     cat_files["交通事故"].append(f)
-                # 判斷靜桃計畫的關鍵字
                 elif any(k in name for k in ["靜桃", "噪音", "改裝車"]): 
                     cat_files["靜桃計畫"].append(f)
             
@@ -698,7 +731,6 @@ if app_mode == "🏠 智慧批次處理中心":
                         process_accident(cat_files["交通事故"])
                         status.update(label="✅ 交通事故處理完成！", state="complete")
 
-                # 新增的靜桃計畫處理流程
                 if cat_files["靜桃計畫"]:
                     with st.status(f"🤫 自動處理【靜桃計畫】({len(cat_files['靜桃計畫'])} 份)...", expanded=True) as status:
                         process_jing_tao(cat_files["靜桃計畫"])
@@ -712,7 +744,7 @@ if app_mode == "🏠 智慧批次處理中心":
                 st.write(traceback.format_exc())
 
 elif app_mode == "📂 PDF 轉 PPTX 工具":
-    st.header("📂 PDF 行政文書轉 PPTX 簡報")
+    st.header("📂 PDF 行政文書轉 PPTX 簡 প্রচ報")
     pdf_file = st.file_uploader("上傳 PDF 檔案", type=["pdf"])
     if pdf_file and st.button("🚀 開始轉換"):
         with st.spinner("轉換中..."):
