@@ -3,9 +3,8 @@ import pandas as pd
 import io
 import re
 import gspread
-import calendar
 import traceback
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 from pdf2image import convert_from_bytes
 from pptx import Presentation
 
@@ -26,11 +25,9 @@ except ImportError:
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 
 try:
-    MY_EMAIL = st.secrets.get("email", {}).get("user", "")
-    MY_PASSWORD = st.secrets.get("email", {}).get("password", "")
     GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
 except:
-    MY_EMAIL, MY_PASSWORD, GCP_CREDS = "", "", None
+    GCP_CREDS = None
 
 # --- [重大違規常數] ---
 MAJOR_UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
@@ -88,7 +85,6 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
 
 # ----------------- [1. 科技執法] -----------------
 def process_tech_enforcement(files):
-    """📸 科技執法"""
     f = files[0]
     f.seek(0)
     df = pd.read_csv(f, encoding='cp950') if f.name.endswith('.csv') else pd.read_excel(f)
@@ -127,7 +123,6 @@ def process_tech_enforcement(files):
 
 # ----------------- [2. 超載統計] -----------------
 def process_overload(files):
-    """🚛 超載違規"""
     f_wk, f_yt, f_ly = None, None, None
     for f in files:
         if "(1)" in f.name: f_yt = f
@@ -181,7 +176,6 @@ def process_overload(files):
         ws.update(range_name='A1', values=[['取締超載違規件數統計表']])
         ws.update(range_name='A2', values=[df_final.columns.tolist()] + df_final.values.tolist())
         
-        # 標題紅字
         requests = []
         for i, col_name in enumerate(df_final.columns):
             if "(" in col_name:
@@ -200,7 +194,6 @@ def process_overload(files):
 
 # ----------------- [3. 重大交通違規] -----------------
 def process_major(files):
-    """🚨 重大違規"""
     if len(files) < 2:
         st.error("❌ 需要至少上傳『本期』與『(1)累計』報表才能進行重大違規比對。")
         return
@@ -344,7 +337,6 @@ def process_major(files):
 
 # ----------------- [4. 強化專案] -----------------
 def process_project(files):
-    """🔥 強化專案"""
     f1 = next((f for f in files if any(k in f.name for k in ["強化", "法條", "自選匯出"])), None)
     f2_list = [f for f in files if any(k in f.name.upper() for k in ["R17", "砂石", "大貨"])]
     
@@ -471,7 +463,6 @@ def process_project(files):
 
 # ----------------- [5. 交通事故] -----------------
 def process_accident(files):
-    """🚑 交通事故"""
     meta = []
     for f in files:
         f.seek(0)
@@ -547,52 +538,59 @@ def process_accident(files):
 
 # ----------------- [6. 靜桃計畫] -----------------
 def process_jing_tao(files):
-    """🤫 靜桃計畫大執法專案統計"""
+    """🤫 靜桃計畫大執法專案統計 (強健標題鎖定版)"""
     
     # 1. 智慧尋找包含「通報日期」的正確檔案與強健讀取機制
     df = None
     for f in files:
         f.seek(0)
+        # 強制取消預設標題 (header=None)，以原始矩陣讀取前20列來防禦大標題
         try:
-            temp_df = pd.read_csv(f, encoding='utf-8', nrows=15)
+            temp_df = pd.read_csv(f, encoding='utf-8', header=None, nrows=20)
         except:
             f.seek(0)
-            try: temp_df = pd.read_csv(f, encoding='cp950', nrows=15)
-            except: continue
-            
-        if '通報日期' in temp_df.to_string():
+            try: 
+                temp_df = pd.read_csv(f, encoding='cp950', header=None, nrows=20)
+            except: 
+                continue
+                
+        # 逐列檢查，不管「通報日期」在哪個儲存格(如B2)都能被抓出來
+        is_target = False
+        for _, row in temp_df.iterrows():
+            if '通報日期' in [str(x).strip() for x in row.values]:
+                is_target = True
+                break
+                
+        if is_target:
             f.seek(0)
-            try: df = pd.read_csv(f, encoding='utf-8')
-            except pd.errors.ParserError:  
-                f.seek(0)
-                df = pd.read_csv(f, encoding='utf-8', skiprows=1)
+            try: 
+                df = pd.read_csv(f, encoding='utf-8', header=None)
             except:
                 f.seek(0)
-                try: df = pd.read_csv(f, encoding='cp950')
-                except:
-                    f.seek(0)
-                    df = pd.read_csv(f, encoding='cp950', skiprows=1)
+                df = pd.read_csv(f, encoding='cp950', header=None)
             break
             
     if df is None:
         st.error("❌ 找不到包含『通報日期』的清冊檔案！請確認上傳的檔案中包含完整的靜桃明細表(如: 靜桃.csv)。")
         return
 
-    # 清理欄位名稱前後空白
-    df.columns = [str(c).strip() for c in df.columns]
-
-    # 2. 處理第一行是大標題，導致真實欄位跑到底下的情況
-    if '通報日期' not in df.columns:
-        for idx, row in df.head(10).iterrows():
-            row_vals = [str(x).strip() for x in row.values]
-            if '通報日期' in row_vals:
-                df.columns = row_vals
-                df = df.iloc[idx+1:].reset_index(drop=True)
-                break
-                
-    if '通報日期' not in df.columns:
+    # 2. 定位真實標題列並重新設定 DataFrame
+    header_idx = -1
+    for idx, row in df.head(15).iterrows():
+        row_vals = [str(x).strip() for x in row.values]
+        if '通報日期' in row_vals:
+            df.columns = row_vals
+            header_idx = idx
+            break
+            
+    if header_idx == -1:
         st.error("❌ 找不到『通報日期』欄位，請確認上傳的靜桃清冊格式是否正確！")
         return
+        
+    # 截斷真實標題上方的所有無用大標題列，並重設 index
+    df = df.iloc[header_idx+1:].reset_index(drop=True)
+    # 清理欄位名稱前後的隱藏空白
+    df.columns = [str(c).strip() for c in df.columns]
 
     # 3. 民國年日期轉換邏輯
     def parse_roc_date(date_str):
@@ -744,7 +742,7 @@ if app_mode == "🏠 智慧批次處理中心":
                 st.write(traceback.format_exc())
 
 elif app_mode == "📂 PDF 轉 PPTX 工具":
-    st.header("📂 PDF 行政文書轉 PPTX 簡 প্রচ報")
+    st.header("📂 PDF 行政文書轉 PPTX 簡報")
     pdf_file = st.file_uploader("上傳 PDF 檔案", type=["pdf"])
     if pdf_file and st.button("🚀 開始轉換"):
         with st.spinner("轉換中..."):
