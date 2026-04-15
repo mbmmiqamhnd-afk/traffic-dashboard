@@ -538,64 +538,83 @@ def process_accident(files):
 
 # ----------------- [6. 靜桃計畫] -----------------
 def process_jing_tao(files):
-    """🤫 靜桃計畫大執法專案統計 (終極強健版)"""
+    """🤫 靜桃計畫大執法專案統計 (底層文字掃描 + 防崩潰版)"""
     
-    df_raw = None
+    target_file = None
+    target_encoding = None
+    header_row_idx = -1
     
-    # 1. 暴力嘗試所有格式讀取檔案 (對付偽裝成 csv 的 Excel 或奇怪編碼)
+    # 1. 降維打擊：不使用 Pandas，直接用底層二進制讀取文字，完全免疫 ParserError
     for f in files:
-        def try_read():
+        f.seek(0)
+        raw_bytes = f.read()
+        
+        text = None
+        # 測試各種台灣公務體系常見編碼
+        for enc in ['utf-8-sig', 'utf-8', 'cp950', 'big5']:
+            try:
+                text = raw_bytes.decode(enc)
+                target_encoding = enc
+                break
+            except UnicodeDecodeError:
+                continue
+                
+        if not text:
+            # 如果文字解碼全失敗，可能是真正的 Excel (.xlsx) 檔案
             f.seek(0)
-            try: return pd.read_csv(f, encoding='utf-8', header=None)
-            except: pass
-            f.seek(0)
-            try: return pd.read_csv(f, encoding='cp950', header=None)
-            except: pass
-            f.seek(0)
-            try: return pd.read_excel(f, header=None)
-            except: pass
-            return None
-            
-        temp = try_read()
-        if temp is not None:
-            # 掃描前 30 列，尋找哪個儲存格藏著「通報日期」
-            for _, row in temp.head(30).iterrows():
-                if any('通報日期' in str(cell).replace(' ', '') for cell in row if pd.notna(cell)):
-                    df_raw = temp
+            try:
+                df_ex = pd.read_excel(f, nrows=30, header=None)
+                for idx, row in df_ex.iterrows():
+                    row_str = "".join([str(x) for x in row if pd.notna(x)])
+                    if '通報日期' in row_str and ('22-06' in row_str or '06-22' in row_str):
+                        target_file = f
+                        target_encoding = 'excel'
+                        header_row_idx = idx
+                        break
+            except:
+                pass
+        else:
+            # 逐行文字掃描，尋找真正的明細表 (必須同時具備日期與時段欄位，避開總表)
+            lines = text.splitlines()
+            for idx, line in enumerate(lines[:30]):
+                if '通報日期' in line and ('22-06' in line or '06-22' in line or '22-6' in line):
+                    target_file = f
+                    header_row_idx = idx
                     break
-        if df_raw is not None:
+        
+        if target_file is not None:
             break
             
-    if df_raw is None:
-        st.error("❌ 系統已嘗試所有編碼，仍找不到包含『通報日期』的清冊！請確認上傳的報表是否正確。")
-        return
-
-    # 2. 定位真實標題列，並重新洗牌 DataFrame
-    header_idx = -1
-    for idx, row in df_raw.head(30).iterrows():
-        if any('通報日期' in str(cell).replace(' ', '') for cell in row if pd.notna(cell)):
-            header_idx = idx
-            # 建立乾淨的欄位名稱
-            df_raw.columns = [str(cell).strip() if pd.notna(cell) else f"Unnamed_{i}" for i, cell in enumerate(row)]
-            break
-            
-    if header_idx == -1:
-        st.error("❌ 找不到『通報日期』標題列！")
+    if target_file is None:
+        st.error("❌ 找不到包含『通報日期』與『22-06時段』的清冊檔案！請確認上傳了正確的「靜桃.csv」或詳細資料表。")
         return
         
-    df = df_raw.iloc[header_idx+1:].reset_index(drop=True)
-    
-    # 智慧尋找關鍵欄位 (防止因看不到的空白導致抓錯欄位)
+    # 2. 定位成功，呼叫 Pandas 從真正的標題列開始讀取 (skiprows 切除上方大標題)
+    target_file.seek(0)
+    try:
+        if target_encoding == 'excel':
+            df = pd.read_excel(target_file, skiprows=header_row_idx)
+        else:
+            # 啟用 Python 引擎與 on_bad_lines，無視所有錯位的逗號
+            df = pd.read_csv(target_file, encoding=target_encoding, skiprows=header_row_idx, engine='python', on_bad_lines='skip')
+    except Exception as e:
+        st.error(f"❌ 檔案解析失敗：{e}")
+        return
+        
+    # 清理欄位名稱前後看不見的空白字元
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # 3. 綁定關鍵欄位
     date_col = next((c for c in df.columns if '通報日期' in c), None)
     unit_col = next((c for c in df.columns if '所別' in c or '單位' in c), None)
     col_22 = next((c for c in df.columns if '22-06' in c or '22-6' in c), None)
     col_06 = next((c for c in df.columns if '06-22' in c or '6-22' in c), None)
 
     if not date_col or not unit_col:
-        st.error(f"❌ 缺乏關鍵欄位！已找到：{list(df.columns)}")
+        st.error(f"❌ 缺乏關鍵欄位！已抓取到的欄位有：{list(df.columns)}")
         return
 
-    # 3. 民國年日期轉換邏輯 (支援自動去除時間標記)
+    # 4. 民國年日期轉換邏輯 (自適應去除時間格式)
     def parse_roc_date(date_str):
         if pd.isna(date_str): return pd.NaT
         date_str = str(date_str).strip().split(' ')[0]
@@ -615,7 +634,7 @@ def process_jing_tao(files):
     
     df_period = df[(df['date'] >= start_date) & (df['date'] <= end_date)]
     
-    # 4. 精準判定邏輯：該欄位必須有打 'V' 或 'v' 才算數
+    # 5. 精準判定邏輯：該欄位必須有打 'V' 或 'v' 才算數
     def get_counts(data):
         c_22 = data[col_22].astype(str).str.upper().str.contains('V', na=False).sum() if col_22 else 0
         c_06 = data[col_06].astype(str).str.upper().str.contains('V', na=False).sum() if col_06 else 0
@@ -649,7 +668,7 @@ def process_jing_tao(files):
     st.write(f"📊 **「靜桃計畫」大執法專案統計表：**")
     st.dataframe(df_res, hide_index=True)
     
-    # 5. 雲端 Google Sheets 同步
+    # 6. 雲端 Google Sheets 同步
     if GCP_CREDS:
         try:
             gc = gspread.service_account_from_dict(GCP_CREDS)
