@@ -540,7 +540,7 @@ def process_accident(files):
 def process_jing_tao(files):
     """
     靜桃計畫大執法專案統計
-    修正重點：自動辨識 Excel 檔案，並精準鎖定「靜桃」（第二個）工作表。
+    修正重點：累計的最晚日期強制與本期的最晚日期同步 (end_dt)。
     """
     df = None
 
@@ -552,22 +552,17 @@ def process_jing_tao(files):
         if is_excel_file:
             try:
                 xls = pd.ExcelFile(f)
-                # 優先尋找名稱包含「靜桃」的工作表
                 target_sheet = next((s for s in xls.sheet_names if '靜桃' in s), None)
-                # 若無「靜桃」，嘗試抓第二個 (index 1) 工作表
                 if not target_sheet and len(xls.sheet_names) > 1:
                     target_sheet = xls.sheet_names[1]
-                # 否則退回抓第一個工作表
                 elif not target_sheet:
                     target_sheet = xls.sheet_names[0]
 
-                # 讀取目標工作表的前50行尋找標題列
                 df_temp = pd.read_excel(xls, sheet_name=target_sheet, header=None, nrows=50)
                 for idx, row in df_temp.iterrows():
                     row_str = " ".join([str(x) for x in row if pd.notna(x)])
                     if '通報日期' in row_str:
                         f.seek(0)
-                        # 從正確的標題列開始讀取完整資料
                         df = pd.read_excel(xls, sheet_name=target_sheet, skiprows=idx)
                         break
                 if df is not None:
@@ -575,7 +570,6 @@ def process_jing_tao(files):
             except Exception:
                 pass
 
-        # 如果不是 Excel 或是 Excel 解析失敗，退回使用暴力 CSV 解碼
         if df is None:
             f.seek(0)
             raw_bytes = f.read()
@@ -597,7 +591,7 @@ def process_jing_tao(files):
         st.error("❌ 找不到包含『通報日期』欄位的清冊檔案！請確認上傳了正確的檔案。")
         return
 
-    # 清理欄位名稱（去除前後空白、換行、全形空格）
+    # 清理欄位名稱
     df.columns = [str(c).strip().replace('\u3000', '').replace('\n', '') for c in df.columns]
 
     # ── 動態綁定關鍵欄位 ──
@@ -633,12 +627,11 @@ def process_jing_tao(files):
 
     df_period = df[(df['_date'] >= start_dt) & (df['_date'] <= end_dt)]
 
-    # 累計區間：抓取資料表中的最小與最大日期
+    # 累計區間：抓取最早日期，並強制以本期終點(end_dt)作為最晚日期
     valid_dates = df['_date'].dropna()
     if not valid_dates.empty:
         min_dt = valid_dates.min()
-        max_dt = valid_dates.max()
-        cumu_str = f"({min_dt.year - 1911}{min_dt.strftime('%m%d')}-{max_dt.year - 1911}{max_dt.strftime('%m%d')})"
+        cumu_str = f"({min_dt.year - 1911}{min_dt.strftime('%m%d')}-{end_dt.year - 1911}{end_dt.strftime('%m%d')})"
     else:
         cumu_str = ""
 
