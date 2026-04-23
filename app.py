@@ -450,7 +450,7 @@ def process_major(files):
                 fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
                 requests.append({"repeatCell": {"range": {"sheetId": ws_main.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 7, "endColumnIndex": 8}, "cell": {"userEnteredFormat": fmt}, "fields": "userEnteredFormat.textFormat.foregroundColor"}})
 
-            # --- 3-2. 同步 6 個細項分頁 (全新九宮格) ---
+            # --- 3-2. 同步 6 個細項分頁 (全新九宮格，移除標題中的龍潭分局) ---
             for cat, df_c in cat_dfs.items():
                 ws_name = f"重大違規-{cat}"
                 ws_cat = sh.worksheet(ws_name) if ws_name in existing_sheets else sh.add_worksheet(title=ws_name, rows="30", cols="15")
@@ -459,7 +459,9 @@ def process_major(files):
                 titles_c = df_c.columns.tolist()
                 top_row_c, bottom_row_c = [t[0] for t in titles_c], [t[1] for t in titles_c]
                 data_body_c = df_c.values.tolist()
-                title_text = f"龍潭分局取締【{cat}】違規統計表 (累計至 {date_yr})"
+                
+                # 修改此處：移除「龍潭分局」
+                title_text = f"取締【{cat}】違規統計表 (累計至 {date_yr})"
                 
                 ws_cat.update(range_name='A1', values=[[title_text] + [""]*9, top_row_c, bottom_row_c] + data_body_c)
                 
