@@ -27,7 +27,7 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
 
-# --- 預設範本資料 (已更新為115年5月份防制危險駕車專案) ---
+# --- 預設範本資料 ---
 DEFAULT_MONTH = "115年5月份"
 
 DEFAULT_CMD = pd.DataFrame([
@@ -42,39 +42,30 @@ DEFAULT_CMD = pd.DataFrame([
 ])
 
 DEFAULT_SCHEDULE = pd.DataFrame([
-    # 第一週
     {"日期（22時至翌日6時）": "115年4月30日～\n5月2日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    
-    # 第二週
     {"日期（22時至翌日6時）": "115年5月8日～\n5月9日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-
-    # 第三週
     {"日期（22時至翌日6時）": "115年5月15日～\n5月16日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-
-    # 第四週
     {"日期（22時至翌日6時）": "115年5月22日～\n5月23日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-
-    # 第五週
     {"日期（22時至翌日6時）": "115年5月29日～\n5月30日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
@@ -111,15 +102,13 @@ def get_client():
 def load_data():
     try:
         client = get_client()
-        if client is None:
-            return None, None, None, "離線模式"
+        if client is None: return None, None, None, "離線模式"
         sh = client.open_by_key(SHEET_ID)
         ws_set = sh.worksheet("危駕月_設定")
         ws_cmd = sh.worksheet("危駕月_指揮組")
         ws_sch = sh.worksheet("危駕月_勤務表")
         return pd.DataFrame(ws_set.get_all_records()), pd.DataFrame(ws_cmd.get_all_records()), pd.DataFrame(ws_sch.get_all_records()), None
-    except Exception as e:
-        return None, None, None, str(e)
+    except Exception as e: return None, None, None, str(e)
 
 def save_data(month, df_cmd, df_schedule):
     try:
@@ -129,7 +118,6 @@ def save_data(month, df_cmd, df_schedule):
         ws_set = sh.worksheet("危駕月_設定")
         ws_set.clear()
         ws_set.update([["Key", "Value"], ["month", month]])
-        
         for ws_name, df in [("危駕月_指揮組", df_cmd), ("危駕月_勤務表", df_schedule)]:
             ws = sh.worksheet(ws_name)
             ws.clear()
@@ -139,7 +127,7 @@ def save_data(month, df_cmd, df_schedule):
         return True
     except: return False
 
-# --- 3. PDF 生成 ---
+# --- 3. PDF 生成 (含頁碼功能) ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
@@ -156,21 +144,25 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
     page_width = A4[0] - 24*mm
     story = []
     
+    # 頁碼回標函數
+    def add_page_number(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 10)
+        page_num = f"第 {canvas.getPageNumber()} 頁"
+        # 繪製在底部中央 (距離底部 10mm)
+        canvas.drawCentredString(A4[0]/2.0, 10*mm, page_num)
+        canvas.restoreState()
+
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=10)
     style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22)
     style_col_header = ParagraphStyle('ColHeader', fontName=font, fontSize=16, leading=20, alignment=1)
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
-    
-    # 懸掛縮排修正
-    style_hanging = ParagraphStyle('Hanging', fontName=font, fontSize=14, leading=20, 
-                                   leftIndent=8.5*mm, firstLineIndent=-8.5*mm, spaceAfter=5)
+    style_hanging = ParagraphStyle('Hanging', fontName=font, fontSize=14, leading=20, leftIndent=8.5*mm, firstLineIndent=-8.5*mm, spaceAfter=5)
     style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4)
 
     story.append(Paragraph(f"<b>{full_title}</b>", style_title))
-    
-    def clean(txt):
-        return str(txt).replace("\n", "<br/>").replace("、", "<br/>")
+    def clean(txt): return str(txt).replace("\n", "<br/>").replace("、", "<br/>")
 
     # 任務編組
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
@@ -179,29 +171,23 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
         data_cmd.append([Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell), Paragraph(str(r.get('代號','')), style_cell), Paragraph(clean(r.get('姓名','')), style_cell), Paragraph(str(r.get('任務','')), style_cell_left)])
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.12, page_width*0.28, page_width*0.45], repeatRows=2)
     t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
-    story.append(t1)
-    story.append(Spacer(1, 6*mm))
+    story.append(t1); story.append(Spacer(1, 6*mm))
 
     # 警力佈署
     data_sch = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["日期（22時至翌日6時）", "單位", "分工"]]]
     for _, r in df_schedule.iterrows():
         data_sch.append([Paragraph(clean(r.get('日期（22時至翌日6時）','')), style_cell), Paragraph(clean(r.get('單位','')), style_cell), Paragraph(str(r.get('分工','')), style_cell_left)])
-
     t2 = Table(data_sch, colWidths=[page_width*0.22, page_width*0.22, page_width*0.56], repeatRows=2)
     t2_styles = [('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]
-
-    # 合併單元格
     date_col = '日期（22時至翌日6時）'
     non_empty = [i for i, val in enumerate(df_schedule[date_col]) if str(val).strip() != ""]
     non_empty.append(len(df_schedule))
     for k in range(len(non_empty) - 1):
         s, e = non_empty[k], non_empty[k+1] - 1
         if e > s: t2_styles.append(('SPAN', (0, s + 2), (0, e + 2))); t2_styles.append(('VALIGN', (0, s + 2), (0, e + 2), 'MIDDLE'))
-
     t2.setStyle(TableStyle(t2_styles))
-    story.append(t2)
-    story.append(Spacer(1, 6*mm))
+    story.append(t2); story.append(Spacer(1, 6*mm))
 
     # 巡簽與備註
     story.append(Paragraph("<b>📍 巡簽地點：</b>", style_section))
@@ -212,7 +198,8 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
     for line in NOTES.split('\n'):
         if line.strip(): story.append(Paragraph(line, style_hanging))
 
-    doc.build(story)
+    # 執行 Build 並套用頁碼
+    doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     return buf.getvalue()
 
 # --- 4. 寄信功能 ---
@@ -232,8 +219,6 @@ def send_report_email(full_title, df_cmd, df_schedule):
 
 # --- 5. 主介面邏輯 ---
 df_set, df_cmd_raw, df_sch_raw, err = load_data()
-
-# 初始化變數，確保不論有沒有讀到資料，c_month 都有值
 if not (err or df_set is None):
     sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     c_month = sd.get("month", DEFAULT_MONTH)
@@ -251,66 +236,36 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 st.subheader("3. 警力佈署")
 res_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
 
-# HTML 預覽 (含 rowspan 合併儲存格邏輯)
+# HTML 預覽 (含 rowspan 自動合併邏輯)
 def get_html():
-    parts = [
-        "<style>",
-        "body {font-family:'標楷體'; padding:20px;}",
-        "table {border-collapse: collapse; width: 100%;}",
-        "th, td {border: 1px solid black; padding: 8px; font-size: 14pt; text-align: center; line-height: 1.5;}",
-        "th {font-size: 16pt; background-color: #f2f2f2;}",
-        ".note-section {font-size: 14pt; font-weight: bold; margin-top: 15px;}",
-        ".hanging-note {font-size: 14pt; padding-left: 2.2em; text-indent: -2.2em; margin-bottom: 5px; line-height: 1.6;}",
-        "</style>"
-    ]
+    parts = ["<style>body{font-family:'標楷體';padding:20px;} table{border-collapse:collapse;width:100%;} th,td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} th{font-size:16pt;background-color:#f2f2f2;} .note-section{font-size:14pt;font-weight:bold;margin-top:15px;} .hanging-note{font-size:14pt;padding-left:2.2em;text-indent:-2.2em;margin-bottom:5px;line-height:1.6;}</style>"]
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{full_title}</b></h2><br>")
-    
-    # 任務編組
     parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>")
     for _, r in res_cmd.iterrows():
         parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
-    
-    # 警力佈署
     parts.append("</table><br><table><tr><th colspan='3'>警 力 佈 署</th></tr><tr><th>日期</th><th>單位</th><th>分工</th></tr>")
-    
-    # 計算 HTML 的 rowspan 以合併日期欄位
     col_date = '日期（22時至翌日6時）'
     dates = res_sch[col_date].tolist()
     non_empty_indices = [i for i, val in enumerate(dates) if str(val).strip() != ""]
     non_empty_indices.append(len(dates))
-    
     rowspans = {}
     for k in range(len(non_empty_indices) - 1):
-        s = non_empty_indices[k]
-        e = non_empty_indices[k+1]
+        s, e = non_empty_indices[k], non_empty_indices[k+1]
         rowspans[s] = e - s
-
     for i, row in res_sch.reset_index(drop=True).iterrows():
         parts.append("<tr>")
-        
-        # 處理合併儲存格 (rowspan)
         if i in rowspans:
             rs = rowspans[i]
             date_val = str(row.get(col_date, '')).replace('\n', '<br>')
-            if rs > 1:
-                parts.append(f"<td rowspan='{rs}'>{date_val}</td>")
-            else:
-                parts.append(f"<td>{date_val}</td>")
-        
-        # 填入單位與分工
+            parts.append(f"<td rowspan='{rs}'>{date_val}</td>")
         parts.append(f"<td>{str(row.get('單位','')).replace(chr(10),'<br>')}</td><td style='text-align:left'>{str(row.get('分工','')).replace(chr(10),'<br>')}</td></tr>")
-    
-    parts.append("</table>")
-    
-    # 巡簽與備註
-    parts.append("<div class='note-section'>📍 巡簽地點：</div>")
+    parts.append("</table><div class='note-section'>📍 巡簽地點：</div>")
     for line in CHECKIN_POINTS.split('\n'):
         if line.strip(): parts.append(f"<div class='hanging-note'>{line}</div>")
     parts.append("<div class='note-section'>📝 備註：</div>")
     for line in NOTES.split('\n'):
         if line.strip(): parts.append(f"<div class='hanging-note'>{line}</div>")
     parts.append("</body></html>")
-    
     return "".join(parts)
 
 st.markdown("---")
