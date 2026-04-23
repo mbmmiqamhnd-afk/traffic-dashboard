@@ -191,7 +191,8 @@ def process_overload(files):
                 })
         if requests: sh.batch_update({"requests": requests})
 
-# ----------------- [3. 重大交通違規] -----------------
+
+# ----------------- [3. 重大交通違規 (總表維持原設定、細項表不改字型與粗體)] -----------------
 def process_major(files):
     if len(files) < 2:
         st.error("❌ 請上傳『本期』與『年累計』報表。若要精確比較細項，請一併上傳第三份『去年累計』報表。")
@@ -347,8 +348,8 @@ def process_major(files):
             if header_idx != -1:
                 headers = [str(x).replace('\n', '').strip() for x in df.iloc[header_idx].values]
                 sub_headers = [str(x).replace('\n', '').strip() for x in df.iloc[header_idx+1].values] if header_idx+1 < len(df) else headers
-                cat_cols = {cat: {'stop': -1, 'cit': -1} for cat in DETAIL_CATEGORIES}
                 
+                cat_cols = {cat: {'stop': -1, 'cit': -1} for cat in DETAIL_CATEGORIES}
                 for c in range(len(headers)):
                     h1, h2 = headers[c], sub_headers[c]
                     current_cat = None
@@ -393,22 +394,25 @@ def process_major(files):
             ds, dc, dt = ys - ls, yc - lc, yt - lt
             
             rows.append([u, ys, yc, yt, ls, lc, lt, ds if u != '警備隊' else "—", dc if u != '警備隊' else "—", dt if u != '警備隊' else "—"])
+            
             sum_cat['ys'] += ys; sum_cat['yc'] += yc; sum_cat['yt'] += yt
             sum_cat['ls'] += ls; sum_cat['lc'] += lc; sum_cat['lt'] += lt
-            if u != '警備隊': sum_cat['ds'] += ds; sum_cat['dc'] += dc; sum_cat['dt'] += dt
+            if u != '警備隊': 
+                sum_cat['ds'] += ds; sum_cat['dc'] += dc; sum_cat['dt'] += dt
                 
         tot_row = ['合計', sum_cat['ys'], sum_cat['yc'], sum_cat['yt'], sum_cat['ls'], sum_cat['lc'], sum_cat['lt'], sum_cat['ds'], sum_cat['dc'], sum_cat['dt']]
         rows.insert(0, tot_row)
         cat_dfs[cat] = pd.DataFrame(rows, columns=pd.MultiIndex.from_arrays([h1_cat, h2_cat]))
 
     with st.expander("🔍 檢視 6 大項重大違規細表 (點擊展開)"):
-        if not dfs_ly: st.info("💡 提醒：因為您未上傳單獨的『去年累計』報表，細項的去年欄位將暫時以 0 計算。")
+        if not dfs_ly: 
+            st.info("💡 提醒：因為您未上傳單獨的『去年累計』報表，細項的去年欄位將暫時以 0 計算。")
         for cat, df_c in cat_dfs.items():
             st.write(f"**【{cat}】統計表**")
             st.dataframe(df_c, use_container_width=True)
 
     # =========================================================
-    # 第三部分：雲端同步 (包含總表與六大細項表)
+    # 第三部分：雲端同步 (總表維持原設定、細項表不改字型與粗體)
     # =========================================================
     if GCP_CREDS:
         try:
@@ -418,7 +422,7 @@ def process_major(files):
             requests = []
             red_color, black_color = {"red": 1.0, "green": 0.0, "blue": 0.0}, {"red": 0.0, "green": 0.0, "blue": 0.0}
             
-            # --- 3-1. 同步總表 ---
+            # --- 3-1. 同步總表 (完全保留原本格式與粗體) ---
             ws_main = sh.get_worksheet(0)
             titles_main = df_result.columns.tolist()
             top_row_m, bottom_row_m = [t[0] for t in titles_main], [t[1] for t in titles_main]
@@ -428,6 +432,7 @@ def process_major(files):
             for i, text in enumerate(top_row_m):
                 if "(" in text:
                     p_start = text.find("(")
+                    # 總表仍保留 bold: True
                     requests.append({"updateCells": {"range": {"sheetId": ws_main.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1}, "rows": [{ "values": [{ "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": black_color, "bold": True}}, {"startIndex": p_start, "format": {"foregroundColor": red_color, "bold": True}}], "userEnteredValue": {"stringValue": text} }] }], "fields": "userEnteredValue,textFormatRuns"}})
 
             for r_idx, row_vals in enumerate(data_body_m):
@@ -437,7 +442,7 @@ def process_major(files):
                 fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
                 requests.append({"repeatCell": {"range": {"sheetId": ws_main.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 7, "endColumnIndex": 8}, "cell": {"userEnteredFormat": fmt}, "fields": "userEnteredFormat.textFormat.foregroundColor"}})
 
-            # --- 3-2. 同步 6 個細項分頁 ---
+            # --- 3-2. 同步 6 個細項分頁 (移除標題龍潭分局，不更改字型及粗體) ---
             for cat, df_c in cat_dfs.items():
                 ws_name = f"重大違規-{cat}"
                 ws_cat = sh.worksheet(ws_name) if ws_name in existing_sheets else sh.add_worksheet(title=ws_name, rows="30", cols="15")
@@ -447,12 +452,12 @@ def process_major(files):
                 top_row_c, bottom_row_c = [t[0] for t in titles_c], [t[1] for t in titles_c]
                 data_body_c = df_c.values.tolist()
                 
-                # 建立標題字串
+                # 標題移除「龍潭分局」
                 title_text = f"取締【{cat}】違規統計表 (累計至 {date_yr})"
                 
                 ws_cat.update(range_name='A1', values=[[title_text] + [""]*9, top_row_c, bottom_row_c] + data_body_c)
                 
-                # 自動化雙色排版邏輯 (為 A1 儲存格大標題套用)
+                # 細項表大標題 (A1)：僅套用顏色雙色排版，不改變原有字型、粗體設定
                 if "(" in title_text:
                     p_start_title = title_text.find("(")
                     requests.append({
@@ -462,8 +467,8 @@ def process_major(files):
                                 "values": [{
                                     "userEnteredValue": {"stringValue": title_text},
                                     "textFormatRuns": [
-                                        {"startIndex": 0, "format": {"foregroundColor": black_color, "bold": True, "fontSize": 14}},
-                                        {"startIndex": p_start_title, "format": {"foregroundColor": red_color, "bold": True, "fontSize": 14}}
+                                        {"startIndex": 0, "format": {"foregroundColor": black_color}},
+                                        {"startIndex": p_start_title, "format": {"foregroundColor": red_color}}
                                     ]
                                 }]
                             }],
@@ -471,7 +476,22 @@ def process_major(files):
                         }
                     })
 
-                # 其他儲存格與欄位的排版 (跨欄置中)
+                # 細項表雙列表頭：僅套用顏色雙色排版，不改變原有字型、粗體設定
+                for i, text in enumerate(top_row_c):
+                    if "(" in text:
+                        p_start = text.find("(")
+                        requests.append({
+                            "updateCells": {
+                                "range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
+                                "rows": [{ "values": [{ "textFormatRuns": [
+                                    {"startIndex": 0, "format": {"foregroundColor": black_color}},
+                                    {"startIndex": p_start, "format": {"foregroundColor": red_color}}
+                                ], "userEnteredValue": {"stringValue": text} }] }],
+                                "fields": "userEnteredValue,textFormatRuns"
+                            }
+                        })
+
+                # 跨欄合併與置中排版 (完全拔除 textFormat 的設定，不影響預設字型/粗體)
                 requests.extend([
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
@@ -481,7 +501,7 @@ def process_major(files):
                     {"repeatCell": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}}, "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"}}
                 ])
                 
-                # 負數差異標示紅字
+                # 負數差異標示紅字 (僅改顏色)
                 for r_idx, row_vals in enumerate(data_body_c):
                     target_row = 3 + r_idx
                     for c_idx in [7, 8, 9]:
