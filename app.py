@@ -195,13 +195,26 @@ def process_overload(files):
 # ----------------- [3. 重大交通違規] -----------------
 def process_major(files):
     if len(files) < 2:
-        st.error("❌ 需要至少上傳『本期』與『(1)年累計』報表才能進行重大違規比對。")
+        st.error("❌ 至少需上傳『本期』與『(1)年累計』報表。若要顯示細項的去年資料，請一併上傳『(2)去年累計』。")
         return
 
     # --- 1. 檔案辨識 ---
-    sorted_files = sorted(files, key=lambda x: x.size)
-    f_wk, f_year = sorted_files[0], sorted_files[1]
-    if "(1)" in f_wk.name: f_wk, f_year = f_year, f_wk
+    f_wk, f_year, f_ly = None, None, None
+    for f in files:
+        if "(1)" in f.name: f_year = f
+        elif "(2)" in f.name: f_ly = f
+        else: f_wk = f
+
+    if not f_year or not f_wk:
+        sorted_files = sorted([f for f in files if "重大" in f.name or "重點" in f.name] or files, key=lambda x: x.size)
+        if len(sorted_files) >= 2:
+            f_wk, f_year = sorted_files[0], sorted_files[1]
+            if "(1)" in f_wk.name: f_wk, f_year = f_year, f_wk
+        if len(sorted_files) >= 3:
+            f_ly = sorted_files[2]
+            
+    if not f_ly:
+        st.warning("⚠️ 提示：未偵測到『(2)去年累計』報表，各違規細項的去年數據將以 0 顯示。")
 
     def get_robust_date(df):
         try:
@@ -228,7 +241,7 @@ def process_major(files):
         except: return 0
 
     # =========================================================
-    # 第一部分：處理原先的「重大違規（總表）」 (完全不變動原邏輯)
+    # 第一部分：處理原先的「重大違規（總表）」 (完全保留原邏輯)
     # =========================================================
     def parse_major_data(f, sheet_kw, col_pair):
         if not f: return {}, ""
@@ -287,7 +300,7 @@ def process_major(files):
     st.dataframe(df_result, use_container_width=True)
 
     # =========================================================
-    # 第二部分：處理「6大違規細項表」(智慧解析年累計表中的今年與去年)
+    # 第二部分：處理「6大違規細項表」(今年與去年分離解析)
     # =========================================================
     DETAIL_CATEGORIES = {
         "酒駕": ["酒駕", "酒後", "35條"],
@@ -298,11 +311,11 @@ def process_major(files):
         "不暫停讓行人": ["行人", "車不讓人", "暫停讓", "44條"]
     }
 
-    def parse_all_details(f_y):
-        res = {cat: {u: {'yt_stop':0, 'yt_cit':0, 'ly_stop':0, 'ly_cit':0} for u in MAJOR_UNIT_ORDER} for cat in DETAIL_CATEGORIES}
-        if not f_y: return res
-        f_y.seek(0)
-        try: xl = pd.ExcelFile(f_y)
+    def parse_detail_file(f):
+        res = {cat: {u: {'stop':0, 'cit':0} for u in MAJOR_UNIT_ORDER} for cat in DETAIL_CATEGORIES}
+        if not f: return res
+        f.seek(0)
+        try: xl = pd.ExcelFile(f)
         except: return res
         
         for sn in xl.sheet_names:
@@ -313,37 +326,34 @@ def process_major(files):
             for idx, row in df.iterrows():
                 row_str = "".join([str(x) for x in row.values if pd.notna(x)])
                 
-                # 判斷目前讀取到哪個類別
                 matched_cat = next((cat for cat, kws in DETAIL_CATEGORIES.items() if any(kw in row_str for kw in kws) and ("項目" in row_str or "統計" in row_str or len(row_str)<30)), None)
                 if matched_cat:
-                    current_cat, col_map = matched_cat, {}
+                    current_cat = matched_cat
+                    col_map = {}
                     continue
                 if not current_cat:
                     current_cat = next((cat for cat, kws in DETAIL_CATEGORIES.items() if any(kw in sn for kw in kws)), None)
-                            
-                # 解析今年與去年的「攔停/違法」與「逕舉/違規」對應的欄位位置
+                
                 if current_cat and ("行政區" in row_str or "單位" in row_str) and not col_map:
                     for c in range(len(row)):
                         h = "".join([str(df.iloc[idx+offset, c]) for offset in [-1, 0, 1] if 0 <= idx+offset < len(df) and pd.notna(df.iloc[idx+offset, c])])
-                        is_yt = "本年" in h or "今年" in h or "114" in h or "115" in h or ("去年" not in h)
-                        is_ly = "去年" in h or "113" in h
-                        if is_yt:
-                            if any(k in h for k in ["攔停", "當場", "違法"]): col_map['yt_stop'] = c
-                            elif any(k in h for k in ["逕舉", "逕行", "違規"]): col_map['yt_cit'] = c
-                        if is_ly:
-                            if any(k in h for k in ["攔停", "當場", "違法"]): col_map['ly_stop'] = c
-                            elif any(k in h for k in ["逕舉", "逕行", "違規"]): col_map['ly_cit'] = c
-                
-                # 取出各單位的數字
+                        # 抓取該表最左側出現的第一組攔停/逕舉 (避免抓到備註或其他年份)
+                        if 'stop' not in col_map and any(k in h for k in ["攔停", "當場", "違法"]):
+                            col_map['stop'] = c
+                        elif 'cit' not in col_map and any(k in h for k in ["逕舉", "逕行", "違規"]):
+                            col_map['cit'] = c
+                            
                 u = clean_unit(row.values[0]) if len(row.values) > 0 else None
                 if u and current_cat and col_map and "合計" not in str(row.values[0]):
-                    res[current_cat][u]['yt_stop'] += to_i(row.values[col_map.get('yt_stop', -1)]) if col_map.get('yt_stop', -1) != -1 else 0
-                    res[current_cat][u]['yt_cit'] += to_i(row.values[col_map.get('yt_cit', -1)]) if col_map.get('yt_cit', -1) != -1 else 0
-                    res[current_cat][u]['ly_stop'] += to_i(row.values[col_map.get('ly_stop', -1)]) if col_map.get('ly_stop', -1) != -1 else 0
-                    res[current_cat][u]['ly_cit'] += to_i(row.values[col_map.get('ly_cit', -1)]) if col_map.get('ly_cit', -1) != -1 else 0
+                    if u in res[current_cat]:
+                        res[current_cat][u]['stop'] += to_i(row.values[col_map.get('stop', -1)]) if 'stop' in col_map else 0
+                        res[current_cat][u]['cit'] += to_i(row.values[col_map.get('cit', -1)]) if 'cit' in col_map else 0
         return res
 
-    cat_res = parse_all_details(f_year)
+    # 讀取今年(f_year) 與 去年(f_ly) 報表
+    d_yt_cat = parse_detail_file(f_year)
+    d_ly_cat = parse_detail_file(f_ly)
+
     cat_dfs = {}
     
     # 全新的 9 宮格雙層表頭
@@ -354,16 +364,20 @@ def process_major(files):
         rows = []
         sum_cat = {'ys':0, 'yc':0, 'yt':0, 'ls':0, 'lc':0, 'lt':0, 'ds':0, 'dc':0, 'dt':0}
         for u in MAJOR_UNIT_ORDER:
-            d = cat_res[cat][u]
-            ys, yc = d['yt_stop'], d['yt_cit']
-            ls, lc = d['ly_stop'], d['ly_cit']
+            ys = d_yt_cat[cat][u]['stop']
+            yc = d_yt_cat[cat][u]['cit']
+            ls = d_ly_cat[cat][u]['stop']
+            lc = d_ly_cat[cat][u]['cit']
+            
             yt, lt = ys + yc, ls + lc
             ds, dc, dt = ys - ls, yc - lc, yt - lt
             
             rows.append([u, ys, yc, yt, ls, lc, lt, ds if u != '警備隊' else "—", dc if u != '警備隊' else "—", dt if u != '警備隊' else "—"])
+            
             sum_cat['ys'] += ys; sum_cat['yc'] += yc; sum_cat['yt'] += yt
             sum_cat['ls'] += ls; sum_cat['lc'] += lc; sum_cat['lt'] += lt
-            if u != '警備隊': sum_cat['ds'] += ds; sum_cat['dc'] += dc; sum_cat['dt'] += dt
+            if u != '警備隊': 
+                sum_cat['ds'] += ds; sum_cat['dc'] += dc; sum_cat['dt'] += dt
                 
         tot_row = ['合計', sum_cat['ys'], sum_cat['yc'], sum_cat['yt'], sum_cat['ls'], sum_cat['lc'], sum_cat['lt'], sum_cat['ds'], sum_cat['dc'], sum_cat['dt']]
         rows.insert(0, tot_row)
@@ -842,7 +856,7 @@ if app_mode == "🏠 智慧批次處理中心":
 
     uploads = st.file_uploader("📂 拖入所有報表檔案", type=["xlsx", "csv", "xls"], accept_multiple_files=True)
     st.divider()
-    st.subheader("🚀 啟動全自動批次作業")
+    st.subheader("🚀 啟全自動批次作業")
 
     if uploads:
         file_hash = sum([f.size for f in uploads]) + len(uploads)
