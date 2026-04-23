@@ -191,7 +191,7 @@ def process_overload(files):
                 })
         if requests: sh.batch_update({"requests": requests})
 
-# ----------------- [3. 重大交通違規 (CSV三報表終極引擎版)] -----------------
+# ----------------- [3. 重大交通違規] -----------------
 def process_major(files):
     if len(files) < 2:
         st.error("❌ 請上傳『本期』與『年累計』報表。若要精確比較細項，請一併上傳第三份『去年累計』報表。")
@@ -258,7 +258,7 @@ def process_major(files):
     dfs_ly = get_dfs(f_ly)
 
     # =========================================================
-    # 第一部分：處理原先的「重大違規（總表）」 (維持原邏輯)
+    # 第一部分：處理原先的「重大違規（總表）」
     # =========================================================
     def parse_main_table(dfs):
         d_yt, d_ly = {}, {}
@@ -285,7 +285,6 @@ def process_major(files):
         w_data = d_wk_yt.get(u, {'stop':0, 'cit':0})
         y_data = d_yr_yt.get(u, {'stop':0, 'cit':0})
         
-        # 總表邏輯不變，抓取正確的去年數字
         if dfs_ly:
             l_data = d_ly_yt.get(u, {'stop':0, 'cit':0})
         else:
@@ -323,7 +322,7 @@ def process_major(files):
     st.dataframe(df_result, use_container_width=True)
 
     # =========================================================
-    # 第二部分：處理「6大違規細項表」 (智慧搜尋3份報表)
+    # 第二部分：處理「6大違規細項表」
     # =========================================================
     DETAIL_CATEGORIES = {
         "酒駕": ["酒駕", "酒後", "35條"],
@@ -340,7 +339,6 @@ def process_major(files):
         
         for df in dfs:
             header_idx = -1
-            # 在資料中尋找橫向包含多個違規名稱的列 (表頭)
             for i in range(min(15, len(df))):
                 row_str = "".join([str(x) for x in df.iloc[i].values if pd.notna(x)])
                 if sum(1 for kw in ["酒駕", "闖紅燈", "逆向行駛", "轉彎"] if kw in row_str) >= 2:
@@ -349,10 +347,8 @@ def process_major(files):
             if header_idx != -1:
                 headers = [str(x).replace('\n', '').strip() for x in df.iloc[header_idx].values]
                 sub_headers = [str(x).replace('\n', '').strip() for x in df.iloc[header_idx+1].values] if header_idx+1 < len(df) else headers
-                
                 cat_cols = {cat: {'stop': -1, 'cit': -1} for cat in DETAIL_CATEGORIES}
                 
-                # 自動辨識對應的直行索引
                 for c in range(len(headers)):
                     h1, h2 = headers[c], sub_headers[c]
                     current_cat = None
@@ -366,7 +362,6 @@ def process_major(files):
                         elif any(k in h2 for k in ["逕", "違規"]):
                             if cat_cols[current_cat]['cit'] == -1: cat_cols[current_cat]['cit'] = c
                             
-                # 開始抓取該檔案中的數據
                 for idx, row in df.iloc[header_idx+1:].iterrows():
                     u = clean_unit(row.values[0])
                     if u and "合計" not in str(row.values[0]):
@@ -376,7 +371,6 @@ def process_major(files):
                             if cc != -1 and cc < len(row): res[cat][u]['cit'] += to_i(row.values[cc])
         return res
 
-    # 運用第2份與第3份報表建立完美九宮格
     d_yr_cat = parse_detail_data(dfs_yr)
     d_ly_cat = parse_detail_data(dfs_ly)
 
@@ -388,14 +382,10 @@ def process_major(files):
         rows = []
         sum_cat = {'ys':0, 'yc':0, 'yt':0, 'ls':0, 'lc':0, 'lt':0, 'ds':0, 'dc':0, 'dt':0}
         for u in MAJOR_UNIT_ORDER:
-            # 從「年累計」檔案抓取今年度
-            ys = d_yr_cat[cat][u]['stop']
-            yc = d_yr_cat[cat][u]['cit']
+            ys = d_yr_cat[cat][u]['stop']; yc = d_yr_cat[cat][u]['cit']
             
-            # 從「去年累計」檔案抓取去年度
             if dfs_ly:
-                ls = d_ly_cat[cat][u]['stop']
-                lc = d_ly_cat[cat][u]['cit']
+                ls = d_ly_cat[cat][u]['stop']; lc = d_ly_cat[cat][u]['cit']
             else:
                 ls = 0; lc = 0
                 
@@ -403,19 +393,16 @@ def process_major(files):
             ds, dc, dt = ys - ls, yc - lc, yt - lt
             
             rows.append([u, ys, yc, yt, ls, lc, lt, ds if u != '警備隊' else "—", dc if u != '警備隊' else "—", dt if u != '警備隊' else "—"])
-            
             sum_cat['ys'] += ys; sum_cat['yc'] += yc; sum_cat['yt'] += yt
             sum_cat['ls'] += ls; sum_cat['lc'] += lc; sum_cat['lt'] += lt
-            if u != '警備隊': 
-                sum_cat['ds'] += ds; sum_cat['dc'] += dc; sum_cat['dt'] += dt
+            if u != '警備隊': sum_cat['ds'] += ds; sum_cat['dc'] += dc; sum_cat['dt'] += dt
                 
         tot_row = ['合計', sum_cat['ys'], sum_cat['yc'], sum_cat['yt'], sum_cat['ls'], sum_cat['lc'], sum_cat['lt'], sum_cat['ds'], sum_cat['dc'], sum_cat['dt']]
         rows.insert(0, tot_row)
         cat_dfs[cat] = pd.DataFrame(rows, columns=pd.MultiIndex.from_arrays([h1_cat, h2_cat]))
 
     with st.expander("🔍 檢視 6 大項重大違規細表 (點擊展開)"):
-        if not dfs_ly: 
-            st.info("💡 提醒：因為您未上傳單獨的『去年累計』報表，細項的去年欄位將暫時以 0 計算。")
+        if not dfs_ly: st.info("💡 提醒：因為您未上傳單獨的『去年累計』報表，細項的去年欄位將暫時以 0 計算。")
         for cat, df_c in cat_dfs.items():
             st.write(f"**【{cat}】統計表**")
             st.dataframe(df_c, use_container_width=True)
@@ -450,7 +437,7 @@ def process_major(files):
                 fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
                 requests.append({"repeatCell": {"range": {"sheetId": ws_main.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 7, "endColumnIndex": 8}, "cell": {"userEnteredFormat": fmt}, "fields": "userEnteredFormat.textFormat.foregroundColor"}})
 
-            # --- 3-2. 同步 6 個細項分頁 (全新九宮格，移除標題中的龍潭分局) ---
+            # --- 3-2. 同步 6 個細項分頁 ---
             for cat, df_c in cat_dfs.items():
                 ws_name = f"重大違規-{cat}"
                 ws_cat = sh.worksheet(ws_name) if ws_name in existing_sheets else sh.add_worksheet(title=ws_name, rows="30", cols="15")
@@ -460,20 +447,41 @@ def process_major(files):
                 top_row_c, bottom_row_c = [t[0] for t in titles_c], [t[1] for t in titles_c]
                 data_body_c = df_c.values.tolist()
                 
-                # 修改此處：移除「龍潭分局」
+                # 建立標題字串
                 title_text = f"取締【{cat}】違規統計表 (累計至 {date_yr})"
                 
                 ws_cat.update(range_name='A1', values=[[title_text] + [""]*9, top_row_c, bottom_row_c] + data_body_c)
                 
+                # 自動化雙色排版邏輯 (為 A1 儲存格大標題套用)
+                if "(" in title_text:
+                    p_start_title = title_text.find("(")
+                    requests.append({
+                        "updateCells": {
+                            "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
+                            "rows": [{
+                                "values": [{
+                                    "userEnteredValue": {"stringValue": title_text},
+                                    "textFormatRuns": [
+                                        {"startIndex": 0, "format": {"foregroundColor": black_color, "bold": True, "fontSize": 14}},
+                                        {"startIndex": p_start_title, "format": {"foregroundColor": red_color, "bold": True, "fontSize": 14}}
+                                    ]
+                                }]
+                            }],
+                            "fields": "userEnteredValue,textFormatRuns"
+                        }
+                    })
+
+                # 其他儲存格與欄位的排版 (跨欄置中)
                 requests.extend([
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 1, "endColumnIndex": 4}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 4, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
-                    {"repeatCell": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "textFormat": {"bold": True}}}, "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.textFormat.bold"}}
+                    {"repeatCell": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}}, "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"}}
                 ])
                 
+                # 負數差異標示紅字
                 for r_idx, row_vals in enumerate(data_body_c):
                     target_row = 3 + r_idx
                     for c_idx in [7, 8, 9]:
