@@ -202,6 +202,16 @@ def process_major(files):
     f_wk, f_year = sorted_files[0], sorted_files[1]
     if "(1)" in f_wk.name: f_wk, f_year = f_year, f_wk
 
+    # 建立六大項與關鍵字的對應表
+    DETAIL_CATEGORIES = {
+        "酒駕": ["酒駕", "酒後", "35條"],
+        "闖紅燈": ["闖紅燈", "53條"],
+        "逆向行駛": ["逆向", "45條"],
+        "轉彎未依規定": ["轉彎", "48條"],
+        "蛇行惡意逼車": ["蛇行", "逼車", "惡意", "43條"],
+        "不暫停讓行人": ["行人", "車不讓人", "暫停讓", "44條"]
+    }
+
     def get_robust_date(df):
         try:
             raw_cells = [str(val) for val in df.head(10).values.flatten() if pd.notna(val)]
@@ -213,26 +223,26 @@ def process_major(files):
             return ""
         except: return ""
 
+    def clean_unit(n):
+        n = str(n).strip()
+        if '分隊' in n: return '交通分隊'
+        if any(k in n for k in ['科技', '交通組']): return '科技執法'
+        if '警備' in n: return '警備隊'
+        for k in ['聖亭', '龍潭', '中興', '石門', '高平', '三和']:
+            if k in n: return k + '所'
+        return None
+
+    def to_i(v):
+        try: return int(float(str(v).replace(',', '').strip()))
+        except: return 0
+
+    # 解析總表資料
     def parse_major_data(f, sheet_kw, col_pair):
         f.seek(0)
         xl = pd.ExcelFile(f)
         sn = next((s for s in xl.sheet_names if sheet_kw in s), xl.sheet_names[0])
         df = pd.read_excel(xl, sheet_name=sn, header=None)
         dt_str = get_robust_date(df)
-        
-        def clean_unit(n):
-            n = str(n).strip()
-            if '分隊' in n: return '交通分隊'
-            if any(k in n for k in ['科技', '交通組']): return '科技執法'
-            if '警備' in n: return '警備隊'
-            for k in ['聖亭', '龍潭', '中興', '石門', '高平', '三和']:
-                if k in n: return k + '所'
-            return None
-
-        def to_i(v):
-            try: return int(float(str(v).replace(',', '').strip()))
-            except: return 0
-
         res = {}
         for _, r in df.iterrows():
             u = clean_unit(r.iloc[0])
@@ -244,6 +254,7 @@ def process_major(files):
     d_year, date_yr = parse_major_data(f_year, "(1)", [15, 16])
     d_last, _ = parse_major_data(f_year, "(1)", [18, 19])
 
+    # 建立總表 DataFrame
     table_rows = []
     summary = {k: 0 for k in ['ws', 'wc', 'ys', 'yc', 'ls', 'lc', 'diff', 'tgt']}
     
@@ -256,7 +267,6 @@ def process_major(files):
         l_total = l_data['stop'] + l_data['cit']
         tgt = MAJOR_TARGETS.get(u, 0)
         diff = int(y_total - l_total)
-        
         rate = f"{(y_total/tgt):.1%}" if tgt > 0 else "0%"
         
         if u != '警備隊':
@@ -280,21 +290,76 @@ def process_major(files):
     header_2 = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
     
     df_result = pd.DataFrame(table_rows, columns=pd.MultiIndex.from_arrays([header_1, header_2]))
-    st.write("📊 **重大違規統計結果：**")
+    st.write("📊 **重大違規統計結果 (總表)：**")
     st.dataframe(df_result, use_container_width=True)
 
+    # ================= 處理六大細項數據 =================
+    def parse_detail_data(f, sheet_kw):
+        f.seek(0)
+        xl = pd.ExcelFile(f)
+        sn = next((s for s in xl.sheet_names if sheet_kw in s), xl.sheet_names[0])
+        df = pd.read_excel(xl, sheet_name=sn, header=None)
+        
+        header_idx = 0
+        max_matches = 0
+        # 動態尋找表頭
+        for i in range(min(15, len(df))):
+            row_str = "".join([str(x) for x in df.iloc[i].values if pd.notna(x)])
+            matches = sum(1 for kws in DETAIL_CATEGORIES.values() for kw in kws if kw in row_str)
+            if matches > max_matches:
+                max_matches = matches
+                header_idx = i
+
+        headers = [str(x).replace('\n', '').strip() for x in df.iloc[header_idx].values]
+        cat_cols = {cat: [] for cat in DETAIL_CATEGORIES}
+        
+        for i, h in enumerate(headers):
+            for cat, kws in DETAIL_CATEGORIES.items():
+                if any(kw in h for kw in kws):
+                    cat_cols[cat].append(i)
+                    break
+                    
+        res = {}
+        for _, r in df.iloc[header_idx+1:].iterrows():
+            u = clean_unit(r.iloc[0])
+            if u and "合計" not in str(r.iloc[0]):
+                if u not in res: res[u] = {cat: 0 for cat in DETAIL_CATEGORIES}
+                for cat, cols in cat_cols.items():
+                    res[u][cat] += sum(to_i(r.iloc[c]) for c in cols if c < len(r))
+        return res
+
+    d_wk_cat = parse_detail_data(f_wk, "重點違規")
+    d_yr_cat = parse_detail_data(f_year, "(1)")
+
+    # 建立各細項專屬的 DataFrame
+    cat_dfs = {}
+    for cat in DETAIL_CATEGORIES.keys():
+        cat_rows = []
+        sum_wk, sum_yr = 0, 0
+        for u in MAJOR_UNIT_ORDER:
+            wk_val = d_wk_cat.get(u, {}).get(cat, 0)
+            yr_val = d_yr_cat.get(u, {}).get(cat, 0)
+            sum_wk += wk_val
+            sum_yr += yr_val
+            cat_rows.append([u, wk_val, yr_val])
+            
+        cat_rows.insert(0, ['合計', sum_wk, sum_yr])
+        df_c = pd.DataFrame(cat_rows, columns=["單位", f"本期({date_wk})", f"本年累計({date_yr})"])
+        cat_dfs[cat] = df_c
+
+    # ================= 雲端同步 (包含總表與六大細項表) =================
     if GCP_CREDS:
         try:
             gc = gspread.service_account_from_dict(GCP_CREDS)
             sh = gc.open_by_url(GOOGLE_SHEET_URL)
-            ws = sh.get_worksheet(0)
             
+            # --- 1. 更新原有的總表 (Worksheet 0) ---
+            ws_main = sh.get_worksheet(0)
             titles = df_result.columns.tolist()
             top_row = [t[0] for t in titles]
             bottom_row = [t[1] for t in titles]
             data_body = df_result.values.tolist()
-            data_list = [top_row, bottom_row] + data_body
-            ws.update(range_name='A2', values=data_list)
+            ws_main.update(range_name='A2', values=[top_row, bottom_row] + data_body)
             
             red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
@@ -305,7 +370,7 @@ def process_major(files):
                     p_start = text.find("(")
                     requests.append({
                         "updateCells": {
-                            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
+                            "range": {"sheetId": ws_main.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
                             "rows": [{ "values": [{ "textFormatRuns": [
                                 {"startIndex": 0, "format": {"foregroundColor": black_color, "bold": True}},
                                 {"startIndex": p_start, "format": {"foregroundColor": red_color, "bold": True}}
@@ -314,26 +379,60 @@ def process_major(files):
                         }
                     })
 
-            red_fmt = {"textFormat": {"foregroundColor": red_color}}
-            black_fmt = {"textFormat": {"foregroundColor": black_color}}
             for r_idx, row_vals in enumerate(data_body):
                 val = row_vals[7]
                 target_row = 3 + r_idx
                 is_negative = isinstance(val, (int, float)) and val < 0
-                fmt = red_fmt if is_negative else black_fmt
+                fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
                 requests.append({
                     "repeatCell": {
-                        "range": {"sheetId": ws.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 7, "endColumnIndex": 8},
+                        "range": {"sheetId": ws_main.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 7, "endColumnIndex": 8},
                         "cell": {"userEnteredFormat": fmt},
                         "fields": "userEnteredFormat.textFormat.foregroundColor"
                     }
                 })
+
+            # --- 2. 新增或更新 6 個細項分頁 ---
+            existing_sheets = [s.title for s in sh.worksheets()]
+            for cat, df_c in cat_dfs.items():
+                ws_name = f"重大違規-{cat}"
+                if ws_name in existing_sheets:
+                    ws_cat = sh.worksheet(ws_name)
+                else:
+                    ws_cat = sh.add_worksheet(title=ws_name, rows="20", cols="10")
                 
+                ws_cat.clear()
+                title_text = f"龍潭分局取締【{cat}】違規統計表"
+                ws_cat.update(range_name='A1', values=[[title_text], df_c.columns.tolist()] + df_c.values.tolist())
+                
+                # 自動跨欄合併與置中排版
+                requests.append({
+                    "mergeCells": {
+                        "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 3},
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                requests.append({
+                    "repeatCell": {
+                        "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 3},
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {"bold": True, "fontSize": 12 if "標題" in title_text else 10}
+                            }
+                        },
+                        "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.textFormat"
+                    }
+                })
+
             if requests:
                 sh.batch_update({"requests": requests})
-            st.write("✅ 重大違規雲端格式與數據同步完成")
+                
+            st.write("✅ 重大違規 (含總表及 6 項獨立分頁) 雲端格式與數據同步完成！")
         except Exception as e:
             st.error(f"雲端同步出錯：{e}")
+            st.write(traceback.format_exc())
 
 # ----------------- [4. 強化專案] -----------------
 def process_project(files):
@@ -544,7 +643,6 @@ def process_jing_tao(files):
     """
     df = None
 
-    # 1. 尋找與讀取目標檔案
     for f in files:
         f.seek(0)
         is_excel_file = f.name.lower().endswith(('.xlsx', '.xls'))
@@ -591,13 +689,10 @@ def process_jing_tao(files):
         st.error("❌ 找不到包含『通報日期』欄位的清冊檔案！請確認上傳了正確的檔案。")
         return
 
-    # 清理欄位名稱
     df.columns = [str(c).strip().replace('\u3000', '').replace('\n', '') for c in df.columns]
 
-    # ── 動態綁定關鍵欄位 ──
     date_col  = next((c for c in df.columns if '通報日期' in c), None)
     unit_col  = next((c for c in df.columns if '所別' in c or ('單位' in c and '舉發單位' not in c)), None)
-
     col_22 = next((c for c in df.columns if re.search(r'22.{0,3}0?6|夜間|深夜', c)), None)
     col_06 = next((c for c in df.columns if re.search(r'0?6.{0,3}22|日間|白天', c)), None)
 
@@ -618,16 +713,12 @@ def process_jing_tao(files):
         return pd.NaT
 
     df['_date'] = df[date_col].apply(parse_roc_date)
-
-    # 本期區間：以昨日為終點，往前7天
     today    = datetime.now()
     end_dt   = today - timedelta(days=1)
     start_dt = end_dt - timedelta(days=6)
     period_str = f"{start_dt.strftime('%m%d')}-{end_dt.strftime('%m%d')}"
-
     df_period = df[(df['_date'] >= start_dt) & (df['_date'] <= end_dt)]
 
-    # 累計區間：抓取最早日期，並強制以本期終點(end_dt)作為最晚日期
     valid_dates = df['_date'].dropna()
     if not valid_dates.empty:
         min_dt = valid_dates.min()
@@ -669,7 +760,6 @@ def process_jing_tao(files):
     col_22_label = col_22 if col_22 else "22-6時"
     col_06_label = col_06 if col_06 else "6-22時"
 
-    # 建立雙層表頭 (MultiIndex)
     header_1 = ['統計期間', f'本期({period_str})', f'本期({period_str})', f'累計{cumu_str}', f'累計{cumu_str}', '總計']
     header_2 = ['', col_22_label, col_06_label, col_22_label, col_06_label, '']
     
@@ -687,8 +777,6 @@ def process_jing_tao(files):
             ws = sh.worksheet(ws_name) if ws_name in existing else sh.add_worksheet(title=ws_name, rows="30", cols="10")
 
             ws.clear()
-            
-            # 將雙層表頭拆解為兩列文字準備寫入 Google Sheets
             titles = df_res.columns.tolist()
             top_row = [t[0] for t in titles]
             bottom_row = [t[1] for t in titles]
@@ -697,19 +785,12 @@ def process_jing_tao(files):
             ws.update(range_name='A1', values=[['「靜桃計畫」大執法專案統計表']])
             ws.update(range_name='A2', values=[top_row, bottom_row] + data_body)
 
-            # 加入 Google Sheets 自動合併儲存格與置中的排版設定
             reqs = [
-                # 標題大字跨欄置中 (A1:F1)
                 {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 6}, "mergeType": "MERGE_ALL"}},
-                # 統計期間跨列置中 (A2:A3)
                 {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
-                # 本期跨欄置中 (B2:C2)
                 {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
-                # 累計跨欄置中 (D2:E2)
                 {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 3, "endColumnIndex": 5}, "mergeType": "MERGE_ALL"}},
-                # 總計跨列置中 (F2:F3)
                 {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 5, "endColumnIndex": 6}, "mergeType": "MERGE_ALL"}},
-                # 將所有表頭 (第一、二、三列) 設定為粗體且垂直/水平置中
                 {"repeatCell": {
                     "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 6},
                     "cell": {"userEnteredFormat": {"textFormat": {"bold": True}, "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
@@ -717,7 +798,6 @@ def process_jing_tao(files):
                 }}
             ]
 
-            # --- 新增：動態分色格式化 (Rich Text Format) ---
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
             
@@ -740,7 +820,6 @@ def process_jing_tao(files):
         except Exception as e:
             st.error(f"雲端同步出錯：{e}")
             st.write(traceback.format_exc())
-
 
 # ==========================================
 # 4. 戰情室首頁與排程器 (自動分流架構)
