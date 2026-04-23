@@ -191,18 +191,28 @@ def process_overload(files):
                 })
         if requests: sh.batch_update({"requests": requests})
 
-# ----------------- [3. 重大交通違規 (CSV/XLSX 雙引擎修復版)] -----------------
+# ----------------- [3. 重大交通違規 (CSV三報表終極引擎版)] -----------------
 def process_major(files):
     if len(files) < 2:
-        st.error("❌ 請上傳『本期』與『年累計』兩份報表。")
+        st.error("❌ 請上傳『本期』與『年累計』報表。若要精確比較細項，請一併上傳第三份『去年累計』報表。")
         return
 
-    # --- 1. 檔案辨識 ---
-    f_wk, f_year = None, None
-    sorted_files = sorted([f for f in files if "重點" in f.name or "重大" in f.name] or files, key=lambda x: x.size)
-    if len(sorted_files) >= 2:
-        f_wk, f_year = sorted_files[0], sorted_files[1]
-        if "(1)" in f_wk.name: f_wk, f_year = f_year, f_wk
+    # --- 1. 三報表智慧辨識 ---
+    f_wk, f_year, f_ly = None, None, None
+    for f in files:
+        if "本期" in f.name: 
+            f_wk = f
+        elif "去年" in f.name: 
+            f_ly = f
+        elif "年累計" in f.name: 
+            f_year = f
+
+    if not f_wk or not f_year:
+        st.warning("⚠️ 無法完全匹配「本期」與「年累計」檔名，系統將嘗試自動分類...")
+        sorted_files = sorted([f for f in files if "重大" in f.name or "重點" in f.name] or files, key=lambda x: x.size)
+        if len(sorted_files) >= 1 and not f_wk: f_wk = sorted_files[0]
+        if len(sorted_files) >= 2 and not f_year: f_year = sorted_files[1]
+        if len(sorted_files) >= 3 and not f_ly: f_ly = sorted_files[2]
 
     # --- 2. 輔助函數 ---
     def get_robust_date(df):
@@ -230,7 +240,6 @@ def process_major(files):
         try: return int(float(str(v).replace(',', '').strip()))
         except: return 0
 
-    # 建立強大的 CSV/XLSX 讀取器
     def get_dfs(f):
         if not f: return []
         f.seek(0)
@@ -246,6 +255,7 @@ def process_major(files):
 
     dfs_wk = get_dfs(f_wk)
     dfs_yr = get_dfs(f_year)
+    dfs_ly = get_dfs(f_ly)
 
     # =========================================================
     # 第一部分：處理原先的「重大違規（總表）」 (維持原邏輯)
@@ -265,7 +275,8 @@ def process_major(files):
         return d_yt, d_ly, dt_str
 
     d_wk_yt, _, date_wk = parse_main_table(dfs_wk)
-    d_yr_yt, d_yr_ly, date_yr = parse_main_table(dfs_yr)
+    d_yr_yt, d_yr_ly_internal, date_yr = parse_main_table(dfs_yr)
+    d_ly_yt, _, date_ly = parse_main_table(dfs_ly)
 
     table_rows = []
     summary = {k: 0 for k in ['ws', 'wc', 'ys', 'yc', 'ls', 'lc', 'diff', 'tgt']}
@@ -273,7 +284,12 @@ def process_major(files):
     for u in MAJOR_UNIT_ORDER:
         w_data = d_wk_yt.get(u, {'stop':0, 'cit':0})
         y_data = d_yr_yt.get(u, {'stop':0, 'cit':0})
-        l_data = d_yr_ly.get(u, {'stop':0, 'cit':0}) # 去年總計數字
+        
+        # 總表邏輯不變，抓取正確的去年數字
+        if dfs_ly:
+            l_data = d_ly_yt.get(u, {'stop':0, 'cit':0})
+        else:
+            l_data = d_yr_ly_internal.get(u, {'stop':0, 'cit':0})
         
         y_total = y_data['stop'] + y_data['cit']
         l_total = l_data['stop'] + l_data['cit']
@@ -296,7 +312,8 @@ def process_major(files):
     
     h_wk = f"本期({date_wk})" if date_wk else "本期"
     h_yr = f"本年累計({date_yr})" if date_yr else "本年累計"
-    h_ls = f"去年累計({date_yr})" if date_yr else "去年累計"
+    h_ls_str = date_ly if dfs_ly else date_yr
+    h_ls = f"去年累計({h_ls_str})" if h_ls_str else "去年累計"
     
     header_1 = ['統計期間', h_wk, h_wk, h_yr, h_yr, h_ls, h_ls, '本年與去年同期比較', '目標值', '達成率']
     header_2 = ['取締方式', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '當場攔停', '逕行舉發', '', '', '']
@@ -306,7 +323,7 @@ def process_major(files):
     st.dataframe(df_result, use_container_width=True)
 
     # =========================================================
-    # 第二部分：處理「6大違規細項表」 (智慧搜尋法)
+    # 第二部分：處理「6大違規細項表」 (智慧搜尋3份報表)
     # =========================================================
     DETAIL_CATEGORIES = {
         "酒駕": ["酒駕", "酒後", "35條"],
@@ -317,79 +334,88 @@ def process_major(files):
         "不暫停讓行人": ["行人", "車不讓人", "暫停讓", "44條"]
     }
 
-    def parse_all_details(dfs):
-        res = {cat: {u: {'yt_stop':0, 'yt_cit':0, 'ly_stop':0, 'ly_cit':0} for u in MAJOR_UNIT_ORDER} for cat in DETAIL_CATEGORIES}
+    def parse_detail_data(dfs):
+        res = {cat: {u: {'stop':0, 'cit':0} for u in MAJOR_UNIT_ORDER} for cat in DETAIL_CATEGORIES}
         if not dfs: return res
         
         for df in dfs:
             header_idx = -1
-            # 找尋表頭(包含違規名稱)
+            # 在資料中尋找橫向包含多個違規名稱的列 (表頭)
             for i in range(min(15, len(df))):
                 row_str = "".join([str(x) for x in df.iloc[i].values if pd.notna(x)])
-                if any(k in row_str for k in ["酒駕", "闖紅燈", "逆向行駛"]):
+                if sum(1 for kw in ["酒駕", "闖紅燈", "逆向行駛", "轉彎"] if kw in row_str) >= 2:
                     header_idx = i; break
                     
             if header_idx != -1:
                 headers = [str(x).replace('\n', '').strip() for x in df.iloc[header_idx].values]
                 sub_headers = [str(x).replace('\n', '').strip() for x in df.iloc[header_idx+1].values] if header_idx+1 < len(df) else headers
                 
-                cat_cols = {cat: {'yt_stop':-1, 'yt_cit':-1, 'ly_stop':-1, 'ly_cit':-1} for cat in DETAIL_CATEGORIES}
-                current_cat = None
+                cat_cols = {cat: {'stop': -1, 'cit': -1} for cat in DETAIL_CATEGORIES}
                 
+                # 自動辨識對應的直行索引
                 for c in range(len(headers)):
                     h1, h2 = headers[c], sub_headers[c]
-                    # 確認當前屬於哪個違規細項
+                    current_cat = None
                     for cat, kws in DETAIL_CATEGORIES.items():
-                        if any(kw in h1 for kw in kws): current_cat = cat; break
+                        if any(kw in h1 for kw in kws): 
+                            current_cat = cat; break
                             
                     if current_cat:
                         if any(k in h2 for k in ["現場", "攔停", "當場", "違法"]):
-                            if cat_cols[current_cat]['yt_stop'] == -1: cat_cols[current_cat]['yt_stop'] = c
-                            elif cat_cols[current_cat]['ly_stop'] == -1: cat_cols[current_cat]['ly_stop'] = c
+                            if cat_cols[current_cat]['stop'] == -1: cat_cols[current_cat]['stop'] = c
                         elif any(k in h2 for k in ["逕", "違規"]):
-                            if cat_cols[current_cat]['yt_cit'] == -1: cat_cols[current_cat]['yt_cit'] = c
-                            elif cat_cols[current_cat]['ly_cit'] == -1: cat_cols[current_cat]['ly_cit'] = c
+                            if cat_cols[current_cat]['cit'] == -1: cat_cols[current_cat]['cit'] = c
                             
-                # 開始抓取單位數據
+                # 開始抓取該檔案中的數據
                 for idx, row in df.iloc[header_idx+1:].iterrows():
                     u = clean_unit(row.values[0])
                     if u and "合計" not in str(row.values[0]):
                         for cat in DETAIL_CATEGORIES:
-                            cs, cc = cat_cols[cat]['yt_stop'], cat_cols[cat]['yt_cit']
-                            ls, lc = cat_cols[cat]['ly_stop'], cat_cols[cat]['ly_cit']
-                            if cs != -1 and cs < len(row): res[cat][u]['yt_stop'] += to_i(row.values[cs])
-                            if cc != -1 and cc < len(row): res[cat][u]['yt_cit'] += to_i(row.values[cc])
-                            if ls != -1 and ls < len(row): res[cat][u]['ly_stop'] += to_i(row.values[ls])
-                            if lc != -1 and lc < len(row): res[cat][u]['ly_cit'] += to_i(row.values[lc])
+                            cs, cc = cat_cols[cat]['stop'], cat_cols[cat]['cit']
+                            if cs != -1 and cs < len(row): res[cat][u]['stop'] += to_i(row.values[cs])
+                            if cc != -1 and cc < len(row): res[cat][u]['cit'] += to_i(row.values[cc])
         return res
 
-    cat_res = parse_all_details(dfs_yr)
+    # 運用第2份與第3份報表建立完美九宮格
+    d_yr_cat = parse_detail_data(dfs_yr)
+    d_ly_cat = parse_detail_data(dfs_ly)
+
     cat_dfs = {}
-    
     h1_cat = ['統計期間', '今年累計', '今年累計', '今年累計', '去年累計', '去年累計', '去年累計', '今年與去年同期比較', '今年與去年同期比較', '今年與去年同期比較']
-    h2_cat = ['單位', '現場攔停', '逕行舉發', '合計', '現場攔停', '逕行舉發', '合計', '現場攔停', '逕行舉發', '合計']
+    h2_cat = ['單位', '當場攔停', '逕行舉發', '合計', '當場攔停', '逕行舉發', '合計', '當場攔停', '逕行舉發', '合計']
 
     for cat in DETAIL_CATEGORIES.keys():
         rows = []
         sum_cat = {'ys':0, 'yc':0, 'yt':0, 'ls':0, 'lc':0, 'lt':0, 'ds':0, 'dc':0, 'dt':0}
         for u in MAJOR_UNIT_ORDER:
-            d = cat_res[cat][u]
-            ys, yc = d['yt_stop'], d['yt_cit']
-            ls, lc = d['ly_stop'], d['ly_cit']
+            # 從「年累計」檔案抓取今年度
+            ys = d_yr_cat[cat][u]['stop']
+            yc = d_yr_cat[cat][u]['cit']
+            
+            # 從「去年累計」檔案抓取去年度
+            if dfs_ly:
+                ls = d_ly_cat[cat][u]['stop']
+                lc = d_ly_cat[cat][u]['cit']
+            else:
+                ls = 0; lc = 0
+                
             yt, lt = ys + yc, ls + lc
             ds, dc, dt = ys - ls, yc - lc, yt - lt
             
             rows.append([u, ys, yc, yt, ls, lc, lt, ds if u != '警備隊' else "—", dc if u != '警備隊' else "—", dt if u != '警備隊' else "—"])
+            
             sum_cat['ys'] += ys; sum_cat['yc'] += yc; sum_cat['yt'] += yt
             sum_cat['ls'] += ls; sum_cat['lc'] += lc; sum_cat['lt'] += lt
-            if u != '警備隊': sum_cat['ds'] += ds; sum_cat['dc'] += dc; sum_cat['dt'] += dt
+            if u != '警備隊': 
+                sum_cat['ds'] += ds; sum_cat['dc'] += dc; sum_cat['dt'] += dt
                 
         tot_row = ['合計', sum_cat['ys'], sum_cat['yc'], sum_cat['yt'], sum_cat['ls'], sum_cat['lc'], sum_cat['lt'], sum_cat['ds'], sum_cat['dc'], sum_cat['dt']]
         rows.insert(0, tot_row)
         cat_dfs[cat] = pd.DataFrame(rows, columns=pd.MultiIndex.from_arrays([h1_cat, h2_cat]))
 
     with st.expander("🔍 檢視 6 大項重大違規細表 (點擊展開)"):
-        st.info("💡 提醒：由於您匯出的報表僅包含今年各細項的數據，故細表內的『去年累計』將真實呈現為 0，而總表的去年數字則已成功為您抓取。")
+        if not dfs_ly: 
+            st.info("💡 提醒：因為您未上傳單獨的『去年累計』報表，細項的去年欄位將暫時以 0 計算。")
         for cat, df_c in cat_dfs.items():
             st.write(f"**【{cat}】統計表**")
             st.dataframe(df_c, use_container_width=True)
@@ -529,7 +555,7 @@ def process_project(files):
         res = [u]
         for i, cat in enumerate(PROJECT_CATS):
             cnt = d15.get(cat, 0) if cat != "大型車違規" else h_sum
-            res.extend([cnt, tgts[i], f"{(cnt/tgts[i]*100):.1f}%" if tgts[i] > 0 else "0.0%"])
+            res.extend([cnt, tgts[i], f"{(cs/ts*100):.1f}%" if tgts[i] > 0 else "0.0%"])
         final_rows.append(res)
 
     headers = ["單位"] + [f"{cat}_{x}" for cat in PROJECT_CATS for x in ["取締件數", "目標值", "達成率"]]
