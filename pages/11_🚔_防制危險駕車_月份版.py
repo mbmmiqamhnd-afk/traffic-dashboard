@@ -27,14 +27,14 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
 
-# --- 預設範本資料 ---
-DEFAULT_MONTH = "115年3月份"
+# --- 預設範本資料 (已更新為115年5月份防制危險駕車專案) ---
+DEFAULT_MONTH = "115年5月份"
 
 DEFAULT_CMD = pd.DataFrame([
     {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導。"},
     {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長 何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
     {"職稱": "副指揮官", "代號": "隆安3", "姓名": "副分局長 蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-    {"職稱": "上級督導官", "代號": "駐區督察", "姓名": "孫三陽", "任務": "重點機動督導。"},
+    {"職稱": "上級督導官", "代號": "建興", "姓名": "駐區督察 孫三陽", "任務": "重點機動督導。"},
     {"職稱": "督導組", "代號": "隆安6", "姓名": "督察組組長 黃長旗、督察組督察員 黃中彥、督察組警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律。"},
     {"職稱": "指導組", "代號": "隆安684", "姓名": "督察組教官 郭文義", "任務": "指導各編組勤務執行及狀況處置。"},
     {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "交通組組長 楊孟竟、交通組警務員 盧冠仁、交通組警務員 李峯甫、交通組巡官 郭勝隆、交通組巡官 羅千金、交通組警員 吳享運、秘書室巡官 陳鵬翔（代理人：警員張庭溱）、人事室警員 陳明祥、行政組警務佐 曾威仁", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
@@ -42,7 +42,40 @@ DEFAULT_CMD = pd.DataFrame([
 ])
 
 DEFAULT_SCHEDULE = pd.DataFrame([
-    {"日期（22時至翌日6時）": "115年3月6日～\n3月7日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    # 第一週
+    {"日期（22時至翌日6時）": "115年4月30日～\n5月2日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+    {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+    {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+    
+    # 第二週
+    {"日期（22時至翌日6時）": "115年5月8日～\n5月9日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+    {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+    {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+
+    # 第三週
+    {"日期（22時至翌日6時）": "115年5月15日～\n5月16日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+    {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+    {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+
+    # 第四週
+    {"日期（22時至翌日6時）": "115年5月22日～\n5月23日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+    {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+    {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+
+    # 第五週
+    {"日期（22時至翌日6時）": "115年5月29日～\n5月30日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
@@ -197,7 +230,7 @@ def send_report_email(full_title, df_cmd, df_schedule):
         return True, None
     except Exception as e: return False, str(e)
 
-# --- 5. 主介面邏輯 (修正後的關鍵區塊) ---
+# --- 5. 主介面邏輯 ---
 df_set, df_cmd_raw, df_sch_raw, err = load_data()
 
 # 初始化變數，確保不論有沒有讀到資料，c_month 都有值
@@ -218,18 +251,58 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 st.subheader("3. 警力佈署")
 res_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
 
-# HTML 預覽
+# HTML 預覽 (含 rowspan 合併儲存格邏輯)
 def get_html():
-    parts = ["<style>body{font-family:'標楷體';padding:20px;} th{border:1px solid black;padding:8px;font-size:16pt;text-align:center;line-height:1.5;background-color:#f2f2f2;} td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} .note-section{font-size:14pt;font-weight:bold;margin-top:15px;} .hanging-note{font-size:14pt;padding-left:2.2em;text-indent:-2.2em;margin-bottom:5px;line-height:1.6;}</style>"]
+    parts = [
+        "<style>",
+        "body {font-family:'標楷體'; padding:20px;}",
+        "table {border-collapse: collapse; width: 100%;}",
+        "th, td {border: 1px solid black; padding: 8px; font-size: 14pt; text-align: center; line-height: 1.5;}",
+        "th {font-size: 16pt; background-color: #f2f2f2;}",
+        ".note-section {font-size: 14pt; font-weight: bold; margin-top: 15px;}",
+        ".hanging-note {font-size: 14pt; padding-left: 2.2em; text-indent: -2.2em; margin-bottom: 5px; line-height: 1.6;}",
+        "</style>"
+    ]
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{full_title}</b></h2><br>")
+    
+    # 任務編組
     parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>")
     for _, r in res_cmd.iterrows():
         parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
+    
+    # 警力佈署
     parts.append("</table><br><table><tr><th colspan='3'>警 力 佈 署</th></tr><tr><th>日期</th><th>單位</th><th>分工</th></tr>")
+    
+    # 計算 HTML 的 rowspan 以合併日期欄位
     col_date = '日期（22時至翌日6時）'
-    for _, row in res_sch.iterrows():
-        parts.append(f"<tr><td>{str(row.get(col_date,'')).replace(chr(10),'<br>')}</td><td>{str(row.get('單位','')).replace(chr(10),'<br>')}</td><td style='text-align:left'>{str(row.get('分工','')).replace(chr(10),'<br>')}</td></tr>")
+    dates = res_sch[col_date].tolist()
+    non_empty_indices = [i for i, val in enumerate(dates) if str(val).strip() != ""]
+    non_empty_indices.append(len(dates))
+    
+    rowspans = {}
+    for k in range(len(non_empty_indices) - 1):
+        s = non_empty_indices[k]
+        e = non_empty_indices[k+1]
+        rowspans[s] = e - s
+
+    for i, row in res_sch.reset_index(drop=True).iterrows():
+        parts.append("<tr>")
+        
+        # 處理合併儲存格 (rowspan)
+        if i in rowspans:
+            rs = rowspans[i]
+            date_val = str(row.get(col_date, '')).replace('\n', '<br>')
+            if rs > 1:
+                parts.append(f"<td rowspan='{rs}'>{date_val}</td>")
+            else:
+                parts.append(f"<td>{date_val}</td>")
+        
+        # 填入單位與分工
+        parts.append(f"<td>{str(row.get('單位','')).replace(chr(10),'<br>')}</td><td style='text-align:left'>{str(row.get('分工','')).replace(chr(10),'<br>')}</td></tr>")
+    
     parts.append("</table>")
+    
+    # 巡簽與備註
     parts.append("<div class='note-section'>📍 巡簽地點：</div>")
     for line in CHECKIN_POINTS.split('\n'):
         if line.strip(): parts.append(f"<div class='hanging-note'>{line}</div>")
@@ -237,6 +310,7 @@ def get_html():
     for line in NOTES.split('\n'):
         if line.strip(): parts.append(f"<div class='hanging-note'>{line}</div>")
     parts.append("</body></html>")
+    
     return "".join(parts)
 
 st.markdown("---")
