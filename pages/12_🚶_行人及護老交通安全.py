@@ -47,8 +47,8 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     {"日期（6時至10時、16時至20時）": "", "單位": "石門派出所", "路段": "中正、文化路段\n校園周邊道路或轄區行人易肇事路口"},
     {"日期（6時至10時、16時至20時）": "", "單位": "高平派出所", "路段": "中豐、中原路段\n校園周邊道路或轄區行人易肇事路口"},
     {"日期（6時至10時、16時至20時）": "", "單位": "三和派出所", "路段": "龍新路、楊銅路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "警備隊", "路段": "校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "龍潭交通分隊", "路段": "校園周邊道路或轄區行人易肇事路口"}
+    {"日期（6時至10時、16時至20時）": "", "單位": "警備隊", "路段": "校園周邊道路 or 轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "龍潭交通分隊", "路段": "校園周邊道路 or 轄區行人易肇事路口"}
 ])
 
 DEFAULT_NOTES = """壹、警察局規劃3月份「行人及護老交通安全專案勤務」期程：
@@ -124,16 +124,23 @@ def _get_font():
 def generate_pdf(month, df_cmd, df_schedule, notes_content):
     font = _get_font()
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=12*mm, bottomMargin=12*mm)
+    # 調整下邊距以留出頁碼空間 (18mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=12*mm, bottomMargin=18*mm)
     W = A4[0] - 24*mm
     story = []
+
+    # 頁碼繪製函式
+    def draw_page_number(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 10)
+        page_num = f"第 {doc.page} 頁"
+        canvas.drawCentredString(A4[0]/2.0, 10*mm, page_num)
+        canvas.restoreState()
 
     s_title  = ParagraphStyle("t",  fontName=font, fontSize=16, alignment=1, spaceAfter=8, leading=22)
     s_th     = ParagraphStyle("th", fontName=font, fontSize=16, alignment=1, leading=22)
     s_cell   = ParagraphStyle("c",  fontName=font, fontSize=14, leading=18, alignment=1)
     s_left   = ParagraphStyle("l",  fontName=font, fontSize=14, leading=18, alignment=0)
-    
-    # 備註縮排設定 (8.5mm 大約對齊首字)
     s_note   = ParagraphStyle("n",  fontName=font, fontSize=12, leading=18, 
                               leftIndent=8.5*mm, firstLineIndent=-8.5*mm, spaceAfter=4)
     
@@ -144,7 +151,7 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
     header_text = f"<b>{UNIT}{month}執行「行人及護老交通安全」專案勤務規劃表</b>"
     story.append(Paragraph(header_text, s_title))
 
-    # 任務編組
+    # 任務編組表格
     cw1 = [W*0.15, W*0.12, W*0.28, W*0.45]
     data1 = [[Paragraph("<b>任　務　編　組</b>", s_th), '', '', '']]
     data1.append([Paragraph(f"<b>{h}</b>", s_th) for h in ["職稱", "代號", "姓名", "任務"]])
@@ -155,7 +162,7 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 警力佈署
+    # 警力佈署表格
     col_date = '日期（6時至10時、16時至20時）'
     cw2 = [W*0.28, W*0.16, W*0.56]
     data2 = [[Paragraph("<b>警　力　佈　署</b>", s_th), '', '']]
@@ -180,7 +187,8 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
         if line.strip():
             story.append(Paragraph(line, s_note))
             
-    doc.build(story)
+    # 生成時加入頁碼回呼
+    doc.build(story, onFirstPage=draw_page_number, onLaterPages=draw_page_number)
     return buf.getvalue()
 
 # --- 6. 寄信功能 ---
@@ -191,7 +199,6 @@ def send_report_email(subject, month, df_cmd, df_schedule, notes):
         msg = MIMEMultipart(); msg["From"] = sender; msg["To"] = sender; msg["Subject"] = subject
         msg.attach(MIMEText("附件為最新的護老交通安全勤務規劃表 PDF。", "plain", "utf-8"))
         part = MIMEBase("application", "pdf"); part.set_payload(pdf_bytes); encoders.encode_base64(part)
-        # 附件檔案名稱也改為主題名稱
         part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(subject)}.pdf")
         msg.attach(part)
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
@@ -216,7 +223,6 @@ ed_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
 st.subheader("4. 備註編輯")
 ed_notes = st.text_area("編輯備註內容", value=current_notes, height=300)
 
-# --- 定義標頭名稱 (作為檔案名稱使用) ---
 full_header_name = f"{UNIT}{c_month}執行「行人及護老交通安全」專案勤務規劃表"
 
 # --- 8. HTML 預覽 ---
@@ -247,13 +253,10 @@ st.components.v1.html(get_html(ed_notes), height=750, scrolling=True)
 
 if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
     save_data(c_month, ed_cmd, ed_sch, ed_notes)
-    
-    # 使用標頭名稱作為檔名與郵件標題
     ok, mail_err = send_report_email(full_header_name, c_month, ed_cmd, ed_sch, ed_notes)
     
     if ok: st.success("📧 雲端同步成功，報表已寄至信箱！")
     else: st.error(f"❌ 雲端同步成功，但寄信失敗：{mail_err}")
     
     pdf_out = generate_pdf(c_month, ed_cmd, ed_sch, ed_notes)
-    # 下載檔案名稱設為標頭名稱
     st.download_button("點此下載 PDF", data=pdf_out, file_name=f"{full_header_name}.pdf")
