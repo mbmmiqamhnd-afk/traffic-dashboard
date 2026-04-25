@@ -443,13 +443,12 @@ for i in range(num_units):
 
             st.text_area("📋 預覽報告", rec["report"], height=380, key=f"txt_{i}")
 
-        else:
-            # 檔案被移除時清掉對應的 session 記錄
-            st.session_state["unit_reports"].pop(i, None)
-            if u_duty and not u_eq:
-                st.warning("請補上裝備交接簿檔案。")
-            elif u_eq and not u_duty:
-                st.warning("請補上勤務表檔案。")
+        elif u_duty and not u_eq:
+            st.warning("請補上裝備交接簿檔案。")
+        elif u_eq and not u_duty:
+            st.warning("請補上勤務表檔案。")
+        # 注意：兩個都沒上傳時不清除 session_state，
+        # 避免切換 tab 觸發 rerun 時把其他單位已存好的資料誤刪
 
 # 總匯整：從 session_state 按單位編號順序組合
 with u_tabs[-1]:
