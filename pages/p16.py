@@ -462,7 +462,8 @@ with u_tabs[-1]:
 
     if all_final_reports:
         full_text = ("\n\n" + "─" * 40 + "\n\n").join(all_final_reports)
-        st.text_area("📄 總匯整結果", full_text, height=1200, key="full_report")
+        st.subheader("📄 總匯整結果")
+        st.code(full_text, language=None)
 
         col_dl, col_mail = st.columns(2)
 
