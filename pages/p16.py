@@ -454,20 +454,22 @@ for i in range(num_units):
 with u_tabs[-1]:
     saved = st.session_state.get("unit_reports", {})
 
-    # ── DEBUG 區（確認問題後可移除）──
-    st.write("🔍 **DEBUG — session_state 目前內容：**")
-    if saved:
-        for k, v in saved.items():
-            st.write(f"  單位索引 {k}：{v.get('uname','?')}，file_key={v.get('file_key','?')}")
-    else:
-        st.write("  （空）")
-    # ────────────────────────────────
-
     all_final_reports = [
         f"【{saved[i]['uname']} 督導報告】\n{saved[i]['report']}"
         for i in sorted(saved.keys(), key=lambda x: int(x))
         if int(i) < num_units
     ]
+
+    # ── DEBUG 區（確認問題後可移除）──
+    st.write("🔍 **DEBUG — session_state 目前內容：**")
+    if saved:
+        for k, v in saved.items():
+            st.write(f"  單位索引 {k}（type={type(k).__name__}）：{v.get('uname','?')}")
+    st.write(f"  num_units={num_units}（type={type(num_units).__name__}）")
+    st.write(f"  sorted keys: {sorted(saved.keys(), key=lambda x: int(x))}")
+    st.write(f"  組合後筆數: {len(all_final_reports)}")
+    # ────────────────────────────────
+
     if all_final_reports:
         full_text = ("\n\n" + "─" * 40 + "\n\n").join(all_final_reports)
         st.text_area("📄 總匯整結果", full_text, height=700, key="full_report")
