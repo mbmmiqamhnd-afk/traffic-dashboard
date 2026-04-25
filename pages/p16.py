@@ -453,6 +453,16 @@ for i in range(num_units):
 # 總匯整：從 session_state 按單位編號順序組合
 with u_tabs[-1]:
     saved = st.session_state.get("unit_reports", {})
+
+    # ── DEBUG 區（確認問題後可移除）──
+    st.write("🔍 **DEBUG — session_state 目前內容：**")
+    if saved:
+        for k, v in saved.items():
+            st.write(f"  單位索引 {k}：{v.get('uname','?')}，file_key={v.get('file_key','?')}")
+    else:
+        st.write("  （空）")
+    # ────────────────────────────────
+
     all_final_reports = [
         f"【{saved[i]['uname']} 督導報告】\n{saved[i]['report']}"
         for i in sorted(saved.keys())
