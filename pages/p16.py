@@ -5,7 +5,7 @@ import re
 import traceback
 
 # --- 1. 分頁基本配置 ---
-st.set_page_config(page_title="督導報告 v7.0 - 裝備防當機版", layout="wide")
+st.set_page_config(page_title="督導報告 v7.0 - 職稱精準版", layout="wide")
 
 # --- 2. 套用標楷體風格 ---
 st.markdown(f"""
@@ -23,7 +23,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📋 督導報告極速生成器 v7.0 (裝備導彈鎖定版)")
+st.title("📋 督導報告極速生成器 v7.0 (職稱動態對位版)")
 
 # --- 3. 核心輔助工具 ---
 def safe_int(val):
@@ -44,30 +44,22 @@ def parse_time_cell(val):
     if m_time: return int(m_time.group(1)), int(m_time.group(2))
     return None, None
 
-# --- 4. 裝備座標解析引擎 (加上強制文字防護罩) ---
+# --- 4. 裝備座標解析引擎 ---
 def extract_equip_dynamic(e_file, hour):
     try:
         df = pd.read_csv(e_file, header=None) if e_file.name.endswith('csv') else pd.read_excel(e_file, header=None)
         df_s = df.astype(str)
         
-        # A. 尋找各裝備的欄位 (全域掃描前 10 列)
-        col_map = {"gun": 2, "bullet": 3, "radio": 6, "vest": 11} # 預設值
+        col_map = {"gun": 2, "bullet": 3, "radio": 6, "vest": 11} 
         
         for r in range(min(10, len(df))):
             for c in range(len(df.columns)):
-                # 🛡️ 加上 str() 強制轉文字，徹底消滅 float 錯誤！
                 val_c = str(df.iloc[r, c]).replace(" ", "").replace("　", "").replace("\n", "")
-                
-                if "手槍" in val_c or ("槍" in val_c and "手" in val_c): 
-                    col_map["gun"] = c
-                if "子彈" in val_c or ("彈" in val_c and "子" in val_c): 
-                    col_map["bullet"] = c
-                if "無線電" in val_c: 
-                    col_map["radio"] = c
-                if "防彈背心" in val_c or "防彈衣" in val_c: 
-                    col_map["vest"] = c
+                if "手槍" in val_c or ("槍" in val_c and "手" in val_c): col_map["gun"] = c
+                if "子彈" in val_c or ("彈" in val_c and "子" in val_c): col_map["bullet"] = c
+                if "無線電" in val_c: col_map["radio"] = c
+                if "防彈背心" in val_c or "防彈衣" in val_c: col_map["vest"] = c
 
-        # B. 尋找符合時間的截止列 (時空切片)
         stop_row = len(df)
         for r_idx in range(min(10, len(df)), len(df)):
             t_val = str(df.iloc[r_idx, 0])
@@ -78,7 +70,6 @@ def extract_equip_dynamic(e_file, hour):
                     stop_row = r_idx
                     break
         
-        # C. 擷取最新狀態
         df_sub = df.iloc[:stop_row]
         df_sub_s = df_s.iloc[:stop_row]
         
@@ -93,13 +84,12 @@ def extract_equip_dynamic(e_file, hour):
             "ri": get_v("在", "radio"), "ro": get_v("出", "radio"), "rf": get_v("送", "radio"),
             "vi": get_v("在", "vest"), "vo": get_v("出", "vest"), "vf": get_v("送", "vest")
         }
-        
         result["debug_map"] = col_map 
         return result
     except Exception as e:
         return {"gi":0, "go":0, "gf":0, "bi":0, "bo":0, "bf":0, "ri":0, "ro":0, "rf":0, "vi":0, "vo":0, "vf":0, "debug_map": f"錯誤: {e}"}
 
-# --- 5. 勤務邏輯解析 (維持 100% 成功的矩陣雷達版) ---
+# --- 5. 勤務邏輯解析 (職稱還原版) ---
 def extract_duty_logic(d_file, hour):
     res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'debug_info': {}}
     try:
@@ -110,13 +100,19 @@ def extract_duty_logic(d_file, hour):
         matches = re.findall(pattern, full_text)
         
         name_map = {}
+        full_title_map = {} # 🌟 新增：儲存包含職稱的完整姓名
+        
         for m in matches:
             code = normalize_code(m[0])
+            title = m[1].strip()
             name = m[2]
             for t_char in ["所", "副", "巡", "警", "實", "員", "長"]:
                 if name.endswith(t_char): name = name[:-1]
-            if len(name) >= 2: name_map[code] = name
-        res['debug_info']['對照表'] = name_map
+            if len(name) >= 2: 
+                name_map[code] = name
+                full_title_map[code] = f"{title}{name}" # 例如：巡佐傅錫城
+                
+        res['debug_info']['對照表'] = full_title_map
 
         time_row_idx = 2 
         time_cols = {}
@@ -151,13 +147,15 @@ def extract_duty_logic(d_file, hour):
             m_code = re.search(r'[A-Za-z0-9]{1,2}', raw_cell)
             if m_code:
                 code = normalize_code(m_code.group(0))
-                res['v_name'] = name_map.get(code, f"未建檔:{code}")
+                # 🌟 使用帶有職稱的名字
+                res['v_name'] = full_title_map.get(code, f"未建檔:{code}")
             else:
                 for code, name in name_map.items():
-                    if name in raw_cell: res['v_name'] = name; break
+                    if name in raw_cell: res['v_name'] = full_title_map.get(code, name); break
 
         cadre_notes = []
         for code in ["A", "B", "C"]:
+            # 幹部動態維持使用純姓名 (例如：鄭榮捷休假)，較符合公文語意
             name = name_map.get(code, {"A":"所長", "B":"副所長", "C":"幹部"}.get(code))
             is_off = False
             patrol_slots = []
@@ -242,7 +240,9 @@ if duty_file and equip_file:
 
         lines = []
         
-        lines.append(f"{time_str}，該所值班警員{duty_data['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
+        # 🌟 這裡改成動態帶入職稱，例如「該所值班警員陳秉贏」或「該所值班巡佐傅錫城」
+        lines.append(f"{time_str}，該所值班{duty_data['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
+        
         if check_mon: lines.append(f"該所駐地監錄設備及天羅地網系統均運作正常，無故障，{d_m5}至{d_m1}有逐日檢測2次以上紀錄。")
         if check_edu: lines.append(f"該所{d_m3}至{d_m1}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
         if check_env: lines.append(f"該所環境內務擺設整齊清潔，符合規定。")
@@ -257,12 +257,12 @@ if duty_file and equip_file:
         final_report = "\n".join([f"{i+1}、{line}" for i, line in enumerate(lines)])
         
         st.markdown("---")
-        st.subheader("📋 最終督導報告 (裝備精準版)")
+        st.subheader("📋 最終督導報告 (職稱精準版)")
         st.text_area("複製回貼公務系統：", value=final_report, height=450)
         
         with st.expander("🛠️ 查看系統自動辨識結果 (除錯專區)"):
             st.write(f"✅ 裝備欄位偵測結果 (Index號)：{eq_data.get('debug_map', '未取得')}")
-            st.write(f"✅ 值班員警：{duty_data['v_name']}")
+            st.write(f"✅ 值班人員：{duty_data['v_name']}")
             st.write(f"✅ 幹部動態：{duty_data['cadre_status']}")
             
     except Exception as e:
