@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import re
 
 # 分頁配置
-st.set_page_config(page_title="督導報告 v7.0 - 絕對坐標版", layout="wide")
+st.set_page_config(page_title="督導報告 v7.0 - 矩陣定位終極版", layout="wide")
 
 # 套用標楷體風格
 st.markdown(f"""
@@ -22,7 +22,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📋 督導報告極速生成器 v7.0 (絕對坐標定位版)")
+st.title("📋 督導報告極速生成器 v7.0 (全矩陣定位版)")
 
 # --- 側邊欄：檔案與時間設定 ---
 with st.sidebar:
@@ -46,29 +46,25 @@ def safe_int(val):
     except: return 0
 
 def normalize_code(c):
+    """將番號標準化，例如 '07', ' 7 ', 'A' 統一轉為乾淨的 '7', 'A'"""
     c_str = str(c).strip().replace(".0", "").upper()
     if c_str.isdigit(): return str(int(c_str))
     return c_str
 
 def parse_time_cell(val):
     """破解 Excel 日期魔咒，強悍提取時間區間"""
-    val_str = str(val).strip().replace("\n", "").replace(" ", "")
-    if val_str in ["", "nan", "NaN"]: return None, None, val_str
+    val_str = str(val).strip().replace("\n", "").replace(" ", "").replace("|", "-")
+    if val_str in ["", "nan", "NaN"]: return None, None
     
-    # 1. 破解 Pandas 日期格式 (例: 2026-06-0700:00:00)
+    # 破解 Pandas 日期轉換
     m_date = re.search(r'20\d{2}-(\d{2})-(\d{2})', val_str)
-    if m_date: return int(m_date.group(1)), int(m_date.group(2)), val_str
+    if m_date: return int(m_date.group(1)), int(m_date.group(2))
         
-    # 2. 標準 06-07, 12~14 格式
+    # 標準 06-07 格式
     m_time = re.search(r'(\d{1,2})[~~\-－—–_]+(\d{1,2})', val_str)
-    if m_time: return int(m_time.group(1)), int(m_time.group(2)), val_str
+    if m_time: return int(m_time.group(1)), int(m_time.group(2))
         
-    # 3. 提取純數字並判斷
-    nums = re.findall(r'\d+', val_str)
-    valid_nums = [int(n) for n in nums if len(n) <= 2 and int(n) <= 24]
-    if len(valid_nums) >= 2: return valid_nums[0], valid_nums[1], val_str
-        
-    return None, None, val_str
+    return None, None
 
 def extract_full_logic(d_file, e_file, hour):
     res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'eq': None, 'debug_info': {}}
@@ -90,47 +86,35 @@ def extract_full_logic(d_file, e_file, hour):
             
         res['debug_info']['1. 番號對照表'] = name_map
 
-        # 🌟 B. 定位 X 軸 (時間軸) - 掃描前 5 列尋找時段
-        time_row_idx = 2 
+        # 🌟 B. 定位 X 軸 (時間軸)
+        time_row_idx = 2 # 根據提示，時段在第 3 列
         time_cols = {}
         target_col_idx = -1
         
+        # 掃描前幾列確認時段位置
         for r in range(5):
             count = 0
             temp_cols = {}
             for c_idx in range(len(df.columns)):
-                start_h, end_h, raw_val = parse_time_cell(df.iloc[r, c_idx])
+                start_h, end_h = parse_time_cell(df.iloc[r, c_idx])
                 if start_h is not None and end_h is not None:
-                    temp_cols[c_idx] = (start_h, end_h, raw_val)
+                    temp_cols[c_idx] = (start_h, end_h)
                     count += 1
-            if count > max(len(time_cols), 3): # 找到最多時段格子的那一列
+            if count > max(len(time_cols), 3):
                 time_row_idx = r
                 time_cols = temp_cols
 
-        for c_idx, (start_h, end_h, raw_val) in time_cols.items():
-            if end_h == 0 or end_h < start_h: end_h += 24
-            calc_hour = hour
-            if calc_hour < 6 and end_h > 24: calc_hour += 24
+        for c_idx, (start_h, end_h) in time_cols.items():
+            calc_end = end_h if end_h > start_h else end_h + 24
+            calc_hour = hour if hour >= 6 or calc_end <= 24 else hour + 24
             
-            if start_h <= calc_hour < end_h:
+            if start_h <= calc_hour < calc_end:
                 target_col_idx = c_idx
 
-        res['debug_info']['2. 時段對位'] = {"時段列 Index": time_row_idx, "鎖定目標欄位": target_col_idx, "解析到的所有時段": {k: v[2] for k, v in time_cols.items()}}
-
-        # 🌟 C. 抓取值班人員 (絕對坐標定位)
+        # 🌟 C. 抓取值班人員 (絕對坐標定位：時段的下一列)
+        v_row_idx = time_row_idx + 1 # 第 4 列
         if target_col_idx != -1:
-            # 依據提示：時段在第3列，第4列是值班代號 -> 所以是時段列的下一列
-            v_row_idx = time_row_idx + 1
-            
-            # 保險機制：確認該列最左邊是不是「值班」
-            for r in range(time_row_idx + 1, min(time_row_idx + 4, len(df))):
-                if "值" in str(df.iloc[r, 0]) + str(df.iloc[r, 1]):
-                    v_row_idx = r
-                    break
-                    
             raw_cell = str(df.iloc[v_row_idx, target_col_idx]).strip()
-            res['debug_info']['3. 值班格子內容'] = f"[{raw_cell}] (位於第 {v_row_idx} 列)"
-            
             # 剝離出番號
             m_code = re.search(r'[A-Za-z0-9]{1,2}', raw_cell)
             if m_code:
@@ -140,46 +124,53 @@ def extract_full_logic(d_file, e_file, hour):
                 for code, name in name_map.items():
                     if name in raw_cell: res['v_name'] = name; break
 
-        # 🌟 D. 抓取幹部動態 (掃描巡邏班)
+        # 🌟 D. 抓取幹部動態 (矩陣雷達掃描法)
         cadre_notes = []
         for code in ["A", "B", "C"]:
             name = name_map.get(code, {"A":"所長", "B":"副所長", "C":"幹部"}.get(code))
-            c_row_idx = -1
-            
-            # 尋找幹部的列號
+            is_off = False
+            patrol_slots = []
+            found_in_matrix = False
+
+            # 掃描第4列以下的所有矩陣格子
             for r in range(v_row_idx, len(df)):
-                for c in range(4):
-                    if normalize_code(df.iloc[r, c]) == code:
-                        c_row_idx = r
-                        break
-                if c_row_idx != -1: break
-            
-            if c_row_idx != -1:
-                duty_now = str(df.iloc[c_row_idx, target_col_idx]) if target_col_idx != -1 else ""
-                if any(k in duty_now for k in ["休", "假", "補", "外"]):
-                    cadre_notes.append(f"{name}休假")
-                else:
-                    slots = []
-                    for c_idx, (s_h, e_h, raw_str) in time_cols.items():
-                        if "巡" in str(df.iloc[c_row_idx, c_idx]):
-                            slots.append((s_h, e_h))
+                # 取得 A、B 欄的勤務名稱
+                duty_title = str(df.iloc[r, 0]) + str(df.iloc[r, 1])
+                is_leave_row = any(k in duty_title for k in ["休", "假", "輪", "輸", "補", "外"])
+                is_patrol_row = "巡" in duty_title
+
+                # 檢查該列的所有時段格子
+                for c_idx, (s_h, e_h) in time_cols.items():
+                    cell_val = str(df.iloc[r, c_idx])
                     
-                    if slots:
-                        min_s = min([s[0] for s in slots])
-                        max_e = max([s[1] for s in slots])
-                        e_str = "24" if max_e == 24 else f"{max_e%24:02d}"
-                        cadre_notes.append(f"{name}在所督勤，編排{min_s:02d}至{e_str}時段巡邏勤務")
-                    else:
-                        cadre_notes.append(f"{name}在所督勤")
-            elif code in name_map:
+                    # 萃取格子內的所有番號 (例如 "A" 或 "A,B")
+                    cell_codes = [normalize_code(x) for x in re.findall(r'[A-Za-z0-9]{1,2}', cell_val)]
+                    
+                    if code in cell_codes:
+                        found_in_matrix = True
+                        if is_leave_row:
+                            is_off = True
+                        elif is_patrol_row:
+                            patrol_slots.append((s_h, e_h))
+
+            # 綜合判定幹部動態
+            if not found_in_matrix or is_off:
                 cadre_notes.append(f"{name}休假")
-                
+            else:
+                if patrol_slots:
+                    min_s = min([s[0] for s in patrol_slots])
+                    max_e = max([s[1] for s in patrol_slots])
+                    e_str = "24" if max_e == 24 or max_e == 0 else f"{max_e%24:02d}"
+                    cadre_notes.append(f"{name}在所督勤，編排{min_s:02d}至{e_str}時段巡邏勤務")
+                else:
+                    cadre_notes.append(f"{name}在所督勤")
+                    
         if cadre_notes:
             res['cadre_status'] = "；".join(cadre_notes) + "。"
             
     except Exception as e:
         res['v_name'] = "解析失敗"
-        res['cadre_status'] = f"解析錯誤: {e}"
+        res['cadre_status'] = f"幹部解析錯誤: {e}"
 
     # 2. 解析裝備交接簿
     try:
@@ -201,7 +192,7 @@ def extract_full_logic(d_file, e_file, hour):
 
 # --- 主畫面執行 ---
 if duty_file and equip_file:
-    with st.spinner("啟動 XY 絕對坐標引擎，精準定位人員動態..."):
+    with st.spinner("啟動矩陣雷達，精準定位人員動態..."):
         data = extract_full_logic(duty_file, equip_file, target_hour)
     
     st.success("✅ 報告生成完畢！")
@@ -231,13 +222,8 @@ if duty_file and equip_file:
     final_report = "\n".join([f"{i+1}、{line}" for i, line in enumerate(lines)])
     
     st.markdown("---")
-    st.subheader("📋 最終督導報告 (坐標解密版)")
+    st.subheader("📋 最終督導報告 (矩陣定位版)")
     st.text_area("複製回貼公務系統：", value=final_report, height=450)
-    
-    with st.expander("🛠️ 查看系統自動辨識結果 (完美除錯區)"):
-        st.json(data['debug_info'])
-        st.write(f"✅ 值班員警：{data['v_name']}")
-        st.write(f"✅ 幹部動態：{data['cadre_status']}")
 
 else:
-    st.info("👋 匯入兩份檔案後，系統將自動啟動坐標解密引擎！")
+    st.info("👋 匯入兩份檔案後，系統將自動啟動矩陣雷達引擎！")
