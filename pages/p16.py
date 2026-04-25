@@ -27,7 +27,7 @@ st.title("📋 督導報告極速生成器 v7.0 (番號全自動比對)")
 # --- 側邊欄：檔案與時間設定 ---
 with st.sidebar:
     st.header("📂 數據源匯入")
-    duty_file = st.file_uploader("1. 上傳『勤務分配表』", type=['xlsx'])
+    duty_file = st.file_uploader("1. 上傳『勤務分配表』", type=['xlsx', 'csv'])
     equip_file = st.file_uploader("2. 上傳『值班裝備交接簿』", type=['xlsx', 'csv'])
     
     st.divider()
@@ -52,56 +52,49 @@ def extract_full_logic(d_file, e_file, hour):
     try:
         # 1. 讀取勤務分配表
         df = pd.read_excel(d_file, header=None)
-        df_str = df.astype(str)
         
-        # 🌟 A. 職稱雷達：無死角建立人員對照表 (代號 -> 姓名)
+        # 🌟 A. 職稱雷達 (防當機強化版)
         name_map = {}
         titles = ["所長", "副所長", "巡官", "巡佐", "警員", "實習"]
         
         for r in range(len(df)):
-            row_vals = df_str.iloc[r].tolist()
-            for c in range(len(row_vals)):
-                val = row_vals[c].strip().replace(" ", "")
-                # 若儲存格內容包含職稱，且不是過長的文章
-                if any(t in val for t in titles) and len(val) <= 6:
-                    # 抓取左邊的「番號」與右邊的「姓名」
-                    if c >= 1 and c + 1 < len(row_vals):
-                        code = row_vals[c-1].strip().replace(".0", "").replace(" ", "").upper()
-                        name = row_vals[c+1].strip().replace(" ", "")
-                        # 驗證番號與姓名長度
+            for c in range(len(df.columns)):
+                # 強制加上 str()，徹底消滅 float error！
+                cell_val = str(df.iloc[r, c])
+                val_clean = cell_val.strip().replace(" ", "")
+                
+                # 情況 1：代號、職稱、姓名分開在不同格子
+                if any(t in val_clean for t in titles) and len(val_clean) <= 6:
+                    if c >= 1 and c + 1 < len(df.columns):
+                        code = str(df.iloc[r, c-1]).strip().replace(".0", "").replace(" ", "").upper()
+                        name = str(df.iloc[r, c+1]).strip().replace(" ", "")
                         if code.isalnum() and 2 <= len(name) <= 5:
                             name_map[code] = name
-                            
-        # 若表格合併在同一格，啟用備用正則表達式掃描
-        if not name_map:
-            for r in range(len(df)):
-                for c in range(len(df.columns)):
-                    cell_text = str(df.iloc[r, c])
-                    matches = re.findall(r'([A-Za-z0-9]{1,2})\s*(?:所長|副所長|巡官|巡佐|警員)\s*([\u4e00-\u9fa5]{2,4})', cell_text)
-                    for m in matches:
-                        name_map[m[0].upper()] = m[1]
+                
+                # 情況 2：代號、職稱、姓名全部擠在同一個格子裡 (正則表達式掃描)
+                matches = re.findall(r'([A-Za-z0-9]{1,2})\s*(?:所長|副所長|巡官|巡佐|警員|實習)\s*([\u4e00-\u9fa5]{2,4})', cell_val)
+                for m in matches:
+                    name_map[m[0].upper()] = m[1]
                         
-        res['debug_map'] = name_map # 紀錄抓到的對照表以供除錯
+        res['debug_map'] = name_map
         
         # 🌟 B. 定位主表時段
         df_main = df.head(45).ffill() 
-        col_idx = 4 + (hour // 2) # E欄=00-02, F欄=02-04...
+        col_idx = 4 + (hour // 2)
         
-        # 🌟 C. 抓取值班人員 (番號反查)
+        # 🌟 C. 抓取值班人員
         duty_rows = df_main[df_main.iloc[:, col_idx].astype(str).str.contains("值班", na=False)]
         if not duty_rows.empty:
-            # 優先找 B 欄(Index 1)，若無則找 A 欄(Index 0)
             row_code = str(duty_rows.iloc[0, 1]).strip().replace(".0", "").upper()
             if row_code == "NAN" or not row_code:
                 row_code = str(duty_rows.iloc[0, 0]).strip().replace(".0", "").upper()
             res['v_name'] = name_map.get(row_code, f"代號[{row_code}]未建檔")
         
-        # 🌟 D. 抓取幹部動態 (嚴格鎖定 A, B, C)
+        # 🌟 D. 抓取幹部動態 (鎖定 A, B, C)
         cadre_notes = []
         for code in ["A", "B", "C"]:
             name = name_map.get(code)
             if name:
-                # 找主表中該番號的列
                 c_row = df_main[df_main.iloc[:, 1].astype(str).str.replace(".0", "").str.upper() == code]
                 if c_row.empty:
                     c_row = df_main[df_main.iloc[:, 0].astype(str).str.replace(".0", "").str.upper() == code]
@@ -111,7 +104,6 @@ def extract_full_logic(d_file, e_file, hour):
                     if any(k in duty_now for k in ["休", "假", "補"]):
                         cadre_notes.append(f"{name}休假")
                     else:
-                        # 掃描全天巡邏班表
                         slots = []
                         for c in range(4, 16):
                             if "巡邏" in str(c_row.iloc[0, c]):
@@ -127,9 +119,9 @@ def extract_full_logic(d_file, e_file, hour):
             res['cadre_status'] = "；".join(cadre_notes) + "。"
             
     except Exception as e:
-        res['v_name'], res['cadre_status'] = "解析失敗", f"幹部解析錯誤: {e}"
+        res['cadre_status'] = f"解析錯誤: {e}"
 
-    # 2. 解析裝備交接簿 (完美版邏輯維持不變)
+    # 2. 解析裝備交接簿
     try:
         df_e = pd.read_csv(e_file, header=None) if e_file.name.endswith('csv') else pd.read_excel(e_file, header=None)
         df_e_s = df_e.astype(str)
@@ -156,7 +148,6 @@ if duty_file and equip_file:
     
     st.success("✅ 數據擷取與番號比對完成！")
     
-    # 勾選事項
     c1, c2 = st.columns(2)
     with c1:
         check_mon = st.checkbox("駐地監錄/天羅地網正常", value=True)
@@ -165,7 +156,6 @@ if duty_file and equip_file:
         check_env = st.checkbox("環境內務擺設整齊", value=True)
         check_alc = st.checkbox("酒測聯單無跳號", value=True)
 
-    # 組合文字 (100% 遵守標準格式)
     lines = []
     
     # 1. 值班
@@ -195,7 +185,6 @@ if duty_file and equip_file:
     if check_alc:
         lines.append(f"該所酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。")
 
-    # 最終生成
     final_report = "\n".join([f"{i+1}、{line}" for i, line in enumerate(lines)])
     
     st.markdown("---")
