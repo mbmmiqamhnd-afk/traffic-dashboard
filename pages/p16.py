@@ -4,9 +4,9 @@ from datetime import datetime, timedelta
 import re
 
 # 分頁配置
-st.set_page_config(page_title="督導報告 v7.0 - 代號比對版", layout="wide")
+st.set_page_config(page_title="督導報告 v7.0 - 終極精準版", layout="wide")
 
-# 套用標楷體風格 (引用您根目錄下的 kaiu.ttf)
+# 套用標楷體風格
 st.markdown(f"""
     <style>
     @font-face {{
@@ -22,7 +22,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📋 督導報告極速生成器 v7.0 (全自動代號比對)")
+st.title("📋 督導報告極速生成器 v7.0 (番號全自動比對)")
 
 # --- 側邊欄：檔案與時間設定 ---
 with st.sidebar:
@@ -35,7 +35,7 @@ with st.sidebar:
     time_str = target_time.strftime('%H%M')
     target_hour = target_time.hour
     
-    # 日期推算 (用於報告語句)
+    # 日期推算 (格式為 04月20日)
     today = datetime.now()
     d_m5, d_m1 = [(today - timedelta(days=i)).strftime('%m月%d日') for i in [5, 1]]
     d_m3 = (today - timedelta(days=3)).strftime('%m月%d日')
@@ -48,46 +48,64 @@ def safe_int(val):
         return 0
 
 def extract_full_logic(d_file, e_file, hour):
-    res = {}
+    res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'eq': None, 'debug_map': {}}
     try:
         # 1. 讀取勤務分配表
         df = pd.read_excel(d_file, header=None)
+        df_str = df.astype(str)
         
-        # 🌟 A. 建立人員對照表 (代號 -> 姓名)
+        # 🌟 A. 職稱雷達：無死角建立人員對照表 (代號 -> 姓名)
         name_map = {}
-        for i, row in df.iterrows():
-            row_str = "".join([str(x) for x in row if pd.notna(x)])
-            if "代號" in row_str and "姓名" in row_str:
-                # 往後掃描對照區
-                for j in range(i + 1, min(i + 30, len(df))):
-                    sub_r = df.iloc[j]
-                    # 警用格式通常是 [代號, 職稱, 姓名] 循環
-                    for k in range(0, len(sub_r) - 2, 3):
-                        code = str(sub_r[k]).strip().replace(".0", "")
-                        name = str(sub_r[k+2]).strip()
-                        if len(name) >= 2 and len(name) <= 4:
+        titles = ["所長", "副所長", "巡官", "巡佐", "警員", "實習"]
+        
+        for r in range(len(df)):
+            row_vals = df_str.iloc[r].tolist()
+            for c in range(len(row_vals)):
+                val = row_vals[c].strip().replace(" ", "")
+                # 若儲存格內容包含職稱，且不是過長的文章
+                if any(t in val for t in titles) and len(val) <= 6:
+                    # 抓取左邊的「番號」與右邊的「姓名」
+                    if c >= 1 and c + 1 < len(row_vals):
+                        code = row_vals[c-1].strip().replace(".0", "").replace(" ", "").upper()
+                        name = row_vals[c+1].strip().replace(" ", "")
+                        # 驗證番號與姓名長度
+                        if code.isalnum() and 2 <= len(name) <= 5:
                             name_map[code] = name
+                            
+        # 若表格合併在同一格，啟用備用正則表達式掃描
+        if not name_map:
+            for r in range(len(df)):
+                for c in range(len(df.columns)):
+                    cell_text = str(df.iloc[r, c])
+                    matches = re.findall(r'([A-Za-z0-9]{1,2})\s*(?:所長|副所長|巡官|巡佐|警員)\s*([\u4e00-\u9fa5]{2,4})', cell_text)
+                    for m in matches:
+                        name_map[m[0].upper()] = m[1]
+                        
+        res['debug_map'] = name_map # 紀錄抓到的對照表以供除錯
         
         # 🌟 B. 定位主表時段
         df_main = df.head(45).ffill() 
         col_idx = 4 + (hour // 2) # E欄=00-02, F欄=02-04...
         
-        # 🌟 C. 抓取值班人員 (代號反查)
+        # 🌟 C. 抓取值班人員 (番號反查)
         duty_rows = df_main[df_main.iloc[:, col_idx].astype(str).str.contains("值班", na=False)]
-        v_name = "未偵測"
         if not duty_rows.empty:
-            # 抓取該列的代號 (通常在 B 欄 / Index 1)
-            row_code = str(duty_rows.iloc[0, 1]).strip().replace(".0", "")
-            v_name = name_map.get(row_code, "未對應姓名")
-        res['v_name'] = v_name
+            # 優先找 B 欄(Index 1)，若無則找 A 欄(Index 0)
+            row_code = str(duty_rows.iloc[0, 1]).strip().replace(".0", "").upper()
+            if row_code == "NAN" or not row_code:
+                row_code = str(duty_rows.iloc[0, 0]).strip().replace(".0", "").upper()
+            res['v_name'] = name_map.get(row_code, f"代號[{row_code}]未建檔")
         
-        # 🌟 D. 抓取幹部動態 (代號 A, B, C)
+        # 🌟 D. 抓取幹部動態 (嚴格鎖定 A, B, C)
         cadre_notes = []
         for code in ["A", "B", "C"]:
             name = name_map.get(code)
             if name:
-                # 找主表中該代號的列
-                c_row = df_main[df_main.iloc[:, 1].astype(str).str.replace(".0", "") == code]
+                # 找主表中該番號的列
+                c_row = df_main[df_main.iloc[:, 1].astype(str).str.replace(".0", "").str.upper() == code]
+                if c_row.empty:
+                    c_row = df_main[df_main.iloc[:, 0].astype(str).str.replace(".0", "").str.upper() == code]
+                
                 if not c_row.empty:
                     duty_now = str(c_row.iloc[0, col_idx])
                     if any(k in duty_now for k in ["休", "假", "補"]):
@@ -104,11 +122,14 @@ def extract_full_logic(d_file, e_file, hour):
                             cadre_notes.append(f"{name}在所督勤，編排{time_range}時段巡邏勤務")
                         else:
                             cadre_notes.append(f"{name}在所督勤")
-        res['cadre_status'] = "；".join(cadre_notes) + "。"
+        
+        if cadre_notes:
+            res['cadre_status'] = "；".join(cadre_notes) + "。"
+            
     except Exception as e:
         res['v_name'], res['cadre_status'] = "解析失敗", f"幹部解析錯誤: {e}"
 
-    # 2. 解析裝備交接簿 (依照您給的數據座標)
+    # 2. 解析裝備交接簿 (完美版邏輯維持不變)
     try:
         df_e = pd.read_csv(e_file, header=None) if e_file.name.endswith('csv') else pd.read_excel(e_file, header=None)
         df_e_s = df_e.astype(str)
@@ -125,14 +146,15 @@ def extract_full_logic(d_file, e_file, hour):
         }
     except:
         res['eq'] = None
+        
     return res
 
 # --- 主畫面執行 ---
 if duty_file and equip_file:
-    with st.spinner("正在執行代號比對與自動解析..."):
+    with st.spinner("啟動雷達掃描，正在解析勤務番號與裝備數據..."):
         data = extract_full_logic(duty_file, equip_file, target_hour)
     
-    st.success("✅ 全自動解析完成！")
+    st.success("✅ 數據擷取與番號比對完成！")
     
     # 勾選事項
     c1, c2 = st.columns(2)
@@ -140,10 +162,10 @@ if duty_file and equip_file:
         check_mon = st.checkbox("駐地監錄/天羅地網正常", value=True)
         check_edu = st.checkbox("勤前教育宣導落實", value=True)
     with c2:
-        check_env = st.checkbox("環境內務擺設整潔", value=True)
+        check_env = st.checkbox("環境內務擺設整齊", value=True)
         check_alc = st.checkbox("酒測聯單無跳號", value=True)
 
-    # 組合文字 (完全還原您的範例格式)
+    # 組合文字 (100% 遵守標準格式)
     lines = []
     
     # 1. 值班
@@ -177,14 +199,16 @@ if duty_file and equip_file:
     final_report = "\n".join([f"{i+1}、{line}" for i, line in enumerate(lines)])
     
     st.markdown("---")
-    st.subheader("📋 最終督導報告 (標楷體)")
-    st.text_area("直接複製到公務系統：", value=final_report, height=450)
+    st.subheader("📋 最終督導報告 (自動對位版)")
+    st.text_area("複製回貼公務系統：", value=final_report, height=450)
     
-    with st.expander("🛠️ 查看後台自動辨識細節 (Debug)"):
+    with st.expander("🛠️ 查看系統自動辨識結果 (若有缺漏請點此)"):
         st.write(f"偵測時段欄位：Index {4 + (target_hour // 2)}")
-        st.write(f"值班員警姓名：{data['v_name']}")
-        st.write(f"幹部動態內容：{data['cadre_status']}")
+        st.write(f"系統抓取到的番號對照表：")
+        st.json(data['debug_map'])
+        st.write(f"值班員警：{data['v_name']}")
+        st.write(f"幹部動態：{data['cadre_status']}")
         st.write(f"裝備數據：{eq}")
 
 else:
-    st.info("👋 請上傳檔案，系統會自動在下方尋找人名對照表進行比對。")
+    st.info("👋 匯入兩份檔案後，系統將自動啟動番號雷達掃描！")
