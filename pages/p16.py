@@ -13,7 +13,6 @@ from datetime import datetime, timedelta
 # ==========================================
 st.set_page_config(page_title="交通業務與督導整合系統", page_icon="🚓", layout="wide")
 
-# 找回側邊欄選單
 try:
     from menu import show_sidebar
     show_sidebar()
@@ -29,32 +28,21 @@ st.markdown("""
         line-height: 1.7 !important;
         color: #1c1c1c !important;
     }
-    .stTabs [data-baseweb="tab-list"] button {
-        font-size: 18px;
-        font-weight: bold;
-    }
+    .stTabs [data-baseweb="tab-list"] button { font-size: 18px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. 寄信功能函數 (對齊危駕月份版 Secrets 路徑)
+# 1. 寄信功能函數 (維持 Secrets 對位)
 # ==========================================
 def send_gmail(subject, body, receiver_email):
     try:
-        # 🌟 關鍵修正：對齊您 [email] 區段的設定
         sender_email = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
-    except KeyError:
-        st.error("❌ 找不到 Secrets 設定！請確保 Secrets 中有 [email] 區段及 user, password 設定。")
-        return False
-
-    try:
         msg = MIMEText(body, 'plain', 'utf-8')
         msg['Subject'] = Header(subject, 'utf-8')
         msg['From'] = f"督導報告助手 <{sender_email}>"
         msg['To'] = receiver_email
-
-        # 使用與您其他程式相同的 SMTP 設定
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender_email, password)
             server.sendmail(sender_email, receiver_email, msg.as_string())
@@ -64,7 +52,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 督導功能解析引擎 (含分隊稱謂與職稱自動對位)
+# 2. 解析核心引擎 (修正聖亭所失敗問題)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -86,13 +74,13 @@ def d_extract_equip(e_file, hour):
         df = pd.read_excel(e_file, header=None) if not e_file.name.endswith('csv') else pd.read_csv(e_file, header=None)
         df_s = df.astype(str)
         col_map = {"gun": None, "bullet": None, "radio": None, "vest": None}
-        for r in range(min(10, len(df))):
+        for r in range(min(12, len(df))):
             for c in range(len(df.columns)):
-                v = str(df.iloc[r, c]).replace(" ", "").replace("　", "").replace("\n", "")
-                if col_map["gun"] is None and ("手槍" in v or ("槍" in v and "手" in v)): col_map["gun"] = c
-                if col_map["bullet"] is None and ("子彈" in v or ("彈" in v and "子" in v)): col_map["bullet"] = c
+                v = str(df.iloc[r, c]).replace(" ", "").replace("\n", "")
+                if col_map["gun"] is None and "手槍" in v: col_map["gun"] = c
+                if col_map["bullet"] is None and "子彈" in v: col_map["bullet"] = c
                 if col_map["radio"] is None and "無線電" in v: col_map["radio"] = c
-                if col_map["vest"] is None and ("背心" in v or "防彈衣" in v): col_map["vest"] = c
+                if col_map["vest"] is None and "背心" in v: col_map["vest"] = c
         col_map = {k: (v if v is not None else d) for k, v, d in zip(col_map.keys(), col_map.values(), [2, 3, 6, 11])}
         stop_r = len(df)
         for r in range(min(10, len(df)), len(df)):
@@ -110,73 +98,80 @@ def d_extract_equip(e_file, hour):
     except: return None
 
 def d_extract_duty(d_file, hour):
-    res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位'}
+    res = {'v_name': '解析失敗', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所'}
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
+        # 1. 偵測單位與稱謂
         for r in range(5):
             rt = "".join([str(x) for x in df.iloc[r].values])
             m = re.search(r'([\u4e00-\u9fa5]+(分局|派出所|分隊|局))', rt)
             if m: res['unit_name'] = m.group(1); break
-        is_traffic_unit = "分隊" in res['unit_name']
+        if "分隊" in res['unit_name']: res['term'] = "該分隊"
+        
+        # 2. 人員雷達 (寬鬆模式，因應聖亭所)
         full = " ".join([str(x).strip() for x in df.values.flatten() if x])
-        p = r'(?<![A-Za-z0-9])([A-Z]|[0-9]{1,2})\s*(所長|副所長|分隊長|小隊長|巡官|巡佐|警員|實習)\s*([\u4e00-\u9fa5]{2,4})'
+        p = r'([A-Z]|[0-9]{1,2})\s*(所長|副所長|分隊長|小隊長|巡官|巡佐|警員|警員兼副所長|實習)\s*([\u4e00-\u9fa5]{2,4})'
         matches = re.findall(p, full)
         n_map, f_map = {}, {}
         for m in matches:
             code, title, name = d_normalize_code(m[0]), m[1].strip(), m[2]
-            for t in ["所", "副", "巡", "警", "實", "員", "長", "隊"]:
-                if name.endswith(t): name = name[:-1]
             if len(name) >= 2: n_map[code] = name; f_map[code] = f"{title}{name}"
+            
+        # 3. 偵測時間欄位
         tr_idx, t_cols, t_col_idx = 2, {}, -1
-        for r in range(5):
-            tmp = {}
-            for c in range(len(df.columns)):
-                sh, eh = d_parse_time(df.iloc[r, c])
-                if sh is not None: tmp[c] = (sh, eh)
+        for r in range(6):
+            tmp = {c: d_parse_time(df.iloc[r, c]) for c in range(len(df.columns)) if d_parse_time(df.iloc[r, c])[0] is not None}
             if len(tmp) > len(t_cols): tr_idx, t_cols = r, tmp
         for c, (sh, eh) in t_cols.items():
-            ce, ch = (eh if eh > sh else eh + 24), (hour if hour >= 6 or ce <= 24 else hour + 24)
+            ce = eh if eh > sh else eh + 24
+            ch = hour if hour >= 6 or ce <= 24 else hour + 24
             if sh <= ch < ce: t_col_idx = c
+            
+        # 4. 偵測值班列 (擴大掃描範圍因應聖亭所)
         vr_idx = tr_idx + 1
-        for r in range(tr_idx + 1, min(tr_idx + 4, len(df))):
-            if "值" in str(df.iloc[r, 0]) + str(df.iloc[r, 1]): vr_idx = r; break
+        for r in range(tr_idx + 1, min(tr_idx + 8, len(df))):
+            if "值" in "".join([str(x) for x in df.iloc[r, :4]]): vr_idx = r; break
+        
         if t_col_idx != -1:
             raw = str(df.iloc[vr_idx, t_col_idx]).strip()
-            mc = re.search(r'[A-Za-z0-9]{1,2}', raw); code = d_normalize_code(mc.group(0)) if mc else ""
-            if code: res['v_name'] = f_map.get(code, f"未建檔:{code}")
-            else:
+            mc = re.search(r'[A-Za-z0-9]{1,2}', raw)
+            code = d_normalize_code(mc.group(0)) if mc else ""
+            if code in f_map: res['v_name'] = f_map[code]
+            else: # 備援：直接比對姓名
                 for c, n in n_map.items():
-                    if n in raw: res['v_name'] = f_map.get(c, n); break
+                    if n in raw: res['v_name'] = f_map[c]; break
+                    
+        # 5. 幹部動態
+        is_traffic = "分隊" in res['unit_name']
+        titles = {"A": "分隊長" if is_traffic else "所長", "B": "小隊長" if is_traffic else "副所長", "C": "幹部"}
         c_notes = []
-        titles = {"A": "分隊長" if is_traffic_unit else "所長", "B": "小隊長" if is_traffic_unit else "副所長", "C": "幹部"}
         for code in ["A", "B", "C"]:
             full_name = f_map.get(code, titles[code])
             found, is_off, p_slots, d_names = False, False, [], set()
             for r in range(vr_idx, len(df)):
-                dt = str(df.iloc[r, 0]) + str(df.iloc[r, 1])
+                dt = "".join([str(x) for x in df.iloc[r, :2]])
                 is_l = any(k in dt for k in ["休", "假", "輪", "輸", "補", "外"])
-                for c, (sh, eh) in t_cols.items():
-                    if code in [d_normalize_code(x) for x in re.findall(r'[A-Za-z0-9]{1,2}', str(df.iloc[r, c]))]:
-                        found = True
-                        if is_l: is_off = True
-                        else:
-                            is_e = False
-                            for k, kn in zip(["巡","守","臨","交","路"],["巡邏","守望","臨檢","交整","路檢"]):
-                                if k in dt or k in str(df.iloc[r, c]): d_names.add(kn); is_e = True
-                            if is_e: p_slots.append((sh, eh))
+                cell_val = str(df.iloc[r, t_col_idx]) if t_col_idx != -1 else ""
+                if code in [d_normalize_code(x) for x in re.findall(r'[A-Z0-9]{1,2}', cell_val)]:
+                    found = True
+                    if is_l: is_off = True
+                    else:
+                        for k, kn in zip(["巡","守","臨","交","路"],["巡邏","守望","臨檢","交整","路檢"]):
+                            if k in dt or k in cell_val: d_names.add(kn)
+                        p_slots.append(t_cols.get(t_col_idx, (0,0)))
             if not found or is_off: c_notes.append(f"{full_name}休假")
             else:
-                if p_slots:
-                    ms, me = min([s[0] for s in p_slots]), max([s[1] for s in p_slots])
-                    e_str = "24" if me==24 or me==0 else f"{me%24:02d}"
-                    c_notes.append(f"{full_name}在所督勤，編排{ms:02d}至{e_str}時段{'、'.join(sorted(list(d_names)))}勤務")
+                if d_names:
+                    sh_slot, eh_slot = t_cols[t_col_idx]
+                    e_str = "24" if eh_slot in (24, 0) else f"{eh_slot % 24:02d}"
+                    c_notes.append(f"{full_name}在所督勤，編排{sh_slot:02d}至{e_str}時段{'、'.join(sorted(d_names))}勤務")
                 else: c_notes.append(f"{full_name}在所督勤")
         res['cadre_status'] = "；".join(c_notes) + "。"
-    except: res['v_name'] = "解析失敗"
+    except: pass
     return res
 
 # ==========================================
-# 3. 主介面整合與報告生成
+# 3. 主介面邏輯 (包含寄信與匯整)
 # ==========================================
 main_tabs = st.tabs(["📊 數據處理", "📋 勤務督導報告"])
 
@@ -184,13 +179,12 @@ with main_tabs[1]:
     st.header("📋 勤務督導報告自動生成")
     c_s1, c_s2 = st.columns(2)
     with c_s1:
-        insp_date = st.date_input("選擇督導日期", datetime.now(), key="insp_d")
+        insp_date = st.date_input("督導日期", datetime.now(), key="insp_d")
         num_units = st.number_input("單位數量", 1, 8, 3, key="num_u")
     with c_s2:
-        d_end = insp_date - timedelta(days=1)
-        d_s5, d_s3 = insp_date - timedelta(days=5), insp_date - timedelta(days=3)
-        d_end_s, d_s5_s, d_s3_s = d_end.strftime('%m月%d日'), d_s5.strftime('%m月%d日'), d_s3.strftime('%m月%d日')
-        st.info(f"📅 監錄區間：{d_s5_s}至{d_end_s} / 勤教：{d_s3_s}至{d_end_s}")
+        d_e = insp_date - timedelta(days=1)
+        d_5, d_3 = insp_date - timedelta(days=5), insp_date - timedelta(days=3)
+        st.info(f"📅 監錄({d_5.strftime('%m%d')}-{d_e.strftime('%m%d')}) / 勤教({d_3.strftime('%m%d')}-{d_e.strftime('%m%d')})")
 
     u_tabs = st.tabs([f"🏢 單位 {i+1}" for i in range(num_units)] + ["📄 總匯整報告"])
     all_final_reports = []
@@ -205,41 +199,27 @@ with main_tabs[1]:
             if u_duty and u_eq:
                 dr = d_extract_duty(u_duty, u_time.hour)
                 er = d_extract_equip(u_eq, u_time.hour)
-                uname = dr['unit_name']
+                uname, t = dr['unit_name'], dr['term']
                 
-                # 建立主詞與格式化內容 (包含強制替換邏輯)
-                lns = []
-                lns.append(f"{u_time.strftime('%H%M')}，該所值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
-                lns.append(f"該所駐地監錄設備及天羅地網系統均運作正常，無故障，{d_s5_s}至{d_end_s}有逐日檢測2次以上紀錄。")
-                lns.append(f"該所{d_s3_s}至{d_end_s}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
-                lns.append(f"該所環境內務擺設整齊清潔，符合規定。")
-                eq = er if er else {"gi":0,"go":0,"gf":0,"bi":0,"bo":0,"ri":0,"ro":0,"rf":0,"vi":0,"vo":0}
-                fix = f"（另有槍枝 {eq['gf']} 把、無線電 {eq['rf']} 臺送修中）" if (eq['gf']+eq['rf']) > 0 else ""
-                lns.append(f"該所手槍出勤 {eq['go']} 把、在所 {eq['gi']} 把，子彈出勤 {eq['bo']} 顆、在所 {eq['bi']} 顆，無線電出勤 {eq['ro']} 臺、在所 {eq['ri']} 臺；防彈背心出勤 {eq['vo']} 件、在所 {eq['vi']} 件，幹部對械彈每日檢查管制良好，符合規定{fix}。")
-                lns.append(f"本日{dr['cadre_status']}")
-                lns.append(f"該所酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。")
-
-                # 強制校正「該分隊」稱謂
-                final_report_lns = []
-                for idx, line in enumerate(lns):
-                    text = line.replace("該所", "該分隊") if "分隊" in uname else line
-                    final_report_lns.append(f"{idx+1}、{text}")
-
-                final_text = "\n".join(final_report_lns)
+                lns = [
+                    f"{u_time.strftime('%H%M')}，{t}值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。",
+                    f"{t}駐地監錄設備及天羅地網系統均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。",
+                    f"{t}{d_3.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。",
+                    f"{t}環境內務擺設整齊清潔，符合規定。",
+                    f"{t}手槍出勤 {er['go'] if er else 0} 把、在所 {er['gi'] if er else 0} 把，子彈出勤 {er['bo'] if er else 0} 顆、在所 {er['bi'] if er else 0} 顆，無線電出勤 {er['ro'] if er else 0} 臺、在所 {er['ri'] if er else 0} 臺；防彈背心出勤 {er['vo'] if er else 0} 件、在所 {er['vi'] if er else 0} 件，幹部對械彈每日檢查管制良好，符合規定。",
+                    f"本日{dr['cadre_status']}",
+                    f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
+                ]
+                
+                final_text = "\n".join([f"{idx+1}、{line.replace('該所', t)}" for idx, line in enumerate(lns)])
                 all_final_reports.append(f"【{uname} 督導報告】\n{final_text}")
                 st.text_area("預覽", final_text, height=350, key=f"txt_{i}")
 
     with u_tabs[-1]:
         if all_final_reports:
             full_text = ("\n\n" + "─" * 40 + "\n\n").join(all_final_reports)
-            st.text_area("📄 總匯整結果", full_text, height=600, key="full_report")
-            
-            st.divider()
-            st.subheader("📫 同步寄送至 Gmail")
-            target_mail = st.text_input("收件人信箱", "mbmmiqamhnd@gmail.com")
-            if st.button("🚀 立即寄出報告"):
-                with st.spinner("郵件寄送中..."):
-                    if send_gmail(f"勤務督導報告_{insp_date.strftime('%Y%m%d')}", full_text, target_mail):
-                        st.success(f"✅ 報告已成功寄送至 {target_mail}")
-        else:
-            st.info("請上傳檔案以生成報告。")
+            st.text_area("📄 總匯整結果", full_text, height=600)
+            target_mail = st.text_input("收件信箱", "mbmmiqamhnd@gmail.com")
+            if st.button("🚀 寄送至 Gmail"):
+                if send_gmail(f"督導報告_{insp_date.strftime('%Y%m%d')}", full_text, target_mail):
+                    st.success("郵件寄送成功！")
