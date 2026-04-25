@@ -39,7 +39,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 進化版解析核心 (支援 06-06 跨夜邏輯)
+# 2. 進化版解析核心 (修正 19:39 解析失敗問題)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -51,7 +51,7 @@ def d_normalize_code(c):
 
 def d_parse_time(val):
     val_str = str(val).strip().replace("\n", "").replace(" ", "")
-    # 支援 06-06, 06~18 等各種格式
+    # 支援 18-20, 06-06 等格式
     m = re.search(r'(\d{1,2})[~~\-－—–_]+(\d{1,2})', val_str)
     return (int(m.group(1)), int(m.group(2))) if m else (None, None)
 
@@ -68,98 +68,112 @@ def d_extract_duty(d_file, hour):
         res['term'] = "該分隊" if "分隊" in res['unit_name'] else "該所"
         
         # B. 建立人員對照 (聖亭所職稱雷達)
-        full_text = " ".join(df.astype(str).values.flatten())
+        # 掃描全表，建立代碼對應表
+        f_map = {}
+        all_cells = df.astype(str).values.flatten()
         p = r'([A-Z0-9]{1,2})\s*(所長|副所長|分隊長|小隊長|巡官|巡佐|警員|警員兼副所長|實習)[\s\n]*([\u4e00-\u9fa5]{2,4})'
-        matches = re.findall(p, full_text)
-        f_map = {d_normalize_code(m[0]): f"{m[1]}{m[2]}" for m in matches}
+        for cell in all_cells:
+            m = re.search(p, cell)
+            if m: f_map[d_normalize_code(m.group(1))] = f"{m.group(2)}{m.group(3)}"
         
-        # C. 24小時時段定位 (06-06 邏輯)
+        # C. 時間軸精準匹配 (修正 19:39 落在 18-20 區間)
         t_cols = {}
-        for r in range(10): # 掃描前 10 列找時間軸
+        for r in range(10): 
             for c in range(len(df.columns)):
                 sh, eh = d_parse_time(df.iloc[r, c])
                 if sh is not None: t_cols[c] = (sh, eh)
             if len(t_cols) > 5: break
             
         target_col = -1
-        # 🌟 核心修正：處理 06 到隔日 06 的時間權重
-        # 如果 hour 是 0-5 點，視為 24-29 點進行比對
-        adjusted_hour = hour if hour >= 6 else hour + 24
+        # 修正：19 點應該落在 18 <= 19 < 20
+        adj_h = hour if hour >= 6 else hour + 24
         for c, (sh, eh) in t_cols.items():
             s_time = sh
             e_time = eh if eh > sh else eh + 24
-            if s_time <= adjusted_hour < e_time:
+            if s_time <= adj_h < e_time:
                 target_col = c; break
 
-        # D. 偵測值班與幹部動態
+        # D. 偵測值班與幹部
         if target_col != -1:
-            # 1. 值班偵測
+            # 1. 值班列搜索 (掃描前 15 列含有「值」字的列)
             for r in range(min(15, len(df))):
-                if "值" in "".join(df.iloc[r, :5]):
+                row_head = "".join(df.iloc[r, :5])
+                if "值" in row_head:
                     val = str(df.iloc[r, target_col])
                     mc = re.search(r'[A-Z0-9]{1,2}', val)
-                    if mc: res['v_name'] = f_map.get(d_normalize_code(mc.group(0)), "未建檔")
+                    if mc:
+                        code = d_normalize_code(mc.group(0))
+                        res['v_name'] = f_map.get(code, f"未建檔({code})")
                     break
             
-            # 2. 幹部動態 (包含邱品淳專案勤務偵測)
-            titles = {"A": "分隊長" if "分隊" in res['unit_name'] else "所長", 
-                      "B": "小隊長" if "分隊" in res['unit_name'] else "副所長", 
+            # 2. 幹部動態 (積極搜尋)
+            is_traffic = "分隊" in res['unit_name']
+            titles = {"A": "分隊長" if is_traffic else "所長", 
+                      "B": "小隊長" if is_traffic else "副所長", 
                       "C": "幹部"}
             c_notes = []
             for code in ["A", "B", "C"]:
                 fname = f_map.get(code, titles[code])
                 is_off = False
-                # 檢查底部休假區 (最後 8 列)
+                
+                # 底部休假檢查
                 for r in range(max(0, len(df)-8), len(df)):
-                    if code in str(df.iloc[r, :]).upper() and any(k in "".join(df.iloc[r, :2]) for k in ["休","輪"]):
+                    row_str = "".join(df.iloc[r, :]).upper()
+                    if code in row_str and any(k in "".join(df.iloc[r, :2]) for k in ["休","輪","假"]):
                         is_off = True; break
                 
                 d_names = set()
-                # 全列垂直掃描 (捕捉聖亭所合併格)
+                # 垂直掃描該時段所有格子
                 for r in range(len(df)):
                     cell_val = str(df.iloc[r, target_col])
                     if code in re.findall(r'[A-Z0-9]{1,2}', cell_val):
-                        is_off = False # 有代號就不算休假
+                        is_off = False # 格子裡有代號就不是休假
                         row_name = "".join(df.iloc[r, :5])
-                        # 關鍵字庫 (包含截圖中的「專案」、「辦案」)
                         kw_map = {"巡":"巡邏", "守":"守望", "望":"守望", "臨":"臨檢", "交":"交整", "路":"路檢", "專":"專案", "辦":"偵辦刑案", "淨":"專案"}
                         for k, kn in kw_map.items():
                             if k in row_name or k in cell_val: d_names.add(kn)
                 
-                if is_off:
-                    c_notes.append(f"{fname}休假")
+                if is_off: c_notes.append(f"{fname}休假")
                 else:
                     if d_names:
                         sh, eh = t_cols[target_col]
                         c_notes.append(f"{fname}在所督勤，編排{sh:02d}-{eh:02d}時段{'、'.join(sorted(d_names))}勤務")
-                    else:
-                        c_notes.append(f"{fname}在所督勤")
+                    else: c_notes.append(f"{fname}在所督勤")
             res['cadre_status'] = "；".join(c_notes) + "。"
-    except: res['cadre_status'] = "解析失敗"
+    except Exception as e: 
+        res['cadre_status'] = f"解析錯誤: {str(e)}"
     return res
 
 # ==========================================
-# 3. 裝備交接簿解析 (維持原邏輯)
+# 3. 裝備交接簿解析 (強化穩定性)
 # ==========================================
 def d_extract_equip(e_file, hour):
     try:
         df = pd.read_excel(e_file, header=None).fillna("")
         df_s = df.astype(str)
-        col_map = {"gun": 2, "bullet": 3, "radio": 6, "vest": 11} # 預設座標
+        # 自動尋找關鍵字欄位
+        col_map = {"gun": 2, "bullet": 3, "radio": 6, "vest": 11}
         for r in range(min(10, len(df))):
             for c in range(len(df.columns)):
                 v = str(df.iloc[r, c])
                 if "手槍" in v: col_map["gun"] = c
                 if "子彈" in v: col_map["bullet"] = c
-        sub = df.iloc[:25]
-        sub_s = df_s.iloc[:25]
+                if "無線電" in v: col_map["radio"] = c
+                if "背心" in v: col_map["vest"] = c
+        
+        sub = df.iloc[:30]
+        sub_s = df_s.iloc[:30]
         def get_v(kw, k):
             rows = sub[sub_s.iloc[:, 1].str.contains(kw, na=False)]
             return d_safe_int(rows.iloc[-1, col_map[k]]) if not rows.empty else 0
+        
         r_fix = sub[sub_s.iloc[:, 1].str.contains("送", na=False)]
-        return {"gi":get_v("在","gun"), "go":get_v("出","gun"), "gf":d_safe_int(r_fix.iloc[-1, col_map["gun"]]) if not r_fix.empty else 0,
+        gf = d_safe_int(r_fix.iloc[-1, col_map["gun"]]) if not r_fix.empty else 0
+        rf = d_safe_int(r_fix.iloc[-1, col_map["radio"]]) if not r_fix.empty else 0
+        
+        return {"gi":get_v("在","gun"), "go":get_v("出","gun"), "gf":gf,
                 "bi":get_v("在","bullet"), "bo":get_v("出","bullet"),
-                "ri":get_v("在","radio"), "ro":get_v("出","radio"), "rf":d_safe_int(r_fix.iloc[-1, col_map["radio"]]) if not r_fix.empty else 0,
+                "ri":get_v("在","radio"), "ro":get_v("出","radio"), "rf":rf,
                 "vi":get_v("在","vest"), "vo":get_v("出","vest")}
     except: return None
 
@@ -177,7 +191,7 @@ with main_tabs[1]:
     with c_s2:
         d_e = insp_date - timedelta(days=1)
         d_5, d_3 = insp_date - timedelta(days=5), insp_date - timedelta(days=3)
-        st.info(f"📅 監錄({d_5.strftime('%m%d')}-{d_e.strftime('%m%d')}) / 勤教({d_3.strftime('%m%d')}-{d_e.strftime('%m%d')})")
+        st.info(f"📅 區間：監錄({d_5.strftime('%m%d')}-{d_e.strftime('%m%d')}) / 勤教({d_3.strftime('%m%d')}-{d_e.strftime('%m%d')})")
 
     u_tabs = st.tabs([f"🏢 單位 {i+1}" for i in range(num_units)] + ["📄 總匯整報告"])
     all_final_reports = []
@@ -203,9 +217,9 @@ with main_tabs[1]:
                     f"本日{dr['cadre_status']}",
                     f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
                 ]
-                final_text = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
+                final_text = "\n".join([f"{idx+1}、{line.replace('該所', t)}" for idx, line in enumerate(lns)])
                 all_final_reports.append(f"【{uname} 督導報告】\n{final_text}")
-                st.text_area("預覽報告", final_text, height=350, key=f"txt_{i}")
+                st.text_area("預覽報告", final_text, height=380, key=f"txt_{i}")
 
     with u_tabs[-1]:
         if all_final_reports:
