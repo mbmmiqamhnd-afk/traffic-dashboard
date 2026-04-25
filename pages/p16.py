@@ -28,12 +28,15 @@ st.markdown("""
         line-height: 1.7 !important;
         color: #1c1c1c !important;
     }
-    .stTabs [data-baseweb="tab-list"] button { font-size: 18px; font-weight: bold; }
+    .stTabs [data-baseweb="tab-list"] button {
+        font-size: 18px;
+        font-weight: bold;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. 寄信功能函數 (維持 Secrets 對位)
+# 1. 寄信功能函數
 # ==========================================
 def send_gmail(subject, body, receiver_email):
     try:
@@ -52,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 解析核心引擎 (修正聖亭所失敗問題)
+# 2. 解析核心引擎 (修正邱品淳誤判休假問題)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -101,23 +104,20 @@ def d_extract_duty(d_file, hour):
     res = {'v_name': '解析失敗', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所'}
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
-        # 1. 偵測單位與稱謂
         for r in range(5):
             rt = "".join([str(x) for x in df.iloc[r].values])
             m = re.search(r'([\u4e00-\u9fa5]+(分局|派出所|分隊|局))', rt)
             if m: res['unit_name'] = m.group(1); break
         if "分隊" in res['unit_name']: res['term'] = "該分隊"
         
-        # 2. 人員雷達 (寬鬆模式，因應聖亭所)
         full = " ".join([str(x).strip() for x in df.values.flatten() if x])
-        p = r'([A-Z]|[0-9]{1,2})\s*(所長|副所長|分隊長|小隊長|巡官|巡佐|警員|警員兼副所長|實習)\s*([\u4e00-\u9fa5]{2,4})'
+        p = r'([A-Z]|[0-9]{1,2})\s*(所長|副所長|分隊長|小隊長|巡官|巡佐|警員|警員兼副所長|實習)[\s\n]*([\u4e00-\u9fa5]{2,4})'
         matches = re.findall(p, full)
         n_map, f_map = {}, {}
         for m in matches:
             code, title, name = d_normalize_code(m[0]), m[1].strip(), m[2]
             if len(name) >= 2: n_map[code] = name; f_map[code] = f"{title}{name}"
             
-        # 3. 偵測時間欄位
         tr_idx, t_cols, t_col_idx = 2, {}, -1
         for r in range(6):
             tmp = {c: d_parse_time(df.iloc[r, c]) for c in range(len(df.columns)) if d_parse_time(df.iloc[r, c])[0] is not None}
@@ -127,7 +127,6 @@ def d_extract_duty(d_file, hour):
             ch = hour if hour >= 6 or ce <= 24 else hour + 24
             if sh <= ch < ce: t_col_idx = c
             
-        # 4. 偵測值班列 (擴大掃描範圍因應聖亭所)
         vr_idx = tr_idx + 1
         for r in range(tr_idx + 1, min(tr_idx + 8, len(df))):
             if "值" in "".join([str(x) for x in df.iloc[r, :4]]): vr_idx = r; break
@@ -137,11 +136,11 @@ def d_extract_duty(d_file, hour):
             mc = re.search(r'[A-Za-z0-9]{1,2}', raw)
             code = d_normalize_code(mc.group(0)) if mc else ""
             if code in f_map: res['v_name'] = f_map[code]
-            else: # 備援：直接比對姓名
+            else:
                 for c, n in n_map.items():
                     if n in raw: res['v_name'] = f_map[c]; break
                     
-        # 5. 幹部動態
+        # --- 幹部動態修正邏輯 ---
         is_traffic = "分隊" in res['unit_name']
         titles = {"A": "分隊長" if is_traffic else "所長", "B": "小隊長" if is_traffic else "副所長", "C": "幹部"}
         c_notes = []
@@ -149,20 +148,29 @@ def d_extract_duty(d_file, hour):
             full_name = f_map.get(code, titles[code])
             found, is_off, p_slots, d_names = False, False, [], set()
             for r in range(vr_idx, len(df)):
-                dt = "".join([str(x) for x in df.iloc[r, :2]])
-                is_l = any(k in dt for k in ["休", "假", "輪", "輸", "補", "外"])
+                # 只有在日期/備註欄出現才算休假
+                dt_area = "".join([str(x) for x in df.iloc[r, :2]])
+                is_l = any(k in dt_area for k in ["休", "假", "輪", "輸", "補", "外"])
+                
                 cell_val = str(df.iloc[r, t_col_idx]) if t_col_idx != -1 else ""
-                if code in [d_normalize_code(x) for x in re.findall(r'[A-Z0-9]{1,2}', cell_val)]:
+                cell_codes = [d_normalize_code(x) for x in re.findall(r'[A-Z0-9]{1,2}', cell_val)]
+                
+                if code in cell_codes:
                     found = True
+                    # 如果該時段格有明確排班，則不視為休假 (修正邱品淳問題)
                     if is_l: is_off = True
-                    else:
-                        for k, kn in zip(["巡","守","臨","交","路"],["巡邏","守望","臨檢","交整","路檢"]):
-                            if k in dt or k in cell_val: d_names.add(kn)
-                        p_slots.append(t_cols.get(t_col_idx, (0,0)))
+                    
+                    # 偵測具體勤務
+                    for k, kn in zip(["巡","守","臨","交","路"],["巡邏","守望","臨檢","交整","路檢"]):
+                        if k in dt_area or k in cell_val: 
+                            d_names.add(kn)
+                            is_off = False # 🌟 只要有排到勤務，就強制取消休假判斷
+                    p_slots.append(t_cols.get(t_col_idx, (0,0)))
+            
             if not found or is_off: c_notes.append(f"{full_name}休假")
             else:
                 if d_names:
-                    sh_slot, eh_slot = t_cols[t_col_idx]
+                    sh_slot, eh_slot = t_cols.get(t_col_idx, (0,0))
                     e_str = "24" if eh_slot in (24, 0) else f"{eh_slot % 24:02d}"
                     c_notes.append(f"{full_name}在所督勤，編排{sh_slot:02d}至{e_str}時段{'、'.join(sorted(d_names))}勤務")
                 else: c_notes.append(f"{full_name}在所督勤")
@@ -171,7 +179,7 @@ def d_extract_duty(d_file, hour):
     return res
 
 # ==========================================
-# 3. 主介面邏輯 (包含寄信與匯整)
+# 3. 主介面邏輯
 # ==========================================
 main_tabs = st.tabs(["📊 數據處理", "📋 勤務督導報告"])
 
