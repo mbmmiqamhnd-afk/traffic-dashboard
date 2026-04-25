@@ -5,7 +5,7 @@ import re
 import traceback
 
 # --- 1. 分頁基本配置 ---
-st.set_page_config(page_title="督導報告 v8.2 - 日期自訂版", layout="wide")
+st.set_page_config(page_title="督導報告 v8.3 - 督導日自動推算版", layout="wide")
 
 # --- 2. 套用標楷體風格 ---
 st.markdown(f"""
@@ -27,7 +27,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📋 督導報告極速生成器 v8.2 (日期手動選擇版)")
+st.title("📋 督導報告極速生成器 v8.3 (督導日自動推算)")
 
 # --- 3. 核心輔助工具 ---
 def safe_int(val):
@@ -159,24 +159,30 @@ def extract_duty_logic(d_file, hour):
     except Exception as e: res['v_name'] = "解析失敗"; res['cadre_status'] = f"錯誤: {e}"
     return res
 
-# --- 6. 側邊欄日期設定 ---
+# --- 6. 側邊欄設定 ---
 with st.sidebar:
     st.header("⚙️ 督導任務設定")
     num_units = st.number_input("本次督導單位數量", min_value=1, max_value=8, value=3)
     st.divider()
     
-    st.subheader("📅 檢查紀錄區間")
-    # 讓使用者手動挑選日期
-    start_date = st.date_input("檢查起始日", datetime.now() - timedelta(days=5))
-    end_date = st.date_input("檢查結束日", datetime.now() - timedelta(days=1))
+    st.subheader("📅 督導日期設定")
+    # 只需選擇督導日期 (起始日)
+    insp_date = st.date_input("選擇督導日期 (起始日)", datetime.now())
     
-    # 格式化為報告使用的字串 (例如: 04月20日)
-    date_start_str = start_date.strftime('%m月%d日')
-    date_end_str = end_date.strftime('%m月%d日')
+    # --- 自動推算邏輯 ---
+    # 監錄系統通常查到昨天為止 (若督導日是 26 號，查 21~25 號)
+    date_end = insp_date - timedelta(days=1)
+    date_start_5d = insp_date - timedelta(days=5)
+    date_start_3d = insp_date - timedelta(days=3)
     
-    # 勤教日期通常是看最近3天，若結束日是昨天，起始日就是結束日往前推2天
-    edu_start_date = end_date - timedelta(days=2)
-    edu_start_str = edu_start_date.strftime('%m月%d日')
+    # 格式化
+    date_end_str = date_end.strftime('%m月%d日')
+    date_start_5d_str = date_start_5d.strftime('%m月%d日')
+    date_start_3d_str = date_start_3d.strftime('%m月%d日')
+    
+    st.write(f"系統將自動帶入：")
+    st.write(f"🔹 監錄區間：{date_start_5d_str}-{date_end_str}")
+    st.write(f"🔹 勤教區間：{date_start_3d_str}-{date_end_str}")
 
 # --- 7. 動態分頁處理 ---
 tab_names = [f"🏢 單位 {i+1}" for i in range(num_units)] + ["📄 總匯整報告"]
@@ -210,11 +216,11 @@ for i in range(num_units):
             lines = []
             lines.append(f"{time_str}，該所值班{duty_data['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
             
-            # 使用手動選擇的日期
+            # 使用自動推算的日期
             if check_mon:
-                lines.append(f"該所駐地監錄設備及天羅地網系統均運作正常，無故障，{date_start_str}至{date_end_str}有逐日檢測2次以上紀錄。")
+                lines.append(f"該所駐地監錄設備及天羅地網系統均運作正常，無故障，{date_start_5d_str}至{date_end_str}有逐日檢測2次以上紀錄。")
             if check_edu:
-                lines.append(f"該所{edu_start_str}至{date_end_str}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
+                lines.append(f"該所{date_start_3d_str}至{date_end_str}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
             
             if check_env: lines.append(f"該所環境內務擺設整齊清潔，符合規定。")
             eq = eq_data if eq_data else {"gi":0, "go":0, "gf":0, "bi":0, "bo":0, "bf":0, "ri":0, "ro":0, "rf":0, "vi":0, "vo":0, "vf":0}
