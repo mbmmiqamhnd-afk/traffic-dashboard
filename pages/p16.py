@@ -465,8 +465,8 @@ with u_tabs[-1]:
 
     all_final_reports = [
         f"【{saved[i]['uname']} 督導報告】\n{saved[i]['report']}"
-        for i in sorted(saved.keys())
-        if i < num_units
+        for i in sorted(saved.keys(), key=lambda x: int(x))
+        if int(i) < num_units
     ]
     if all_final_reports:
         full_text = ("\n\n" + "─" * 40 + "\n\n").join(all_final_reports)
