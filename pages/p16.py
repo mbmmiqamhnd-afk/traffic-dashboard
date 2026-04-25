@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import re
 
 # 分頁配置
-st.set_page_config(page_title="督導報告 v7.0 - 終極無敵版", layout="wide")
+st.set_page_config(page_title="督導報告 v7.0 - 天眼逆向追蹤版", layout="wide")
 
 # 套用標楷體風格
 st.markdown(f"""
@@ -22,7 +22,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📋 督導報告極速生成器 v7.0 (全自動雷達版)")
+st.title("📋 督導報告極速生成器 v7.0 (天眼逆向追蹤版)")
 
 # --- 側邊欄：檔案與時間設定 ---
 with st.sidebar:
@@ -35,7 +35,7 @@ with st.sidebar:
     time_str = target_time.strftime('%H%M')
     target_hour = target_time.hour
     
-    # 日期推算 (格式為 04月20日)
+    # 日期推算
     today = datetime.now()
     d_m5, d_m1 = [(today - timedelta(days=i)).strftime('%m月%d日') for i in [5, 1]]
     d_m3 = (today - timedelta(days=3)).strftime('%m月%d日')
@@ -48,24 +48,19 @@ def safe_int(val):
         return 0
 
 def normalize_code(c):
-    """將番號標準化，例如 '07', ' 7 ', 'A' 統一轉為乾淨的 '7', 'A'"""
     c_str = str(c).strip().replace(".0", "").upper()
     if c_str.isdigit():
         return str(int(c_str))
     return c_str
 
 def extract_full_logic(d_file, e_file, hour):
-    res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'eq': None, 'debug_map': {}}
+    res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'eq': None, 'debug_map': {}, 'debug_rows': {}}
     try:
         # 1. 讀取勤務分配表
         df = pd.read_excel(d_file, header=None)
         
-        # 🌟 A. 全域平坦化雷達：徹底無視 Excel 合併儲存格
-        # 將整張表轉為單一巨大字串，完全不怕擠在同一格
+        # 🌟 A. 全域平坦化雷達：取得完美番號對照表
         full_text = " ".join([str(x).strip() for x in df.values.flatten() if pd.notna(x)])
-        
-        # 強力正則表達式：尋找 [番號] + [職稱] + [姓名]
-        # (?<![A-Za-z0-9]) 確保番號前不是英文數字，避免抓錯
         pattern = r'(?<![A-Za-z0-9])([A-Z]|[0-9]{1,2})\s*(所長|副所長|巡官|巡佐|警員|實習)\s*([\u4e00-\u9fa5]{2,4})'
         matches = re.findall(pattern, full_text)
         
@@ -73,75 +68,76 @@ def extract_full_logic(d_file, e_file, hour):
         for m in matches:
             code = normalize_code(m[0])
             name = m[2]
-            # 專殺「劉憬霖警」這類黏字的 Bug：把結尾的職稱字眼切掉
             for t_char in ["所", "副", "巡", "警", "實", "員", "長"]:
-                if name.endswith(t_char):
-                    name = name[:-1]
+                if name.endswith(t_char): name = name[:-1]
             if len(name) >= 2:
                 name_map[code] = name
-                
         res['debug_map'] = name_map
         
-        # 🌟 B. 定位主表時段
-        df_main = df.head(45).ffill() 
+        # 🌟 B. 綁定每位員警的主表列號 (Row Index)
+        df_ffill = df.ffill() # 處理所有合併儲存格
+        officer_rows = {}
+        
+        # 掃描整份文件 (取消 head 限制，防止漏抓副所長)
+        for r in range(len(df_ffill)):
+            for c in range(4): # 番號通常在前 4 欄
+                code = normalize_code(df_ffill.iloc[r, c])
+                # 如果番號有在對照表內，且還沒被綁定列號
+                if code in name_map and code not in officer_rows:
+                    # 確認這列真的有班表數據 (隨便檢查後面欄位是否有字，避免抓到最底下的對照表本身)
+                    has_duty = any(str(df_ffill.iloc[r, c_idx]).strip() not in ["", "nan", "NaN"] for c_idx in range(4, 16))
+                    if has_duty:
+                        officer_rows[code] = r
+        res['debug_rows'] = officer_rows
+        
+        # 定位時段欄位
         col_idx = 4 + (hour // 2)
         
-        # 🌟 C. 抓取值班人員
-        duty_rows = df_main[df_main.iloc[:, col_idx].astype(str).str.contains(r"值.*班", regex=True, na=False)]
-        if not duty_rows.empty:
-            found_name = False
-            # 掃描該列前四格尋找番號
-            for search_col in range(4):
-                r_code = normalize_code(duty_rows.iloc[0, search_col])
-                if r_code in name_map:
-                    res['v_name'] = name_map[r_code]
-                    found_name = True
-                    break
-            
-            if not found_name:
-                fallback_code = normalize_code(duty_rows.iloc[0, 1])
-                if fallback_code == "" or fallback_code == "NAN":
-                    fallback_code = normalize_code(duty_rows.iloc[0, 0])
-                res['v_name'] = name_map.get(fallback_code, f"番號[{fallback_code}]未建檔")
+        # 🌟 C. 抓取值班人員 (逆向查表法)
+        for code, row_idx in officer_rows.items():
+            duty_val = str(df_ffill.iloc[row_idx, col_idx])
+            # 只要該員的該時段包含「值」字，且不是督勤
+            if "值" in duty_val and "督" not in duty_val:
+                res['v_name'] = name_map[code]
+                break
         
-        # 🌟 D. 抓取幹部動態 (鎖定 A, B, C)
+        # 🌟 D. 抓取幹部動態 (A, B, C)
         cadre_notes = []
         for code in ["A", "B", "C"]:
-            # 若對照表沒抓到，預設給職稱
-            c_name = name_map.get(code, {"A":"所長", "B":"副所長", "C":"幹部"}.get(code))
+            name = name_map.get(code, {"A":"所長", "B":"副所長", "C":"幹部"}.get(code))
             
-            # 找尋幹部番號所在列
-            c_row = pd.DataFrame()
-            for search_col in range(4):
-                temp_row = df_main[df_main.iloc[:, search_col].apply(normalize_code) == code]
-                if not temp_row.empty:
-                    c_row = temp_row
-                    break
-                    
-            if not c_row.empty:
-                duty_now = str(c_row.iloc[0, col_idx])
-                if any(k in duty_now for k in ["休", "假", "補"]):
-                    cadre_notes.append(f"{c_name}休假")
+            # 狀況 1：幹部今天有排班 (在主表有找到列)
+            if code in officer_rows:
+                row_idx = officer_rows[code]
+                duty_now = str(df_ffill.iloc[row_idx, col_idx])
+                
+                if any(k in duty_now for k in ["休", "假", "補", "外"]):
+                    cadre_notes.append(f"{name}休假")
                 else:
+                    # 掃描 00-24 全天有無巡邏
                     slots = []
                     for c_col in range(4, 16):
-                        if "巡邏" in str(c_row.iloc[0, c_col]):
+                        if "巡" in str(df_ffill.iloc[row_idx, c_col]):
                             h = (c_col - 4) * 2
                             slots.append(f"{h:02d}-{h+2:02d}")
                     if slots:
                         time_range = f"{slots[0][:2]}至{slots[-1][-2:]}"
-                        cadre_notes.append(f"{c_name}在所督勤，編排{time_range}時段巡邏勤務")
+                        cadre_notes.append(f"{name}在所督勤，編排{time_range}時段巡邏勤務")
                     else:
-                        cadre_notes.append(f"{c_name}在所督勤")
+                        cadre_notes.append(f"{name}在所督勤")
+                        
+            # 狀況 2：幹部在對照表裡，但今天主表完全沒排他的班 (視同休假)
+            elif code in name_map:
+                cadre_notes.append(f"{name}休假")
         
         if cadre_notes:
             res['cadre_status'] = "；".join(cadre_notes) + "。"
             
     except Exception as e:
         res['v_name'] = "解析失敗"
-        res['cadre_status'] = f"幹部解析錯誤: {e}"
+        res['cadre_status'] = f"解析錯誤: {e}"
 
-    # 2. 解析裝備交接簿 (完美版維持不變)
+    # 2. 解析裝備交接簿 (完美穩定維持)
     try:
         df_e = pd.read_csv(e_file, header=None) if e_file.name.endswith('csv') else pd.read_excel(e_file, header=None)
         df_e_s = df_e.astype(str)
@@ -163,10 +159,10 @@ def extract_full_logic(d_file, e_file, hour):
 
 # --- 主畫面執行 ---
 if duty_file and equip_file:
-    with st.spinner("啟動全域雷達掃描，正在比對勤務番號與裝備數據..."):
+    with st.spinner("啟動天眼逆向追蹤引擎，正在分析人員動態..."):
         data = extract_full_logic(duty_file, equip_file, target_hour)
     
-    st.success("✅ 數據擷取與番號比對完成！")
+    st.success("✅ 人員動態與裝備數據自動對位完成！")
     
     c1, c2 = st.columns(2)
     with c1:
@@ -209,16 +205,15 @@ if duty_file and equip_file:
     final_report = "\n".join([f"{i+1}、{line}" for i, line in enumerate(lines)])
     
     st.markdown("---")
-    st.subheader("📋 最終督導報告 (自動對位版)")
+    st.subheader("📋 最終督導報告 (天眼逆向追蹤版)")
     st.text_area("複製回貼公務系統：", value=final_report, height=450)
     
-    with st.expander("🛠️ 查看系統自動辨識結果 (完美對位區)"):
+    with st.expander("🛠️ 查看系統自動辨識結果 (除錯專區)"):
         st.write(f"偵測時段欄位：Index {4 + (target_hour // 2)}")
-        st.write(f"✅ 完美過濾的番號對照表：")
-        st.json(data['debug_map'])
+        st.write(f"人員對應主表列號 (有抓到列號才代表有排班)：")
+        st.json(data['debug_rows'])
         st.write(f"值班員警：{data['v_name']}")
         st.write(f"幹部動態：{data['cadre_status']}")
-        st.write(f"裝備數據：{eq}")
 
 else:
-    st.info("👋 匯入兩份檔案後，系統將自動啟動番號雷達掃描！")
+    st.info("👋 匯入兩份檔案後，系統將自動啟動天眼逆向掃描！")
