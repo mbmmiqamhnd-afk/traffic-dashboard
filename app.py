@@ -834,7 +834,7 @@ def process_jing_tao(files):
         except Exception as e: st.error(f"雲端同步出錯：{e}")
 
 # ==========================================
-# 4. 首頁與排程器
+# 4. 首頁與側邊欄選單
 # ==========================================
 with st.sidebar:
     # 1. 系統大標題
@@ -849,19 +849,18 @@ with st.sidebar:
     
     # 3. 勤務規劃模組
     st.subheader("📅 勤務與專案規劃")
-    st.page_link("pages/9_🚓_專案勤務規劃.py", label="專案勤務規劃", icon="🚓")
-    st.page_link("pages/10_🚓_防制危險駕車.py", label="防制危險駕車", icon="🚓")
-    st.page_link("pages/11_🚓_防制危險駕車_月份版.py", label="防制危險駕車 (月份版)", icon="📅")
-    st.page_link("pages/14_🚓_二階段勤務規劃.py", label="二階段勤務規劃", icon="🚓")
-    st.page_link("pages/15_三合一勤務規劃系統.py", label="三合一勤務規劃系統", icon="📋")
+    st.page_link("pages/p09.py", label="專案勤務規劃", icon="🚓")
+    st.page_link("pages/p10.py", label="防制危險駕車", icon="🚓")
+    st.page_link("pages/p11.py", label="防制危險駕車 (月份版)", icon="📅")
+    st.page_link("pages/p14.py", label="二階段勤務規劃", icon="🚓")
+    st.page_link("pages/p15.py", label="三合一勤務規劃系統", icon="📋")
     
     # 4. 交通安全與其他工具
     st.subheader("🛠️ 專案與輔助工具")
-    st.page_link("pages/12_🚶_行人及護老交通安全.py", label="行人及護老交通安全", icon="🚶")
-    st.page_link("pages/13_🚛_取締砂石車.py", label="取締砂石車", icon="🚛")
-    st.page_link("pages/5_商標頁碼工具.py", label="商標頁碼工具", icon="🔖")
-    st.page_link("pages/6_PDF轉檔工具.py", label="PDF 轉 PPTX 工具", icon="📂")
-
+    st.page_link("pages/p12.py", label="行人及護老交通安全", icon="🚶")
+    st.page_link("pages/p13.py", label="取締砂石車", icon="🚛")
+    st.page_link("pages/p05.py", label="商標頁碼工具", icon="🔖")
+    st.page_link("pages/p06.py", label="PDF 轉 PPTX 工具", icon="📂")
 
 st.header("📈 交通執法數據全自動批次處理中心")
 st.info("💡 請將所需報表全選後，直接拖曳至下方區域即可自動分流處理。")
