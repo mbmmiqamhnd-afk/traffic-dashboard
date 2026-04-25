@@ -14,7 +14,6 @@ def show_sidebar():
         
         # 3. 勤務與專案規劃
         st.subheader("📅 勤務與專案規劃")
-        # 👇 這裡已經幫您把名稱改為「聯合稽查勤務規劃」 👇
         st.page_link("pages/p09.py", label="聯合稽查勤務規劃", icon="🚓") 
         st.page_link("pages/p10.py", label="防制危險駕車", icon="🚓")
         st.page_link("pages/p11.py", label="防制危險駕車 (月份版)", icon="📅")
@@ -27,3 +26,5 @@ def show_sidebar():
         st.subheader("🛠️ 輔助工具")
         st.page_link("pages/p05.py", label="商標頁碼工具", icon="🔖")
         st.page_link("pages/p06.py", label="PDF 轉 PPTX 工具", icon="📂")
+        # 👇 這是我們新增的 v7 工具連結 👇
+        st.page_link("pages/p16.py", label="督導報告極速生成器 v7.0", icon="📋")
