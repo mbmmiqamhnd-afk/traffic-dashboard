@@ -1,4 +1,6 @@
 import streamlit as st
+from menu import show_sidebar
+show_sidebar()
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
