@@ -1,4 +1,6 @@
 import streamlit as st
+from menu import show_sidebar
+show_sidebar()
 import io
 from pdf2image import convert_from_bytes
 from pptx import Presentation
