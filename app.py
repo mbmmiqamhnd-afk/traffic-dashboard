@@ -847,18 +847,18 @@ with st.sidebar:
     st.subheader("📊 數據與分析")
     st.page_link("app.py", label="全自動批次處理中心", icon="⚙️")
     
-    # 3. 勤務規劃模組
+    # 3. 勤務與專案規劃 (已將行人護老、砂石車移至此處)
     st.subheader("📅 勤務與專案規劃")
     st.page_link("pages/p09.py", label="專案勤務規劃", icon="🚓")
     st.page_link("pages/p10.py", label="防制危險駕車", icon="🚓")
     st.page_link("pages/p11.py", label="防制危險駕車 (月份版)", icon="📅")
+    st.page_link("pages/p12.py", label="行人及護老交通安全", icon="🚶")
+    st.page_link("pages/p13.py", label="取締砂石車", icon="🚛")
     st.page_link("pages/p14.py", label="二階段勤務規劃", icon="🚓")
     st.page_link("pages/p15.py", label="三合一勤務規劃系統", icon="📋")
     
-    # 4. 交通安全與其他工具
-    st.subheader("🛠️ 專案與輔助工具")
-    st.page_link("pages/p12.py", label="行人及護老交通安全", icon="🚶")
-    st.page_link("pages/p13.py", label="取締砂石車", icon="🚛")
+    # 4. 輔助工具 (剩下純行政文書工具)
+    st.subheader("🛠️ 輔助工具")
     st.page_link("pages/p05.py", label="商標頁碼工具", icon="🔖")
     st.page_link("pages/p06.py", label="PDF 轉 PPTX 工具", icon="📂")
 
