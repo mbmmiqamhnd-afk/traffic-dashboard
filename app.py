@@ -837,8 +837,31 @@ def process_jing_tao(files):
 # 4. 首頁與排程器
 # ==========================================
 with st.sidebar:
+    # 1. 系統大標題
     st.title("🚓 交通執法自動化分析引擎")
-    st.info("本系統專為處理繁雜交通執法報表所設計，支援自動辨識、運算並同步至雲端儀表板。")
+    st.info("本系統專為處理繁雜交通執法報表設計，支援自動辨識與雲端同步。")
+    
+    st.divider() # 分隔線
+    
+    # 2. 核心數據處理
+    st.subheader("📊 數據與分析")
+    st.page_link("app.py", label="全自動批次處理中心", icon="⚙️")
+    
+    # 3. 勤務規劃模組
+    st.subheader("📅 勤務與專案規劃")
+    st.page_link("pages/9_🚓_專案勤務規劃.py", label="專案勤務規劃", icon="🚓")
+    st.page_link("pages/10_🚓_防制危險駕車.py", label="防制危險駕車", icon="🚓")
+    st.page_link("pages/11_🚓_防制危險駕車_月份版.py", label="防制危險駕車 (月份版)", icon="📅")
+    st.page_link("pages/14_🚓_二階段勤務規劃.py", label="二階段勤務規劃", icon="🚓")
+    st.page_link("pages/15_三合一勤務規劃系統.py", label="三合一勤務規劃系統", icon="📋")
+    
+    # 4. 交通安全與其他工具
+    st.subheader("🛠️ 專案與輔助工具")
+    st.page_link("pages/12_🚶_行人及護老交通安全.py", label="行人及護老交通安全", icon="🚶")
+    st.page_link("pages/13_🚛_取締砂石車.py", label="取締砂石車", icon="🚛")
+    st.page_link("pages/5_商標頁碼工具.py", label="商標頁碼工具", icon="🔖")
+    st.page_link("pages/6_PDF轉檔工具.py", label="PDF 轉 PPTX 工具", icon="📂")
+
 
 st.header("📈 交通執法數據全自動批次處理中心")
 st.info("💡 請將所需報表全選後，直接拖曳至下方區域即可自動分流處理。")
