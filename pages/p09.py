@@ -1,6 +1,4 @@
 import streamlit as st
-from menu import show_sidebar
-show_sidebar()
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
@@ -20,9 +18,13 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
 import re
+from menu import show_sidebar
 
-# --- 1. 頁面設定 ---
-st.set_page_config(page_title="雲端勤務規劃系統", layout="wide", page_icon="🚓")
+# --- 1. 頁面設定 (必須是第一個 Streamlit 指令) ---
+st.set_page_config(page_title="聯合稽查勤務規劃系統", layout="wide", page_icon="🚓")
+
+# 呼叫側邊欄
+show_sidebar()
 
 # --- 常數與設定 ---
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
@@ -161,11 +163,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story = []
 
     style_title        = ParagraphStyle('Title',       fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8,   wordWrap='CJK')
-    style_info         = ParagraphStyle('Info',        fontName=font, fontSize=12, alignment=2, spaceAfter=10,             wordWrap='CJK')
+    style_info         = ParagraphStyle('Info',        fontName=font, fontSize=12, alignment=2, spaceAfter=10,              wordWrap='CJK')
     style_cell         = ParagraphStyle('Cell',        fontName=font, fontSize=14, leading=20, alignment=1,                 wordWrap='CJK')
     style_cell_left    = ParagraphStyle('CellLeft',    fontName=font, fontSize=14, leading=20, alignment=0,                 wordWrap='CJK')
     style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm,
-                                        alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0,                             wordWrap='CJK')
+                                        alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0,                              wordWrap='CJK')
     style_table_title  = ParagraphStyle('TTitle',      fontName=font, fontSize=16, alignment=1, leading=22,                 wordWrap='CJK')
 
     story.append(Paragraph(f"{unit}{project}勤務規劃表", style_title))
@@ -325,7 +327,8 @@ p = d.get("project_name", DEFAULT_PROJ)
 b = d.get("briefing_info", DEFAULT_BRIEF)
 s = d.get("check_station", DEFAULT_STATION)
 
-st.title("🚓 專案勤務規劃管理系統")
+# 將標題修改為「聯合稽查」
+st.title("🚓 聯合稽查勤務規劃管理系統")
 c1, c2 = st.columns(2)
 p_raw, p_time = c1.text_input("專案名稱", p), c2.text_input("勤務時間", t)
 
@@ -362,12 +365,4 @@ col_dl1, col_dl2 = st.columns(2)
 
 plan_filename = f"{u}{p_name}勤務規劃表.pdf"
 
-col_dl1.download_button("📝 下載 1.勤務規劃表", data=generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl), file_name=plan_filename, use_container_width=True)
-col_dl2.download_button("🖋️ 下載 2.人員簽到表", data=generate_attendance_pdf(u, p_name, p_time, b_info), file_name=f"簽到表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
-
-if st.button("💾 同步雲端並發送備份郵件", use_container_width=True):
-    with st.spinner("處理中..."):
-        save_data(u, p_time, p_name, b_info, s_info, res_cmd, res_ptl)
-        ok, m_err = send_report_email(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
-        if ok: st.success("✅ 同步與郵件發送成功！")
-        else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {m_err}")
+col_dl1.download_button("📝 下載 1.勤務規劃表", data=generate_
