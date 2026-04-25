@@ -1,4 +1,6 @@
 import streamlit as st
+from menu import show_sidebar
+show_sidebar()
 import io
 import os
 from pypdf import PdfReader, PdfWriter
