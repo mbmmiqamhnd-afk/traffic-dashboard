@@ -75,7 +75,7 @@ def d_extract_equip(e_file, hour):
     except: return None
 
 def d_extract_duty(d_file, hour):
-    res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所'}
+    res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位'}
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
         for r in range(5):
@@ -83,9 +83,7 @@ def d_extract_duty(d_file, hour):
             m = re.search(r'([\u4e00-\u9fa5]+(分局|派出所|分隊|局))', rt)
             if m: res['unit_name'] = m.group(1); break
         
-        # 🌟 核心稱謂偵測
         is_traffic_unit = "分隊" in res['unit_name']
-        res['term'] = "該分隊" if is_traffic_unit else "該所"
         
         full = " ".join([str(x).strip() for x in df.values.flatten() if x])
         p = r'(?<![A-Za-z0-9])([A-Z]|[0-9]{1,2})\s*(所長|副所長|分隊長|小隊長|巡官|巡佐|警員|實習)\s*([\u4e00-\u9fa5]{2,4})'
@@ -160,7 +158,7 @@ def d_extract_duty(d_file, hour):
 # ==========================================
 # 2. 原有的交通執法數據處理邏輯 (process_ 函數)
 # ==========================================
-# [請完整貼上您原本 process_tech_enforcement, process_overload... 等函數內容]
+# (在此處貼上您原本程式中所有的 process_ 函數內容)
 
 # ==========================================
 # 3. 主介面分頁整合
@@ -169,7 +167,7 @@ main_tabs = st.tabs(["📊 數據自動化處理", "📋 勤務督導報告"])
 
 with main_tabs[0]:
     st.header("📈 執法數據全自動批次中心")
-    # (此處接您原本的 file_uploader 與業務程式碼)
+    # (此處接您原本的 file_uploader 與業務邏輯)
 
 with main_tabs[1]:
     st.header("📋 勤務督導報告自動生成")
@@ -181,7 +179,7 @@ with main_tabs[1]:
         d_end = insp_date - timedelta(days=1)
         d_s5, d_s3 = insp_date - timedelta(days=5), insp_date - timedelta(days=3)
         d_end_s, d_s5_s, d_s3_s = d_end.strftime('%m月%d日'), d_s5.strftime('%m月%d日'), d_s3.strftime('%m月%d日')
-        st.info(f"📅 監錄區間：{d_s5_s}至{d_end_s} / 勤教：{d_s3_s}至{d_end_s}")
+        st.info(f"📅 區間：監錄({d_s5_s}-{d_end_s}) / 勤教({d_s3_s}-{d_end_s})")
 
     u_tabs = st.tabs([f"🏢 單位 {i+1}" for i in range(num_units)] + ["📄 總匯整報告"])
     all_final_reports = []
@@ -190,37 +188,39 @@ with main_tabs[1]:
         with u_tabs[i]:
             u_time = st.time_input("抵達時間", datetime.now().time(), key=f"ut_{i}")
             col_f1, col_f2 = st.columns(2)
-            with col_f1: u_duty = st.file_uploader("上傳勤務表", type=['xlsx'], key=f"ud_{i}")
-            with col_f2: u_eq = st.file_uploader("上傳交接簿", type=['xlsx'], key=f"ue_{i}")
+            with col_f1: u_duty = st.file_uploader("1. 上傳勤務表", type=['xlsx'], key=f"ud_{i}")
+            with col_f2: u_eq = st.file_uploader("2. 上傳交接簿", type=['xlsx'], key=f"ue_{i}")
 
             if u_duty and u_eq:
                 dr = d_extract_duty(u_duty, u_time.hour)
                 er = d_extract_equip(u_eq, u_time.hour)
                 uname = dr['unit_name']
-                t = dr['term'] # 🌟 取得「該分隊」或「該所」
                 
+                # 🌟 第一階段：建立原始模板 (以「該所」為基準)
                 lns = []
-                # 1. 值班 (修正：使用變數 t)
-                lns.append(f"{u_time.strftime('%H%M')}，{t}值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
-                # 2. 監錄 (修正：使用變數 t)
-                lns.append(f"{t}駐地監錄設備及天羅地網系統均運作正常，無故障，{d_s5_s}至{d_end_s}有逐日檢測2次以上紀錄。")
-                # 3. 勤教 (修正：使用變數 t)
-                lns.append(f"{t}{d_s3_s}至{d_end_s}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
-                # 4. 內務 (修正：使用變數 t)
-                lns.append(f"{t}環境內務擺設整齊清潔，符合規定。")
-                # 5. 裝備 (修正：使用變數 t)
+                lns.append(f"{u_time.strftime('%H%M')}，該所值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
+                lns.append(f"該所駐地監錄設備及天羅地網系統均運作正常，無故障，{d_s5_s}至{d_end_s}有逐日檢測2次以上紀錄。")
+                lns.append(f"該所{d_s3_s}至{d_end_s}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
+                lns.append(f"該所環境內務擺設整齊清潔，符合規定。")
                 eq = er if er else {"gi":0,"go":0,"gf":0,"bi":0,"bo":0,"ri":0,"ro":0,"rf":0,"vi":0,"vo":0}
                 fix = f"（另有槍枝 {eq['gf']} 把、無線電 {eq['rf']} 臺送修中）" if (eq['gf']+eq['rf']) > 0 else ""
-                lns.append(f"{t}手槍出勤 {eq['go']} 把、在所 {eq['gi']} 把，子彈出勤 {eq['bo']} 顆、在所 {eq['bi']} 顆，無線電出勤 {eq['ro']} 臺、在所 {eq['ri']} 臺；防彈背心出勤 {eq['vo']} 件、在所 {eq['vi']} 件，幹部對械彈每日檢查管制良好，符合規定{fix}。")
-                # 6. 幹部
+                lns.append(f"該所手槍出勤 {eq['go']} 把、在所 {eq['gi']} 把，子彈出勤 {eq['bo']} 顆、在所 {eq['bi']} 顆，無線電出勤 {eq['ro']} 臺、在所 {eq['ri']} 臺；防彈背心出勤 {eq['vo']} 件、在所 {eq['vi']} 件，幹部對械彈每日檢查管制良好，符合規定{fix}。")
                 lns.append(f"本日{dr['cadre_status']}")
-                # 7. 酒測 (修正：使用變數 t)
-                lns.append(f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。")
+                lns.append(f"該所酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。")
 
-                final = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
-                all_final_reports.append(f"【{uname} 督導報告】\n{final}")
+                # 🌟 第二階段：全域主詞強制校正 (這招最穩)
+                final_lns = []
+                for idx, line in enumerate(lns):
+                    text = line
+                    # 如果偵測到是分隊，將所有「該所」強行換成「該分隊」
+                    if "分隊" in uname:
+                        text = text.replace("該所", "該分隊")
+                    final_lns.append(f"{idx+1}、{text}")
+
+                final_report = "\n".join(final_lns)
+                all_final_reports.append(f"【{uname} 督導報告】\n{final_report}")
                 st.success(f"✅ {uname} 報告已完成")
-                st.text_area("預覽", final, height=350, key=f"txt_{i}")
+                st.text_area("預覽", final_report, height=350, key=f"txt_{i}")
 
     with u_tabs[-1]:
         if all_final_reports:
