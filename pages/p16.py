@@ -399,7 +399,10 @@ with c_s2:
     st.info(f"📅 區間：監錄({d_s5_s}–{d_end_s}) / 勤教({d_s3_s}–{d_end_s})")
 
 u_tabs = st.tabs([f"🏢 單位 {i+1}" for i in range(num_units)] + ["📄 總匯整報告"])
-all_final_reports = []
+
+# session_state 儲存各單位報告，key = "report_i"，跨 rerun 不遺失
+if "unit_reports" not in st.session_state:
+    st.session_state["unit_reports"] = {}
 
 for i in range(num_units):
     with u_tabs[i]:
@@ -411,31 +414,51 @@ for i in range(num_units):
             u_eq = st.file_uploader("2. 上傳裝備交接簿 (.xlsx)", type=['xlsx'], key=f"ue_{i}")
 
         if u_duty and u_eq:
-            with st.spinner("解析中…"):
-                dr = d_extract_duty(u_duty, u_time.hour)
-                er = d_extract_equip(u_eq, u_time.hour)
+            # 用檔名組合當 cache key，檔案沒換就不重新解析
+            file_key = f"{u_duty.name}|{u_eq.name}|{u_time.hour}"
+            stored   = st.session_state["unit_reports"].get(i, {})
 
-            uname  = dr['unit_name']
-            report = build_report(dr, er, u_time, d_s5_s, d_end_s, d_s3_s)
+            if stored.get("file_key") != file_key:
+                with st.spinner("解析中…"):
+                    dr = d_extract_duty(u_duty, u_time.hour)
+                    er = d_extract_equip(u_eq, u_time.hour)
+                report = build_report(dr, er, u_time, d_s5_s, d_end_s, d_s3_s)
+                st.session_state["unit_reports"][i] = {
+                    "file_key":  file_key,
+                    "uname":     dr["unit_name"],
+                    "unit_type": dr["unit_type"],
+                    "v_name":    dr["v_name"],
+                    "cadre":     dr["cadre_status"],
+                    "report":    report,
+                }
 
-            all_final_reports.append(f"【{uname} 督導報告】\n{report}")
-            st.success(f"✅ {uname}（{dr['unit_type']}）報告已完成")
+            rec = st.session_state["unit_reports"][i]
+            st.success(f"✅ {rec['uname']}（{rec['unit_type']}）報告已完成")
 
             with st.expander("🔍 偵測結果核查"):
-                st.write(f"**單位名稱：** {uname}")
-                st.write(f"**單位類型：** {dr['unit_type']}")
-                st.write(f"**值班人員：** {dr['v_name']}")
-                st.write(f"**幹部狀態：** {dr['cadre_status']}")
+                st.write(f"**單位名稱：** {rec['uname']}")
+                st.write(f"**單位類型：** {rec['unit_type']}")
+                st.write(f"**值班人員：** {rec['v_name']}")
+                st.write(f"**幹部狀態：** {rec['cadre']}")
 
-            st.text_area("📋 預覽報告", report, height=380, key=f"txt_{i}")
+            st.text_area("📋 預覽報告", rec["report"], height=380, key=f"txt_{i}")
 
-        elif u_duty and not u_eq:
-            st.warning("請補上裝備交接簿檔案。")
-        elif u_eq and not u_duty:
-            st.warning("請補上勤務表檔案。")
+        else:
+            # 檔案被移除時清掉對應的 session 記錄
+            st.session_state["unit_reports"].pop(i, None)
+            if u_duty and not u_eq:
+                st.warning("請補上裝備交接簿檔案。")
+            elif u_eq and not u_duty:
+                st.warning("請補上勤務表檔案。")
 
-# 總匯整
+# 總匯整：從 session_state 按單位編號順序組合
 with u_tabs[-1]:
+    saved = st.session_state.get("unit_reports", {})
+    all_final_reports = [
+        f"【{saved[i]['uname']} 督導報告】\n{saved[i]['report']}"
+        for i in sorted(saved.keys())
+        if i < num_units
+    ]
     if all_final_reports:
         full_text = ("\n\n" + "─" * 40 + "\n\n").join(all_final_reports)
         st.text_area("📄 總匯整結果", full_text, height=700, key="full_report")
