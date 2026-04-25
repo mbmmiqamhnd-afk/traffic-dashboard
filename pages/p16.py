@@ -5,7 +5,7 @@ import re
 import traceback
 
 # --- 1. 分頁基本配置 ---
-st.set_page_config(page_title="督導報告 v7.0 - 裝備導彈鎖定版", layout="wide")
+st.set_page_config(page_title="督導報告 v7.0 - 裝備防當機版", layout="wide")
 
 # --- 2. 套用標楷體風格 ---
 st.markdown(f"""
@@ -44,19 +44,19 @@ def parse_time_cell(val):
     if m_time: return int(m_time.group(1)), int(m_time.group(2))
     return None, None
 
-# --- 4. 裝備座標解析引擎 (全域雷達升級版) ---
+# --- 4. 裝備座標解析引擎 (加上強制文字防護罩) ---
 def extract_equip_dynamic(e_file, hour):
     try:
         df = pd.read_csv(e_file, header=None) if e_file.name.endswith('csv') else pd.read_excel(e_file, header=None)
         df_s = df.astype(str)
         
-        # A. 尋找各裝備的欄位 (全域掃描前 10 列，徹底無死角)
+        # A. 尋找各裝備的欄位 (全域掃描前 10 列)
         col_map = {"gun": 2, "bullet": 3, "radio": 6, "vest": 11} # 預設值
         
-        for r in range(min(10, len(df_s))):
-            for c in range(len(df_s.columns)):
-                # 清除所有的空白、全形空白與換行，確保文字比對 100% 成功
-                val_c = df_s.iloc[r, c].replace(" ", "").replace("　", "").replace("\n", "")
+        for r in range(min(10, len(df))):
+            for c in range(len(df.columns)):
+                # 🛡️ 加上 str() 強制轉文字，徹底消滅 float 錯誤！
+                val_c = str(df.iloc[r, c]).replace(" ", "").replace("　", "").replace("\n", "")
                 
                 if "手槍" in val_c or ("槍" in val_c and "手" in val_c): 
                     col_map["gun"] = c
@@ -69,8 +69,8 @@ def extract_equip_dynamic(e_file, hour):
 
         # B. 尋找符合時間的截止列 (時空切片)
         stop_row = len(df)
-        for r_idx in range(min(10, len(df)), len(df)): # 從標題區之後開始掃描時間
-            t_val = df_s.iloc[r_idx, 0]
+        for r_idx in range(min(10, len(df)), len(df)):
+            t_val = str(df.iloc[r_idx, 0])
             nums = re.findall(r'\d{1,2}', t_val)
             if nums:
                 row_h = int(nums[0])
@@ -94,13 +94,12 @@ def extract_equip_dynamic(e_file, hour):
             "vi": get_v("在", "vest"), "vo": get_v("出", "vest"), "vf": get_v("送", "vest")
         }
         
-        # 將抓到的座標回傳以便 Debug 觀看
         result["debug_map"] = col_map 
         return result
     except Exception as e:
         return {"gi":0, "go":0, "gf":0, "bi":0, "bo":0, "bf":0, "ri":0, "ro":0, "rf":0, "vi":0, "vo":0, "vf":0, "debug_map": f"錯誤: {e}"}
 
-# --- 5. 勤務邏輯解析 (矩陣雷達版) ---
+# --- 5. 勤務邏輯解析 (維持 100% 成功的矩陣雷達版) ---
 def extract_duty_logic(d_file, hour):
     res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'debug_info': {}}
     try:
