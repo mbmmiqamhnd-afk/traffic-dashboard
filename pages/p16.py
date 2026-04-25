@@ -28,7 +28,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. 督導功能解析引擎 (含職稱還原與自動對位)
+# 1. 督導功能解析引擎 (含分隊稱謂動態適應)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -79,7 +79,7 @@ def d_extract_equip(e_file, hour):
     except: return None
 
 def d_extract_duty(d_file, hour):
-    res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位'}
+    res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所'}
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
         for r in range(5):
@@ -87,18 +87,26 @@ def d_extract_duty(d_file, hour):
             m = re.search(r'([\u4e00-\u9fa5]+(分局|派出所|分隊|局))', rt)
             if m: res['unit_name'] = m.group(1); break
         
+        # 🌟 稱謂自動動態調整
+        if "分隊" in res['unit_name']:
+            res['term'] = "該分隊"
+            is_traffic_unit = True
+        else:
+            res['term'] = "該所"
+            is_traffic_unit = False
+        
         full = " ".join([str(x).strip() for x in df.values.flatten() if x])
-        p = r'(?<![A-Za-z0-9])([A-Z]|[0-9]{1,2})\s*(所長|副所長|巡官|巡佐|警員|實習)\s*([\u4e00-\u9fa5]{2,4})'
+        p = r'(?<![A-Za-z0-9])([A-Z]|[0-9]{1,2})\s*(所長|副所長|分隊長|小隊長|巡官|巡佐|警員|實習)\s*([\u4e00-\u9fa5]{2,4})'
         matches = re.findall(p, full)
         
         n_map, f_map = {}, {}
         for m in matches:
             code, title, name = d_normalize_code(m[0]), m[1].strip(), m[2]
-            for t in ["所", "副", "巡", "警", "實", "員", "長"]:
+            for t in ["所", "副", "巡", "警", "實", "員", "長", "隊"]:
                 if name.endswith(t): name = name[:-1]
             if len(name) >= 2: 
                 n_map[code] = name
-                f_map[code] = f"{title}{name}" # 🌟 這裡儲存 職稱+姓名
+                f_map[code] = f"{title}{name}"
                 
         tr_idx, t_cols, t_col_idx = 2, {}, -1
         for r in range(5):
@@ -125,9 +133,13 @@ def d_extract_duty(d_file, hour):
                     if n in raw: res['v_name'] = f_map.get(c, n); break
                     
         c_notes = []
+        if is_traffic_unit:
+            default_titles = {"A": "分隊長", "B": "小隊長", "C": "幹部"}
+        else:
+            default_titles = {"A": "所長", "B": "副所長", "C": "幹部"}
+
         for code in ["A", "B", "C"]:
-            # 🌟 幹部動態現在也會自動帶入職稱 (例如：所長鄭榮捷)
-            full_name = f_map.get(code, {"A":"所長", "B":"副所長", "C":"幹部"}.get(code))
+            full_name = f_map.get(code, default_titles[code])
             found, is_off, p_slots, d_names = False, False, [], set()
             for r in range(vr_idx, len(df)):
                 dt = str(df.iloc[r, 0]) + str(df.iloc[r, 1])
@@ -155,25 +167,21 @@ def d_extract_duty(d_file, hour):
     return res
 
 # ==========================================
-# 2. 原始業務邏輯 (完整保留 process_ 函數)
+# 2. 原有的交通執法數據處理邏輯 (process_ 函數)
 # ==========================================
-# [此處保留您提供的 process_tech_enforcement, process_overload, process_major, etc. 原始函數]
-# 為縮減長度，開發時請貼回您原始的所有 process 邏輯
+# [請保留原本 p16.py 內的所有 process_ 邏輯代碼，此處因篇幅省略]
 
 # ==========================================
-# 3. 主介面分頁整合
+# 3. 主分頁架構整合
 # ==========================================
 main_tabs = st.tabs(["📊 數據自動化處理", "📋 勤務督導報告"])
 
-# --- 第一頁：原本的數據處理中心 ---
+# --- Tab 1: 原始數據處理 ---
 with main_tabs[0]:
-    st.header("📈 執法數據全自動批次處理中心")
+    st.header("📈 執法數據全自動批次中心")
     uploads = st.file_uploader("📂 拖入所有報表檔案", type=["xlsx", "csv", "xls"], accept_multiple_files=True, key="orig_up")
-    if uploads:
-        # [執行原本的分流處理 logic]
-        pass
 
-# --- 第二頁：督導報告生成 (格式還原與職稱顯示) ---
+# --- Tab 2: 督導報告生成 (分隊/派出所動態稱謂) ---
 with main_tabs[1]:
     st.header("📋 勤務督導報告自動生成")
     c_s1, c_s2 = st.columns(2)
@@ -196,39 +204,35 @@ with main_tabs[1]:
             with col_f1: u_duty = st.file_uploader("上傳勤務表", type=['xlsx'], key=f"ud_{i}")
             with col_f2: u_eq = st.file_uploader("上傳交接簿", type=['xlsx'], key=f"ue_{i}")
 
-            st.write("💡 **檢查勾選：**")
-            ck1, ck2 = st.columns(2)
-            with ck1:
-                c_mon = st.checkbox("駐地監錄紀錄落實", value=True, key=f"cm_{i}")
-                c_edu = st.checkbox("勤前教育宣導落實", value=True, key=f"ce_{i}")
-            with ck2:
-                c_env = st.checkbox("環境內務擺設整齊", value=True, key=f"cv_{i}")
-                c_alc = st.checkbox("酒測聯單紀錄完整", value=True, key=f"ca_{i}")
-
             if u_duty and u_eq:
                 dr = d_extract_duty(u_duty, u_time.hour)
                 er = d_extract_equip(u_eq, u_time.hour)
                 uname = dr['unit_name']
+                t = dr['term'] # 🌟 取得動態稱謂 (該所 或 該分隊)
                 
                 lns = []
-                lns.append(f"{u_time.strftime('%H%M')}，該所值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
-                if c_mon: lns.append(f"該所駐地監錄設備及天羅地網系統均運作正常，無故障，{d_s5_s}至{d_end_s}有逐日檢測2次以上紀錄。")
-                if c_edu: lns.append(f"該所{d_s3_s}至{d_end_s}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
-                if c_env: lns.append(f"該所環境內務擺設整齊清潔，符合規定。")
-                
+                # 1. 值班
+                lns.append(f"{u_time.strftime('%H%M')}，{t}值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
+                # 2. 監錄
+                lns.append(f"{t}駐地監錄設備及天羅地網系統均運作正常，無故障，{d_s5_s}至{d_end_s}有逐日檢測2次以上紀錄。")
+                # 3. 勤教
+                lns.append(f"{t}{d_s3_s}至{d_end_s}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
+                # 4. 內務
+                lns.append(f"{t}環境內務擺設整齊清潔，符合規定。")
+                # 5. 裝備
                 eq = er if er else {"gi":0,"go":0,"gf":0,"bi":0,"bo":0,"ri":0,"ro":0,"rf":0,"vi":0,"vo":0}
                 fix = f"（另有槍枝 {eq['gf']} 把、無線電 {eq['rf']} 臺送修中）" if (eq['gf']+eq['rf']) > 0 else ""
-                lns.append(f"該所手槍出勤 {eq['go']} 把、在所 {eq['gi']} 把，子彈出勤 {eq['bo']} 顆、在所 {eq['bi']} 顆，無線電出勤 {eq['ro']} 臺、在所 {eq['ri']} 臺；防彈背心出勤 {eq['vo']} 件、在所 {eq['vi']} 件，幹部對械彈每日檢查管制良好，符合規定{fix}。")
+                lns.append(f"{t}手槍出勤 {eq['go']} 把、在所 {eq['gi']} 把，子彈出勤 {eq['bo']} 顆、在所 {eq['bi']} 顆，無線電出勤 {eq['ro']} 臺、在所 {eq['ri']} 臺；防彈背心出勤 {eq['vo']} 件、在所 {eq['vi']} 件，幹部對械彈每日檢查管制良好，符合規定{fix}。")
+                # 6. 幹部
                 lns.append(f"本日{dr['cadre_status']}")
-                if c_alc: lns.append(f"該所酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。")
+                # 7. 酒測
+                lns.append(f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。")
 
                 final = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
                 all_final_reports.append(f"【{uname} 督導報告】\n{final}")
-                st.success(f"✅ {uname} 報告已完成")
-                st.text_area("報告預覽", final, height=350, key=f"txt_{i}")
+                st.success(f"✅ {uname} 報告已產出")
+                st.text_area("預覽", final, height=350, key=f"txt_{i}")
 
     with u_tabs[-1]:
         if all_final_reports:
-            st.text_area("📄 總匯整結果 (全選複製)", "\n\n--------------------\n\n".join(all_final_reports), height=600)
-        else:
-            st.warning("請先完成各單位檔案上傳。")
+            st.text_area("📄 總匯整結果", "\n\n--------------------\n\n".join(all_final_reports), height=600)
