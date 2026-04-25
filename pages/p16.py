@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import re
 
 # 分頁配置
-st.set_page_config(page_title="督導報告 v7.0 - 終極完美版", layout="wide")
+st.set_page_config(page_title="督導報告 v7.0 - 終極無敵版", layout="wide")
 
 # 套用標楷體風格
 st.markdown(f"""
@@ -22,7 +22,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📋 督導報告極速生成器 v7.0 (番號完美對位版)")
+st.title("📋 督導報告極速生成器 v7.0 (全自動雷達版)")
 
 # --- 側邊欄：檔案與時間設定 ---
 with st.sidebar:
@@ -60,36 +60,37 @@ def extract_full_logic(d_file, e_file, hour):
         # 1. 讀取勤務分配表
         df = pd.read_excel(d_file, header=None)
         
-        # 🌟 A. 職稱雷達 (完美三格對位法 - 針對聖亭所截圖格式)
-        name_map = {}
-        titles = ["所長", "副所長", "巡官", "巡佐", "警員", "實習"]
+        # 🌟 A. 全域平坦化雷達：徹底無視 Excel 合併儲存格
+        # 將整張表轉為單一巨大字串，完全不怕擠在同一格
+        full_text = " ".join([str(x).strip() for x in df.values.flatten() if pd.notna(x)])
         
-        for r in range(len(df)):
-            # 將整列轉為字串並清除多餘空格，方便比對
-            row_vals = [str(x).replace(" ", "").replace("\n", "").replace("\u3000", "").replace(".0", "") for x in df.iloc[r]]
-            for c in range(len(row_vals) - 2):
-                code = row_vals[c].upper()
-                title = row_vals[c+1]
-                name = row_vals[c+2]
+        # 強力正則表達式：尋找 [番號] + [職稱] + [姓名]
+        # (?<![A-Za-z0-9]) 確保番號前不是英文數字，避免抓錯
+        pattern = r'(?<![A-Za-z0-9])([A-Z]|[0-9]{1,2})\s*(所長|副所長|巡官|巡佐|警員|實習)\s*([\u4e00-\u9fa5]{2,4})'
+        matches = re.findall(pattern, full_text)
+        
+        name_map = {}
+        for m in matches:
+            code = normalize_code(m[0])
+            name = m[2]
+            # 專殺「劉憬霖警」這類黏字的 Bug：把結尾的職稱字眼切掉
+            for t_char in ["所", "副", "巡", "警", "實", "員", "長"]:
+                if name.endswith(t_char):
+                    name = name[:-1]
+            if len(name) >= 2:
+                name_map[code] = name
                 
-                # 特徵辨識：[代號] + [職稱] + [姓名]
-                if re.match(r'^([A-Z]|[0-9]{1,2})$', code) and any(t in title for t in titles):
-                    # 確保抓下來的純粹是中文姓名，過濾掉任何奇怪的符號
-                    clean_name = re.sub(r'[^\u4e00-\u9fa5]', '', name)
-                    if 2 <= len(clean_name) <= 4:
-                        name_map[normalize_code(code)] = clean_name
-                        
         res['debug_map'] = name_map
         
         # 🌟 B. 定位主表時段
         df_main = df.head(45).ffill() 
         col_idx = 4 + (hour // 2)
         
-        # 🌟 C. 抓取值班人員 (全欄位防漏掃描)
+        # 🌟 C. 抓取值班人員
         duty_rows = df_main[df_main.iloc[:, col_idx].astype(str).str.contains(r"值.*班", regex=True, na=False)]
         if not duty_rows.empty:
-            # 掃描該列的前 4 個格子，只要看到對照表裡的番號就抓
             found_name = False
+            # 掃描該列前四格尋找番號
             for search_col in range(4):
                 r_code = normalize_code(duty_rows.iloc[0, search_col])
                 if r_code in name_map:
@@ -97,39 +98,41 @@ def extract_full_logic(d_file, e_file, hour):
                     found_name = True
                     break
             
-            # 如果還是找不到，抓第一格的內容作為除錯提示
             if not found_name:
-                fallback_code = normalize_code(duty_rows.iloc[0, 0])
-                res['v_name'] = f"未偵測 (番號 {fallback_code} 不在對照表中)"
+                fallback_code = normalize_code(duty_rows.iloc[0, 1])
+                if fallback_code == "" or fallback_code == "NAN":
+                    fallback_code = normalize_code(duty_rows.iloc[0, 0])
+                res['v_name'] = name_map.get(fallback_code, f"番號[{fallback_code}]未建檔")
         
-        # 🌟 D. 抓取幹部動態 (嚴格鎖定 A, B, C)
+        # 🌟 D. 抓取幹部動態 (鎖定 A, B, C)
         cadre_notes = []
         for code in ["A", "B", "C"]:
-            name = name_map.get(code)
-            if name:
-                # 掃描前 4 欄尋找幹部番號
-                c_row = pd.DataFrame()
-                for search_col in range(4):
-                    temp_row = df_main[df_main.iloc[:, search_col].apply(normalize_code) == code]
-                    if not temp_row.empty:
-                        c_row = temp_row
-                        break
-                        
-                if not c_row.empty:
-                    duty_now = str(c_row.iloc[0, col_idx])
-                    if any(k in duty_now for k in ["休", "假", "補"]):
-                        cadre_notes.append(f"{name}休假")
+            # 若對照表沒抓到，預設給職稱
+            c_name = name_map.get(code, {"A":"所長", "B":"副所長", "C":"幹部"}.get(code))
+            
+            # 找尋幹部番號所在列
+            c_row = pd.DataFrame()
+            for search_col in range(4):
+                temp_row = df_main[df_main.iloc[:, search_col].apply(normalize_code) == code]
+                if not temp_row.empty:
+                    c_row = temp_row
+                    break
+                    
+            if not c_row.empty:
+                duty_now = str(c_row.iloc[0, col_idx])
+                if any(k in duty_now for k in ["休", "假", "補"]):
+                    cadre_notes.append(f"{c_name}休假")
+                else:
+                    slots = []
+                    for c_col in range(4, 16):
+                        if "巡邏" in str(c_row.iloc[0, c_col]):
+                            h = (c_col - 4) * 2
+                            slots.append(f"{h:02d}-{h+2:02d}")
+                    if slots:
+                        time_range = f"{slots[0][:2]}至{slots[-1][-2:]}"
+                        cadre_notes.append(f"{c_name}在所督勤，編排{time_range}時段巡邏勤務")
                     else:
-                        slots = []
-                        for c_col in range(4, 16):
-                            if "巡邏" in str(c_row.iloc[0, c_col]):
-                                h = (c_col - 4) * 2
-                                slots.append(f"{h:02d}-{h+2:02d}")
-                        if slots:
-                            time_range = f"{slots[0][:2]}至{slots[-1][-2:]}"
-                            cadre_notes.append(f"{name}在所督勤，編排{time_range}時段巡邏勤務")
-                        else:
-                            cadre_notes.append(f"{name}在所督勤")
+                        cadre_notes.append(f"{c_name}在所督勤")
         
         if cadre_notes:
             res['cadre_status'] = "；".join(cadre_notes) + "。"
@@ -160,7 +163,7 @@ def extract_full_logic(d_file, e_file, hour):
 
 # --- 主畫面執行 ---
 if duty_file and equip_file:
-    with st.spinner("啟動精準對位雷達，正在比對勤務番號與裝備數據..."):
+    with st.spinner("啟動全域雷達掃描，正在比對勤務番號與裝備數據..."):
         data = extract_full_logic(duty_file, equip_file, target_hour)
     
     st.success("✅ 數據擷取與番號比對完成！")
@@ -209,9 +212,9 @@ if duty_file and equip_file:
     st.subheader("📋 最終督導報告 (自動對位版)")
     st.text_area("複製回貼公務系統：", value=final_report, height=450)
     
-    with st.expander("🛠️ 查看系統自動辨識結果 (除錯專區)"):
+    with st.expander("🛠️ 查看系統自動辨識結果 (完美對位區)"):
         st.write(f"偵測時段欄位：Index {4 + (target_hour // 2)}")
-        st.write(f"✅ 完美提取的番號對照表：")
+        st.write(f"✅ 完美過濾的番號對照表：")
         st.json(data['debug_map'])
         st.write(f"值班員警：{data['v_name']}")
         st.write(f"幹部動態：{data['cadre_status']}")
