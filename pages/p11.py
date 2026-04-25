@@ -1,6 +1,5 @@
 import streamlit as st
-import pafrom menu import show_sidebar
-show_sidebar()ndas as pd
+import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -19,9 +18,13 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
+from menu import show_sidebar
 
 # --- 1. 頁面設定 ---
 st.set_page_config(page_title="防制危險駕車月份版", layout="wide", page_icon="🗓️")
+
+# 呼叫側邊欄 (必須放在 set_page_config 之後)
+show_sidebar()
 
 # --- 常數與設定 ---
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
