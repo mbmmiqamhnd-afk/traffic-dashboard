@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import re
 
 # 分頁配置
-st.set_page_config(page_title="督導報告 v7.0 - 姓名鎖定版", layout="wide")
+st.set_page_config(page_title="督導報告 v7.0 - 坐標解密版", layout="wide")
 
 # 套用標楷體風格
 st.markdown(f"""
@@ -22,7 +22,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📋 督導報告極速生成器 v7.0 (姓名鎖定引擎)")
+st.title("📋 督導報告極速生成器 v7.0 (完美坐標解密版)")
 
 # --- 側邊欄：檔案與時間設定 ---
 with st.sidebar:
@@ -35,7 +35,7 @@ with st.sidebar:
     time_str = target_time.strftime('%H%M')
     target_hour = target_time.hour
     
-    # 日期推算
+    # 日期推算 
     today = datetime.now()
     d_m5, d_m1 = [(today - timedelta(days=i)).strftime('%m月%d日') for i in [5, 1]]
     d_m3 = (today - timedelta(days=3)).strftime('%m月%d日')
@@ -59,7 +59,7 @@ def extract_full_logic(d_file, e_file, hour):
         # 1. 讀取勤務分配表
         df = pd.read_excel(d_file, header=None)
         
-        # 🌟 A. 取得完美番號對照表
+        # 🌟 A. 取得完美番號對照表 (維持成功的引擎)
         full_text = " ".join([str(x).strip() for x in df.values.flatten() if pd.notna(x)])
         pattern = r'(?<![A-Za-z0-9])([A-Z]|[0-9]{1,2})\s*(所長|副所長|巡官|巡佐|警員|實習)\s*([\u4e00-\u9fa5]{2,4})'
         matches = re.findall(pattern, full_text)
@@ -74,37 +74,47 @@ def extract_full_logic(d_file, e_file, hour):
                 name_map[code] = name
         res['debug_map'] = name_map
         
-        # 🌟 B. 綁定每位員警的主表列號 (改用「姓名」直接搜尋)
         df_ffill = df.ffill()
-        officer_rows = {code: [] for code in name_map}
-        
-        for r in range(len(df_ffill)):
-            # 將該列的前 4 欄合併，用來找名字
-            search_area = "".join([str(df_ffill.iloc[r, c]) for c in range(4)]).replace(" ", "").replace("\n", "").replace("nan", "")
-            
-            for code, name in name_map.items():
-                if name in search_area:
-                    # 確認這列真的有排班表 (檢查 00-24 時段欄位)
-                    has_duty = any(str(df_ffill.iloc[r, c_idx]).strip() not in ["", "nan", "NaN"] for c_idx in range(4, min(16, len(df_ffill.columns))))
-                    if has_duty:
-                        officer_rows[code].append(r)
-                        
-        # 轉換 Debug 顯示：用名字顯示被綁定的列號
-        res['debug_rows'] = {name_map[c]: rows for c, rows in officer_rows.items() if rows}
-        
-        # 定位時段欄位
         col_idx = 4 + (hour // 2)
         if col_idx >= len(df_ffill.columns): col_idx = len(df_ffill.columns) - 1
         
-        # 🌟 C. 抓取值班人員 (姓名定位法)
-        for code, rows in officer_rows.items():
-            for r in rows:
-                duty_val = str(df_ffill.iloc[r, col_idx])
-                if "值" in duty_val and "督" not in duty_val and "替" not in duty_val:
-                    res['v_name'] = name_map[code]
-                    break
-            if res['v_name'] != "未偵測":
+        # 🌟 B. 綁定每位幹部與員警的主表列號
+        officer_rows = {code: [] for code in name_map}
+        for r in range(len(df_ffill)):
+            search_area = "".join([str(df_ffill.iloc[r, c]) for c in range(4)]).replace(" ", "").replace("\n", "").replace("nan", "")
+            for code, name in name_map.items():
+                if name in search_area:
+                    has_duty = any(str(df_ffill.iloc[r, c_idx]).strip() not in ["", "nan", "NaN"] for c_idx in range(4, min(16, len(df_ffill.columns))))
+                    if has_duty:
+                        officer_rows[code].append(r)
+        
+        # 🌟 C. 抓取值班人員 (依照您提供的【坐標密碼】)
+        # 預設第 4 列 (Index 3)，但為了容錯，我們掃描前 10 列的 A 欄與 B 欄尋找「值班」
+        target_row = 3 
+        for r in range(10):
+            if "值" in str(df_ffill.iloc[r, 0]) or "值" in str(df_ffill.iloc[r, 1]):
+                target_row = r
                 break
+                
+        # 在「值班列」與「時段欄」的交叉點，取出番號
+        raw_cell_val = str(df_ffill.iloc[target_row, col_idx])
+        
+        # 萃取格子內的番號 (例如格子寫 "7" 或 "7(督)", 都能抓出 7)
+        m_code = re.search(r'[A-Za-z0-9]{1,2}', raw_cell_val)
+        if m_code:
+            norm_code = normalize_code(m_code.group(0))
+            if norm_code in name_map:
+                res['v_name'] = name_map[norm_code]
+            else:
+                res['v_name'] = f"未偵測 (無效番號:{norm_code})"
+        else:
+            # 防呆：如果格子裡直接寫名字而不是番號
+            for code, name in name_map.items():
+                if name in raw_cell_val:
+                    res['v_name'] = name
+                    break
+            if res['v_name'] == "未偵測":
+                res['v_name'] = f"未偵測 (格內值:{raw_cell_val})"
         
         # 🌟 D. 抓取幹部動態 (A, B, C)
         cadre_notes = []
@@ -112,7 +122,6 @@ def extract_full_logic(d_file, e_file, hour):
             name = name_map.get(code, {"A":"所長", "B":"副所長", "C":"幹部"}.get(code))
             rows = officer_rows.get(code, [])
             
-            # 狀況 1：幹部今天有排班 (在主表有找到他的列)
             if rows:
                 primary_row = rows[0]
                 duty_now = str(df_ffill.iloc[primary_row, col_idx])
@@ -120,7 +129,6 @@ def extract_full_logic(d_file, e_file, hour):
                 if any(k in duty_now for k in ["休", "假", "補", "外"]):
                     cadre_notes.append(f"{name}休假")
                 else:
-                    # 掃描 00-24 所有的列，尋找巡邏
                     slots = []
                     for r in rows:
                         for c_col in range(4, min(16, len(df_ffill.columns))):
@@ -129,13 +137,11 @@ def extract_full_logic(d_file, e_file, hour):
                                 slots.append(f"{h:02d}-{h+2:02d}")
                     
                     if slots:
-                        slots = sorted(list(set(slots))) # 確保時間排序
+                        slots = sorted(list(set(slots)))
                         time_range = f"{slots[0][:2]}至{slots[-1][-2:]}"
                         cadre_notes.append(f"{name}在所督勤，編排{time_range}時段巡邏勤務")
                     else:
                         cadre_notes.append(f"{name}在所督勤")
-                        
-            # 狀況 2：幹部在對照表裡，但主表找不到他 (直接視同休假)
             elif code in name_map:
                 cadre_notes.append(f"{name}休假")
         
@@ -146,7 +152,7 @@ def extract_full_logic(d_file, e_file, hour):
         res['v_name'] = "解析失敗"
         res['cadre_status'] = f"解析錯誤: {e}"
 
-    # 2. 解析裝備交接簿 (完美穩定維持)
+    # 2. 解析裝備交接簿
     try:
         df_e = pd.read_csv(e_file, header=None) if e_file.name.endswith('csv') else pd.read_excel(e_file, header=None)
         df_e_s = df_e.astype(str)
@@ -168,7 +174,7 @@ def extract_full_logic(d_file, e_file, hour):
 
 # --- 主畫面執行 ---
 if duty_file and equip_file:
-    with st.spinner("啟動姓名追蹤引擎，正在分析人員動態..."):
+    with st.spinner("啟動坐標解密引擎，精準定位人員動態..."):
         data = extract_full_logic(duty_file, equip_file, target_hour)
     
     st.success("✅ 報告生成完畢！")
@@ -210,19 +216,15 @@ if duty_file and equip_file:
     if check_alc:
         lines.append(f"該所酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。")
 
-    # 最終生成
     final_report = "\n".join([f"{i+1}、{line}" for i, line in enumerate(lines)])
     
     st.markdown("---")
-    st.subheader("📋 最終督導報告 (天眼姓名追蹤版)")
+    st.subheader("📋 最終督導報告 (坐標解密版)")
     st.text_area("複製回貼公務系統：", value=final_report, height=450)
     
     with st.expander("🛠️ 查看系統自動辨識結果 (除錯專區)"):
-        st.write(f"偵測時段欄位：Index {4 + (target_hour // 2)}")
-        st.write(f"系統綁定的人員列號 (有抓到列號才代表有排班)：")
-        st.json(data['debug_rows'])
-        st.write(f"值班員警：{data['v_name']}")
-        st.write(f"幹部動態：{data['cadre_status']}")
+        st.write(f"✅ 值班員警：{data['v_name']}")
+        st.write(f"✅ 幹部動態：{data['cadre_status']}")
 
 else:
-    st.info("👋 匯入兩份檔案後，系統將自動啟動姓名追蹤引擎！")
+    st.info("👋 匯入兩份檔案後，系統將自動啟動坐標解密引擎！")
