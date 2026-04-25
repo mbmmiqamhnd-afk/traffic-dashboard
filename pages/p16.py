@@ -471,6 +471,7 @@ with u_tabs[-1]:
     # ────────────────────────────────
 
     if all_final_reports:
+        st.write(f"DEBUG 各筆長度: {[len(r) for r in all_final_reports]}")
         full_text = ("\n\n" + "─" * 40 + "\n\n").join(all_final_reports)
         st.text_area("📄 總匯整結果", full_text, height=700, key="full_report")
 
