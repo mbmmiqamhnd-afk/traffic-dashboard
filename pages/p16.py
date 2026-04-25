@@ -416,7 +416,7 @@ for i in range(num_units):
         if u_duty and u_eq:
             # 用檔名組合當 cache key，檔案沒換就不重新解析
             file_key = f"{u_duty.name}|{u_eq.name}|{u_time.hour}"
-            stored   = st.session_state["unit_reports"].get(i, {})
+            stored   = st.session_state["unit_reports"].get(i) or {}
 
             if stored.get("file_key") != file_key:
                 with st.spinner("解析中…"):
