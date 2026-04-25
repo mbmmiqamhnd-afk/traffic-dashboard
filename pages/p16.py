@@ -4,8 +4,8 @@ from datetime import datetime, timedelta
 import re
 import traceback
 
-# --- 1. 分頁基本配置 ---
-st.set_page_config(page_title="督導報告 v8.3 - 督導日自動推算版", layout="wide")
+# --- 1. 頁面基本配置 ---
+st.set_page_config(page_title="督導報告 v8.4 - 全功能修復版", layout="wide")
 
 # --- 2. 套用標楷體風格 ---
 st.markdown(f"""
@@ -27,9 +27,9 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📋 督導報告極速生成器 v8.3 (督導日自動推算)")
+st.title("📋 督導報告極速生成器 v8.4")
 
-# --- 3. 核心輔助工具 ---
+# --- 3. 核心工具函數 ---
 def safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
     except: return 0
@@ -48,7 +48,7 @@ def parse_time_cell(val):
     if m_time: return int(m_time.group(1)), int(m_time.group(2))
     return None, None
 
-# --- 4. 裝備座標解析引擎 ---
+# --- 4. 裝備解析引擎 (導彈鎖定 + 時空切片) ---
 def extract_equip_dynamic(e_file, hour):
     try:
         df = pd.read_csv(e_file, header=None) if e_file.name.endswith('csv') else pd.read_excel(e_file, header=None)
@@ -65,6 +65,7 @@ def extract_equip_dynamic(e_file, hour):
         col_map["bullet"] = col_map["bullet"] if col_map["bullet"] is not None else 3
         col_map["radio"] = col_map["radio"] if col_map["radio"] is not None else 6
         col_map["vest"] = col_map["vest"] if col_map["vest"] is not None else 11
+
         stop_row = len(df)
         for r_idx in range(min(10, len(df)), len(df)):
             t_val = str(df.iloc[r_idx, 0])
@@ -159,86 +160,91 @@ def extract_duty_logic(d_file, hour):
     except Exception as e: res['v_name'] = "解析失敗"; res['cadre_status'] = f"錯誤: {e}"
     return res
 
-# --- 6. 側邊欄設定 ---
+# --- 6. 側邊欄配置 (獨立存在) ---
 with st.sidebar:
     st.header("⚙️ 督導任務設定")
     num_units = st.number_input("本次督導單位數量", min_value=1, max_value=8, value=3)
     st.divider()
     
     st.subheader("📅 督導日期設定")
-    # 只需選擇督導日期 (起始日)
     insp_date = st.date_input("選擇督導日期 (起始日)", datetime.now())
     
-    # --- 自動推算邏輯 ---
-    # 監錄系統通常查到昨天為止 (若督導日是 26 號，查 21~25 號)
+    # 日期推算邏輯
     date_end = insp_date - timedelta(days=1)
     date_start_5d = insp_date - timedelta(days=5)
     date_start_3d = insp_date - timedelta(days=3)
     
-    # 格式化
     date_end_str = date_end.strftime('%m月%d日')
     date_start_5d_str = date_start_5d.strftime('%m月%d日')
     date_start_3d_str = date_start_3d.strftime('%m月%d日')
     
-    st.write(f"系統將自動帶入：")
-    st.write(f"🔹 監錄區間：{date_start_5d_str}-{date_end_str}")
-    st.write(f"🔹 勤教區間：{date_start_3d_str}-{date_end_str}")
+    st.info(f"系統將自動帶入：\n\n監錄：{date_start_5d_str}-{date_end_str}\n\n勤教：{date_start_3d_str}-{date_end_str}")
 
-# --- 7. 動態分頁處理 ---
+# --- 7. 主頁面：動態分頁生成 ---
 tab_names = [f"🏢 單位 {i+1}" for i in range(num_units)] + ["📄 總匯整報告"]
 tabs = st.tabs(tab_names)
 all_final_reports = [] 
 
+# 核心循環：為每個單位建立介面
 for i in range(num_units):
     with tabs[i]:
-        st.subheader(f"第 {i+1} 站督導數據匯入")
+        st.subheader(f"第 {i+1} 站資料匯入")
+        
+        # 單位獨立時間設定
         target_time = st.time_input("抵達督導時間", datetime.now().time(), key=f"time_{i}")
         time_str, target_hour = target_time.strftime('%H%M'), target_time.hour
         
         col_f1, col_f2 = st.columns(2)
-        with col_f1: duty_file = st.file_uploader(f"1. 上傳勤務表", type=['xlsx'], key=f"duty_{i}")
+        with col_f1: duty_file = st.file_uploader(f"1. 上傳勤務表 (自動偵測單位)", type=['xlsx'], key=f"duty_{i}")
         with col_f2: equip_file = st.file_uploader(f"2. 上傳裝備交接簿", type=['xlsx'], key=f"eq_{i}")
 
-        st.write("💡 該單位檢查狀況：")
+        st.write("---")
+        st.write("💡 **該單位檢查狀況 (可手動調整勾選)：**")
         col_c1, col_c2 = st.columns(2)
         with col_c1:
-            check_mon = st.checkbox("駐地監錄/天羅地網正常", value=True, key=f"c_mon_{i}")
-            check_edu = st.checkbox("勤前教育宣導落實", value=True, key=f"c_edu_{i}")
+            check_mon = st.checkbox("駐地監錄/天羅地網紀錄落實", value=True, key=f"c_mon_{i}")
+            check_edu = st.checkbox("勤前教育宣導事項落實", value=True, key=f"c_edu_{i}")
         with col_c2:
-            check_env = st.checkbox("環境內務擺設整齊", value=True, key=f"c_env_{i}")
-            check_alc = st.checkbox("酒測聯單無跳號", value=True, key=f"c_alc_{i}")
+            check_env = st.checkbox("環境內務擺設整齊清潔", value=True, key=f"c_env_{i}")
+            check_alc = st.checkbox("酒測聯單紀錄無跳號情形", value=True, key=f"c_alc_{i}")
 
+        # 當該單位的檔案都備齊時才執行解析
         if duty_file and equip_file:
-            duty_data = extract_duty_logic(duty_file, target_hour)
-            eq_data = extract_equip_dynamic(equip_file, target_hour)
-            u_name = duty_data['unit_name']
-            
-            lines = []
-            lines.append(f"{time_str}，該所值班{duty_data['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
-            
-            # 使用自動推算的日期
-            if check_mon:
-                lines.append(f"該所駐地監錄設備及天羅地網系統均運作正常，無故障，{date_start_5d_str}至{date_end_str}有逐日檢測2次以上紀錄。")
-            if check_edu:
-                lines.append(f"該所{date_start_3d_str}至{date_end_str}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
-            
-            if check_env: lines.append(f"該所環境內務擺設整齊清潔，符合規定。")
-            eq = eq_data if eq_data else {"gi":0, "go":0, "gf":0, "bi":0, "bo":0, "bf":0, "ri":0, "ro":0, "rf":0, "vi":0, "vo":0, "vf":0}
-            fix_str = f"（另有槍枝 {eq['gf']} 把、無線電 {eq['rf']} 臺送修中）" if (eq['gf'] + eq['rf']) > 0 else ""
-            lines.append(f"該所手槍出勤 {eq['go']} 把、在所 {eq['gi']} 把，子彈出勤 {eq['bo']} 顆、在所 {eq['bi']} 顆，無線電出勤 {eq['ro']} 臺、在所 {eq['ri']} 臺；防彈背心出勤 {eq['vo']} 件、在所 {eq['vi']} 件，幹部對械彈每日檢查管制良好，符合規定{fix_str}。")
-            lines.append(f"本日{duty_data['cadre_status']}")
-            if check_alc: lines.append(f"該所酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。")
+            try:
+                duty_data = extract_duty_logic(duty_file, target_hour)
+                eq_data = extract_equip_dynamic(equip_file, target_hour)
+                u_name = duty_data['unit_name']
+                
+                lines = []
+                lines.append(f"{time_str}，該所值班{duty_data['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
+                if check_mon:
+                    lines.append(f"該所駐地監錄設備及天羅地網系統均運作正常，無故障，{date_start_5d_str}至{date_end_str}有逐日檢測2次以上紀錄。")
+                if check_edu:
+                    lines.append(f"該所{date_start_3d_str}至{date_end_str}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
+                if check_env: lines.append(f"該所環境內務擺設整齊清潔，符合規定。")
+                
+                eq = eq_data if eq_data else {"gi":0, "go":0, "gf":0, "bi":0, "bo":0, "bf":0, "ri":0, "ro":0, "rf":0, "vi":0, "vo":0, "vf":0}
+                fix_str = f"（另有槍枝 {eq['gf']} 把、無線電 {eq['rf']} 臺送修中）" if (eq['gf'] + eq['rf']) > 0 else ""
+                lines.append(f"該所手槍出勤 {eq['go']} 把、在所 {eq['gi']} 把，子彈出勤 {eq['bo']} 顆、在所 {eq['bi']} 顆，無線電出勤 {eq['ro']} 臺、在所 {eq['ri']} 臺；防彈背心出勤 {eq['vo']} 件、在所 {eq['vi']} 件，幹部對械彈每日檢查管制良好，符合規定{fix_str}。")
+                lines.append(f"本日{duty_data['cadre_status']}")
+                if check_alc: lines.append(f"該所酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。")
 
-            final_report = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lines)])
-            all_final_reports.append(f"【{u_name} 督導報告】\n{final_report}")
-            st.success(f"✅ {u_name} | 解析完畢！")
-            st.text_area("預覽：", value=final_report, height=300, key=f"text_{i}")
+                final_report = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lines)])
+                all_final_reports.append(f"【{u_name} 督導報告】\n{final_report}")
+                
+                st.success(f"✅ {u_name} 報告已產出！")
+                st.text_area("單所報告預覽：", value=final_report, height=300, key=f"text_{i}")
+            except Exception as e:
+                st.error(f"該單位解析時發生錯誤: {e}")
+        else:
+            st.info(f"請上傳 {i+1} 站的勤務表與交接簿以生成報告。")
 
-# --- 8. 總匯整 ---
+# --- 8. 總匯整報告分頁 ---
 with tabs[-1]:
-    st.subheader("📄 總匯整報告區")
+    st.subheader("📄 所有單位督導報告總匯整")
     if all_final_reports:
         combined_text = "\n\n----------------------------------------\n\n".join(all_final_reports)
-        st.text_area("點擊下方全選複製：", value=combined_text, height=600)
+        st.success("🎉 所有報告已就緒，請複製下方文字：")
+        st.text_area("點擊全選複製：", value=combined_text, height=600, key="total_report_area")
     else:
-        st.info("⏳ 請先前往各單位分頁上傳檔案。")
+        st.warning("⏳ 尚未有任何單位生成報告，請先上傳檔案。")
