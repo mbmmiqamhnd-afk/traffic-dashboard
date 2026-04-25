@@ -5,8 +5,6 @@ import re
 import gspread
 import traceback
 from datetime import datetime, timedelta
-from pdf2image import convert_from_bytes
-from pptx import Presentation
 
 # ==========================================
 # 0. 系統初始化與格式套件
@@ -840,80 +838,60 @@ def process_jing_tao(files):
 # ==========================================
 with st.sidebar:
     st.title("🚓 交通執法自動化分析引擎")
-    app_mode = st.selectbox("功能模組", ["🏠 智慧批次處理中心", "📂 PDF 轉 PPTX 工具"])
+    st.info("本系統專為處理繁雜交通執法報表所設計，支援自動辨識、運算並同步至雲端儀表板。")
 
-if app_mode == "🏠 智慧批次處理中心":
-    st.header("📈 交通數據全自動批次處理中心")
-    st.info("💡 請將所需報表全選後，直接拖曳至下方區域即可自動分流處理。")
+st.header("📈 交通執法數據全自動批次處理中心")
+st.info("💡 請將所需報表全選後，直接拖曳至下方區域即可自動分流處理。")
 
-    uploads = st.file_uploader("📂 拖入所有報表檔案", type=["xlsx", "csv", "xls"], accept_multiple_files=True)
-    st.divider()
-    st.subheader("🚀 啟動全自動批次作業")
+uploads = st.file_uploader("📂 拖入所有報表檔案", type=["xlsx", "csv", "xls"], accept_multiple_files=True)
+st.divider()
+st.subheader("🚀 啟動全自動批次作業")
 
-    if uploads:
-        file_hash = sum([f.size for f in uploads]) + len(uploads)
-        if st.session_state.get("last_processed_hash") == file_hash:
-            st.success("✅ 目前上傳的檔案皆已全自動處理完畢！")
-            st.info("💡 若要處理新報表，請重新整理頁面或拖入新檔案。")
-        else:
-            cat_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": [], "靜桃計畫": []}
+if uploads:
+    file_hash = sum([f.size for f in uploads]) + len(uploads)
+    if st.session_state.get("last_processed_hash") == file_hash:
+        st.success("✅ 目前上傳的檔案皆已全自動處理完畢！")
+        st.info("💡 若要處理新報表，請重新整理頁面或拖入新檔案。")
+    else:
+        cat_files = {"科技執法": [], "重大違規": [], "超載統計": [], "強化專案": [], "交通事故": [], "靜桃計畫": []}
 
-            for f in uploads:
-                name = f.name.lower()
-                if any(k in name for k in ["list", "地點", "科技"]): cat_files["科技執法"].append(f)
-                elif any(k in name for k in ["stone", "超載"]): cat_files["超載統計"].append(f)
-                elif any(k in name for k in ["重大", "重點"]): cat_files["重大違規"].append(f)
-                elif any(k in name for k in ["強化", "專案", "砂石", "大貨", "r17", "法條", "自選匯出"]): cat_files["強化專案"].append(f)
-                elif any(k in name for k in ["a1", "a2", "事故", "案件統計"]): cat_files["交通事故"].append(f)
-                elif any(k in name for k in ["靜桃", "噪音", "改裝車", "總表", "詳細資料"]): cat_files["靜桃計畫"].append(f)
+        for f in uploads:
+            name = f.name.lower()
+            if any(k in name for k in ["list", "地點", "科技"]): cat_files["科技執法"].append(f)
+            elif any(k in name for k in ["stone", "超載"]): cat_files["超載統計"].append(f)
+            elif any(k in name for k in ["重大", "重點"]): cat_files["重大違規"].append(f)
+            elif any(k in name for k in ["強化", "專案", "砂石", "大貨", "r17", "法條", "自選匯出"]): cat_files["強化專案"].append(f)
+            elif any(k in name for k in ["a1", "a2", "事故", "案件統計"]): cat_files["交通事故"].append(f)
+            elif any(k in name for k in ["靜桃", "噪音", "改裝車", "總表", "詳細資料"]): cat_files["靜桃計畫"].append(f)
 
-            try:
-                if cat_files["科技執法"]:
-                    with st.status("📸 處理【科技執法】...", expanded=True):
-                        process_tech_enforcement(cat_files["科技執法"])
-                
-                if cat_files["超載統計"]:
-                    with st.status("🚛 處理【超載統計】...", expanded=True):
-                        process_overload(cat_files["超載統計"])
-                
-                if cat_files["重大違規"]:
-                    with st.status("🚨 處理【重大交通違規】...", expanded=True):
-                        process_major(cat_files["重大違規"])
-                
-                if cat_files["強化專案"]:
-                    with st.status("🔥 處理【強化專案】...", expanded=True):
-                        process_project(cat_files["強化專案"])
-                
-                if cat_files["交通事故"]:
-                    with st.status("🚑 處理【交通事故】...", expanded=True):
-                        process_accident(cat_files["交通事故"])
-                
-                if cat_files["靜桃計畫"]:
-                    with st.status("🤫 處理【靜桃計畫】...", expanded=True):
-                        process_jing_tao(cat_files["靜桃計畫"])
+        try:
+            if cat_files["科技執法"]:
+                with st.status("📸 處理【科技執法】...", expanded=True):
+                    process_tech_enforcement(cat_files["科技執法"])
+            
+            if cat_files["超載統計"]:
+                with st.status("🚛 處理【超載統計】...", expanded=True):
+                    process_overload(cat_files["超載統計"])
+            
+            if cat_files["重大違規"]:
+                with st.status("🚨 處理【重大交通違規】...", expanded=True):
+                    process_major(cat_files["重大違規"])
+            
+            if cat_files["強化專案"]:
+                with st.status("🔥 處理【強化專案】...", expanded=True):
+                    process_project(cat_files["強化專案"])
+            
+            if cat_files["交通事故"]:
+                with st.status("🚑 處理【交通事故】...", expanded=True):
+                    process_accident(cat_files["交通事故"])
+            
+            if cat_files["靜桃計畫"]:
+                with st.status("🤫 處理【靜桃計畫】...", expanded=True):
+                    process_jing_tao(cat_files["靜桃計畫"])
 
-                st.session_state["last_processed_hash"] = file_hash
-                st.balloons()
-                
-            except Exception as e:
-                st.error(f"⚠️ 批次處理發生錯誤：{e}")
-                st.write(traceback.format_exc())
-
-elif app_mode == "📂 PDF 轉 PPTX 工具":
-    st.header("📂 PDF 行政文書轉 PPTX 簡報")
-    pdf_file = st.file_uploader("上傳 PDF 檔案", type=["pdf"])
-    if pdf_file and st.button("🚀 開始轉換"):
-        with st.spinner("轉換中..."):
-            try:
-                images, prs = convert_from_bytes(pdf_file.read(), dpi=200), Presentation()
-                for img in images:
-                    slide = prs.slides.add_slide(prs.slide_layouts[6])
-                    img_byte_arr = io.BytesIO()
-                    img.save(img_byte_arr, format='PNG')
-                    slide.shapes.add_picture(io.BytesIO(img_byte_arr.getvalue()), 0, 0, width=prs.slide_width, height=prs.slide_height)
-                pptx_io = io.BytesIO()
-                prs.save(pptx_io)
-                st.success("✅ 轉換完成！")
-                st.download_button("📥 下載 PPTX", data=pptx_io.getvalue(), file_name=f"{pdf_file.name.replace('.pdf', '')}_轉換.pptx", mime="application/vnd.openxmlformats-officedocument.presentationml.presentation")
-            except Exception as e:
-                st.error(f"錯誤：{e}")
+            st.session_state["last_processed_hash"] = file_hash
+            st.balloons()
+            
+        except Exception as e:
+            st.error(f"⚠️ 批次處理發生錯誤：{e}")
+            st.write(traceback.format_exc())
