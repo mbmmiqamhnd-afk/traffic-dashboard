@@ -302,9 +302,15 @@ def build_report(dr, er, u_time, d_s5_s, d_end_s, d_s3_s):
         if (eq['gf'] + eq['rf']) > 0 else ""
     )
 
+    # 派出所有天羅地網，交通分隊/隊沒有
+    if unit_type == "所":
+        cctv_line = f"{subject}駐地監錄設備及天羅地網系統均運作正常，無故障，{d_s5_s}至{d_end_s}有逐日檢測2次以上紀錄。"
+    else:
+        cctv_line = f"{subject}駐地監錄設備均運作正常，無故障，{d_s5_s}至{d_end_s}有逐日檢測2次以上紀錄。"
+
     lns = [
         f"{u_time.strftime('%H%M')}，{subject}值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。",
-        f"{subject}駐地監錄設備及天羅地網系統均運作正常，無故障，{d_s5_s}至{d_end_s}有逐日檢測2次以上紀錄。",
+        cctv_line,
         f"{subject}{d_s3_s}至{d_end_s}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。",
         f"{subject}環境內務擺設整齊清潔，符合規定。",
         (
