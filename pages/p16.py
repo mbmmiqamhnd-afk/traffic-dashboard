@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import re
 
 # 分頁配置
-st.set_page_config(page_title="督導報告 v7.0 - 完美對位版", layout="wide")
+st.set_page_config(page_title="督導報告 v7.0 - 終極完美版", layout="wide")
 
 # 套用標楷體風格
 st.markdown(f"""
@@ -22,7 +22,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📋 督導報告極速生成器 v7.0 (番號全自動比對)")
+st.title("📋 督導報告極速生成器 v7.0 (番號完美對位版)")
 
 # --- 側邊欄：檔案與時間設定 ---
 with st.sidebar:
@@ -48,7 +48,7 @@ def safe_int(val):
         return 0
 
 def normalize_code(c):
-    """將番號標準化，例如 '07', '7.0', ' 7 ' 統一轉為 '7'"""
+    """將番號標準化，例如 '07', ' 7 ', 'A' 統一轉為乾淨的 '7', 'A'"""
     c_str = str(c).strip().replace(".0", "").upper()
     if c_str.isdigit():
         return str(int(c_str))
@@ -60,32 +60,24 @@ def extract_full_logic(d_file, e_file, hour):
         # 1. 讀取勤務分配表
         df = pd.read_excel(d_file, header=None)
         
-        # 🌟 A. 職稱雷達：萃取純姓名
+        # 🌟 A. 職稱雷達 (完美三格對位法 - 針對聖亭所截圖格式)
         name_map = {}
-        titles_regex = r"(所長|副所長|巡官|巡佐|警員|實習)"
+        titles = ["所長", "副所長", "巡官", "巡佐", "警員", "實習"]
         
         for r in range(len(df)):
-            for c in range(len(df.columns)):
-                # 強制轉型，徹底消滅 float 錯誤
-                cell_val = str(df.iloc[r, c]).strip().replace(".0", "").replace(" ", "")
-                if cell_val in ["", "NAN"]: continue
+            # 將整列轉為字串並清除多餘空格，方便比對
+            row_vals = [str(x).replace(" ", "").replace("\n", "").replace("\u3000", "").replace(".0", "") for x in df.iloc[r]]
+            for c in range(len(row_vals) - 2):
+                code = row_vals[c].upper()
+                title = row_vals[c+1]
+                name = row_vals[c+2]
                 
-                # 情況 1: 該格剛好是番號 (例如 '13' 或 'A')
-                if re.match(r'^([A-Z]|[0-9]{1,2})$', cell_val, re.IGNORECASE):
-                    ahead = ""
-                    if c + 1 < len(df.columns): ahead += str(df.iloc[r, c+1])
-                    if c + 2 < len(df.columns): ahead += str(df.iloc[r, c+2])
-                    ahead = ahead.strip().replace(" ", "").replace(".0", "")
-                    
-                    # 抓取職稱後面的名字
-                    m = re.search(f"{titles_regex}([\u4e00-\u9fa5]{{2,4}})", ahead)
-                    if m:
-                        name_map[normalize_code(cell_val)] = m.group(2)
-                
-                # 情況 2: 番號、職稱、姓名全擠在同一格
-                m_all = re.findall(f"([A-Z]|[0-9]{{1,2}}){titles_regex}([\u4e00-\u9fa5]{{2,4}})", cell_val, re.IGNORECASE)
-                for m in m_all:
-                    name_map[normalize_code(m[0])] = m[2]
+                # 特徵辨識：[代號] + [職稱] + [姓名]
+                if re.match(r'^([A-Z]|[0-9]{1,2})$', code) and any(t in title for t in titles):
+                    # 確保抓下來的純粹是中文姓名，過濾掉任何奇怪的符號
+                    clean_name = re.sub(r'[^\u4e00-\u9fa5]', '', name)
+                    if 2 <= len(clean_name) <= 4:
+                        name_map[normalize_code(code)] = clean_name
                         
         res['debug_map'] = name_map
         
@@ -93,50 +85,60 @@ def extract_full_logic(d_file, e_file, hour):
         df_main = df.head(45).ffill() 
         col_idx = 4 + (hour // 2)
         
-        # 🌟 C. 抓取值班人員
-        duty_rows = df_main[df_main.iloc[:, col_idx].astype(str).str.contains("值班", na=False)]
+        # 🌟 C. 抓取值班人員 (全欄位防漏掃描)
+        duty_rows = df_main[df_main.iloc[:, col_idx].astype(str).str.contains(r"值.*班", regex=True, na=False)]
         if not duty_rows.empty:
-            r_code = normalize_code(duty_rows.iloc[0, 1])
-            if r_code == "NAN" or r_code == "":
-                r_code = normalize_code(duty_rows.iloc[0, 0])
-            res['v_name'] = name_map.get(r_code, f"番號[{r_code}]未建檔")
+            # 掃描該列的前 4 個格子，只要看到對照表裡的番號就抓
+            found_name = False
+            for search_col in range(4):
+                r_code = normalize_code(duty_rows.iloc[0, search_col])
+                if r_code in name_map:
+                    res['v_name'] = name_map[r_code]
+                    found_name = True
+                    break
+            
+            # 如果還是找不到，抓第一格的內容作為除錯提示
+            if not found_name:
+                fallback_code = normalize_code(duty_rows.iloc[0, 0])
+                res['v_name'] = f"未偵測 (番號 {fallback_code} 不在對照表中)"
         
         # 🌟 D. 抓取幹部動態 (嚴格鎖定 A, B, C)
         cadre_notes = []
         for code in ["A", "B", "C"]:
-            # 搜尋主表第一欄或第二欄符合番號的列
-            c_row = df_main[df_main.iloc[:, 1].apply(normalize_code) == code]
-            if c_row.empty:
-                c_row = df_main[df_main.iloc[:, 0].apply(normalize_code) == code]
-            
-            if not c_row.empty:
-                # 取得姓名，若對照表遺漏則用預設職稱代替
-                c_name = name_map.get(code)
-                if not c_name: c_name = {"A":"所長", "B":"副所長", "C":"幹部"}.get(code)
-                
-                duty_now = str(c_row.iloc[0, col_idx])
-                if any(k in duty_now for k in ["休", "假", "補"]):
-                    cadre_notes.append(f"{c_name}休假")
-                else:
-                    # 掃描巡邏班
-                    slots = []
-                    for c_col in range(4, 16):
-                        if "巡邏" in str(c_row.iloc[0, c_col]):
-                            h = (c_col - 4) * 2
-                            slots.append(f"{h:02d}-{h+2:02d}")
-                    if slots:
-                        time_range = f"{slots[0][:2]}至{slots[-1][-2:]}"
-                        cadre_notes.append(f"{c_name}在所督勤，編排{time_range}時段巡邏勤務")
+            name = name_map.get(code)
+            if name:
+                # 掃描前 4 欄尋找幹部番號
+                c_row = pd.DataFrame()
+                for search_col in range(4):
+                    temp_row = df_main[df_main.iloc[:, search_col].apply(normalize_code) == code]
+                    if not temp_row.empty:
+                        c_row = temp_row
+                        break
+                        
+                if not c_row.empty:
+                    duty_now = str(c_row.iloc[0, col_idx])
+                    if any(k in duty_now for k in ["休", "假", "補"]):
+                        cadre_notes.append(f"{name}休假")
                     else:
-                        cadre_notes.append(f"{c_name}在所督勤")
+                        slots = []
+                        for c_col in range(4, 16):
+                            if "巡邏" in str(c_row.iloc[0, c_col]):
+                                h = (c_col - 4) * 2
+                                slots.append(f"{h:02d}-{h+2:02d}")
+                        if slots:
+                            time_range = f"{slots[0][:2]}至{slots[-1][-2:]}"
+                            cadre_notes.append(f"{name}在所督勤，編排{time_range}時段巡邏勤務")
+                        else:
+                            cadre_notes.append(f"{name}在所督勤")
         
         if cadre_notes:
             res['cadre_status'] = "；".join(cadre_notes) + "。"
             
     except Exception as e:
-        res['v_name'], res['cadre_status'] = "解析失敗", f"幹部解析錯誤: {e}"
+        res['v_name'] = "解析失敗"
+        res['cadre_status'] = f"幹部解析錯誤: {e}"
 
-    # 2. 解析裝備交接簿
+    # 2. 解析裝備交接簿 (完美版維持不變)
     try:
         df_e = pd.read_csv(e_file, header=None) if e_file.name.endswith('csv') else pd.read_excel(e_file, header=None)
         df_e_s = df_e.astype(str)
@@ -158,7 +160,7 @@ def extract_full_logic(d_file, e_file, hour):
 
 # --- 主畫面執行 ---
 if duty_file and equip_file:
-    with st.spinner("啟動雷達掃描，正在解析勤務番號與裝備數據..."):
+    with st.spinner("啟動精準對位雷達，正在比對勤務番號與裝備數據..."):
         data = extract_full_logic(duty_file, equip_file, target_hour)
     
     st.success("✅ 數據擷取與番號比對完成！")
@@ -207,9 +209,9 @@ if duty_file and equip_file:
     st.subheader("📋 最終督導報告 (自動對位版)")
     st.text_area("複製回貼公務系統：", value=final_report, height=450)
     
-    with st.expander("🛠️ 查看系統自動辨識結果 (Debug)"):
+    with st.expander("🛠️ 查看系統自動辨識結果 (除錯專區)"):
         st.write(f"偵測時段欄位：Index {4 + (target_hour // 2)}")
-        st.write(f"系統過濾後的番號對照表：")
+        st.write(f"✅ 完美提取的番號對照表：")
         st.json(data['debug_map'])
         st.write(f"值班員警：{data['v_name']}")
         st.write(f"幹部動態：{data['cadre_status']}")
