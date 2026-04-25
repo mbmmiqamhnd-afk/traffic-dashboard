@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import re
 
 # 分頁配置
-st.set_page_config(page_title="督導報告 v7.0 - 全勤務偵測版", layout="wide")
+st.set_page_config(page_title="督導報告 v7.0 - 時空對位版", layout="wide")
 
 # 套用標楷體風格
 st.markdown(f"""
@@ -22,7 +22,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📋 督導報告極速生成器 v7.0 (幹部全勤務偵測)")
+st.title("📋 督導報告極速生成器 v7.0 (矩陣與時間對位版)")
 
 # --- 側邊欄：檔案與時間設定 ---
 with st.sidebar:
@@ -31,7 +31,7 @@ with st.sidebar:
     equip_file = st.file_uploader("2. 上傳『值班裝備交接簿』", type=['xlsx', 'csv'])
     
     st.divider()
-    target_time = st.time_input("督導時間 (自動對位時段)", datetime.now().time())
+    target_time = st.time_input("督導時間 (自動對位時段與裝備)", datetime.now().time())
     time_str = target_time.strftime('%H%M')
     target_hour = target_time.hour
     
@@ -66,9 +66,10 @@ def parse_time_cell(val):
 def extract_full_logic(d_file, e_file, hour):
     res = {'v_name': '未偵測', 'cadre_status': '無幹部資料', 'eq': None, 'debug_info': {}}
     try:
+        # 1. 讀取勤務分配表
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
         
-        # 🌟 A. 取得完美番號對照表
+        # A. 取得完美番號對照表
         full_text = " ".join([str(x).strip() for x in df.values.flatten() if x])
         pattern = r'(?<![A-Za-z0-9])([A-Z]|[0-9]{1,2})\s*(所長|副所長|巡官|巡佐|警員|實習)\s*([\u4e00-\u9fa5]{2,4})'
         matches = re.findall(pattern, full_text)
@@ -83,7 +84,7 @@ def extract_full_logic(d_file, e_file, hour):
             
         res['debug_info']['1. 番號對照表'] = name_map
 
-        # 🌟 B. 定位 X 軸 (時間軸)
+        # B. 定位 X 軸 (時間軸)
         time_row_idx = 2 
         time_cols = {}
         target_col_idx = -1
@@ -107,7 +108,7 @@ def extract_full_logic(d_file, e_file, hour):
             if start_h <= calc_hour < calc_end:
                 target_col_idx = c_idx
 
-        # 🌟 C. 抓取值班人員
+        # C. 抓取值班人員
         v_row_idx = time_row_idx + 1 
         for r in range(time_row_idx + 1, min(time_row_idx + 4, len(df))):
             if "值" in str(df.iloc[r, 0]) + str(df.iloc[r, 1]):
@@ -124,13 +125,13 @@ def extract_full_logic(d_file, e_file, hour):
                 for code, name in name_map.items():
                     if name in raw_cell: res['v_name'] = name; break
 
-        # 🌟 D. 抓取幹部動態 (擴充全勤務雷達)
+        # D. 抓取幹部動態
         cadre_notes = []
         for code in ["A", "B", "C"]:
             name = name_map.get(code, {"A":"所長", "B":"副所長", "C":"幹部"}.get(code))
             is_off = False
             patrol_slots = []
-            duty_names = set() # 蒐集勤務名稱 (如: 巡邏, 守望)
+            duty_names = set() 
             found_in_matrix = False
 
             for r in range(v_row_idx, len(df)):
@@ -146,23 +147,16 @@ def extract_full_logic(d_file, e_file, hour):
                         if is_leave_row:
                             is_off = True
                         else:
-                            # 偵測是否有外部勤務，並記錄時間與名稱
                             is_external = False
-                            if "巡" in duty_title or "巡" in cell_val:
-                                duty_names.add("巡邏"); is_external = True
-                            if "守" in duty_title or "守" in cell_val:
-                                duty_names.add("守望"); is_external = True
-                            if "臨" in duty_title or "臨" in cell_val:
-                                duty_names.add("臨檢"); is_external = True
-                            if "交" in duty_title or "交" in cell_val:
-                                duty_names.add("交整"); is_external = True
-                            if "路" in duty_title or "路" in cell_val:
-                                duty_names.add("路檢"); is_external = True
+                            if "巡" in duty_title or "巡" in cell_val: duty_names.add("巡邏"); is_external = True
+                            if "守" in duty_title or "守" in cell_val: duty_names.add("守望"); is_external = True
+                            if "臨" in duty_title or "臨" in cell_val: duty_names.add("臨檢"); is_external = True
+                            if "交" in duty_title or "交" in cell_val: duty_names.add("交整"); is_external = True
+                            if "路" in duty_title or "路" in cell_val: duty_names.add("路檢"); is_external = True
                             
                             if is_external:
                                 patrol_slots.append((s_h, e_h))
 
-            # 綜合判定
             if not found_in_matrix or is_off:
                 cadre_notes.append(f"{name}休假")
             else:
@@ -170,8 +164,6 @@ def extract_full_logic(d_file, e_file, hour):
                     min_s = min([s[0] for s in patrol_slots])
                     max_e = max([s[1] for s in patrol_slots])
                     e_str = "24" if max_e == 24 or max_e == 0 else f"{max_e%24:02d}"
-                    
-                    # 組合勤務名稱，例如 "巡邏、守望"
                     d_str = "、".join(sorted(list(duty_names)))
                     cadre_notes.append(f"{name}在所督勤，編排{min_s:02d}至{e_str}時段{d_str}勤務")
                 else:
@@ -184,27 +176,54 @@ def extract_full_logic(d_file, e_file, hour):
         res['v_name'] = "解析失敗"
         res['cadre_status'] = f"幹部解析錯誤: {e}"
 
-    # 2. 解析裝備交接簿
+    # 🌟 2. 解析裝備交接簿 (時間切片引擎)
     try:
         df_e = pd.read_csv(e_file, header=None) if e_file.name.endswith('csv') else pd.read_excel(e_file, header=None)
         df_e_s = df_e.astype(str)
         
-        r_in = df_e[df_e_s.iloc[:, 1].str.contains("在", na=False)].iloc[-1]
-        r_out = df_e[df_e_s.iloc[:, 1].str.contains("出", na=False)].iloc[-1]
-        r_fix = df_e[df_e_s.iloc[:, 1].str.contains("送", na=False)].iloc[-1]
+        stop_idx = len(df_e)
+        for r in range(len(df_e)):
+            t_val = df_e_s.iloc[r, 0] # 假設時間在 A 欄
+            nums = re.findall(r'\d{1,2}', t_val)
+            if nums:
+                row_hour = int(nums[0])
+                # 如果交接簿的時間大於督導時間，就停止 (防呆：避免跨夜 02時 誤判 20時)
+                if row_hour > hour and (row_hour - hour < 12):
+                    stop_idx = r
+                    break
+                    
+        # 切出督導時間之前的紀錄
+        df_e_valid = df_e.iloc[:stop_idx]
+        df_e_s_valid = df_e_s.iloc[:stop_idx]
         
+        # 安全獲取最後一筆匹配紀錄
+        def get_latest_row(df, df_s, keyword):
+            rows = df[df_s.iloc[:, 1].str.contains(keyword, na=False)]
+            return rows.iloc[-1] if not rows.empty else None
+            
+        r_in = get_latest_row(df_e_valid, df_e_s_valid, "在")
+        r_out = get_latest_row(df_e_valid, df_e_s_valid, "出")
+        r_fix = get_latest_row(df_e_valid, df_e_s_valid, "送")
+        
+        def get_val(row, idx):
+            return safe_int(row.iloc[idx]) if row is not None and idx < len(row) else 0
+
         res['eq'] = {
-            "gi": safe_int(r_in.iloc[2]), "go": safe_int(r_out.iloc[2]), "gf": safe_int(r_fix.iloc[2]),
-            "bi": safe_int(r_in.iloc[3]), "bo": safe_int(r_out.iloc[3]), "bf": safe_int(r_fix.iloc[3]),
-            "ri": safe_int(r_in.iloc[6]), "ro": safe_int(r_out.iloc[6]), "rf": safe_int(r_fix.iloc[6]),
-            "vi": safe_int(r_in.iloc[11]), "vo": safe_int(r_out.iloc[11]), "vf": safe_int(r_fix.iloc[11])
+            "gi": get_val(r_in, 2), "go": get_val(r_out, 2), "gf": get_val(r_fix, 2),
+            "bi": get_val(r_in, 3), "bo": get_val(r_out, 3), "bf": get_val(r_fix, 3),
+            "ri": get_val(r_in, 6), "ro": get_val(r_out, 6), "rf": get_val(r_fix, 6),
+            "vi": get_val(r_in, 11), "vo": get_val(r_out, 11), "vf": get_val(r_fix, 11)
         }
-    except: res['eq'] = None
+        res['debug_info']['2. 裝備切片行數'] = stop_idx
+    except Exception as e: 
+        res['eq'] = None
+        res['debug_info']['裝備解析錯誤'] = str(e)
+        
     return res
 
 # --- 主畫面執行 ---
 if duty_file and equip_file:
-    with st.spinner("啟動矩陣雷達，精準定位全勤務動態..."):
+    with st.spinner("啟動時空矩陣引擎，精準定位人員與裝備動態..."):
         data = extract_full_logic(duty_file, equip_file, target_hour)
     
     st.success("✅ 報告生成完畢！")
@@ -234,8 +253,13 @@ if duty_file and equip_file:
     final_report = "\n".join([f"{i+1}、{line}" for i, line in enumerate(lines)])
     
     st.markdown("---")
-    st.subheader("📋 最終督導報告 (全勤務版)")
+    st.subheader("📋 最終督導報告 (時空對位版)")
     st.text_area("複製回貼公務系統：", value=final_report, height=450)
+    
+    with st.expander("🛠️ 查看系統自動辨識結果 (除錯專區)"):
+        st.write(f"✅ 值班員警：{data['v_name']}")
+        st.write(f"✅ 幹部動態：{data['cadre_status']}")
+        st.json(data['debug_info'])
 
 else:
     st.info("👋 匯入兩份檔案後，系統將自動啟動矩陣雷達引擎！")
