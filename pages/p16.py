@@ -460,20 +460,9 @@ with u_tabs[-1]:
         if int(i) < num_units
     ]
 
-    # ── DEBUG 區（確認問題後可移除）──
-    st.write("🔍 **DEBUG — session_state 目前內容：**")
-    if saved:
-        for k, v in saved.items():
-            st.write(f"  單位索引 {k}（type={type(k).__name__}）：{v.get('uname','?')}")
-    st.write(f"  num_units={num_units}（type={type(num_units).__name__}）")
-    st.write(f"  sorted keys: {sorted(saved.keys(), key=lambda x: int(x))}")
-    st.write(f"  組合後筆數: {len(all_final_reports)}")
-    # ────────────────────────────────
-
     if all_final_reports:
-        st.write(f"DEBUG 各筆長度: {[len(r) for r in all_final_reports]}")
         full_text = ("\n\n" + "─" * 40 + "\n\n").join(all_final_reports)
-        st.text_area("📄 總匯整結果", full_text, height=700, key="full_report")
+        st.text_area("📄 總匯整結果", full_text, height=1200, key="full_report")
 
         col_dl, col_mail = st.columns(2)
 
