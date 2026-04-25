@@ -365,4 +365,12 @@ col_dl1, col_dl2 = st.columns(2)
 
 plan_filename = f"{u}{p_name}勤務規劃表.pdf"
 
-col_dl1.download_button("📝 下載 1.勤務規劃表", data=generate_
+col_dl1.download_button("📝 下載 1.勤務規劃表", data=generate_pdf_from_data(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl), file_name=plan_filename, use_container_width=True)
+col_dl2.download_button("🖋️ 下載 2.人員簽到表", data=generate_attendance_pdf(u, p_name, p_time, b_info), file_name=f"簽到表_{datetime.now().strftime('%m%d')}.pdf", use_container_width=True)
+
+if st.button("💾 同步雲端並發送備份郵件", use_container_width=True):
+    with st.spinner("處理中..."):
+        save_data(u, p_time, p_name, b_info, s_info, res_cmd, res_ptl)
+        ok, m_err = send_report_email(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
+        if ok: st.success("✅ 同步與郵件發送成功！")
+        else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {m_err}")
