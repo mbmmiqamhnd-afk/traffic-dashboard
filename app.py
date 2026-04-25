@@ -422,7 +422,7 @@ def process_major(files):
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             blue_color = {"red": 0.0, "green": 0.0, "blue": 1.0}
             
-            # --- 3-1. 同步總表 (維持原有邏輯，包含預設的字型與粗體) ---
+            # --- 3-1. 同步總表 ---
             ws_main = sh.get_worksheet(0)
             titles_main = df_result.columns.tolist()
             top_row_m, bottom_row_m = [t[0] for t in titles_main], [t[1] for t in titles_main]
@@ -441,7 +441,7 @@ def process_major(files):
                 fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
                 requests.append({"repeatCell": {"range": {"sheetId": ws_main.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 7, "endColumnIndex": 8}, "cell": {"userEnteredFormat": fmt}, "fields": "userEnteredFormat.textFormat.foregroundColor"}})
 
-            # --- 3-2. 同步 6 個細項分頁 (不覆蓋預設字型/粗體/大小，僅改變顏色) ---
+            # --- 3-2. 同步 6 個細項分頁 ---
             for cat, df_c in cat_dfs.items():
                 ws_name = f"重大違規-{cat}"
                 ws_cat = sh.worksheet(ws_name) if ws_name in existing_sheets else sh.add_worksheet(title=ws_name, rows="30", cols="15")
@@ -451,12 +451,9 @@ def process_major(files):
                 top_row_c, bottom_row_c = [t[0] for t in titles_c], [t[1] for t in titles_c]
                 data_body_c = df_c.values.tolist()
                 
-                # 標題 (移除龍潭分局)
                 title_text = f"取締【{cat}】違規統計表 (累計至 {date_yr})"
-                
                 ws_cat.update(range_name='A1', values=[[title_text] + [""]*9, top_row_c, bottom_row_c] + data_body_c)
                 
-                # 大標題 A1：藍色 + 紅色 (不設定 bold 或 fontSize)
                 if "(" in title_text:
                     p_start_title = title_text.find("(")
                     requests.append({
@@ -475,7 +472,6 @@ def process_major(files):
                         }
                     })
 
-                # 細項表頭括號：黑色 + 紅色
                 for i, text in enumerate(top_row_c):
                     if "(" in text:
                         p_start = text.find("(")
@@ -490,7 +486,6 @@ def process_major(files):
                             }
                         })
 
-                # 跨欄置中排版
                 requests.extend([
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
@@ -500,7 +495,6 @@ def process_major(files):
                     {"repeatCell": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}}, "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"}}
                 ])
                 
-                # 負數標紅字 (僅更動顏色)
                 for r_idx, row_vals in enumerate(data_body_c):
                     target_row = 3 + r_idx
                     for c_idx in [7, 8, 9]:
