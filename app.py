@@ -11,7 +11,7 @@ from pptx import Presentation
 # ==========================================
 # 0. 系統初始化與格式套件
 # ==========================================
-st.set_page_config(page_title="龍潭分局交通智慧戰情室", page_icon="🚓", layout="wide")
+st.set_page_config(page_title="交通執法自動化分析引擎", page_icon="🚓", layout="wide")
 
 try:
     from gspread_formatting import *
@@ -839,7 +839,7 @@ def process_jing_tao(files):
 # 4. 首頁與排程器
 # ==========================================
 with st.sidebar:
-    st.title("🚓 龍潭分局戰情室")
+    st.title("🚓 交通執法自動化分析引擎")
     app_mode = st.selectbox("功能模組", ["🏠 智慧批次處理中心", "📂 PDF 轉 PPTX 工具"])
 
 if app_mode == "🏠 智慧批次處理中心":
