@@ -14,7 +14,8 @@ def show_sidebar():
         
         # 3. 勤務與專案規劃
         st.subheader("📅 勤務與專案規劃")
-        st.page_link("pages/p09.py", label="專案勤務規劃", icon="🚓")
+        # 👇 這裡已經幫您把名稱改為「聯合稽查勤務規劃」 👇
+        st.page_link("pages/p09.py", label="聯合稽查勤務規劃", icon="🚓") 
         st.page_link("pages/p10.py", label="防制危險駕車", icon="🚓")
         st.page_link("pages/p11.py", label="防制危險駕車 (月份版)", icon="📅")
         st.page_link("pages/p12.py", label="行人及護老交通安全", icon="🚶")
