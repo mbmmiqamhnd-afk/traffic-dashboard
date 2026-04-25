@@ -52,7 +52,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 解析核心引擎 (已整合積極偵測邏輯)
+# 2. 解析核心引擎 (修正邱品淳誤判問題)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -82,19 +82,16 @@ def d_extract_equip(e_file, hour):
                 if col_map["radio"] is None and "無線電" in v: col_map["radio"] = c
                 if col_map["vest"] is None and "背心" in v: col_map["vest"] = c
         col_map = {k: (v if v is not None else d) for k, v, d in zip(col_map.keys(), col_map.values(), [2, 3, 6, 11])}
-        stop_r = len(df)
-        for r in range(min(10, len(df)), len(df)):
-            nums = re.findall(r'\d{1,2}', str(df.iloc[r, 0]))
-            if nums and int(nums[0]) > hour and (int(nums[0]) - hour < 12):
-                stop_r = r; break
-        sub = df.iloc[:stop_r]; sub_s = df_s.iloc[:stop_r]
+        sub = df.iloc[:20]
+        sub_s = df_s.iloc[:20]
         def get_v(kw, k):
             rows = sub[sub_s.iloc[:, 1].str.contains(kw, na=False)]
             return d_safe_int(rows.iloc[-1, col_map[k]]) if not rows.empty else 0
         r_fix = sub[sub_s.iloc[:, 1].str.contains("送", na=False)]
-        gf = d_safe_int(r_fix.iloc[-1, col_map["gun"]]) if not r_fix.empty else 0
-        rf = d_safe_int(r_fix.iloc[-1, col_map["radio"]]) if not r_fix.empty else 0
-        return {"gi":get_v("在","gun"), "go":get_v("出","gun"), "gf":gf, "bi":get_v("在","bullet"), "bo":get_v("出","bullet"), "ri":get_v("在","radio"), "ro":get_v("出","radio"), "rf":rf, "vi":get_v("在","vest"), "vo":get_v("出","vest")}
+        return {"gi":get_v("在","gun"), "go":get_v("出","gun"), "gf":d_safe_int(r_fix.iloc[-1, col_map["gun"]]) if not r_fix.empty else 0,
+                "bi":get_v("在","bullet"), "bo":get_v("出","bullet"),
+                "ri":get_v("在","radio"), "ro":get_v("出","radio"), "rf":d_safe_int(r_fix.iloc[-1, col_map["radio"]]) if not r_fix.empty else 0,
+                "vi":get_v("在","vest"), "vo":get_v("出","vest")}
     except: return None
 
 def d_extract_duty(d_file, hour):
@@ -113,8 +110,8 @@ def d_extract_duty(d_file, hour):
         matches = re.findall(p, full)
         n_map, f_map = {}, {}
         for m in matches:
-            code_id, title, name = d_normalize_code(m[0]), m[1].strip(), m[2]
-            if len(name) >= 2: n_map[code_id] = name; f_map[code_id] = f"{title}{name}"
+            cid, title, name = d_normalize_code(m[0]), m[1].strip(), m[2]
+            if len(name) >= 2: n_map[cid] = name; f_map[cid] = f"{title}{name}"
             
         tr_idx, t_cols, t_col_idx = 2, {}, -1
         for r in range(6):
@@ -150,6 +147,7 @@ def d_extract_duty(d_file, hour):
                     found = True
                     dt_area = "".join([str(x) for x in df.iloc[r, :2]])
                     row_all_text = "".join([str(x) for x in df.iloc[r, :]])
+                    # 💡 邏輯修正：只要時段格有代號，就極大機率在勤。除非 A/B 欄有休假且完全沒有勤務字眼。
                     has_work_kw = any(kw in row_all_text for kw in ["巡","守","望","臨","交","路","督","勤","備","辦","內","專"])
                     if any(k in dt_area for k in ["休", "假", "輪", "補"]) and not has_work_kw:
                         is_actually_off = True
@@ -170,7 +168,7 @@ def d_extract_duty(d_file, hour):
     return res
 
 # ==========================================
-# 3. 主介面邏輯
+# 3. 主介面邏輯 (報告生成與寄信)
 # ==========================================
 main_tabs = st.tabs(["📊 數據處理", "📋 勤務督導報告"])
 
