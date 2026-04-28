@@ -13,7 +13,6 @@ from datetime import datetime, timedelta
 # ==========================================
 st.set_page_config(page_title="勤務督導報告自動生成系統", page_icon="🚓", layout="wide")
 
-# 初始化 Session State，用來存放各單位的報告結果
 if "unit_reports" not in st.session_state:
     st.session_state.unit_reports = {}
 
@@ -32,15 +31,12 @@ st.markdown("""
         line-height: 1.7 !important;
         color: #1c1c1c !important;
     }
-    .stTabs [data-baseweb="tab-list"] button {
-        font-size: 18px;
-        font-weight: bold;
-    }
+    .stTabs [data-baseweb="tab-list"] button { font-size: 18px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. 寄信功能 (對齊 [email] user/password)
+# 1. 寄信功能
 # ==========================================
 def send_gmail(subject, body, receiver_email):
     try:
@@ -59,27 +55,37 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 解析核心引擎 (全單位高相容性版)
+# 2. 鋼鐵版解析引擎 (防干擾時間鎖定)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
     except: return 0
 
 def d_normalize_code(c):
-    c_str = str(c).strip().replace(".0", "").upper()
+    c_str = str(c).strip().upper()
+    # 🌟 新增：全形英文/數字強制轉半形，避免 A 與 Ａ 判斷失敗
+    c_str = c_str.translate(str.maketrans('０１２３４５６７８９ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ', '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
+    c_str = c_str.replace(".0", "")
     return str(int(c_str)) if c_str.isdigit() else c_str
 
 def d_parse_time(val):
     val_str = str(val).strip().replace("\n", "").replace(" ", "")
-    m = re.search(r'(\d{1,2})[~~\-－—–_]+(\d{1,2})', val_str)
-    return (int(m.group(1)), int(m.group(2))) if m else (None, None)
+    # 🌟 嚴格過濾日期雜訊
+    if any(x in val_str for x in ["年", "月", "日", "/"]): return None, None
+    m = re.search(r'(?<!\d)(\d{1,2})[~~\-－—–_]+(\d{1,2})(?!\d)', val_str)
+    if m:
+        sh, eh = int(m.group(1)), int(m.group(2))
+        # 確保合理的小時範圍 (考量跨夜可能寫到 30)
+        if 0 <= sh <= 24 and 0 <= eh <= 30:
+            return sh, eh
+    return None, None
 
 def d_extract_duty(d_file, hour):
     res = {'v_name': '解析失敗', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所'}
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
         
-        # A. 偵測單位與類型
+        # A. 單位與稱謂屬性
         unit_full = ""
         for r in range(5):
             rt = "".join([str(x) for x in df.iloc[r].values])
@@ -91,8 +97,9 @@ def d_extract_duty(d_file, hour):
         
         is_guard = "警備隊" in unit_full or ("隊" in unit_full and "分隊" not in unit_full)
         res['term'] = "該隊" if is_guard or "分隊" in unit_full else "該所"
+        loc_term = res['term'][1:] # "所" 或 "隊"
         
-        # B. 建立人員對照 (全表掃描，支援隊長/副隊長)
+        # B. 全表人員雷達
         f_map = {}
         all_text = " ".join(df.astype(str).values.flatten())
         p = r'([A-Z0-9]{1,2})\s*(所長|副所長|隊長|副隊長|分隊長|小隊長|巡官|巡佐|警員|實習)[\s\n]*([\u4e00-\u9fa5]{2,4})'
@@ -100,25 +107,32 @@ def d_extract_duty(d_file, hour):
         for m in matches:
             f_map[d_normalize_code(m[0])] = f"{m[1]}{m[2]}"
             
-        # C. 時間座標定位 (支援 06-06 跨夜)
-        t_cols = {}
-        for r in range(12): 
+        # C. 🌟 鋼鐵時間座標鎖定法 (只取時間區段最多的一列)
+        t_cols, tr_idx = {}, -1
+        for r in range(15): 
+            tmp = {}
             for c in range(len(df.columns)):
                 sh, eh = d_parse_time(df.iloc[r, c])
-                if sh is not None: t_cols[c] = (sh, eh)
-            if len(t_cols) > 5: break
-            
+                if sh is not None: tmp[c] = (sh, eh)
+            if len(tmp) > len(t_cols): 
+                t_cols = tmp
+                tr_idx = r
+                
+        # 對位抵達時間
         target_col = -1
         adj_h = hour if hour >= 6 else hour + 24
         for c, (sh, eh) in t_cols.items():
-            s, e = sh, (eh if eh > sh else eh + 24)
-            if s <= adj_h < e: target_col = c; break
+            s = sh if sh >= 6 else sh + 24
+            e = eh if eh > sh else eh + 24
+            if e < s: e += 24 # 跨夜容錯
+            if s <= adj_h < e: 
+                target_col = c; break
 
-        if target_col != -1:
-            # 偵測值班人員 (避開幹部優先權)
-            for r in range(min(20, len(df))):
+        if target_col != -1 and tr_idx != -1:
+            # 1. 值班人員偵測 (從時間軸下方開始找)
+            for r in range(tr_idx + 1, min(tr_idx + 25, len(df))):
                 row_head = "".join(df.iloc[r, :6])
-                if "值" in row_head:
+                if "值" in row_head or "班" in row_head:
                     val = str(df.iloc[r, target_col])
                     m_code = re.search(r'[A-Z0-9]{1,2}', val)
                     if m_code:
@@ -126,7 +140,7 @@ def d_extract_duty(d_file, hour):
                         res['v_name'] = f_map.get(code, f"警員({code})")
                         break
             
-            # 幹部動態
+            # 2. 幹部動態
             c_codes = ["01", "02", "A", "B", "C"] if is_guard else ["A", "B", "C"]
             default_t = {"01":"隊長","02":"副隊長","A":"所長","B":"副所長","C":"幹部"}
             c_notes = []
@@ -136,18 +150,19 @@ def d_extract_duty(d_file, hour):
                 fname = f_map.get(code, default_t.get(code, "幹部"))
                 
                 is_off = False
-                for r in range(max(0, len(df)-12), len(df)):
+                for r in range(max(0, len(df)-15), len(df)):
                     row_str = "".join(df.iloc[r, :]).upper()
-                    if code in row_str and any(k in "".join(df.iloc[r, :3]) for k in ["休","輪","假"]):
+                    if code in row_str and any(k in "".join(df.iloc[r, :4]) for k in ["休","輪","假","補"]):
                         is_off = True; break
                 
                 d_names = set()
-                for r in range(len(df)):
+                for r in range(tr_idx + 1, len(df)):
                     cell_val = str(df.iloc[r, target_col])
-                    if code in re.findall(r'[A-Z0-9]{1,2}', cell_val):
+                    extracted_codes = [d_normalize_code(x) for x in re.findall(r'[A-Z0-9]{1,2}', cell_val)]
+                    if code in extracted_codes:
                         is_off = False
                         row_n = "".join(df.iloc[r, :5])
-                        kw_map = {"巡":"巡邏", "守":"守望", "臨":"臨檢", "交":"交整", "路":"路檢", "督":"督勤", "備":"備勤", "專":"專案"}
+                        kw_map = {"巡":"巡邏", "守":"守望", "望":"守望", "臨":"臨檢", "交":"交整", "路":"路檢", "督":"督勤", "備":"備勤", "專":"專案", "辦":"偵辦刑案", "淨":"專案"}
                         for k, kn in kw_map.items():
                             if k in row_n or k in cell_val: d_names.add(kn)
                 
@@ -155,10 +170,14 @@ def d_extract_duty(d_file, hour):
                 else:
                     if d_names:
                         sh_s, eh_s = t_cols[target_col]
-                        c_notes.append(f"{fname}在所督勤，編排{sh_s:02d}-{eh_s if eh_s!=0 else 24:02d}時段{'、'.join(sorted(d_names))}勤務")
-                    else: c_notes.append(f"{fname}在所督勤")
+                        c_notes.append(f"{fname}在{loc_term}督勤，編排{sh_s:02d}-{eh_s if eh_s!=0 else 24:02d}時段{'、'.join(sorted(d_names))}勤務")
+                    else: c_notes.append(f"{fname}在{loc_term}督勤")
             res['cadre_status'] = "；".join(c_notes) + "。"
-    except: pass
+        else:
+            res['v_name'] = "時段對位失敗"
+            res['cadre_status'] = f"無法定位 {hour:02d} 點的勤務欄位，請檢查班表時間格式。"
+    except Exception as e: 
+        res['cadre_status'] = f"解析發生錯誤：{str(e)}"
     return res
 
 def d_extract_equip(e_file, hour):
@@ -183,7 +202,7 @@ def d_extract_equip(e_file, hour):
     except: return None
 
 # ==========================================
-# 3. 主介面 (移除數據處理分頁，直接顯示報告生成)
+# 3. 主介面 UI
 # ==========================================
 st.header("📋 勤務督導報告自動生成")
 
@@ -196,7 +215,6 @@ with c_s2:
     d_5, d_3 = insp_date - timedelta(days=5), insp_date - timedelta(days=3)
     st.info(f"📅 檢測區間：監錄({d_5.strftime('%m%d')}-{d_e.strftime('%m%d')}) / 勤教({d_3.strftime('%m%d')}-{d_e.strftime('%m%d')})")
 
-# 建立各單位的分頁與總匯整分頁
 u_tabs = st.tabs([f"🏢 單位 {i+1}" for i in range(num_units)] + ["📄 總匯整報告"])
 
 for i in range(num_units):
@@ -221,15 +239,15 @@ for i in range(num_units):
                 f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
             ]
             final_text = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
-            
-            # 將結果存入 Session State
             st.session_state.unit_reports[i] = f"【{uname} 督導報告】\n{final_text}"
             
-            st.success(f"✅ {uname} 解析完成")
+            if dr['v_name'] == "時段對位失敗":
+                st.error(f"❌ {uname} 解析失敗：{dr['cadre_status']}")
+            else:
+                st.success(f"✅ {uname} 解析完成")
             st.text_area("預覽報告", final_text, height=350, key=f"preview_{i}")
 
 with u_tabs[-1]:
-    # 從 Session State 抓取所有已上傳單位的報告
     reports_list = [st.session_state.unit_reports[k] for k in sorted(st.session_state.unit_reports.keys()) if k < num_units]
     
     if reports_list:
