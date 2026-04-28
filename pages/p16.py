@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 進階解析引擎 (警備隊值班上列優先規則)
+# 2. 進階解析引擎 (強化警備隊規則與幹部過濾)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -87,27 +87,23 @@ def d_extract_duty(d_file, hour):
             rt = "".join([str(x) for x in df.iloc[r].values]).replace(" ", "")
             m = re.search(r'([\u4e00-\u9fa5]+(派出所|分駐所|警備隊|分隊|中隊|大隊|隊))', rt)
             if m: 
-                unit_full = m.group(1)
-                res['unit_name'] = unit_full
-                break
+                unit_full = m.group(1); res['unit_name'] = unit_full; break
 
         is_guard = "警備隊" in unit_full
-        if "分隊" in unit_full:
-            res['term'] = "該分隊"
-        elif "隊" in unit_full:
-            res['term'] = "該隊"
-        else:
-            res['term'] = "該所"
-            
-        loc_term = res['term'][1:]
-        res['loc_term'] = loc_term
+        if "分隊" in unit_full: res['term'] = "該分隊"
+        elif "隊" in unit_full: res['term'] = "該隊"
+        else: res['term'] = "該所"
+        res['loc_term'] = res['term'][1:]
 
-        # B. 人員雷達
+        # B. 人員雷達 (增加對標題文字的過濾)
         f_map = {}
         all_text = " ".join(df.astype(str).values.flatten())
+        # 過濾掉包含「姓名、代號、職稱」等字眼的匹配
         p = r'([A-Z0-9]{1,2})\s*(所長|副所長|隊長|副隊長|分隊長|小隊長|警務佐|巡官|巡佐|警員|實習)[\s\n,]*([\u4e00-\u9fa5]{2,4})'
         for m in re.findall(p, all_text):
-            f_map[d_normalize_code(m[0])] = f"{m[1]}{m[2]}"
+            name = m[2]
+            if any(x in name for x in ["姓名", "代號", "職稱", "人員"]): continue
+            f_map[d_normalize_code(m[0])] = f"{m[1]}{name}"
 
         # C. 時間座標鎖定
         t_cols, tr_idx = {}, -1
@@ -116,9 +112,7 @@ def d_extract_duty(d_file, hour):
             for c in range(len(df.columns)):
                 sh, eh = d_parse_time(df.iloc[r, c])
                 if sh is not None: tmp[c] = (sh, eh)
-            if len(tmp) > len(t_cols): 
-                t_cols = tmp
-                tr_idx = r
+            if len(tmp) > len(t_cols): t_cols = tmp; tr_idx = r
 
         adj_h = hour if hour >= 6 else hour + 24
         target_col = -1
@@ -127,46 +121,35 @@ def d_extract_duty(d_file, hour):
             if s <= adj_h < e: target_col = c; break
 
         if target_col != -1 and tr_idx != -1:
-            # 偵測底部邊界
             footer_idx = len(df)
             for r in range(len(df)-1, max(0, len(df)-25), -1):
                 if any(x in "".join(df.iloc[r, :]).replace(" ", "") for x in ["輪休", "主管簽章", "備註", "合計", "人數"]):
                     footer_idx = r; break
 
-            # 1. 🌟 值班偵測邏輯升級
+            # 1. 值班偵測邏輯 (僅警備隊限制上列)
             v_found = False
             for r in range(tr_idx + 1, min(footer_idx, len(df))):
                 cell_a = str(df.iloc[r, 0]).strip()
                 row_head = "".join(df.iloc[r, :target_col+1])
-                
                 if "值班" in cell_a or any(x in row_head for x in ["值", "班"]):
                     cell_val = str(df.iloc[r, target_col]).strip()
-                    
-                    # 🌟 警備隊專屬邏輯：強制取上列，空白即代表無值班人員
                     if is_guard:
                         top_val = cell_val.split('\n')[0] if '\n' in cell_val else cell_val
                         mc = re.search(r'[A-Z0-9]{1,2}', top_val)
                         if mc:
                             code = d_normalize_code(mc.group(0))
                             res['v_name'] = f_map.get(code, f"警員({code})")
-                        else:
-                            res['v_name'] = "該時段無值班人員"
-                        v_found = True
-                        break # 找到標籤列的上列後即停止
-                    
-                    # 一般單位邏輯：支援下列偵測
+                        else: res['v_name'] = "該時段無值班人員"
+                        v_found = True; break
                     else:
                         mc = re.search(r'[A-Z0-9]{1,2}', cell_val)
                         if mc:
                             code = d_normalize_code(mc.group(0))
                             res['v_name'] = f_map.get(code, f"警員({code})")
-                            v_found = True
-                            break
-            
-            if not v_found:
-                res['v_name'] = "該時段無值班人員"
+                            v_found = True; break
+            if not v_found: res['v_name'] = "該時段無值班人員"
 
-            # 2. 全天候幹部動態追蹤
+            # 2. 幹部動態 (排除標題文字、修正斷句)
             target_titles = ["所長", "副所長", "隊長", "副隊長", "分隊長", "小隊長", "警務佐"]
             target_codes = sorted(
                 [c for c, info in f_map.items() if any(t in info for t in target_titles)],
@@ -182,12 +165,14 @@ def d_extract_duty(d_file, hour):
 
                 for c_idx, (sh, eh) in t_cols.items():
                     for r in range(tr_idx + 1, footer_idx):
-                        if code in [d_normalize_code(x) for x in re.findall(r'[A-Z0-9]{1,2}', str(df.iloc[r, c_idx]))]:
+                        cell_v = str(df.iloc[r, c_idx])
+                        if code in [d_normalize_code(x) for x in re.findall(r'[A-Z0-9]{1,2}', cell_v)]:
                             duty_parts = []
                             for scan_c in range(0, c_idx):
                                 txt = str(df.iloc[r, scan_c]).strip()
-                                txt = re.sub(r'^[0-9一二三四五六七八九十、\s\.]+', '', txt)
-                                if txt and len(txt) >= 2: duty_parts.append(txt)
+                                txt = re.sub(r'^[0-9一二三四五六七八九十、\s\.、]+', '', txt) # 增加過濾符號
+                                if txt and len(txt) >= 2 and not any(x in txt for x in ["代號", "職稱", "姓名"]):
+                                    duty_parts.append(txt)
                             
                             duty_name = "勤務"
                             if duty_parts:
@@ -222,9 +207,9 @@ def d_extract_duty(d_file, hour):
                             merged.append((cs, ce))
                         for ms, me in merged:
                             summary.append(f"{ms:02d}-{(24 if me in [0, 24] else me):02d}{d_name}")
-                    c_notes.append(f"{fname}在{loc_term}督勤，編排" + "、".join(summary) + "勤務")
+                    c_notes.append(f"{fname}在{res['loc_term']}督勤，編排" + "、".join(summary) + "勤務")
                 else:
-                    c_notes.append(f"{fname}在{loc_term}督勤")
+                    c_notes.append(f"{fname}在{res['loc_term']}督勤")
 
             res['cadre_status'] = "；".join(c_notes) + "。"
         else:
@@ -234,7 +219,7 @@ def d_extract_duty(d_file, hour):
     return res
 
 # ==========================================
-# 3. 裝備解析與主 UI
+# 3. 裝備解析與 UI (省略重複部分，與前版相同)
 # ==========================================
 def d_extract_equip(e_file, hour):
     try:
@@ -252,10 +237,8 @@ def d_extract_equip(e_file, hour):
         r_fix = sub[sub_s.iloc[:, 1].str.contains("送", na=False)]
         return {
             "gi": get_v("在", "gun"), "go": get_v("出", "gun"),
-            "gf": d_safe_int(r_fix.iloc[-1, col_map["gun"]]) if not r_fix.empty else 0,
             "bi": get_v("在", "bullet"), "bo": get_v("出", "bullet"),
             "ri": get_v("在", "radio"), "ro": get_v("出", "radio"),
-            "rf": d_safe_int(r_fix.iloc[-1, col_map["radio"]]) if not r_fix.empty else 0,
             "vi": get_v("在", "vest"), "vo": get_v("出", "vest")
         }
     except: return None
@@ -278,7 +261,6 @@ for i in range(num_units):
             t = dr['term']; loc_term = dr['loc_term']
             d_e = insp_date - timedelta(days=1)
             
-            # 第一項邏輯切換
             if dr['v_name'] == "該時段無值班人員":
                 line_1 = f"{u_time.strftime('%H%M')}，{t}該時段無值班人員。"
             else:
