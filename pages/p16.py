@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化全天候解析引擎
+# 2. 超進化全天候解析引擎 (警備隊拘留室加強版)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -77,28 +77,32 @@ def d_parse_time(val):
     return None, None
 
 def d_extract_duty(d_file, hour):
-    res = {'v_name': '解析失敗', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所', 'loc_term': '所', 'has_skyline': True}
+    res = {
+        'v_name': '解析失敗', 
+        'detention_name': None, # 拘留室人員
+        'cadre_status': '無幹部資料', 
+        'unit_name': '未偵測單位', 
+        'term': '該所', 
+        'loc_term': '所', 
+        'has_skyline': True
+    }
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
 
-        # A. 偵測單位與稱謂
+        # A. 偵測單位
         unit_full = ""
         for r in range(5):
             rt = "".join([str(x) for x in df.iloc[r].values]).replace(" ", "")
             m = re.search(r'([\u4e00-\u9fa5]+(派出所|分駐所|警備隊|分隊|中隊|大隊|隊))', rt)
             if m: unit_full = m.group(1); res['unit_name'] = unit_full; break
 
-        # 🌟 邏輯修正：若為隊或分隊，則無天羅地網
+        is_guard_unit = "警備隊" in unit_full
         if "分隊" in unit_full:
-            res['term'] = "該分隊"
-            res['has_skyline'] = False
+            res['term'] = "該分隊"; res['has_skyline'] = False
         elif "隊" in unit_full:
-            res['term'] = "該隊"
-            res['has_skyline'] = False
+            res['term'] = "該隊"; res['has_skyline'] = False
         else:
-            res['term'] = "該所"
-            res['has_skyline'] = True
-            
+            res['term'] = "該所"; res['has_skyline'] = True
         res['loc_term'] = res['term'][1:]
 
         # B. 人員雷達
@@ -132,24 +136,35 @@ def d_extract_duty(d_file, hour):
                 if any(x in row_all for x in ["輪休", "主管簽章", "備註", "合計", "人數"]):
                     footer_idx = r; break
 
-            # 1. 值班偵測
+            # 1. 🌟 值班與拘留室偵測 (僅警備隊觸發拘留室搜尋)
             v_found = False
             for r in range(tr_idx + 1, min(footer_idx, len(df))):
                 cell_a = str(df.iloc[r, 0]).strip()
                 row_head = "".join(df.iloc[r, :target_col+1])
+                
+                # A. 偵測值班人員
                 if "值班" in cell_a or any(x in row_head for x in ["值", "班"]):
-                    cell_val = str(df.iloc[r, target_col]).strip()
-                    # 警備隊限制上列
-                    is_guard_unit = "隊" in res['term']
-                    t_val = cell_val.split('\n')[0] if is_guard_unit and '\n' in cell_val else cell_val
-                    mc = re.search(r'[A-Z0-9]{1,2}', t_val)
-                    if mc:
-                        code = d_normalize_code(mc.group(0))
-                        res['v_name'] = f_map.get(code, f"警員({code})")
-                        v_found = True; break
+                    if not v_found: # 確保只抓第一列
+                        cell_val = str(df.iloc[r, target_col]).strip()
+                        # 警備隊規則：僅看上列
+                        t_val = cell_val.split('\n')[0] if is_guard_unit and '\n' in cell_val else cell_val
+                        mc = re.search(r'[A-Z0-9]{1,2}', t_val)
+                        if mc:
+                            res['v_name'] = f_map.get(d_normalize_code(mc.group(0)), f"警員({mc.group(0)})")
+                        else:
+                            res['v_name'] = "該時段無值班人員"
+                        v_found = True
+                
+                # B. 🌟 偵測拘留室人員 (僅限警備隊)
+                if is_guard_unit and "拘留" in cell_a:
+                    d_val = str(df.iloc[r, target_col]).strip()
+                    md = re.search(r'[A-Z0-9]{1,2}', d_val)
+                    if md:
+                        res['detention_name'] = f_map.get(d_normalize_code(md.group(0)), f"警員({md.group(0)})")
+
             if not v_found: res['v_name'] = "該時段無值班人員"
 
-            # 2. 幹部全天動態 (含合併與排序)
+            # 2. 幹部動態 (排序與合併)
             target_titles = ["所長", "副所長", "隊長", "副隊長", "分隊長", "小隊長", "警務佐"]
             def cadre_rank(code):
                 title = f_map[code]
@@ -239,10 +254,24 @@ for i in range(num_units):
             d_e = insp_date - timedelta(days=1)
             d_5, d_3 = (insp_date - timedelta(days=5)), (insp_date - timedelta(days=3))
             
-            # 🌟 第 1 項：值班與無值班判斷
-            line_1 = f"{u_time.strftime('%H%M')}，{t}{'該時段無值班人員。' if dr['v_name'] == '該時段無值班人員' else '值班' + dr['v_name'] + '服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。'}"
+            # 🌟 第 1 項：值班、拘留室綜合判定
+            duty_desc = ""
+            if dr['v_name'] == "該時段無值班人員":
+                duty_desc = "該時段無值班人員"
+            else:
+                duty_desc = f"值班{dr['v_name']}"
             
-            # 🌟 第 2 項：邏輯修正 - 隊/分隊移除「天羅地網」
+            # 警備隊額外增加拘留室人員文字
+            detention_text = ""
+            if "警備隊" in dr['unit_name']:
+                if dr['detention_name']:
+                    detention_text = f"、拘留室值班人員{dr['detention_name']}"
+                else:
+                    detention_text = "、拘留室目前無人拘留"
+            
+            line_1 = f"{u_time.strftime('%H%M')}，{t}{duty_desc}{detention_text}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。"
+            
+            # 第 2 項：監錄系統判定
             system_desc = "駐地監錄設備及天羅地網系統" if dr['has_skyline'] else "駐地監錄設備"
             line_2 = f"{t}{system_desc}均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。"
             
