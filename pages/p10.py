@@ -37,6 +37,13 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
 # --- 工具函式 ---
+def normalize(s):
+    """去除所有空白、換行，方便字串比對"""
+    return str(s).replace('\n', '').replace('\r', '').replace(' ', '').strip()
+
+def is_blank(val):
+    return normalize(val) in ["", "None", "nan"]
+
 def format_staff_only(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]:
         return ""
@@ -101,12 +108,12 @@ def calc_time_strings(p_time):
     if not date_match:
         return "", ""
 
-    y = date_match.group(1)
-    m = int(date_match.group(2))
-    d = int(date_match.group(3))
+    y          = date_match.group(1)
+    m          = int(date_match.group(2))
+    d          = int(date_match.group(3))
     start_hour = date_match.group(4)
 
-    y_tw = int(y) if y else (datetime.now().year - 1911)
+    y_tw    = int(y) if y else (datetime.now().year - 1911)
     base_dt = datetime(y_tw + 1911, m, d)
     next_dt = base_dt + timedelta(days=1)
 
@@ -287,6 +294,9 @@ with col2:
 # 計算兩種時段字串
 dedicated_time, normal_time = calc_time_strings(p_time)
 
+# 預先算好 normalize 後的 dedicated_time，供後處理比對用
+dedicated_norm = normalize(dedicated_time)
+
 # --- 任務編組 ---
 st.subheader("3. 任務編組")
 res_cmd = st.data_editor(
@@ -306,7 +316,7 @@ if len(st.session_state.data_ptl) == 0:
     )
 
 # 第一列空白時預填 dedicated_time 與代號/編組
-if str(st.session_state.data_ptl.at[0, '勤務時段']).strip() in ["", "nan", "None"]:
+if is_blank(st.session_state.data_ptl.at[0, '勤務時段']):
     st.session_state.data_ptl.at[0, '勤務時段'] = dedicated_time
     unit_base = (
         "隆安8" if "石門" in cmdr_input else
@@ -325,21 +335,21 @@ res_ptl = st.data_editor(
 ).fillna("")
 
 # --- 後處理：依列序補填正確時段 ---
-# 根本原因：data_editor 新增列時會自動從上一列複製值，
-# 導致第二列帶入 dedicated_time（如「5月1日\n零時至4時」）而非空白。
-# 因此必須同時攔截「空白」和「值等於 dedicated_time」兩種情況。
+# data_editor 新增列時會自動從上一列複製值，
+# 複製過來的 \n 可能被轉成空白，所以用 normalize() 去除所有空白換行後再比對。
 for i in range(len(res_ptl)):
-    cur_t = str(res_ptl.at[i, '勤務時段']).strip()
+    cur_t      = str(res_ptl.at[i, '勤務時段'])
+    cur_norm   = normalize(cur_t)
 
     if i == 0:
-        # 第一列：空白才填 dedicated_time，有值就保留（尊重使用者手動修改）
-        if cur_t in ["", "nan", "None"]:
+        # 第一列：空白才填 dedicated_time，有值保留
+        if is_blank(cur_t):
             res_ptl.at[i, '勤務時段'] = dedicated_time
     else:
         # 第二列以後：
         #   空白 → 填 normal_time
-        #   值與 dedicated_time 相同（從第一列自動複製過來）→ 強制覆蓋為 normal_time
-        if cur_t in ["", "nan", "None"] or cur_t == dedicated_time.strip():
+        #   normalize 後與 dedicated_time 相同（從第一列複製過來）→ 強制覆蓋
+        if is_blank(cur_t) or cur_norm == dedicated_norm:
             res_ptl.at[i, '勤務時段'] = normal_time
 
 # 更新 session_state
