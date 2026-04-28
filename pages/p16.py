@@ -9,9 +9,9 @@ from email.header import Header
 from datetime import datetime, timedelta
 
 # ==========================================
-# 0. 系統初始化
+# 0. 系統初始化與狀態管理
 # ==========================================
-st.set_page_config(page_title="交通業務與督導整合系統", page_icon="🚓", layout="wide")
+st.set_page_config(page_title="交通業務整合系統", page_icon="🚓", layout="wide")
 
 if "unit_reports" not in st.session_state:
     st.session_state.unit_reports = {}
@@ -31,7 +31,7 @@ def send_gmail(subject, body, receiver_email):
         password = st.secrets["email"]["password"]
         msg = MIMEText(body, 'plain', 'utf-8')
         msg['Subject'] = Header(subject, 'utf-8')
-        msg['From'] = f"督導報告助手 <{sender_email}>"
+        msg['From'] = f"督導助手 <{sender_email}>"
         msg['To'] = receiver_email
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender_email, password)
@@ -42,7 +42,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 進化版解析引擎 (專治警備隊與高平格式)
+# 2. 進化版解析引擎 (全單位高相容性)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -62,28 +62,31 @@ def d_extract_duty(d_file, hour):
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
         
-        # 1. 偵測單位與稱謂屬性
-        is_guard_unit = False
+        # A. 偵測單位與類型
+        unit_full = ""
         for r in range(5):
             rt = "".join([str(x) for x in df.iloc[r].values])
-            m = re.search(r'([\u4e00-\u9fa5]+(分局|派出所|分隊|局|隊))', rt)
+            m = re.search(r'([\u4e00-\u9fa5]+(分局|派出所|分隊|警備隊|隊))', rt)
             if m: 
-                res['unit_name'] = m.group(1)
-                if "警備隊" in res['unit_name']: is_guard_unit = True
+                unit_full = m.group(1)
+                res['unit_name'] = unit_full
                 break
-        res['term'] = "該隊" if is_guard_unit or "分隊" in res['unit_name'] else "該所"
         
-        # 2. 人員雷達 (支援 隊長/副隊長 職稱)
-        all_cells = df.astype(str).values.flatten()
-        p = r'([A-Z0-9]{1,2})\s*(所長|副所長|隊長|副隊長|分隊長|小隊長|巡官|巡佐|警員|警員兼副所長|實習)[\s\n]*([\u4e00-\u9fa5]{2,4})'
+        is_guard = "警備隊" in unit_full or "隊" in unit_full and "分隊" not in unit_full
+        res['term'] = "該隊" if is_guard or "分隊" in unit_full else "該所"
+        
+        # B. 建立全表人員雷達 (深度掃描對照區)
         f_map = {}
-        for cell in all_cells:
-            m = re.search(p, cell)
-            if m: f_map[d_normalize_code(m.group(1))] = f"{m.group(2)}{m.group(3)}"
-        
-        # 3. 時間座標偵測
+        all_text = " ".join(df.astype(str).values.flatten())
+        # 匹配各式職稱：包含隊長、副隊長
+        p = r'([A-Z0-9]{1,2})\s*(所長|副所長|隊長|副隊長|分隊長|小隊長|巡官|巡佐|警員|實習)[\s\n]*([\u4e00-\u9fa5]{2,4})'
+        matches = re.findall(p, all_text)
+        for m in matches:
+            f_map[d_normalize_code(m[0])] = f"{m[1]}{m[2]}"
+            
+        # C. 時間座標定位
         t_cols = {}
-        for r in range(10): 
+        for r in range(12): # 擴大掃描時間軸
             for c in range(len(df.columns)):
                 sh, eh = d_parse_time(df.iloc[r, c])
                 if sh is not None: t_cols[c] = (sh, eh)
@@ -92,56 +95,53 @@ def d_extract_duty(d_file, hour):
         target_col = -1
         adj_h = hour if hour >= 6 else hour + 24
         for c, (sh, eh) in t_cols.items():
-            s_time, e_time = sh, (eh if eh > sh else eh + 24)
-            if s_time <= adj_h < e_time:
-                target_col = c; break
+            s, e = sh, (eh if eh > sh else eh + 24)
+            if s <= adj_h < e: target_col = c; break
 
         if target_col != -1:
-            # 偵測值班人員 (避開幹部代號)
+            # 1. 值班人員偵測 (排除 A/B/C 的優先權)
             for r in range(min(20, len(df))):
-                row_h = "".join(df.iloc[r, :5])
-                if "值" in row_h:
+                row_head = "".join(df.iloc[r, :6])
+                if "值" in row_head:
                     val = str(df.iloc[r, target_col])
-                    mc = re.search(r'[A-Z0-9]{1,2}', val)
-                    if mc:
-                        code = d_normalize_code(mc.group(0))
-                        if code not in ["A", "B", "C"]: # 值班通常不是 A/B/C
-                            res['v_name'] = f_map.get(code, f"警員{code}")
-                            break
+                    m_code = re.search(r'[A-Z0-9]{1,2}', val)
+                    if m_code:
+                        code = d_normalize_code(m_code.group(0))
+                        res['v_name'] = f_map.get(code, f"警員({code})")
+                        break
             
-            # 4. 幹部動態 (高平與警備隊特化)
-            if is_guard_unit:
-                titles = {"A": "隊長", "B": "副隊長", "C": "幹部"}
-            else:
-                titles = {"A": "所長", "B": "副所長", "C": "幹部"}
-            
+            # 2. 幹部動態 (適應隊長/所長職稱)
+            c_codes = ["01", "02", "A", "B", "C"] if is_guard else ["A", "B", "C"]
+            default_t = {"01":"隊長","02":"副隊長","A":"所長","B":"副所長","C":"幹部"}
             c_notes = []
-            for code in ["A", "B", "C"]:
-                if code not in f_map and code != "A": continue # 警備隊人數少，若沒定義則跳過
-                fname = f_map.get(code, titles[code])
-                is_off = False
+            
+            for code in c_codes:
+                if code not in f_map and code not in ["A", "B"]: continue
+                fname = f_map.get(code, default_t.get(code, "幹部"))
                 
-                # 底部休假區掃描
-                for r in range(max(0, len(df)-10), len(df)):
-                    if code in str(df.iloc[r, :]).upper() and any(k in "".join(df.iloc[r, :3]) for k in ["休","輪","假"]):
+                # 判定休假 (精準掃描底部)
+                is_off = False
+                for r in range(max(0, len(df)-12), len(df)):
+                    row_str = "".join(df.iloc[r, :]).upper()
+                    if code in row_str and any(k in "".join(df.iloc[r, :3]) for k in ["休","輪","假"]):
                         is_off = True; break
                 
+                # 判定勤務
                 d_names = set()
-                # 垂直勤務掃描 (修正高平副所長偵測)
                 for r in range(len(df)):
                     cell_val = str(df.iloc[r, target_col])
                     if code in re.findall(r'[A-Z0-9]{1,2}', cell_val):
-                        is_off = False 
+                        is_off = False
                         row_n = "".join(df.iloc[r, :5])
-                        kw_map = {"巡":"巡邏", "守":"守望", "臨":"臨檢", "交":"交整", "路":"路檢", "督":"督勤", "備":"備勤"}
+                        kw_map = {"巡":"巡邏", "守":"守望", "臨":"臨檢", "交":"交整", "路":"路檢", "督":"督勤", "備":"備勤", "專":"專案"}
                         for k, kn in kw_map.items():
                             if k in row_n or k in cell_val: d_names.add(kn)
                 
                 if is_off: c_notes.append(f"{fname}休假")
                 else:
                     if d_names:
-                        sh, eh = t_cols[target_col]
-                        c_notes.append(f"{fname}在所督勤，編排{sh:02d}-{eh if eh!=0 else 24:02d}時段{'、'.join(sorted(d_names))}勤務")
+                        sh_s, eh_s = t_cols[target_col]
+                        c_notes.append(f"{fname}在所督勤，編排{sh_s:02d}-{eh_s if eh_s!=0 else 24:02d}時段{'、'.join(sorted(d_names))}勤務")
                     else: c_notes.append(f"{fname}在所督勤")
             res['cadre_status'] = "；".join(c_notes) + "。"
     except: pass
@@ -169,7 +169,7 @@ def d_extract_equip(e_file, hour):
     except: return None
 
 # ==========================================
-# 3. 主 UI 介面
+# 3. 主介面 UI
 # ==========================================
 main_tabs = st.tabs(["📊 數據處理", "📋 勤務督導報告"])
 
