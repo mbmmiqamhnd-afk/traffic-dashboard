@@ -221,27 +221,45 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr_default)
 
-# --- 核心連動邏輯 (已修正避免覆蓋使用者手動修改) ---
+# --- 核心連動邏輯 (已修正避免覆蓋使用者手動修改，並區分專責與一般巡邏) ---
 if len(ed_ptl) == 0:
     ed_ptl = pd.DataFrame([["", "", "", "", ""]], columns=["勤務時段", "代號", "編組", "服勤人員", "任務分工"])
 
 ed_ptl = ed_ptl.reset_index(drop=True)
 
-date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
+# 擷取日期與後面的「時段」
+# 例如："115年3月6日22時至翌日6時" -> 擷取出 "22時至翌日6時"
+date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日(.*)', p_time)
 if date_match and len(ed_ptl) > 0:
-    # 檢查第一列的勤務時段是否為空字串或 NaN，只有空的時候才預填
-    current_val = str(ed_ptl.at[0, '勤務時段']).strip()
-    if current_val in ["", "nan", "None"]:
-        try:
-            y_val = date_match.group(1)
-            m_val = int(date_match.group(2))
-            d_val = int(date_match.group(3))
-            y_tw = int(y_val) if y_val else (datetime.now().year - 1911)
-            base_dt = datetime(y_tw + 1911, m_val, d_val)
-            next_dt = base_dt + timedelta(days=1)
-            ed_ptl.at[0, '勤務時段'] = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
-        except: 
-            pass
+    try:
+        y_val = date_match.group(1)
+        m_val = int(date_match.group(2))
+        d_val = int(date_match.group(3))
+        # 這裡的 time_part 就是扣掉日期後的時間，例如 "22時至翌日6時"
+        time_part = date_match.group(4).strip() 
+        
+        y_tw = int(y_val) if y_val else (datetime.now().year - 1911)
+        base_dt = datetime(y_tw + 1911, m_val, d_val)
+        next_dt = base_dt + timedelta(days=1)
+        
+        # 專責警力專用時段 (隔日0-4時)
+        dedicated_time = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
+        
+        # 迴圈處理每一列的資料
+        for i in range(len(ed_ptl)):
+            current_time_val = str(ed_ptl.at[i, '勤務時段']).strip()
+            current_group_val = str(ed_ptl.at[i, '編組']).strip()
+            
+            # 只有當該列的「勤務時段」是空的時候才自動填入
+            if current_time_val in ["", "nan", "None"]:
+                # 判斷是否為專責：第一列預設為專責，或者編組名稱包含「專責」二字
+                if i == 0 or "專責" in current_group_val:
+                    ed_ptl.at[i, '勤務時段'] = dedicated_time
+                else:
+                    # 其他線上巡邏警力，直接帶入整體勤務時間的時段
+                    ed_ptl.at[i, '勤務時段'] = time_part
+    except: 
+        pass
 
 if len(ed_ptl) > 0:
     # 判斷代號
@@ -255,7 +273,7 @@ if len(ed_ptl) > 0:
     
     suffix = "1" if ("所長" in cmdr_input and "副所長" not in cmdr_input) or ("分隊長" in cmdr_input and "副分隊長" not in cmdr_input) else "2"
     
-    # 只有當原本沒資料時才自動填入，避免干擾手動編輯
+    # 針對第一列(專責)自動填入預設代號與編組
     if str(ed_ptl.at[0, '代號']).strip() in ["", "nan", "None"]:
         ed_ptl.at[0, '代號'] = base + suffix
         
