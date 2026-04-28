@@ -245,6 +245,9 @@ if date_match and len(ed_ptl) > 0:
         # 專責警力專用時段 (隔日0-4時)
         dedicated_time = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
         
+        # 一般線上巡邏警力專用時段 (當日日期 + 時段)
+        normal_time = f"{m_val}月{d_val}日\n{time_part}"
+        
         # 迴圈處理每一列的資料
         for i in range(len(ed_ptl)):
             current_time_val = str(ed_ptl.at[i, '勤務時段']).strip()
@@ -256,8 +259,8 @@ if date_match and len(ed_ptl) > 0:
                 if i == 0 or "專責" in current_group_val:
                     ed_ptl.at[i, '勤務時段'] = dedicated_time
                 else:
-                    # 其他線上巡邏警力，直接帶入整體勤務時間的時段
-                    ed_ptl.at[i, '勤務時段'] = time_part
+                    # 其他線上巡邏警力，帶入勤務時間的「日期」+「時段」
+                    ed_ptl.at[i, '勤務時段'] = normal_time
     except: 
         pass
 
