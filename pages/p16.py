@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化全天候解析引擎 (單位稱謂全面連動修正)
+# 2. 超進化全天候解析引擎 (值班上列優先與空白判定)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -81,19 +81,16 @@ def d_extract_duty(d_file, hour):
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
 
-        # A. 🌟 精準偵測單位與稱謂 (防提早截斷)
+        # A. 偵測單位與稱謂
         unit_full = ""
         for r in range(5):
-            # 移除空格確保抓取完整名稱
             rt = "".join([str(x) for x in df.iloc[r].values]).replace(" ", "")
-            # 移除 "分局" 作為攔截點，強制抓到尾端的單位屬性
             m = re.search(r'([\u4e00-\u9fa5]+(派出所|分駐所|警備隊|分隊|中隊|大隊|隊))', rt)
             if m: 
                 unit_full = m.group(1)
                 res['unit_name'] = unit_full
                 break
 
-        # 自動判定單位層級並賦值
         if "分隊" in unit_full:
             res['term'] = "該分隊"
         elif "隊" in unit_full:
@@ -101,7 +98,7 @@ def d_extract_duty(d_file, hour):
         else:
             res['term'] = "該所"
             
-        loc_term = res['term'][1:] # 切割為 分隊, 隊, 所
+        loc_term = res['term'][1:]
         res['loc_term'] = loc_term
 
         # B. 人員雷達
@@ -135,20 +132,30 @@ def d_extract_duty(d_file, hour):
                 if any(x in "".join(df.iloc[r, :]).replace(" ", "") for x in ["輪休", "主管簽章", "備註", "合計", "人數"]):
                     footer_idx = r; break
 
-            # 1. 當前值班偵測
+            # 1. 🌟 值班偵測 (強制取上列，空白則回報無人)
             v_found = False
             for r in range(tr_idx + 1, min(footer_idx, len(df))):
                 cell_a = str(df.iloc[r, 0]).strip()
                 row_head = "".join(df.iloc[r, :target_col+1])
+                
                 if "值班" in cell_a or any(x in row_head for x in ["值", "班"]):
-                    mc = re.search(r'[A-Z0-9]{1,2}', str(df.iloc[r, target_col]))
+                    # 取出目標時段的儲存格內容
+                    cell_val = str(df.iloc[r, target_col]).strip()
+                    # 如果儲存格內有換行(上/下列)，只取第一行(上列)
+                    top_val = cell_val.split('\n')[0] if '\n' in cell_val else cell_val
+                    
+                    mc = re.search(r'[A-Z0-9]{1,2}', top_val)
                     if mc:
                         code = d_normalize_code(mc.group(0))
                         res['v_name'] = f_map.get(code, f"警員({code})")
-                        v_found = True
-                        break
+                    else:
+                        res['v_name'] = "該時段無值班人員"
+                        
+                    v_found = True
+                    break # 找到第一列(上列)就立刻停止，不看下列
+                    
             if not v_found:
-                res['v_name'] = "值班欄位未偵測"
+                res['v_name'] = "該時段無值班人員"
 
             # 2. 全天候幹部動態追蹤
             target_titles = ["所長", "副所長", "隊長", "副隊長", "分隊長", "小隊長", "警務佐"]
@@ -164,11 +171,9 @@ def d_extract_duty(d_file, hour):
                 duties_found = {}
                 is_off = False
 
-                # 掃描全天時段
                 for c_idx, (sh, eh) in t_cols.items():
                     for r in range(tr_idx + 1, footer_idx):
                         if code in [d_normalize_code(x) for x in re.findall(r'[A-Z0-9]{1,2}', str(df.iloc[r, c_idx]))]:
-                            
                             duty_parts = []
                             for scan_c in range(0, c_idx):
                                 txt = str(df.iloc[r, scan_c]).strip()
@@ -182,15 +187,12 @@ def d_extract_duty(d_file, hour):
                                 if "值班" in duty_name and len(duty_parts) > 1:
                                     duty_name = f"{duty_name}({duty_parts[1]})"
 
-                            # 休假攔截器
                             if any(k in duty_name for k in ["休", "輪", "假", "補", "外宿"]):
-                                is_off = True
-                                continue
+                                is_off = True; continue
 
                             if duty_name not in duties_found: duties_found[duty_name] = []
                             duties_found[duty_name].append([sh, eh])
 
-                # 掃描底部輪休區
                 if not is_off and not duties_found:
                     for r in range(footer_idx, len(df)):
                         row_str = "".join([str(x) for x in df.iloc[r, :]]).upper()
@@ -273,17 +275,21 @@ for i in range(num_units):
             dr = d_extract_duty(u_duty, u_time.hour)
             er = d_extract_equip(u_eq, u_time.hour)
             
-            # 🌟 取出精準的稱謂變數
-            t = dr['term']                  # 該隊 / 該所 / 該分隊
-            loc_term = dr.get('loc_term', '所') # 隊 / 所 / 分隊
+            t = dr['term']                  
+            loc_term = dr.get('loc_term', '所') 
             
             d_e = insp_date - timedelta(days=1)
             d_5 = insp_date - timedelta(days=5)
             d_3 = insp_date - timedelta(days=3)
             
-            # 🌟 完整套用精準稱謂的報告內容
+            # 🌟 判斷是否無值班人員並切換語句
+            if dr['v_name'] == "該時段無值班人員":
+                line_1 = f"{u_time.strftime('%H%M')}，{t}該時段無值班人員。"
+            else:
+                line_1 = f"{u_time.strftime('%H%M')}，{t}值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。"
+            
             lns = [
-                f"{u_time.strftime('%H%M')}，{t}值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。",
+                line_1,
                 f"{t}駐地監錄設備及天羅地網系統均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。",
                 f"{t}{d_3.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。",
                 f"{t}環境內務擺設整齊清潔，符合規定。",
