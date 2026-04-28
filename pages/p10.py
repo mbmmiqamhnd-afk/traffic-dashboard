@@ -124,7 +124,7 @@ def send_report_email(time_str, commander, df_cmd, df_patrol, custom_filename):
     except Exception as e:
         return False, str(e)
 
-# --- 日期解析與時段字串計算 ---
+# --- 邏輯運算函式 ---
 def calc_time_strings(p_time):
     date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日(.*)', p_time)
     if not date_match: return "", ""
@@ -136,6 +136,22 @@ def calc_time_strings(p_time):
     dedicated_time = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
     normal_time = f"{m}月{d}日\n{time_part}"
     return dedicated_time, normal_time
+
+def get_unit_details(cmdr_input):
+    """智慧判定分隊、派出所的代號與編組名稱"""
+    if "分隊" in cmdr_input: unit_base = "隆安99"
+    elif "石門" in cmdr_input: unit_base = "隆安8"
+    elif "高平" in cmdr_input: unit_base = "隆安9"
+    elif "聖亭" in cmdr_input: unit_base = "隆安5"
+    elif "龍潭" in cmdr_input: unit_base = "隆安6"
+    elif "中興" in cmdr_input: unit_base = "隆安7"
+    else: unit_base = "隆安"
+    
+    suffix = "1" if ("所長" in cmdr_input and "副" not in cmdr_input) else "2"
+    unit_match = re.search(r'([\u4e00-\u9fa5]+?(?:派出所|所|分隊|警備隊))', cmdr_input)
+    unit_name = re.sub(r'派出所$', '所', unit_match.group(1)) if unit_match else cmdr_input[:3]
+    
+    return unit_base + suffix, f"專責警力\n（{unit_name}輪值）"
 
 # --- PDF 字型與產生 ---
 def _get_font():
@@ -170,7 +186,6 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
         s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
-    # 1. 任務編組
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -184,16 +199,13 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45])
     t1.setStyle(TableStyle([
-        ('FONTNAME',(0,0),(-1,-1),font), 
-        ('GRID',(0,0),(-1,-1),0.5,colors.black), 
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'), 
-        ('SPAN',(0,0),(-1,0)), 
+        ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), 
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), 
         ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))
     ]))
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 2. 警力佈署
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -209,13 +221,9 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
 
     t2 = Table(data_ptl, colWidths=[page_width*0.22, page_width*0.13, page_width*0.15, page_width*0.23, page_width*0.27])
     t2.setStyle(TableStyle([
-        ('FONTNAME',(0,0),(-1,-1),font), 
-        ('GRID',(0,0),(-1,-1),0.5,colors.black), 
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'), 
-        ('SPAN',(0,0),(-1,0)), 
-        ('SPAN',(0,1),(-1,1)), 
-        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), 
-        ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))
+        ('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), 
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), 
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))
     ]))
     story.append(t2)
     
@@ -253,6 +261,7 @@ def get_preview_html(df_c, df_p, cmdr_n, time_s):
 # ============================================================
 st.title("🚔 防制危險駕車專案勤務規劃表")
 
+# 1. 狀態初始化
 if 'data_ptl' not in st.session_state:
     s, c, p = load_from_cloud()
     if s is not None:
@@ -265,26 +274,59 @@ if 'data_ptl' not in st.session_state:
         st.session_state.cmdr = "石門所副所長林榮裕"
         st.session_state.data_cmd = pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
         st.session_state.data_ptl = pd.DataFrame([["", "", "", "", ""]], columns=["勤務時段", "代號", "編組", "服勤人員", "任務分工"])
-if 'last_ptl_len' not in st.session_state:
-    st.session_state.last_ptl_len = len(st.session_state.data_ptl)
 
+# 確保快取監聽變數存在
+if 'prev_p_time' not in st.session_state: st.session_state.prev_p_time = st.session_state.p_time
+if 'prev_cmdr' not in st.session_state: st.session_state.prev_cmdr = st.session_state.cmdr
+if 'last_ptl_len' not in st.session_state: st.session_state.last_ptl_len = len(st.session_state.data_ptl)
+
+# 2. 輸入區塊
 col1, col2 = st.columns(2)
 with col1: p_time = st.text_input("1. 勤務時間", st.session_state.p_time)
 with col2: cmdr_input = st.text_input("2. 交通快打指揮官", st.session_state.cmdr)
 
+# 3. 變更監聽器 (當輸入框被修改時，立即更新表格內容)
+needs_sync_rerun = False
+
+if p_time != st.session_state.prev_p_time:
+    dedicated_time, normal_time = calc_time_strings(p_time)
+    for i in range(len(st.session_state.data_ptl)):
+        group = str(st.session_state.data_ptl.at[i, '編組']).strip()
+        if i == 0 or "專責" in group:
+            st.session_state.data_ptl.at[i, '勤務時段'] = dedicated_time
+        else:
+            st.session_state.data_ptl.at[i, '勤務時段'] = normal_time
+    st.session_state.prev_p_time = p_time
+    st.session_state.p_time = p_time
+    needs_sync_rerun = True
+
+if cmdr_input != st.session_state.prev_cmdr:
+    if len(st.session_state.data_ptl) > 0:
+        daihao, bianzu = get_unit_details(cmdr_input)
+        st.session_state.data_ptl.at[0, '代號'] = daihao
+        st.session_state.data_ptl.at[0, '編組'] = bianzu
+    st.session_state.prev_cmdr = cmdr_input
+    st.session_state.cmdr = cmdr_input
+    needs_sync_rerun = True
+
+if needs_sync_rerun:
+    st.rerun()
+
+# 4. 編輯器顯示
 dedicated_time, normal_time = calc_time_strings(p_time)
 st.subheader("3. 任務編組")
 res_cmd = st.data_editor(st.session_state.data_cmd, num_rows="dynamic", use_container_width=True).fillna("")
 st.subheader("4. 警力佈署")
 res_ptl_raw = st.data_editor(st.session_state.data_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# 核心邏輯：自動校正新增列日期
+# 5. 表格行數防呆 (解決 Streamlit 自動跳號 +1 的問題)
 current_len = len(res_ptl_raw)
-needs_rerun = False
+needs_editor_rerun = False
+
 if current_len > st.session_state.last_ptl_len:
     for i in range(st.session_state.last_ptl_len, current_len):
         res_ptl_raw.at[i, '勤務時段'], res_ptl_raw.at[i, '服勤人員'] = normal_time, ""
-    st.session_state.data_ptl, st.session_state.last_ptl_len, needs_rerun = res_ptl_raw, current_len, True
+    st.session_state.data_ptl, st.session_state.last_ptl_len, needs_editor_rerun = res_ptl_raw, current_len, True
 elif current_len < st.session_state.last_ptl_len:
     st.session_state.data_ptl, st.session_state.last_ptl_len = res_ptl_raw, current_len
 else:
@@ -292,26 +334,25 @@ else:
 
 if len(st.session_state.data_ptl) > 0 and is_blank(st.session_state.data_ptl.at[0, '勤務時段']):
     st.session_state.data_ptl.at[0, '勤務時段'] = dedicated_time
-    unit_base = "隆安8" if "石門" in cmdr_input else "隆安6" if "龍潭" in cmdr_input else "隆安"
-    st.session_state.data_ptl.at[0, '代號'] = unit_base + ("1" if "所長" in cmdr_input and "副" not in cmdr_input else "2")
-    st.session_state.data_ptl.at[0, '編組'], needs_rerun = f"專責警力\n（{cmdr_input[:3]}輪值）", True
+    daihao, bianzu = get_unit_details(cmdr_input)
+    st.session_state.data_ptl.at[0, '代號'] = daihao
+    st.session_state.data_ptl.at[0, '編組'] = bianzu
+    needs_editor_rerun = True
 
-if needs_rerun: st.rerun()
+if needs_editor_rerun: 
+    st.rerun()
 
-# ------------------------------------------------------------
-# 🎯 統一檔名生成邏輯：依照您的需求格式化日期為 1150430
-# ------------------------------------------------------------
+# 6. 檔名生成與輸出區
 date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
 if date_match:
     y_fn = date_match.group(1) if date_match.group(1) else str(datetime.now().year - 1911)
-    m_fn = str(date_match.group(2)).zfill(2) # 補零
-    d_fn = str(date_match.group(3)).zfill(2) # 補零
+    m_fn = str(date_match.group(2)).zfill(2)
+    d_fn = str(date_match.group(3)).zfill(2)
     date_fn = f"{y_fn}{m_fn}{d_fn}"
 else:
     date_fn = datetime.now().strftime('%m%d')
 final_filename = f"防制危險駕車勤務規劃表_{date_fn}"
 
-# --- 按鈕區 ---
 st.markdown("---")
 with st.expander("📄 預覽勤務規劃表"):
     html_preview = get_preview_html(res_cmd, st.session_state.data_ptl, cmdr_input, p_time)
@@ -334,6 +375,6 @@ with col_sync:
         with st.spinner("處理中..."):
             sync_ok = save_to_cloud(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
             mail_ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, st.session_state.data_ptl, final_filename)
-            if sync_ok and mail_ok: st.success(f"✅ 同步與郵件寄送成功！檔名：{final_filename}.pdf")
+            if sync_ok and mail_ok: st.success(f"✅ 同步與郵件寄送成功！附件：{final_filename}.pdf")
             elif sync_ok: st.warning(f"⚠️ 雲端同步成功，但郵件失敗：{mail_err}")
             else: st.error("❌ 雲端同步失敗。")
