@@ -106,7 +106,7 @@ def send_report_email(time_str, commander, df_cmd, df_patrol, custom_filename):
         
         msg = MIMEMultipart()
         msg["From"] = sender
-        msg["To"] = sender  # 寄給自己
+        msg["To"] = sender
         msg["Subject"] = custom_filename
         msg.attach(MIMEText(f"附件為「{custom_filename}」PDF 規劃表。", "plain", "utf-8"))
         
@@ -164,13 +164,13 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     story.append(Paragraph(f"<b>{UNIT_TITLE}執行「防制危險駕車專案勤務」規劃表</b>", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
     
-    def br(txt, bold_time=True):
+    def br(txt):
         if not txt: return ""
         s = str(txt).replace('\n', '<br/>').replace('\xa0', ' ')
-        if bold_time:
-            s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
+        s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
+    # 1. 任務編組
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -193,6 +193,7 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
+    # 2. 警力佈署
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -238,17 +239,14 @@ def get_preview_html(df_c, df_p, cmdr_n, time_s):
     for _, r in df_c.iterrows():
         if all(str(v).strip() == "" for v in r.values): continue
         cmd_rows += f"<tr><td>{str(r.get('職稱','')).replace('\\n','<br>')}</td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('\\n','<br>').replace('\n','<br>')}</td><td>{r.get('任務','')}</td></tr>"
-    
     ptl_rows = ""
     for _, r in df_p.iterrows():
         if all(str(v).strip() == "" for v in r.values): continue
         ptl_rows += f"<tr><td>{str(r.get('勤務時段','')).replace('\\n','<br>').replace('\n','<br>')}</td><td>{r.get('代號','')}</td><td>{str(r.get('編組','')).replace('\\n','<br>').replace('\n','<br>')}</td><td>{str(r.get('服勤人員','')).replace('\\n','<br>').replace('\n','<br>')}</td><td>{r.get('任務分工','')}</td></tr>"
-    
     return f"""<style>table {{ width:100%; border-collapse:collapse; font-family:"標楷體"; }} th,td {{ border:1px solid black; padding:8px; text-align:center; }} th {{ background:#f2f2f2; font-size:16pt; }} td {{ font-size:14pt; }}</style>
     <h2 style='text-align:center;'>{UNIT_TITLE} 規劃表</h2><div style='text-align:right;'>勤務時間：{time_s}</div><br>
     <table><tr><th colspan="4">任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>{cmd_rows}</table><br>
     <table><tr><th colspan="5">警 力 佈 署</th></tr><tr><th colspan="5" style="text-align:left;">交通快打指揮官：{cmdr_n}</th></tr><tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>{ptl_rows}</table>"""
-
 
 # ============================================================
 # 主介面
@@ -300,15 +298,24 @@ if len(st.session_state.data_ptl) > 0 and is_blank(st.session_state.data_ptl.at[
 
 if needs_rerun: st.rerun()
 
+# ------------------------------------------------------------
+# 🎯 統一檔名生成邏輯：依照您的需求格式化日期為 1150430
+# ------------------------------------------------------------
+date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
+if date_match:
+    y_fn = date_match.group(1) if date_match.group(1) else str(datetime.now().year - 1911)
+    m_fn = str(date_match.group(2)).zfill(2) # 補零
+    d_fn = str(date_match.group(3)).zfill(2) # 補零
+    date_fn = f"{y_fn}{m_fn}{d_fn}"
+else:
+    date_fn = datetime.now().strftime('%m%d')
+final_filename = f"防制危險駕車勤務規劃表_{date_fn}"
+
 # --- 按鈕區 ---
 st.markdown("---")
 with st.expander("📄 預覽勤務規劃表"):
     html_preview = get_preview_html(res_cmd, st.session_state.data_ptl, cmdr_input, p_time)
     st.components.v1.html(html_preview, height=600, scrolling=True)
-
-# 產生統一的檔名 (抓取輸入框的日期，例如: 防制危險駕車勤務規劃表_115430)
-date_fn = "".join(re.findall(r'\d+', p_time))[:8] if re.findall(r'\d+', p_time) else datetime.now().strftime('%Y%m%d')
-final_filename = f"防制危險駕車勤務規劃表_{date_fn}"
 
 col_pdf, col_sync = st.columns(2)
 with col_pdf:
@@ -318,7 +325,7 @@ with col_pdf:
             st.download_button(
                 label="📥 點此下載", 
                 data=pdf_buf, 
-                file_name=f"{final_filename}.pdf",  # ← 確保使用統一檔名
+                file_name=f"{final_filename}.pdf",
                 mime="application/pdf"
             )
 
@@ -327,7 +334,6 @@ with col_sync:
         with st.spinner("處理中..."):
             sync_ok = save_to_cloud(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
             mail_ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, st.session_state.data_ptl, final_filename)
-            
-            if sync_ok and mail_ok: st.success(f"✅ 同步與郵件寄送成功！附件：{final_filename}.pdf")
-            elif sync_ok: st.warning(f"⚠️ 雲端已同步，但郵件失敗：{mail_err}")
-            else: st.error("❌ 雲端同步失敗，請檢查權限與 Secrets。")
+            if sync_ok and mail_ok: st.success(f"✅ 同步與郵件寄送成功！檔名：{final_filename}.pdf")
+            elif sync_ok: st.warning(f"⚠️ 雲端同步成功，但郵件失敗：{mail_err}")
+            else: st.error("❌ 雲端同步失敗。")
