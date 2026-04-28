@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 高精準解析引擎 (修正時間軸被編號覆蓋的 Bug)
+# 2. 高精準解析引擎 (警備隊 A、B 代號對位)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -69,16 +69,13 @@ def d_normalize_code(c):
 
 def d_parse_time(val):
     val_str = str(val).strip().replace("\n", "").replace(" ", "")
-    # 嚴格過濾雜訊，確保只抓時間區間
     if any(x in val_str for x in ["年", "月", "日", "號"]): return None, None
     
-    # 🌟 核心修正：強制要求必須有分隔符 (- ~ / | : 等)，徹底杜絕抓到「日期」或「流水號」
     m = re.search(r'(?<!\d)(\d{1,2})[:：\-\s~～/|]+(\d{1,2})(?!\d)', val_str)
     if m:
         sh, eh = int(m.group(1)), int(m.group(2))
         if 0 <= sh <= 24 and 0 <= eh <= 30:
             return sh, eh
-        
     return None, None
 
 def d_extract_duty(d_file, hour):
@@ -108,14 +105,13 @@ def d_extract_duty(d_file, hour):
         for m in matches:
             f_map[d_normalize_code(m[0])] = f"{m[1]}{m[2]}"
             
-        # C. 鋼鐵時間座標鎖定法 (只掃描前 10 列，找出包含最多時間區段的列)
+        # C. 鋼鐵時間座標鎖定法
         t_cols, tr_idx = {}, -1
         for r in range(10): 
             tmp = {}
             for c in range(len(df.columns)):
                 sh, eh = d_parse_time(df.iloc[r, c])
                 if sh is not None: tmp[c] = (sh, eh)
-            # 只要是標準的 24 小時制或 12 小時制，就會被精準鎖定
             if len(tmp) > len(t_cols): 
                 t_cols = tmp
                 tr_idx = r
@@ -126,8 +122,7 @@ def d_extract_duty(d_file, hour):
         for c, (sh, eh) in t_cols.items():
             s = sh if sh >= 6 else sh + 24
             e = eh if eh > sh else eh + 24
-            if e <= s: e += 24 # 跨夜修正 (如 23-01)
-            # 龍潭分局 06-07 形式，sh=6, eh=7，完全符合
+            if e <= s: e += 24 # 跨夜修正
             if s <= adj_h < e: 
                 target_col = c; break
 
@@ -143,20 +138,29 @@ def d_extract_duty(d_file, hour):
                         res['v_name'] = f_map.get(code, f"警員({code})")
                         break
             
-            # 2. 幹部動態
-            c_codes = ["01", "02", "A", "B", "C"] if is_guard else ["A", "B", "C"]
-            default_t = {"01":"隊長","02":"副隊長","A":"所長","B":"副所長","C":"幹部"}
+            # 2. 🌟 幹部動態 (統一 A、B 代號，動態切換稱謂)
+            c_codes = ["A", "B"]
+            
+            if is_guard:
+                default_t = {"A": "隊長", "B": "副隊長"}
+            elif "分隊" in unit_full:
+                default_t = {"A": "分隊長", "B": "小隊長"}
+            else:
+                default_t = {"A": "所長", "B": "副所長"}
+
             c_notes = []
             
             for code in c_codes:
-                if code not in f_map and code not in ["A", "B"]: continue
                 fname = f_map.get(code, default_t.get(code, "幹部"))
                 is_off = False
+                
+                # 休假偵測
                 for r in range(max(0, len(df)-15), len(df)):
                     row_str = "".join(df.iloc[r, :]).upper()
                     if code in row_str and any(k in "".join(df.iloc[r, :4]) for k in ["休","輪","假","補"]):
                         is_off = True; break
                 
+                # 勤務偵測
                 d_names = set()
                 for r in range(tr_idx + 1, len(df)):
                     cell_val = str(df.iloc[r, target_col])
@@ -168,6 +172,7 @@ def d_extract_duty(d_file, hour):
                         for k, kn in kw_map.items():
                             if k in row_n or k in cell_val: d_names.add(kn)
                 
+                # 產出報告文字
                 if is_off: c_notes.append(f"{fname}休假")
                 else:
                     if d_names:
@@ -177,7 +182,7 @@ def d_extract_duty(d_file, hour):
             res['cadre_status'] = "；".join(c_notes) + "。"
         else:
             res['v_name'] = "時段對位失敗"
-            res['cadre_status'] = f"無法定位 {hour:02d} 點的欄位。請確認班表第 1-10 列中是否有正確的時間標題列（例如 11-12、12-13 或 12|13）。"
+            res['cadre_status'] = f"無法定位 {hour:02d} 點的欄位。請確認班表第 1-10 列中是否有正確的時間標題列。"
     except Exception as e: 
         res['cadre_status'] = f"解析發生錯誤：{str(e)}"
     return res
