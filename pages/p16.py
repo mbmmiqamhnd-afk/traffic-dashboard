@@ -36,7 +36,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. 寄信功能 (對齊 [email] user/password)
+# 1. 寄信功能
 # ==========================================
 def send_gmail(subject, body, receiver_email):
     try:
@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超強韌解析引擎 (修正 12 點定位失敗問題)
+# 2. 高精準解析引擎 (修正龍潭分局 12 點定位問題)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -63,48 +63,50 @@ def d_safe_int(val):
 
 def d_normalize_code(c):
     c_str = str(c).strip().upper()
-    # 全形轉半形，確保代號 A/B/C 匹配成功
     c_str = c_str.translate(str.maketrans('０１２３４５６７８９ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ', '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
     c_str = c_str.replace(".0", "")
     return str(int(c_str)) if c_str.isdigit() else c_str
 
 def d_parse_time(val):
     val_str = str(val).strip().replace("\n", "").replace(" ", "")
-    # 嚴格過濾「年月日」，但保留斜線作為分隔符的可能性
+    # 過濾包含年月日字眼的雜訊
     if any(x in val_str for x in ["年", "月", "日"]): return None, None
     
-    # 支援 12-14, 12:14, 12~14, 12/14, 12 14 等多種分隔符
+    # 支援 06-07, 12-13, 12:13, 12/13 等格式
     m = re.search(r'(?<!\d)(\d{1,2})[:：\-\s~～/]+(\d{1,2})(?!\d)', val_str)
     if m:
         sh, eh = int(m.group(1)), int(m.group(2))
-        if 0 <= sh <= 24 and 0 <= eh <= 30: return sh, eh
+        return sh, eh
         
-    # 支援單一數字 (如 12)，視為雙小時時段起始
+    # 支援單一小時數字（例如寫 12），視為 1 小時時段
     m_single = re.fullmatch(r'(\d{1,2})', val_str)
     if m_single:
         sh = int(m_single.group(1))
-        if 0 <= sh <= 24: return sh, sh + 2
+        return sh, sh + 1
         
     return None, None
 
 def d_extract_duty(d_file, hour):
     res = {'v_name': '解析失敗', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所'}
     try:
+        # 使用 dtype=str 避免 Excel 自動將 12-13 轉為日期
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
         
-        # A. 偵測單位
+        # A. 偵測單位與類型
+        unit_full = ""
         for r in range(5):
             rt = "".join([str(x) for x in df.iloc[r].values])
             m = re.search(r'([\u4e00-\u9fa5]+(分局|派出所|分隊|警備隊|隊))', rt)
             if m: 
-                res['unit_name'] = m.group(1)
+                unit_full = m.group(1)
+                res['unit_name'] = unit_full
                 break
         
-        is_guard = "警備隊" in res['unit_name'] or ("隊" in res['unit_name'] and "分隊" not in res['unit_name'])
-        res['term'] = "該隊" if is_guard or "分隊" in res['unit_name'] else "該所"
+        is_guard = "警備隊" in unit_full or ("隊" in unit_full and "分隊" not in unit_full)
+        res['term'] = "該隊" if is_guard or "分隊" in unit_full else "該所"
         loc_term = res['term'][1:]
         
-        # B. 人員對照雷達
+        # B. 全表人員雷達
         f_map = {}
         all_text = " ".join(df.astype(str).values.flatten())
         p = r'([A-Z0-9]{1,2})\s*(所長|副所長|隊長|副隊長|分隊長|小隊長|巡官|巡佐|警員|實習)[\s\n]*([\u4e00-\u9fa5]{2,4})'
@@ -112,7 +114,7 @@ def d_extract_duty(d_file, hour):
         for m in matches:
             f_map[d_normalize_code(m[0])] = f"{m[1]}{m[2]}"
             
-        # C. 時間座標鎖定 (取時段最多的一列)
+        # C. 鋼鐵時間座標鎖定法 (優先鎖定時段最多的列，龍潭分局通常在第 3 列)
         t_cols, tr_idx = {}, -1
         for r in range(15): 
             tmp = {}
@@ -123,25 +125,25 @@ def d_extract_duty(d_file, hour):
                 t_cols = tmp
                 tr_idx = r
                 
-        # 對位抵達時間
+        # 對位抵達時間 (支援 06-06 跨夜邏輯)
         target_col = -1
         adj_h = hour if hour >= 6 else hour + 24
         for c, (sh, eh) in t_cols.items():
             s = sh if sh >= 6 else sh + 24
             e = eh if eh > sh else eh + 24
-            if e < s: e += 24 
+            # 龍潭分局 1 小時 1 欄，eh 會等於 sh+1
             if s <= adj_h < e: 
                 target_col = c; break
 
         if target_col != -1 and tr_idx != -1:
             # 1. 值班偵測
             for r in range(tr_idx + 1, min(tr_idx + 25, len(df))):
-                row_head = "".join(df.iloc[r, :6])
+                row_head = "".join(df.iloc[r, :target_col+1])
                 if any(x in row_head for x in ["值", "班"]):
                     val = str(df.iloc[r, target_col])
-                    mc = re.search(r'[A-Z0-9]{1,2}', val)
-                    if mc:
-                        code = d_normalize_code(mc.group(0))
+                    m_code = re.search(r'[A-Z0-9]{1,2}', val)
+                    if m_code:
+                        code = d_normalize_code(m_code.group(0))
                         res['v_name'] = f_map.get(code, f"警員({code})")
                         break
             
@@ -154,7 +156,6 @@ def d_extract_duty(d_file, hour):
                 if code not in f_map and code not in ["A", "B"]: continue
                 fname = f_map.get(code, default_t.get(code, "幹部"))
                 is_off = False
-                # 底部休假檢查
                 for r in range(max(0, len(df)-15), len(df)):
                     row_str = "".join(df.iloc[r, :]).upper()
                     if code in row_str and any(k in "".join(df.iloc[r, :4]) for k in ["休","輪","假","補"]):
@@ -180,11 +181,14 @@ def d_extract_duty(d_file, hour):
             res['cadre_status'] = "；".join(c_notes) + "。"
         else:
             res['v_name'] = "時段對位失敗"
-            res['cadre_status'] = f"無法定位 {hour:02d} 點的欄位。請確認班表第 1-15 列中是否有正確的時間標題列（例如 10-12 或 12-14）。"
+            res['cadre_status'] = f"無法定位 {hour:02d} 點的欄位。請確認班表第 3 列（N 欄開始）是否有時間標題列（例如 11-12 或 12-13）。"
     except Exception as e: 
         res['cadre_status'] = f"解析發生錯誤：{str(e)}"
     return res
 
+# ==========================================
+# 3. 裝備解析與主介面
+# ==========================================
 def d_extract_equip(e_file, hour):
     try:
         df = pd.read_excel(e_file, header=None).fillna("")
@@ -206,16 +210,14 @@ def d_extract_equip(e_file, hour):
                 "vi":get_v("在","vest"), "vo":get_v("出","vest")}
     except: return None
 
-# ==========================================
-# 3. 主介面 UI
-# ==========================================
-st.header("📋 勤務督導報告自動生成")
+st.header("📋 勤務督導報告自動生成系統")
 
 c_s1, c_s2 = st.columns(2)
 with c_s1:
     insp_date = st.date_input("選擇督導日期", datetime.now(), key="insp_d")
     num_units = st.number_input("待督導單位數量", 1, 8, 3, key="num_u")
 with c_s2:
+    # 統計期間顯示為上傳日前一日
     d_e = insp_date - timedelta(days=1)
     d_5, d_3 = insp_date - timedelta(days=5), insp_date - timedelta(days=3)
     st.info(f"📅 檢測區間：監錄({d_5.strftime('%m%d')}-{d_e.strftime('%m%d')}) / 勤教({d_3.strftime('%m%d')}-{d_e.strftime('%m%d')})")
