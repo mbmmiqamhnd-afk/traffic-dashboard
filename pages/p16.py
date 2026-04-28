@@ -9,7 +9,7 @@ from email.header import Header
 from datetime import datetime, timedelta
 
 # ==========================================
-# 0. 系統初始化
+# 0. 系統初始化與狀態管理
 # ==========================================
 st.set_page_config(page_title="勤務督導報告自動生成系統", page_icon="🚓", layout="wide")
 
@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 進階解析引擎 (強化排序與排除錯誤)
+# 2. 進階解析引擎 (幹部動態：時間順序版)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -81,7 +81,7 @@ def d_extract_duty(d_file, hour):
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
 
-        # A. 偵測單位
+        # A. 偵測單位與稱謂
         unit_full = ""
         for r in range(5):
             rt = "".join([str(x) for x in df.iloc[r].values]).replace(" ", "")
@@ -103,11 +103,14 @@ def d_extract_duty(d_file, hour):
             if any(x in name for x in ["姓名", "職稱", "代號", "人員"]): continue
             f_map[d_normalize_code(m[0])] = f"{m[1]}{name}"
 
-        # C. 時間座標鎖定
+        # C. 時間座標鎖定 (徹底排除 NoneType)
         t_cols, tr_idx = {}, -1
         for r in range(12):
-            tmp = {c: d_parse_time(df.iloc[r, c]) for c in range(len(df.columns)) if d_parse_time(df.iloc[r, c])[0] is not None}
-            if len(tmp) > len(t_cols): t_cols, tr_idx = tmp, r
+            tmp = {}
+            for c in range(len(df.columns)):
+                sh, eh = d_parse_time(df.iloc[r, c])
+                if sh is not None: tmp[c] = (sh, eh)
+            if len(tmp) > len(t_cols): t_cols = tmp; tr_idx = r
 
         adj_h = hour if hour >= 6 else hour + 24
         target_col = -1
@@ -132,30 +135,28 @@ def d_extract_duty(d_file, hour):
                     t_val = cell_val.split('\n')[0] if is_guard and '\n' in cell_val else cell_val
                     mc = re.search(r'[A-Z0-9]{1,2}', t_val)
                     if mc:
-                        res['v_name'] = f_map.get(d_normalize_code(mc.group(0)), f"警員({mc.group(0)})")
+                        code = d_normalize_code(mc.group(0))
+                        res['v_name'] = f_map.get(code, f"警員({code})")
                         v_found = True; break
             if not v_found: res['v_name'] = "該時段無值班人員"
 
-            # 2. 幹部全天動態 (🌟 修正排序邏輯：主官排最前)
+            # 2. 幹部全天動態 (🌟 修正排序：職級排序 + 勤務時間順序)
             target_titles = ["所長", "副所長", "隊長", "副隊長", "分隊長", "小隊長", "警務佐"]
             
             def cadre_rank(code):
                 title = f_map[code]
-                if any(x in title for x in ["所長", "隊長", "分隊長"]) and "副" not in title:
-                    return 0  # 最高級
-                if "副" in title:
-                    return 1  # 二級
-                if "佐" in title or "巡佐" in title:
-                    return 2  # 三級
+                if any(x in title for x in ["所長", "隊長", "分隊長"]) and "副" not in title: return 0
+                if "副" in title: return 1
+                if "佐" in title or "巡佐" in title: return 2
                 return 3
 
-            target_codes = sorted([c for c, i in f_map.items() if any(t in i for t in target_titles)], 
-                                  key=cadre_rank)
+            target_codes = sorted([c for c, i in f_map.items() if any(t in i for t in target_titles)], key=cadre_rank)
 
             c_notes = []
             for code in target_codes:
                 fname = f_map.get(code, "幹部")
-                duties_found = {}
+                # 使用 list 存儲時段，方便後續排序： [(start_abs, end_abs, duty_name, sh_orig, eh_orig), ...]
+                all_duties = []
                 is_off = False
 
                 for c_idx, (sh, eh) in t_cols.items():
@@ -175,31 +176,42 @@ def d_extract_duty(d_file, hour):
                             if any(k in duty_name for k in ["休", "輪", "假", "補", "外宿"]):
                                 is_off = True; continue
 
-                            if duty_name not in duties_found: duties_found[duty_name] = []
-                            duties_found[duty_name].append([sh, eh])
+                            # 計算絕對時間(6-30)用於排序
+                            s_abs = sh if sh >= 6 else sh + 24
+                            e_abs = eh if eh > sh else eh + 24
+                            all_duties.append({'s': s_abs, 'e': e_abs, 'name': duty_name, 'sh_orig': sh, 'eh_orig': eh})
 
-                if not duties_found:
+                if not all_duties:
                     for r in range(footer_idx, len(df)):
-                        row_str = "".join([str(x) for x in df.iloc[r, :]]).upper()
-                        if code in row_str and any(k in row_str for k in ["休", "輪", "假", "補"]):
+                        if code in str(df.iloc[r, :]).upper() and any(k in str(df.iloc[r, :]) for k in ["休", "輪", "假", "補"]):
                             is_off = True; break
 
                 if is_off: c_notes.append(f"{fname}休假")
-                elif duties_found:
+                elif all_duties:
+                    # 🌟 核心排序邏輯：按起始時間由早到晚排序
+                    all_duties.sort(key=lambda x: x['s'])
+                    
+                    # 合併同名稱且連續的勤務
+                    merged = []
+                    if all_duties:
+                        curr = all_duties[0]
+                        for next_d in all_duties[1:]:
+                            if next_d['name'] == curr['name'] and next_d['s'] == curr['e']:
+                                curr['e'] = next_d['e']
+                                curr['eh_orig'] = next_d['eh_orig']
+                            else:
+                                merged.append(curr)
+                                curr = next_d
+                        merged.append(curr)
+                    
                     summary = []
-                    for d_name, intervals in sorted(duties_found.items()):
-                        intervals.sort()
-                        merged = []
-                        if intervals:
-                            cs, ce = intervals[0]
-                            for ns, ne in intervals[1:]:
-                                if ns == ce: ce = ne
-                                else: merged.append((cs, ce)); cs, ce = ns, ne
-                            merged.append((cs, ce))
-                        for ms, me in merged:
-                            summary.append(f"{ms:02d}-{(24 if me in [0, 24] else me):02d}{d_name}")
+                    for m in merged:
+                        me_str = "24" if m['eh_orig'] in [0, 24] else f"{m['eh_orig']:02d}"
+                        summary.append(f"{m['sh_orig']:02d}-{me_str}{m['name']}")
+                    
                     c_notes.append(f"{fname}在{res['loc_term']}督勤，編排" + "、".join(summary) + "勤務")
-                else: c_notes.append(f"{fname}在{res['loc_term']}督勤")
+                else:
+                    c_notes.append(f"{fname}在{res['loc_term']}督勤")
 
             res['cadre_status'] = "；".join(c_notes) + "。"
         else: res['v_name'] = "對位失敗"; res['cadre_status'] = f"無法定位時段。"
