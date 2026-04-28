@@ -44,6 +44,13 @@ def normalize(s):
 def is_blank(val):
     return normalize(val) in ["", "None", "nan"]
 
+def is_dedicated(val):
+    """
+    判斷某個勤務時段值是否屬於 dedicated_time（零時至4時）。
+    不管日期是幾號，只要含「零時」就認定是第一列專屬時段被複製過來的。
+    """
+    return '零時' in str(val)
+
 def format_staff_only(val):
     if pd.isna(val) or str(val).strip() in ["None", "nan", ""]:
         return ""
@@ -117,13 +124,30 @@ def calc_time_strings(p_time):
     base_dt = datetime(y_tw + 1911, m, d)
     next_dt = base_dt + timedelta(days=1)
 
-    # 第一列：隔日零時至4時
     dedicated_time = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
-
-    # 第二列以後：當日幾時至翌日6時
-    normal_time = f"{m}月{d}日\n{start_hour}時至翌日6時"
+    normal_time    = f"{m}月{d}日\n{start_hour}時至翌日6時"
 
     return dedicated_time, normal_time
+
+# --- 後處理：依列序補填正確時段 ---
+def fix_time_column(df, dedicated_time, normal_time):
+    """
+    第一列：空白才填 dedicated_time，有值保留。
+    第二列以後：
+      - 空白 → 填 normal_time
+      - 含「零時」（不管日期幾號，代表從第一列複製過來）→ 強制覆蓋為 normal_time
+    這樣無論 data_editor 複製行為或 Google Sheets 存入的舊錯誤值，都能正確修正。
+    """
+    df = df.copy()
+    for i in range(len(df)):
+        cur_t = str(df.at[i, '勤務時段'])
+        if i == 0:
+            if is_blank(cur_t):
+                df.at[i, '勤務時段'] = dedicated_time
+        else:
+            if is_blank(cur_t) or is_dedicated(cur_t):
+                df.at[i, '勤務時段'] = normal_time
+    return df
 
 # --- PDF 字型設定 ---
 def register_font():
@@ -294,9 +318,6 @@ with col2:
 # 計算兩種時段字串
 dedicated_time, normal_time = calc_time_strings(p_time)
 
-# 預先算好 normalize 後的 dedicated_time，供後處理比對用
-dedicated_norm = normalize(dedicated_time)
-
 # --- 任務編組 ---
 st.subheader("3. 任務編組")
 res_cmd = st.data_editor(
@@ -328,35 +349,20 @@ if is_blank(st.session_state.data_ptl.at[0, '勤務時段']):
     )
     st.session_state.data_ptl.at[0, '編組'] = f"專責警力\n（{cmdr_input[:3]}輪值）"
 
-res_ptl = st.data_editor(
+res_ptl_raw = st.data_editor(
     st.session_state.data_ptl,
     num_rows="dynamic",
     use_container_width=True
 ).fillna("")
 
-# --- 後處理：依列序補填正確時段 ---
-# data_editor 新增列時會自動從上一列複製值，
-# 複製過來的 \n 可能被轉成空白，所以用 normalize() 去除所有空白換行後再比對。
-for i in range(len(res_ptl)):
-    cur_t      = str(res_ptl.at[i, '勤務時段'])
-    cur_norm   = normalize(cur_t)
+# 後處理：修正時段欄位
+res_ptl = fix_time_column(res_ptl_raw, dedicated_time, normal_time)
 
-    if i == 0:
-        # 第一列：空白才填 dedicated_time，有值保留
-        if is_blank(cur_t):
-            res_ptl.at[i, '勤務時段'] = dedicated_time
-    else:
-        # 第二列以後：
-        #   空白 → 填 normal_time
-        #   normalize 後與 dedicated_time 相同（從第一列複製過來）→ 強制覆蓋
-        if is_blank(cur_t) or cur_norm == dedicated_norm:
-            res_ptl.at[i, '勤務時段'] = normal_time
-
-# 更新 session_state
+# 更新 session_state（存入已修正的版本）
 st.session_state.p_time   = p_time
 st.session_state.cmdr     = cmdr_input
 st.session_state.data_cmd = res_cmd
-st.session_state.data_ptl = res_ptl
+st.session_state.data_ptl = res_ptl  # ← 存修正後的，不存 raw
 
 # --- 預覽 ---
 st.markdown("---")
@@ -381,6 +387,7 @@ with col_pdf:
 with col_sync:
     if st.button("💾 同步至雲端", type="primary"):
         with st.spinner("同步中..."):
+            # 同步已後處理完的 res_ptl，確保存入雲端的就是正確值
             if save_to_cloud(p_time, cmdr_input, res_cmd, res_ptl):
                 st.success("✅ 雲端同步成功！")
             else:
