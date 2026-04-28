@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 高精準解析引擎 (修正龍潭分局 12 點定位問題)
+# 2. 高精準解析引擎 (修正直線分隔符 | 定位問題)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -72,13 +72,13 @@ def d_parse_time(val):
     # 過濾包含年月日字眼的雜訊
     if any(x in val_str for x in ["年", "月", "日"]): return None, None
     
-    # 支援 06-07, 12-13, 12:13, 12/13 等格式
-    m = re.search(r'(?<!\d)(\d{1,2})[:：\-\s~～/]+(\d{1,2})(?!\d)', val_str)
+    # 🌟 核心修正：加入對 | (直線) 的支援，精準捕捉 06|07 格式
+    m = re.search(r'(?<!\d)(\d{1,2})[:：\-\s~～/|]+(\d{1,2})(?!\d)', val_str)
     if m:
         sh, eh = int(m.group(1)), int(m.group(2))
         return sh, eh
         
-    # 支援單一小時數字（例如寫 12），視為 1 小時時段
+    # 支援單一小時數字
     m_single = re.fullmatch(r'(\d{1,2})', val_str)
     if m_single:
         sh = int(m_single.group(1))
@@ -89,7 +89,6 @@ def d_parse_time(val):
 def d_extract_duty(d_file, hour):
     res = {'v_name': '解析失敗', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所'}
     try:
-        # 使用 dtype=str 避免 Excel 自動將 12-13 轉為日期
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
         
         # A. 偵測單位與類型
@@ -114,7 +113,7 @@ def d_extract_duty(d_file, hour):
         for m in matches:
             f_map[d_normalize_code(m[0])] = f"{m[1]}{m[2]}"
             
-        # C. 鋼鐵時間座標鎖定法 (優先鎖定時段最多的列，龍潭分局通常在第 3 列)
+        # C. 時間座標鎖定法
         t_cols, tr_idx = {}, -1
         for r in range(15): 
             tmp = {}
@@ -125,13 +124,13 @@ def d_extract_duty(d_file, hour):
                 t_cols = tmp
                 tr_idx = r
                 
-        # 對位抵達時間 (支援 06-06 跨夜邏輯)
+        # 對位抵達時間
         target_col = -1
         adj_h = hour if hour >= 6 else hour + 24
         for c, (sh, eh) in t_cols.items():
             s = sh if sh >= 6 else sh + 24
             e = eh if eh > sh else eh + 24
-            # 龍潭分局 1 小時 1 欄，eh 會等於 sh+1
+            if e < s: e += 24 # 跨夜修正
             if s <= adj_h < e: 
                 target_col = c; break
 
@@ -181,13 +180,13 @@ def d_extract_duty(d_file, hour):
             res['cadre_status'] = "；".join(c_notes) + "。"
         else:
             res['v_name'] = "時段對位失敗"
-            res['cadre_status'] = f"無法定位 {hour:02d} 點的欄位。請確認班表第 3 列（N 欄開始）是否有時間標題列（例如 11-12 或 12-13）。"
+            res['cadre_status'] = f"無法定位 {hour:02d} 點的欄位。請確認班表第 1-15 列中是否有正確的時間標題列（例如 11-12、12-13 或 12|13）。"
     except Exception as e: 
         res['cadre_status'] = f"解析發生錯誤：{str(e)}"
     return res
 
 # ==========================================
-# 3. 裝備解析與主介面
+# 3. 裝備解析
 # ==========================================
 def d_extract_equip(e_file, hour):
     try:
@@ -210,14 +209,16 @@ def d_extract_equip(e_file, hour):
                 "vi":get_v("在","vest"), "vo":get_v("出","vest")}
     except: return None
 
-st.header("📋 勤務督導報告自動生成系統")
+# ==========================================
+# 4. 主介面 UI
+# ==========================================
+st.header("📋 勤務督導報告自動生成")
 
 c_s1, c_s2 = st.columns(2)
 with c_s1:
     insp_date = st.date_input("選擇督導日期", datetime.now(), key="insp_d")
     num_units = st.number_input("待督導單位數量", 1, 8, 3, key="num_u")
 with c_s2:
-    # 統計期間顯示為上傳日前一日
     d_e = insp_date - timedelta(days=1)
     d_5, d_3 = insp_date - timedelta(days=5), insp_date - timedelta(days=3)
     st.info(f"📅 檢測區間：監錄({d_5.strftime('%m%d')}-{d_e.strftime('%m%d')}) / 勤教({d_3.strftime('%m%d')}-{d_e.strftime('%m%d')})")
