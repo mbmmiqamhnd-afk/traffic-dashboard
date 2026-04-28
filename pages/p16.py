@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 進階解析引擎 (時段合併與冗餘過濾版)
+# 2. 超進化全天候解析引擎
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -77,7 +77,7 @@ def d_parse_time(val):
     return None, None
 
 def d_extract_duty(d_file, hour):
-    res = {'v_name': '解析失敗', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所', 'loc_term': '所'}
+    res = {'v_name': '解析失敗', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所', 'loc_term': '所', 'has_skyline': True}
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
 
@@ -88,10 +88,17 @@ def d_extract_duty(d_file, hour):
             m = re.search(r'([\u4e00-\u9fa5]+(派出所|分駐所|警備隊|分隊|中隊|大隊|隊))', rt)
             if m: unit_full = m.group(1); res['unit_name'] = unit_full; break
 
-        is_guard = "警備隊" in unit_full
-        if "分隊" in unit_full: res['term'] = "該分隊"
-        elif "隊" in unit_full: res['term'] = "該隊"
-        else: res['term'] = "該所"
+        # 🌟 邏輯修正：若為隊或分隊，則無天羅地網
+        if "分隊" in unit_full:
+            res['term'] = "該分隊"
+            res['has_skyline'] = False
+        elif "隊" in unit_full:
+            res['term'] = "該隊"
+            res['has_skyline'] = False
+        else:
+            res['term'] = "該所"
+            res['has_skyline'] = True
+            
         res['loc_term'] = res['term'][1:]
 
         # B. 人員雷達
@@ -132,22 +139,23 @@ def d_extract_duty(d_file, hour):
                 row_head = "".join(df.iloc[r, :target_col+1])
                 if "值班" in cell_a or any(x in row_head for x in ["值", "班"]):
                     cell_val = str(df.iloc[r, target_col]).strip()
-                    t_val = cell_val.split('\n')[0] if is_guard and '\n' in cell_val else cell_val
+                    # 警備隊限制上列
+                    is_guard_unit = "隊" in res['term']
+                    t_val = cell_val.split('\n')[0] if is_guard_unit and '\n' in cell_val else cell_val
                     mc = re.search(r'[A-Z0-9]{1,2}', t_val)
                     if mc:
-                        res['v_name'] = f_map.get(d_normalize_code(mc.group(0)), f"警員({mc.group(0)})")
+                        code = d_normalize_code(mc.group(0))
+                        res['v_name'] = f_map.get(code, f"警員({code})")
                         v_found = True; break
             if not v_found: res['v_name'] = "該時段無值班人員"
 
-            # 2. 幹部全天動態 (🌟 修正時段合併與冗餘過濾)
+            # 2. 幹部全天動態 (含合併與排序)
             target_titles = ["所長", "副所長", "隊長", "副隊長", "分隊長", "小隊長", "警務佐"]
-            
             def cadre_rank(code):
                 title = f_map[code]
                 if any(x in title for x in ["所長", "隊長", "分隊長"]) and "副" not in title: return 0
                 if "副" in title: return 1
                 return 2
-
             target_codes = sorted([c for c, i in f_map.items() if any(t in i for t in target_titles)], key=cadre_rank)
 
             c_notes = []
@@ -155,7 +163,6 @@ def d_extract_duty(d_file, hour):
                 fname = f_map.get(code, "幹部")
                 all_duties = []
                 is_off = False
-
                 for c_idx, (sh, eh) in t_cols.items():
                     for r in range(tr_idx + 1, footer_idx):
                         if code in [d_normalize_code(x) for x in re.findall(r'[A-Z0-9]{1,2}', str(df.iloc[r, c_idx]))]:
@@ -165,71 +172,31 @@ def d_extract_duty(d_file, hour):
                                 txt = re.sub(r'^[0-9一二三四五六七八九十、\s\.\、]+', '', txt)
                                 if txt and len(txt) >= 2 and not any(x in txt for x in ["代號", "職稱", "姓名", "人員", "所長", "隊長", "警員"]):
                                     duty_parts.append(txt)
-                            
                             duty_name = duty_parts[0] if duty_parts else "勤務"
-                            if "值班" in duty_name and len(duty_parts) > 1:
-                                duty_name = f"{duty_name}({duty_parts[1]})"
-
-                            if any(k in duty_name for k in ["休", "輪", "假", "補", "外宿"]):
-                                is_off = True; continue
-                            
-                            # 過濾無意義的「勤務」二字，若已經有其他精確名稱
-                            if duty_name == "勤務" and len(all_duties) > 0 and all_duties[-1]['s'] == (sh if sh >= 6 else sh + 24):
-                                continue
-
-                            all_duties.append({
-                                's': sh if sh >= 6 else sh + 24,
-                                'e': eh if eh > sh else eh + 24,
-                                'name': duty_name,
-                                'sh_orig': sh,
-                                'eh_orig': eh
-                            })
-
-                if not all_duties:
-                    for r in range(footer_idx, len(df)):
-                        if code in str(df.iloc[r, :]).upper() and any(k in str(df.iloc[r, :]) for k in ["休", "輪", "假", "補"]):
-                            is_off = True; break
+                            if "值班" in duty_name and len(duty_parts) > 1: duty_name = f"{duty_name}({duty_parts[1]})"
+                            if any(k in duty_name for k in ["休", "輪", "假", "補", "外宿"]): is_off = True; continue
+                            all_duties.append({'s': sh if sh >= 6 else sh + 24, 'e': eh if eh > sh else eh + 24, 'name': duty_name, 'sh_orig': sh, 'eh_orig': eh})
 
                 if is_off: c_notes.append(f"{fname}休假")
                 elif all_duties:
                     all_duties.sort(key=lambda x: x['s'])
-                    
-                    # 🌟 核心合併邏輯：合併連續時段且同勤務名稱，或過濾重複時段
                     merged = []
                     for d in all_duties:
-                        if not merged:
-                            merged.append(d)
+                        if not merged: merged.append(d)
                         else:
                             last = merged[-1]
-                            # 如果時段完全重疊且名稱帶有「勤務」字樣，則忽略
-                            if d['s'] == last['s'] and d['name'] == "勤務":
-                                continue
-                            # 如果時段連續且名稱相同，合併之
-                            elif d['s'] == last['e'] and d['name'] == last['name']:
-                                last['e'] = d['e']
-                                last['eh_orig'] = d['eh_orig']
-                            # 如果時段完全重疊但名稱不同，取較長的名稱（非勤務）
-                            elif d['s'] == last['s'] and d['name'] != last['name']:
-                                if last['name'] == "勤務": last['name'] = d['name']
-                            else:
-                                merged.append(d)
-                    
-                    summary = []
-                    for m in merged:
-                        me_str = "24" if m['eh_orig'] in [0, 24] else f"{m['eh_orig']:02d}"
-                        summary.append(f"{m['sh_orig']:02d}-{me_str}{m['name']}")
-                    
+                            if d['s'] == last['e'] and d['name'] == last['name']:
+                                last['e'] = d['e']; last['eh_orig'] = d['eh_orig']
+                            else: merged.append(d)
+                    summary = [f"{m['sh_orig']:02d}-{(24 if m['eh_orig'] in [0, 24] else m['eh_orig']):02d}{m['name']}" for m in merged]
                     c_notes.append(f"{fname}在{res['loc_term']}督勤，編排" + "、".join(summary) + "勤務")
-                else:
-                    c_notes.append(f"{fname}在{res['loc_term']}督勤")
-
+                else: c_notes.append(f"{fname}在{res['loc_term']}督勤")
             res['cadre_status'] = "；".join(c_notes) + "。"
-    except Exception as e:
-        res['cadre_status'] = f"解析中斷：{str(e)}"
+    except Exception as e: res['cadre_status'] = f"解析中斷：{str(e)}"
     return res
 
 # ==========================================
-# 3. 裝備解析與 UI
+# 3. 裝備解析
 # ==========================================
 def d_extract_equip(e_file, hour):
     try:
@@ -244,13 +211,15 @@ def d_extract_equip(e_file, hour):
         def get_v(kw, k):
             rows = sub[sub_s.iloc[:, 1].str.contains(kw, na=False)]
             return d_safe_int(rows.iloc[-1, col_map[k]]) if not rows.empty else 0
-        r_fix = sub[sub_s.iloc[:, 1].str.contains("送", na=False)]
         return {"gi": get_v("在", "gun"), "go": get_v("出", "gun"),
                 "bi": get_v("在", "bullet"), "bo": get_v("出", "bullet"),
                 "ri": get_v("在", "radio"), "ro": get_v("出", "radio"),
                 "vi": get_v("在", "vest"), "vo": get_v("出", "vest")}
     except: return None
 
+# ==========================================
+# 4. 主 UI
+# ==========================================
 st.header("📋 勤務督導報告自動生成系統")
 insp_date = st.date_input("選擇督導日期", datetime.now(), key="insp_d")
 num_units = st.number_input("待督導單位數量", 1, 8, 3, key="num_u")
@@ -270,11 +239,16 @@ for i in range(num_units):
             d_e = insp_date - timedelta(days=1)
             d_5, d_3 = (insp_date - timedelta(days=5)), (insp_date - timedelta(days=3))
             
+            # 🌟 第 1 項：值班與無值班判斷
             line_1 = f"{u_time.strftime('%H%M')}，{t}{'該時段無值班人員。' if dr['v_name'] == '該時段無值班人員' else '值班' + dr['v_name'] + '服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。'}"
+            
+            # 🌟 第 2 項：邏輯修正 - 隊/分隊移除「天羅地網」
+            system_desc = "駐地監錄設備及天羅地網系統" if dr['has_skyline'] else "駐地監錄設備"
+            line_2 = f"{t}{system_desc}均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。"
             
             lns = [
                 line_1,
-                f"{t}駐地監錄設備及天羅地網系統均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。",
+                line_2,
                 f"{t}{d_3.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。",
                 f"{t}環境內務擺設整齊清潔，符合規定。",
                 f"{t}手槍出勤 {er['go'] if er else 0} 把、在{loc_term} {er['gi'] if er else 0} 把，子彈出勤 {er['bo'] if er else 0} 顆、在{loc_term} {er['bi'] if er else 0} 顆，無線電出勤 {er['ro'] if er else 0} 臺、在{loc_term} {er['ri'] if er else 0} 臺；防彈背心出勤 {er['vo'] if er else 0} 件、在{loc_term} {er['vi'] if er else 0} 件，幹部對械彈每日檢查管制良好，符合規定。",
