@@ -330,14 +330,30 @@ s = d.get("check_station", DEFAULT_STATION)
 # 將標題修改為「聯合稽查」
 st.title("🚓 聯合稽查勤務規劃管理系統")
 c1, c2 = st.columns(2)
-p_raw, p_time = c1.text_input("專案名稱", p), c2.text_input("勤務時間", t)
 
+# 1. 先渲染勤務時間，取得最新的時間輸入值
+p_time = c2.text_input("勤務時間", value=t)
+
+# 2. 自動擷取勤務時間的月、日，產生 4 碼前綴
 match = re.search(r"(\d+)月(\d+)日", p_time)
-if match:
-    prefix = f"{str(match.group(1)).zfill(2)}{str(match.group(2)).zfill(2)}"
-    p_name = f"{prefix}{p_raw[4:]}" if re.match(r"^\d{4}", p_raw) else f"{prefix}{p_raw}"
-else:
-    p_name = p_raw
+new_prefix = f"{str(match.group(1)).zfill(2)}{str(match.group(2)).zfill(2)}" if match else ""
+
+# 3. 初始化專案名稱的 session_state (若剛載入則套用預設值 p)
+if "p_name_input" not in st.session_state:
+    st.session_state.p_name_input = p
+
+# 4. 判斷並連動更新狀態：如果時間改變了，立刻抽換專案名稱前 4 碼
+current_p = st.session_state.p_name_input
+if new_prefix:
+    if re.match(r"^\d{4}", current_p):
+        if current_p[:4] != new_prefix:
+            st.session_state.p_name_input = f"{new_prefix}{current_p[4:]}"
+    else:
+        st.session_state.p_name_input = f"{new_prefix}{current_p}"
+
+# 5. 渲染專案名稱於左側欄，直接綁定 key 來連動畫面的文字框
+p_name = c1.text_input("專案名稱", key="p_name_input")
+
 
 st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(df_cmd if df_cmd is not None and not df_cmd.empty else DEFAULT_CMD.copy(), num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
