@@ -221,7 +221,7 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr_default)
 
-# 核心連動邏輯
+# --- 核心連動邏輯 (已修正避免覆蓋使用者手動修改) ---
 if len(ed_ptl) == 0:
     ed_ptl = pd.DataFrame([["", "", "", "", ""]], columns=["勤務時段", "代號", "編組", "服勤人員", "任務分工"])
 
@@ -229,15 +229,19 @@ ed_ptl = ed_ptl.reset_index(drop=True)
 
 date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
 if date_match and len(ed_ptl) > 0:
-    try:
-        y_val = date_match.group(1)
-        m_val = int(date_match.group(2))
-        d_val = int(date_match.group(3))
-        y_tw = int(y_val) if y_val else (datetime.now().year - 1911)
-        base_dt = datetime(y_tw + 1911, m_val, d_val)
-        next_dt = base_dt + timedelta(days=1)
-        ed_ptl.at[0, '勤務時段'] = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
-    except: pass
+    # 檢查第一列的勤務時段是否為空字串或 NaN，只有空的時候才預填
+    current_val = str(ed_ptl.at[0, '勤務時段']).strip()
+    if current_val in ["", "nan", "None"]:
+        try:
+            y_val = date_match.group(1)
+            m_val = int(date_match.group(2))
+            d_val = int(date_match.group(3))
+            y_tw = int(y_val) if y_val else (datetime.now().year - 1911)
+            base_dt = datetime(y_tw + 1911, m_val, d_val)
+            next_dt = base_dt + timedelta(days=1)
+            ed_ptl.at[0, '勤務時段'] = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
+        except: 
+            pass
 
 if len(ed_ptl) > 0:
     # 判斷代號
@@ -250,12 +254,16 @@ if len(ed_ptl) > 0:
     else: base = "隆安"
     
     suffix = "1" if ("所長" in cmdr_input and "副所長" not in cmdr_input) or ("分隊長" in cmdr_input and "副分隊長" not in cmdr_input) else "2"
-    ed_ptl.at[0, '代號'] = base + suffix
-
-    unit_match = re.search(r'([\u4e00-\u9fa5]+?(?:派出所|所|分隊|警備隊))', cmdr_input)
-    if unit_match:
-        pu = re.sub(r'派出所$', '所', unit_match.group(1))
-        ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
+    
+    # 只有當原本沒資料時才自動填入，避免干擾手動編輯
+    if str(ed_ptl.at[0, '代號']).strip() in ["", "nan", "None"]:
+        ed_ptl.at[0, '代號'] = base + suffix
+        
+    if str(ed_ptl.at[0, '編組']).strip() in ["", "nan", "None"]:
+        unit_match = re.search(r'([\u4e00-\u9fa5]+?(?:派出所|所|分隊|警備隊))', cmdr_input)
+        if unit_match:
+            pu = re.sub(r'派出所$', '所', unit_match.group(1))
+            ed_ptl.at[0, '編組'] = f"專責警力\n（{pu}輪值）"
 
 # 顯示編輯器
 st.subheader("3. 任務編組")
