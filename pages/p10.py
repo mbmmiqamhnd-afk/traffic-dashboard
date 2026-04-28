@@ -137,7 +137,7 @@ def calc_time_strings(p_time):
     normal_time = f"{m}月{d}日\n{time_part}"
     return dedicated_time, normal_time
 
-# --- 完整還原原版 PDF 樣式與產生邏輯 ---
+# --- PDF 字型與產生 ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
@@ -171,7 +171,6 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
             s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
-    # 1. 任務編組表
     data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
@@ -194,7 +193,6 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    # 2. 警力佈署表
     data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
@@ -220,7 +218,6 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     ]))
     story.append(t2)
     
-    # 3. 備註與打卡地點 (保持原汁原味的縮排格式)
     story.append(Spacer(1, 6*mm))
     story.append(Paragraph("<b>📍 巡簽地點：</b>", style_cell_l))
     for l in CHECKIN_POINTS.split('\n'):
@@ -309,23 +306,28 @@ with st.expander("📄 預覽勤務規劃表"):
     html_preview = get_preview_html(res_cmd, st.session_state.data_ptl, cmdr_input, p_time)
     st.components.v1.html(html_preview, height=600, scrolling=True)
 
+# 產生統一的檔名 (抓取輸入框的日期，例如: 防制危險駕車勤務規劃表_115430)
+date_fn = "".join(re.findall(r'\d+', p_time))[:8] if re.findall(r'\d+', p_time) else datetime.now().strftime('%Y%m%d')
+final_filename = f"防制危險駕車勤務規劃表_{date_fn}"
+
 col_pdf, col_sync = st.columns(2)
 with col_pdf:
-    if st.button("📥 產生並下載 PDF"):
+    if st.button("📥 下載 PDF"):
         with st.spinner("產生 PDF 中..."):
             pdf_buf = generate_pdf(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
-            st.download_button("點此下載 PDF 檔案", pdf_buf, f"防制危險駕車勤務規劃表_{datetime.now().strftime('%Y%m%d')}.pdf", "application/pdf")
+            st.download_button(
+                label="📥 點此下載", 
+                data=pdf_buf, 
+                file_name=f"{final_filename}.pdf",  # ← 確保使用統一檔名
+                mime="application/pdf"
+            )
 
 with col_sync:
     if st.button("💾 同步雲端並寄信", type="primary"):
         with st.spinner("處理中..."):
-            # 1. 同步
             sync_ok = save_to_cloud(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
-            # 2. 寄信
-            date_fn = "".join(re.findall(r'\d+', p_time))[:8] if re.findall(r'\d+', p_time) else datetime.now().strftime('%Y%m%d')
-            final_filename = f"防制危險駕車勤務規劃表_{date_fn}"
             mail_ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, st.session_state.data_ptl, final_filename)
             
-            if sync_ok and mail_ok: st.success(f"✅ 同步與郵件寄送成功！已將附件傳送至信箱。")
+            if sync_ok and mail_ok: st.success(f"✅ 同步與郵件寄送成功！附件：{final_filename}.pdf")
             elif sync_ok: st.warning(f"⚠️ 雲端已同步，但郵件失敗：{mail_err}")
             else: st.error("❌ 雲端同步失敗，請檢查權限與 Secrets。")
