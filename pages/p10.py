@@ -12,6 +12,12 @@ from datetime import datetime, timedelta
 import io
 import os
 import re
+import smtplib
+import urllib.parse as _ul
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -97,9 +103,7 @@ def save_to_cloud(p_time, cmdr, df_c, df_p):
 
 # --- 日期解析與時段字串計算 ---
 def calc_time_strings(p_time):
-    """
-    回傳 (第一列專用的隔日, 第二列以後專用的當日)
-    """
+    """回傳 (第一列專用的隔日, 第二列以後專用的當日)"""
     date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日(.*)', p_time)
     if not date_match:
         return "", ""
@@ -108,7 +112,6 @@ def calc_time_strings(p_time):
     m = int(date_match.group(2))
     d = int(date_match.group(3))
     
-    # 抓取日期後面的時段字串 (例如 "22時至翌日6時")
     time_part = date_match.group(4).strip()
     if not time_part:
         time_part = "22時至翌日6時"
@@ -117,9 +120,7 @@ def calc_time_strings(p_time):
     base_dt = datetime(y_tw + 1911, m, d)
     next_dt = base_dt + timedelta(days=1)
 
-    # 第一列：勤務時間的隔日 零時至4時
     dedicated_time = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
-    # 第二列以後：勤務時間的當日 + 使用者輸入的時段
     normal_time = f"{m}月{d}日\n{time_part}"
 
     return dedicated_time, normal_time
@@ -266,8 +267,9 @@ if 'data_ptl' not in st.session_state:
         st.session_state.cmdr     = "石門所副所長林榮裕"
         st.session_state.data_cmd = pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
         st.session_state.data_ptl = pd.DataFrame([["", "", "", "", ""]], columns=["勤務時段", "代號", "編組", "服勤人員", "任務分工"])
-    
-    # 紀錄表格的初始行數，用來比對有沒有被點擊「新增一列」
+
+# 👇【核心防錯】強制確保行數變數存在，避免 AttributeError
+if 'last_ptl_len' not in st.session_state:
     st.session_state.last_ptl_len = len(st.session_state.data_ptl)
 
 col1, col2 = st.columns(2)
@@ -285,8 +287,6 @@ res_cmd = st.data_editor(st.session_state.data_cmd, num_rows="dynamic", use_cont
 
 # --- 警力佈署 ---
 st.subheader("4. 警力佈署")
-
-# 表格渲染
 res_ptl_raw = st.data_editor(st.session_state.data_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
 # ============================================================
@@ -296,35 +296,32 @@ current_len = len(res_ptl_raw)
 needs_rerun = False
 
 if current_len > st.session_state.last_ptl_len:
-    # 代表使用者剛剛點擊了「新增一列」
-    # 強制將剛新增的所有列覆蓋為「當日 22時至翌日6時」
+    # 點擊了「新增一列」: 強制覆蓋為當日時間並清空人員
     for i in range(st.session_state.last_ptl_len, current_len):
         res_ptl_raw.at[i, '勤務時段'] = normal_time
-        res_ptl_raw.at[i, '服勤人員'] = ""  # 順便清空姓名，避免複製到上一列的人員
+        res_ptl_raw.at[i, '服勤人員'] = ""  
     
     st.session_state.data_ptl = res_ptl_raw
     st.session_state.last_ptl_len = current_len
     needs_rerun = True
 
 elif current_len < st.session_state.last_ptl_len:
-    # 代表使用者刪除了列
+    # 刪除列
     st.session_state.data_ptl = res_ptl_raw
     st.session_state.last_ptl_len = current_len
 
 else:
-    # 沒有新增也沒有刪除，正常更新資料
+    # 正常更新
     st.session_state.data_ptl = res_ptl_raw
 
-# 針對第一列：如果是空白的，給予專屬的隔日零時預設值
+# 針對第一列空白處理
 if len(st.session_state.data_ptl) > 0 and is_blank(st.session_state.data_ptl.at[0, '勤務時段']):
     st.session_state.data_ptl.at[0, '勤務時段'] = dedicated_time
-    # 自動給予預設代號與編組
     unit_base = "隆安8" if "石門" in cmdr_input else "隆安6" if "龍潭" in cmdr_input else "隆安"
     st.session_state.data_ptl.at[0, '代號'] = unit_base + ("1" if "所長" in cmdr_input and "副" not in cmdr_input else "2")
     st.session_state.data_ptl.at[0, '編組'] = f"專責警力\n（{cmdr_input[:3]}輪值）"
     needs_rerun = True
 
-# 只要有修正過錯誤的預設值，立刻刷新畫面
 if needs_rerun:
     st.rerun()
 
