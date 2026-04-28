@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 進階解析引擎 (幹部動態：時間順序版)
+# 2. 進階解析引擎 (時段合併與冗餘過濾版)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -103,7 +103,7 @@ def d_extract_duty(d_file, hour):
             if any(x in name for x in ["姓名", "職稱", "代號", "人員"]): continue
             f_map[d_normalize_code(m[0])] = f"{m[1]}{name}"
 
-        # C. 時間座標鎖定 (徹底排除 NoneType)
+        # C. 時間座標鎖定
         t_cols, tr_idx = {}, -1
         for r in range(12):
             tmp = {}
@@ -135,27 +135,24 @@ def d_extract_duty(d_file, hour):
                     t_val = cell_val.split('\n')[0] if is_guard and '\n' in cell_val else cell_val
                     mc = re.search(r'[A-Z0-9]{1,2}', t_val)
                     if mc:
-                        code = d_normalize_code(mc.group(0))
-                        res['v_name'] = f_map.get(code, f"警員({code})")
+                        res['v_name'] = f_map.get(d_normalize_code(mc.group(0)), f"警員({mc.group(0)})")
                         v_found = True; break
             if not v_found: res['v_name'] = "該時段無值班人員"
 
-            # 2. 幹部全天動態 (🌟 修正排序：職級排序 + 勤務時間順序)
+            # 2. 幹部全天動態 (🌟 修正時段合併與冗餘過濾)
             target_titles = ["所長", "副所長", "隊長", "副隊長", "分隊長", "小隊長", "警務佐"]
             
             def cadre_rank(code):
                 title = f_map[code]
                 if any(x in title for x in ["所長", "隊長", "分隊長"]) and "副" not in title: return 0
                 if "副" in title: return 1
-                if "佐" in title or "巡佐" in title: return 2
-                return 3
+                return 2
 
             target_codes = sorted([c for c, i in f_map.items() if any(t in i for t in target_titles)], key=cadre_rank)
 
             c_notes = []
             for code in target_codes:
                 fname = f_map.get(code, "幹部")
-                # 使用 list 存儲時段，方便後續排序： [(start_abs, end_abs, duty_name, sh_orig, eh_orig), ...]
                 all_duties = []
                 is_off = False
 
@@ -175,11 +172,18 @@ def d_extract_duty(d_file, hour):
 
                             if any(k in duty_name for k in ["休", "輪", "假", "補", "外宿"]):
                                 is_off = True; continue
+                            
+                            # 過濾無意義的「勤務」二字，若已經有其他精確名稱
+                            if duty_name == "勤務" and len(all_duties) > 0 and all_duties[-1]['s'] == (sh if sh >= 6 else sh + 24):
+                                continue
 
-                            # 計算絕對時間(6-30)用於排序
-                            s_abs = sh if sh >= 6 else sh + 24
-                            e_abs = eh if eh > sh else eh + 24
-                            all_duties.append({'s': s_abs, 'e': e_abs, 'name': duty_name, 'sh_orig': sh, 'eh_orig': eh})
+                            all_duties.append({
+                                's': sh if sh >= 6 else sh + 24,
+                                'e': eh if eh > sh else eh + 24,
+                                'name': duty_name,
+                                'sh_orig': sh,
+                                'eh_orig': eh
+                            })
 
                 if not all_duties:
                     for r in range(footer_idx, len(df)):
@@ -188,21 +192,27 @@ def d_extract_duty(d_file, hour):
 
                 if is_off: c_notes.append(f"{fname}休假")
                 elif all_duties:
-                    # 🌟 核心排序邏輯：按起始時間由早到晚排序
                     all_duties.sort(key=lambda x: x['s'])
                     
-                    # 合併同名稱且連續的勤務
+                    # 🌟 核心合併邏輯：合併連續時段且同勤務名稱，或過濾重複時段
                     merged = []
-                    if all_duties:
-                        curr = all_duties[0]
-                        for next_d in all_duties[1:]:
-                            if next_d['name'] == curr['name'] and next_d['s'] == curr['e']:
-                                curr['e'] = next_d['e']
-                                curr['eh_orig'] = next_d['eh_orig']
+                    for d in all_duties:
+                        if not merged:
+                            merged.append(d)
+                        else:
+                            last = merged[-1]
+                            # 如果時段完全重疊且名稱帶有「勤務」字樣，則忽略
+                            if d['s'] == last['s'] and d['name'] == "勤務":
+                                continue
+                            # 如果時段連續且名稱相同，合併之
+                            elif d['s'] == last['e'] and d['name'] == last['name']:
+                                last['e'] = d['e']
+                                last['eh_orig'] = d['eh_orig']
+                            # 如果時段完全重疊但名稱不同，取較長的名稱（非勤務）
+                            elif d['s'] == last['s'] and d['name'] != last['name']:
+                                if last['name'] == "勤務": last['name'] = d['name']
                             else:
-                                merged.append(curr)
-                                curr = next_d
-                        merged.append(curr)
+                                merged.append(d)
                     
                     summary = []
                     for m in merged:
@@ -214,13 +224,12 @@ def d_extract_duty(d_file, hour):
                     c_notes.append(f"{fname}在{res['loc_term']}督勤")
 
             res['cadre_status'] = "；".join(c_notes) + "。"
-        else: res['v_name'] = "對位失敗"; res['cadre_status'] = f"無法定位時段。"
     except Exception as e:
         res['cadre_status'] = f"解析中斷：{str(e)}"
     return res
 
 # ==========================================
-# 3. 裝備解析
+# 3. 裝備解析與 UI
 # ==========================================
 def d_extract_equip(e_file, hour):
     try:
@@ -242,9 +251,6 @@ def d_extract_equip(e_file, hour):
                 "vi": get_v("在", "vest"), "vo": get_v("出", "vest")}
     except: return None
 
-# ==========================================
-# 4. 主 UI
-# ==========================================
 st.header("📋 勤務督導報告自動生成系統")
 insp_date = st.date_input("選擇督導日期", datetime.now(), key="insp_d")
 num_units = st.number_input("待督導單位數量", 1, 8, 3, key="num_u")
