@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化全天候解析引擎 (單位稱謂精準修正)
+# 2. 超進化全天候解析引擎 (單位稱謂全面連動修正)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -77,18 +77,23 @@ def d_parse_time(val):
     return None, None
 
 def d_extract_duty(d_file, hour):
-    res = {'v_name': '解析失敗', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所'}
+    res = {'v_name': '解析失敗', 'cadre_status': '無幹部資料', 'unit_name': '未偵測單位', 'term': '該所', 'loc_term': '所'}
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
 
-        # A. 偵測單位與稱謂
+        # A. 🌟 精準偵測單位與稱謂 (防提早截斷)
         unit_full = ""
         for r in range(5):
-            rt = "".join([str(x) for x in df.iloc[r].values])
-            m = re.search(r'([\u4e00-\u9fa5]+(分局|派出所|分隊|警備隊|隊))', rt)
-            if m: unit_full = m.group(1); res['unit_name'] = unit_full; break
+            # 移除空格確保抓取完整名稱
+            rt = "".join([str(x) for x in df.iloc[r].values]).replace(" ", "")
+            # 移除 "分局" 作為攔截點，強制抓到尾端的單位屬性
+            m = re.search(r'([\u4e00-\u9fa5]+(派出所|分駐所|警備隊|分隊|中隊|大隊|隊))', rt)
+            if m: 
+                unit_full = m.group(1)
+                res['unit_name'] = unit_full
+                break
 
-        # 🌟 核心修正：精準區分分隊、隊、所
+        # 自動判定單位層級並賦值
         if "分隊" in unit_full:
             res['term'] = "該分隊"
         elif "隊" in unit_full:
@@ -97,6 +102,7 @@ def d_extract_duty(d_file, hour):
             res['term'] = "該所"
             
         loc_term = res['term'][1:] # 切割為 分隊, 隊, 所
+        res['loc_term'] = loc_term
 
         # B. 人員雷達
         f_map = {}
@@ -266,18 +272,22 @@ for i in range(num_units):
         if u_duty and u_eq:
             dr = d_extract_duty(u_duty, u_time.hour)
             er = d_extract_equip(u_eq, u_time.hour)
-            t = dr['term'] # 此時 t 會根據單位名稱動態為 該所、該隊、該分隊
+            
+            # 🌟 取出精準的稱謂變數
+            t = dr['term']                  # 該隊 / 該所 / 該分隊
+            loc_term = dr.get('loc_term', '所') # 隊 / 所 / 分隊
             
             d_e = insp_date - timedelta(days=1)
             d_5 = insp_date - timedelta(days=5)
             d_3 = insp_date - timedelta(days=3)
             
+            # 🌟 完整套用精準稱謂的報告內容
             lns = [
                 f"{u_time.strftime('%H%M')}，{t}值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。",
                 f"{t}駐地監錄設備及天羅地網系統均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。",
                 f"{t}{d_3.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。",
                 f"{t}環境內務擺設整齊清潔，符合規定。",
-                f"{t}手槍出勤 {er['go'] if er else 0} 把、在所 {er['gi'] if er else 0} 把，子彈出勤 {er['bo'] if er else 0} 顆、在所 {er['bi'] if er else 0} 顆，無線電出勤 {er['ro'] if er else 0} 臺、在所 {er['ri'] if er else 0} 臺；防彈背心出勤 {er['vo'] if er else 0} 件、在所 {er['vi'] if er else 0} 件，幹部對械彈每日檢查管制良好，符合規定。",
+                f"{t}手槍出勤 {er['go'] if er else 0} 把、在{loc_term} {er['gi'] if er else 0} 把，子彈出勤 {er['bo'] if er else 0} 顆、在{loc_term} {er['bi'] if er else 0} 顆，無線電出勤 {er['ro'] if er else 0} 臺、在{loc_term} {er['ri'] if er else 0} 臺；防彈背心出勤 {er['vo'] if er else 0} 件、在{loc_term} {er['vi'] if er else 0} 件，幹部對械彈每日檢查管制良好，符合規定。",
                 f"本日{dr['cadre_status']}",
                 f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
             ]
