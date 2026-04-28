@@ -3,7 +3,7 @@ import streamlit as st
 st.set_page_config(page_title="防制危險駕車勤務", layout="wide", page_icon="🚔")
 
 from menu import show_sidebar
-show_sidebar() 
+show_sidebar()
 
 import pandas as pd
 import gspread
@@ -42,55 +42,94 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
-# --- 2. 工具函式 ---
+# --- 工具函式 ---
 def format_staff_only(val):
-    if pd.isna(val) or str(val).strip() in ["None", "nan", ""]: return ""
+    if pd.isna(val) or str(val).strip() in ["None", "nan", ""]:
+        return ""
     s = str(val).replace('\\', '\n').replace('、', '\n').replace('\xa0', ' ')
     s = re.sub(r'(\d{2}[:：]?\d{0,2}\s*-\s*\d{2}[:：]?\d{0,2}[時]?[:：])\s*([^\n\s])', r'\1\n\2', s)
     return '\n'.join([l.strip() for l in s.split('\n') if l.strip()])
 
 @st.cache_resource
 def get_client():
-    if "gcp_service_account" not in st.secrets: return None
+    if "gcp_service_account" not in st.secrets:
+        return None
     try:
         info = dict(st.secrets["gcp_service_account"])
         info["private_key"] = info["private_key"].replace("\\n", "\n")
         creds = Credentials.from_service_account_info(info, scopes=SCOPES)
         return gspread.authorize(creds)
-    except: return None
+    except:
+        return None
 
 def load_from_cloud():
     client = get_client()
-    if not client: return None, None, None
+    if not client:
+        return None, None, None
     try:
         sh = client.open_by_key(SHEET_ID)
         s = pd.DataFrame(sh.worksheet("危駕_設定").get_all_records())
         c = pd.DataFrame(sh.worksheet("危駕_指揮組").get_all_records())
         p = pd.DataFrame(sh.worksheet("危駕_警力佈署").get_all_records())
         return s, c, p
-    except: return None, None, None
+    except:
+        return None, None, None
 
 def save_to_cloud(p_time, cmdr, df_c, df_p):
     client = get_client()
-    if not client: return False
+    if not client:
+        return False
     try:
         sh = client.open_by_key(SHEET_ID)
         sh.worksheet("危駕_設定").clear()
-        sh.worksheet("危駕_設定").update(range_name='A1', values=[["Key", "Value"], ["plan_time", p_time], ["commander", cmdr]])
-        
+        sh.worksheet("危駕_設定").update(
+            range_name='A1',
+            values=[["Key", "Value"], ["plan_time", p_time], ["commander", cmdr]]
+        )
         for name, df in [("危駕_指揮組", df_c), ("危駕_警力佈署", df_p)]:
             ws = sh.worksheet(name)
             ws.clear()
             data = [df.columns.tolist()] + df.fillna("").astype(str).values.tolist()
             ws.update(range_name='A1', values=data)
         return True
-    except: return False
+    except:
+        return False
 
-# --- 3. 初始化 Session State ---
+# --- 日期解析與時段字串計算（修正版）---
+def calc_time_strings(p_time):
+    """
+    輸入勤務時間字串（如「115年4月30日22時至翌日6時」），
+    回傳 (dedicated_time, normal_time)：
+      dedicated_time：隔日零時至4時（第一列用）
+      normal_time：當日幾時至翌日6時（第二列以後用）
+    """
+    # 解析：年(選)、月、日、起始小時
+    date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日.*?(\d+)時', p_time)
+    if not date_match:
+        return "", ""
+
+    y = date_match.group(1)
+    m = int(date_match.group(2))
+    d = int(date_match.group(3))
+    start_hour = date_match.group(4)  # 例如 "22"
+
+    y_tw = int(y) if y else (datetime.now().year - 1911)
+    base_dt = datetime(y_tw + 1911, m, d)
+    next_dt = base_dt + timedelta(days=1)
+
+    # 第一列：隔日零時至4時
+    dedicated_time = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
+
+    # 第二列以後：當日幾時至翌日6時
+    normal_time = f"{m}月{d}日\n{start_hour}時至翌日6時"
+
+    return dedicated_time, normal_time
+
+# --- 初始化 Session State ---
 if 'data_ptl' not in st.session_state:
     s, c, p = load_from_cloud()
     if s is not None:
-        sd = dict(zip(s.iloc[:,0].astype(str), s.iloc[:,1].astype(str)))
+        sd = dict(zip(s.iloc[:, 0].astype(str), s.iloc[:, 1].astype(str)))
         st.session_state.p_time = sd.get("plan_time", "115年4月30日22時至翌日6時")
         st.session_state.cmdr = sd.get("commander", "石門所副所長林榮裕")
         st.session_state.data_cmd = c
@@ -101,7 +140,7 @@ if 'data_ptl' not in st.session_state:
         st.session_state.data_cmd = pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
         st.session_state.data_ptl = pd.DataFrame(columns=["勤務時段", "代號", "編組", "服勤人員", "任務分工"])
 
-# --- 4. 介面 ---
+# --- 介面 ---
 st.title("🚔 防制危險駕車專案勤務規劃表")
 
 col1, col2 = st.columns(2)
@@ -110,63 +149,228 @@ with col1:
 with col2:
     cmdr_input = st.text_input("2. 交通快打指揮官", st.session_state.cmdr)
 
-# 核心邏輯：計算日期
-date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日(.*)', p_time)
-dedicated_time = ""
-normal_time = ""
-if date_match:
-    y, m, d, part = date_match.group(1), int(date_match.group(2)), int(date_match.group(3)), date_match.group(4).strip()
-    y_tw = int(y) if y else (datetime.now().year - 1911)
-    base_dt = datetime(y_tw + 1911, m, d)
-    next_dt = base_dt + timedelta(days=1)
-    dedicated_time = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
-    normal_time = f"{m}月{d}日\n{part}"
+# 計算兩種時段字串
+dedicated_time, normal_time = calc_time_strings(p_time)
 
-# 顯示任務編組
+# --- 任務編組 ---
 st.subheader("3. 任務編組")
-res_cmd = st.data_editor(st.session_state.data_cmd, num_rows="dynamic", use_container_width=True).fillna("")
+res_cmd = st.data_editor(
+    st.session_state.data_cmd,
+    num_rows="dynamic",
+    use_container_width=True
+).fillna("")
 
-# 顯示警力佈署
+# --- 警力佈署 ---
 st.subheader("4. 警力佈署")
-# 自動處理第一列預填
-if len(st.session_state.data_ptl) == 0:
-    st.session_state.data_ptl = pd.DataFrame([["", "", "", "", ""]], columns=["勤務時段", "代號", "編組", "服勤人員", "任務分工"])
 
-# 在編輯器渲染前，針對「完全空白」的新表單做預填
-if str(st.session_state.data_ptl.at[0, '勤務時段']).strip() in ["", "nan"]:
+# 確保第一列存在
+if len(st.session_state.data_ptl) == 0:
+    st.session_state.data_ptl = pd.DataFrame(
+        [["", "", "", "", ""]],
+        columns=["勤務時段", "代號", "編組", "服勤人員", "任務分工"]
+    )
+
+# 對第一列空白時預填 dedicated_time 與代號/編組
+if str(st.session_state.data_ptl.at[0, '勤務時段']).strip() in ["", "nan", "None"]:
     st.session_state.data_ptl.at[0, '勤務時段'] = dedicated_time
-    # 自動帶入代號
-    unit_base = "隆安8" if "石門" in cmdr_input else "隆安6" if "龍潭" in cmdr_input else "隆安"
-    st.session_state.data_ptl.at[0, '代號'] = unit_base + ("1" if "所長" in cmdr_input and "副" not in cmdr_input else "2")
+    unit_base = (
+        "隆安8" if "石門" in cmdr_input else
+        "隆安6" if "龍潭" in cmdr_input else
+        "隆安"
+    )
+    st.session_state.data_ptl.at[0, '代號'] = unit_base + (
+        "1" if "所長" in cmdr_input and "副" not in cmdr_input else "2"
+    )
     st.session_state.data_ptl.at[0, '編組'] = f"專責警力\n（{cmdr_input[:3]}輪值）"
 
-res_ptl = st.data_editor(st.session_state.data_ptl, num_rows="dynamic", use_container_width=True).fillna("")
+res_ptl = st.data_editor(
+    st.session_state.data_ptl,
+    num_rows="dynamic",
+    use_container_width=True
+).fillna("")
 
-# --- 後處理：修正新增列的日期 ---
+# --- 後處理：依列序補填正確時段（修正版）---
 for i in range(len(res_ptl)):
     cur_t = str(res_ptl.at[i, '勤務時段']).strip()
-    cur_g = str(res_ptl.at[i, '編組']).strip()
-    # 如果是新增列（值為空，或者是從上一列自動複製過來的錯誤跨日時間）
-    if i > 0 and ("專責" not in cur_g):
-        if cur_t in ["", "nan", "None"] or "零時" in cur_t:
+
+    # 只在欄位空白時才自動填入，不覆蓋使用者手動輸入的值
+    if cur_t in ["", "nan", "None"]:
+        if i == 0:
+            res_ptl.at[i, '勤務時段'] = dedicated_time
+        else:
             res_ptl.at[i, '勤務時段'] = normal_time
 
-# 更新到 session_state 以便下次 rerun 保持
+# 更新 session_state 以便下次 rerun 保持
+st.session_state.p_time = p_time
+st.session_state.cmdr = cmdr_input
 st.session_state.data_cmd = res_cmd
 st.session_state.data_ptl = res_ptl
 
-# --- 5. 預覽與輸出 (略，維持原本 PDF 與 HTML 邏輯) ---
-# ... (此處保留你原本的 get_preview 和 generate_pdf 函式) ...
+# --- PDF 字型設定 ---
+def register_font():
+    font_paths = [
+        "kaiu.ttf",
+        os.path.join(os.path.dirname(__file__), "kaiu.ttf"),
+        "C:/Windows/Fonts/kaiu.ttf",
+        "/usr/share/fonts/truetype/kaiu.ttf",
+    ]
+    for fp in font_paths:
+        if os.path.exists(fp):
+            pdfmetrics.registerFont(TTFont("BiauKai", fp))
+            return True
+    return False
 
+FONT_AVAILABLE = register_font()
+FONT_NAME = "BiauKai" if FONT_AVAILABLE else "Helvetica"
+
+# --- PDF 產生 ---
+def generate_pdf(df_c, df_p, cmdr_n, time_s):
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=15 * mm,
+        rightMargin=15 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+    )
+
+    styles = {
+        "title": ParagraphStyle("title", fontName=FONT_NAME, fontSize=14, leading=20, alignment=1),
+        "sub":   ParagraphStyle("sub",   fontName=FONT_NAME, fontSize=11, leading=16, alignment=1),
+        "cell":  ParagraphStyle("cell",  fontName=FONT_NAME, fontSize=9,  leading=13),
+        "note":  ParagraphStyle("note",  fontName=FONT_NAME, fontSize=8,  leading=12),
+    }
+
+    W = A4[0] - 30 * mm  # 可用寬度
+
+    def make_table(data, col_widths, row_heights=None):
+        t = Table(data, colWidths=col_widths, rowHeights=row_heights)
+        t.setStyle(TableStyle([
+            ("FONTNAME",    (0, 0), (-1, -1), FONT_NAME),
+            ("FONTSIZE",    (0, 0), (-1, -1), 9),
+            ("GRID",        (0, 0), (-1, -1), 0.5, colors.black),
+            ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN",       (0, 0), (-1, -1), "CENTER"),
+            ("TOPPADDING",  (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("BACKGROUND",  (0, 0), (-1, 0), colors.lightgrey),
+        ]))
+        return t
+
+    story = []
+
+    # 標題
+    story.append(Paragraph(UNIT_TITLE, styles["title"]))
+    story.append(Paragraph("防制危險駕車專案勤務規劃表", styles["title"]))
+    story.append(Spacer(1, 4 * mm))
+
+    # 勤務時間 & 指揮官
+    info_data = [
+        [Paragraph(f"勤務時間：{time_s}", styles["cell"]),
+         Paragraph(f"交通快打指揮官：{cmdr_n}", styles["cell"])],
+    ]
+    story.append(make_table(info_data, [W * 0.55, W * 0.45], [16]))
+    story.append(Spacer(1, 3 * mm))
+
+    # 任務編組
+    story.append(Paragraph("【任務編組】", styles["sub"]))
+    if len(df_c) > 0:
+        cmd_header = [["職稱", "代號", "姓名", "任務"]]
+        cmd_rows = [
+            [Paragraph(str(r.get("職稱", "")), styles["cell"]),
+             Paragraph(str(r.get("代號", "")), styles["cell"]),
+             Paragraph(str(r.get("姓名", "")), styles["cell"]),
+             Paragraph(str(r.get("任務", "")),  styles["cell"])]
+            for _, r in df_c.iterrows()
+        ]
+        story.append(make_table(cmd_header + cmd_rows, [W * 0.2, W * 0.15, W * 0.2, W * 0.45]))
+    story.append(Spacer(1, 3 * mm))
+
+    # 警力佈署
+    story.append(Paragraph("【警力佈署】", styles["sub"]))
+    if len(df_p) > 0:
+        ptl_header = [["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]
+        ptl_rows = [
+            [Paragraph(str(r.get("勤務時段", "")).replace('\n', '<br/>'), styles["cell"]),
+             Paragraph(str(r.get("代號", "")),    styles["cell"]),
+             Paragraph(str(r.get("編組", "")).replace('\n', '<br/>'),    styles["cell"]),
+             Paragraph(format_staff_only(r.get("服勤人員", "")).replace('\n', '<br/>'), styles["cell"]),
+             Paragraph(str(r.get("任務分工", "")).replace('\n', '<br/>'), styles["cell"])]
+            for _, r in df_p.iterrows()
+        ]
+        story.append(make_table(ptl_header + ptl_rows, [W * 0.14, W * 0.1, W * 0.16, W * 0.3, W * 0.3]))
+    story.append(Spacer(1, 3 * mm))
+
+    # 打卡地點
+    story.append(Paragraph("【打卡地點】", styles["sub"]))
+    checkin_data = [[Paragraph(CHECKIN_POINTS.replace('\n', '<br/>'), styles["cell"])]]
+    story.append(make_table(checkin_data, [W]))
+    story.append(Spacer(1, 3 * mm))
+
+    # 注意事項
+    story.append(Paragraph("【注意事項】", styles["sub"]))
+    note_data = [[Paragraph(NOTES.replace('\n', '<br/>'), styles["note"])]]
+    story.append(make_table(note_data, [W]))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+# --- HTML 預覽 ---
 def get_preview_html(df_c, df_p, cmdr_n, time_s):
-    # 簡單預覽邏輯
-    return f"<h3>預覽：{time_s}</h3><p>指揮官：{cmdr_n}</p>" # 建議接回你原本的 HTML 渲染代碼
+    def df_to_html(df, cols):
+        rows_html = ""
+        for _, r in df.iterrows():
+            cells = "".join(
+                f"<td style='padding:4px 8px;border:1px solid #ccc;white-space:pre-wrap'>{str(r.get(c,''))}</td>"
+                for c in cols
+            )
+            rows_html += f"<tr>{cells}</tr>"
+        header = "".join(f"<th style='padding:4px 8px;border:1px solid #ccc;background:#eee'>{c}</th>" for c in cols)
+        return f"<table style='border-collapse:collapse;width:100%;font-size:12px'><thead><tr>{header}</tr></thead><tbody>{rows_html}</tbody></table>"
 
+    return f"""
+    <div style="font-family:serif;font-size:13px;padding:12px">
+      <h3 style="text-align:center;margin:4px 0">{UNIT_TITLE}</h3>
+      <h4 style="text-align:center;margin:4px 0">防制危險駕車專案勤務規劃表</h4>
+      <p><b>勤務時間：</b>{time_s}　<b>指揮官：</b>{cmdr_n}</p>
+      <p><b>【任務編組】</b></p>
+      {df_to_html(df_c, ["職稱","代號","姓名","任務"])}
+      <p><b>【警力佈署】</b></p>
+      {df_to_html(df_p, ["勤務時段","代號","編組","服勤人員","任務分工"])}
+      <p><b>【打卡地點】</b></p>
+      <pre style="font-size:12px;margin:0">{CHECKIN_POINTS}</pre>
+      <p><b>【注意事項】</b></p>
+      <pre style="font-size:12px;margin:0">{NOTES}</pre>
+    </div>
+    """
+
+# --- 預覽 ---
 st.markdown("---")
-if st.button("💾 同步至雲端並寄送郵件", type="primary"):
-    with st.spinner("同步中..."):
-        if save_to_cloud(p_time, cmdr_input, res_cmd, res_ptl):
-            st.success("✅ 雲端同步成功！")
-            # 這裡可以接寄信代碼 send_report_email(...)
-        else:
-            st.error("❌ 同步失敗。請檢查 Google Sheets 權限或 Secrets 設定。")
+with st.expander("📄 預覽勤務規劃表"):
+    html_preview = get_preview_html(res_cmd, res_ptl, cmdr_input, p_time)
+    st.components.v1.html(html_preview, height=600, scrolling=True)
+
+# --- 下載 PDF ---
+col_pdf, col_sync = st.columns(2)
+
+with col_pdf:
+    if st.button("📥 下載 PDF"):
+        with st.spinner("產生 PDF 中..."):
+            pdf_buf = generate_pdf(res_cmd, res_ptl, cmdr_input, p_time)
+            st.download_button(
+                label="點此下載 PDF",
+                data=pdf_buf,
+                file_name=f"危駕勤務規劃_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+            )
+
+# --- 同步雲端 ---
+with col_sync:
+    if st.button("💾 同步至雲端", type="primary"):
+        with st.spinner("同步中..."):
+            if save_to_cloud(p_time, cmdr_input, res_cmd, res_ptl):
+                st.success("✅ 雲端同步成功！")
+            else:
+                st.error("❌ 同步失敗。請檢查 Google Sheets 權限或 Secrets 設定。")
