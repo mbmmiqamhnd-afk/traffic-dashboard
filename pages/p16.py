@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 進階解析引擎 (修正 NoneType 比較錯誤)
+# 2. 進階解析引擎 (強化排序與排除錯誤)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -81,7 +81,7 @@ def d_extract_duty(d_file, hour):
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna("")
 
-        # A. 偵測單位與稱謂
+        # A. 偵測單位
         unit_full = ""
         for r in range(5):
             rt = "".join([str(x) for x in df.iloc[r].values]).replace(" ", "")
@@ -94,7 +94,7 @@ def d_extract_duty(d_file, hour):
         else: res['term'] = "該所"
         res['loc_term'] = res['term'][1:]
 
-        # B. 人員雷達 (強化標題過濾，避免抓到孫祥愷)
+        # B. 人員雷達
         f_map = {}
         all_text = " ".join(df.astype(str).values.flatten())
         p = r'([A-Z0-9]{1,2})\s*(所長|副所長|隊長|副隊長|分隊長|小隊長|警務佐|巡官|巡佐|警員|實習)[\s\n,]*([\u4e00-\u9fa5]{2,4})'
@@ -103,28 +103,19 @@ def d_extract_duty(d_file, hour):
             if any(x in name for x in ["姓名", "職稱", "代號", "人員"]): continue
             f_map[d_normalize_code(m[0])] = f"{m[1]}{name}"
 
-        # C. 🌟 時間座標鎖定 (修正字典生成式，徹底排除 NoneType)
+        # C. 時間座標鎖定
         t_cols, tr_idx = {}, -1
         for r in range(12):
-            tmp = {}
-            for c in range(len(df.columns)):
-                sh, eh = d_parse_time(df.iloc[r, c])
-                if sh is not None: # 關鍵修正點：確保 sh 不是 None 之後才加入
-                    tmp[c] = (sh, eh)
-            if len(tmp) > len(t_cols): 
-                t_cols = tmp
-                tr_idx = r
+            tmp = {c: d_parse_time(df.iloc[r, c]) for c in range(len(df.columns)) if d_parse_time(df.iloc[r, c])[0] is not None}
+            if len(tmp) > len(t_cols): t_cols, tr_idx = tmp, r
 
         adj_h = hour if hour >= 6 else hour + 24
         target_col = -1
         for c, (sh, eh) in t_cols.items():
-            # 再次保險：確保對位邏輯中 sh, eh 有值
-            if sh is None: continue
             s, e = (sh if sh >= 6 else sh + 24), (eh if eh > sh else eh + 24)
             if s <= adj_h < e: target_col = c; break
 
         if target_col != -1 and tr_idx != -1:
-            # 偵測底部邊界 (龍潭所範圍較大，設為 40)
             footer_idx = len(df)
             for r in range(len(df)-1, max(0, len(df)-40), -1):
                 row_all = "".join(df.iloc[r, :]).replace(" ", "")
@@ -138,7 +129,6 @@ def d_extract_duty(d_file, hour):
                 row_head = "".join(df.iloc[r, :target_col+1])
                 if "值班" in cell_a or any(x in row_head for x in ["值", "班"]):
                     cell_val = str(df.iloc[r, target_col]).strip()
-                    # 警備隊限制上列，一般所隊支援下列
                     t_val = cell_val.split('\n')[0] if is_guard and '\n' in cell_val else cell_val
                     mc = re.search(r'[A-Z0-9]{1,2}', t_val)
                     if mc:
@@ -146,10 +136,21 @@ def d_extract_duty(d_file, hour):
                         v_found = True; break
             if not v_found: res['v_name'] = "該時段無值班人員"
 
-            # 2. 幹部全天動態 (強化標題與姓名過濾)
+            # 2. 幹部全天動態 (🌟 修正排序邏輯：主官排最前)
             target_titles = ["所長", "副所長", "隊長", "副隊長", "分隊長", "小隊長", "警務佐"]
+            
+            def cadre_rank(code):
+                title = f_map[code]
+                if any(x in title for x in ["所長", "隊長", "分隊長"]) and "副" not in title:
+                    return 0  # 最高級
+                if "副" in title:
+                    return 1  # 二級
+                if "佐" in title or "巡佐" in title:
+                    return 2  # 三級
+                return 3
+
             target_codes = sorted([c for c, i in f_map.items() if any(t in i for t in target_titles)], 
-                                  key=lambda x: ("所長" in f_map[x], "隊長" in f_map[x], "副" in f_map[x], "佐" in f_map[x]), reverse=True)
+                                  key=cadre_rank)
 
             c_notes = []
             for code in target_codes:
@@ -164,7 +165,6 @@ def d_extract_duty(d_file, hour):
                             for scan_c in range(0, c_idx):
                                 txt = str(df.iloc[r, scan_c]).strip()
                                 txt = re.sub(r'^[0-9一二三四五六七八九十、\s\.\、]+', '', txt)
-                                # 🌟 核心修正：移除勤務名稱中的姓名與職稱雜訊
                                 if txt and len(txt) >= 2 and not any(x in txt for x in ["代號", "職稱", "姓名", "人員", "所長", "隊長", "警員"]):
                                     duty_parts.append(txt)
                             
@@ -204,7 +204,7 @@ def d_extract_duty(d_file, hour):
             res['cadre_status'] = "；".join(c_notes) + "。"
         else: res['v_name'] = "對位失敗"; res['cadre_status'] = f"無法定位時段。"
     except Exception as e:
-        res['cadre_status'] = f"解析發生錯誤：{str(e)}"
+        res['cadre_status'] = f"解析中斷：{str(e)}"
     return res
 
 # ==========================================
