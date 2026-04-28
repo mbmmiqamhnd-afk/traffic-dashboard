@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化全天候解析引擎 (完全保留 B 欄動態與防呆)
+# 2. 超進化全天候解析引擎 (加入休假攔截器)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -150,6 +150,7 @@ def d_extract_duty(d_file, hour):
             for code in target_codes:
                 fname = f_map.get(code, "幹部")
                 duties_found = {}
+                is_off = False
 
                 # 掃描全天時段
                 for c_idx, (sh, eh) in t_cols.items():
@@ -169,17 +170,23 @@ def d_extract_duty(d_file, hour):
                                 if "值班" in duty_name and len(duty_parts) > 1:
                                     duty_name = f"{duty_name}({duty_parts[1]})"
 
+                            # 🌟 核心修正：休假攔截器！若 A 欄為休假類別，直接判定為休假，不排入勤務
+                            if any(k in duty_name for k in ["休", "輪", "假", "補", "外宿"]):
+                                is_off = True
+                                continue
+
                             if duty_name not in duties_found: duties_found[duty_name] = []
                             duties_found[duty_name].append([sh, eh])
 
-                # 判定休假
-                is_off = False
-                if not duties_found:
+                # 若主表未攔截到休假，且也沒找到任何勤務，則掃描底部輪休區
+                if not is_off and not duties_found:
                     for r in range(footer_idx, len(df)):
-                        if code in str(df.iloc[r, :]).upper() and any(k in str(df.iloc[r, :]) for k in ["休", "輪", "假", "補"]):
+                        row_str = "".join([str(x) for x in df.iloc[r, :]]).upper()
+                        if code in row_str and any(k in row_str for k in ["休", "輪", "假", "補"]):
                             is_off = True; break
 
-                if is_off:
+                # 產出最終文字
+                if is_off and not duties_found:
                     c_notes.append(f"{fname}休假")
                 elif duties_found:
                     summary = []
@@ -195,7 +202,6 @@ def d_extract_duty(d_file, hour):
                         for ms, me in merged:
                             summary.append(f"{ms:02d}-{(24 if me in [0, 24] else me):02d}{d_name}")
                     
-                    # 🌟 完整還原：「在所督勤，編排...勤務」
                     c_notes.append(f"{fname}在{loc_term}督勤，編排" + "、".join(summary) + "勤務")
                 else:
                     c_notes.append(f"{fname}在{loc_term}督勤")
