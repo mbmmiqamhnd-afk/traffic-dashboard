@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 進化版解析引擎 (支援警務佐及 A 欄標題自動對位)
+# 2. 終極解析引擎 (精準 A 欄標題對位版)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -95,10 +95,9 @@ def d_extract_duty(d_file, hour):
         res['term'] = "該隊" if is_guard or "分隊" in unit_full else "該所"
         loc_term = res['term'][1:]
         
-        # B. 全表人員雷達 (建立職稱與代號映射)
+        # B. 全表人員雷達
         f_map = {}
         all_text = " ".join(df.astype(str).values.flatten())
-        # 匹配職稱：增加警務佐
         p = r'([A-Z0-9]{1,2})\s*(所長|副所長|隊長|副隊長|分隊長|小隊長|警務佐|巡官|巡佐|警員|實習)[\s\n,]*([\u4e00-\u9fa5]{2,4})'
         matches = re.findall(p, all_text)
         for m in matches:
@@ -116,11 +115,12 @@ def d_extract_duty(d_file, hour):
         adj_h = hour if hour >= 6 else hour + 24
         target_col = -1
         for c, (sh, eh) in t_cols.items():
-            s, e = (sh if sh >= 6 else sh + 24), (eh if eh > sh else eh + 24)
+            s = sh if sh >= 6 else sh + 24
+            e = eh if eh > sh else eh + 24
             if s <= adj_h < e: target_col = c; break
 
         if target_col != -1 and tr_idx != -1:
-            # 偵測底部邊界
+            # D. 偵測底部邊界
             footer_start_idx = len(df)
             for r in range(len(df)-1, max(0, len(df)-25), -1):
                 if any(x in "".join(df.iloc[r, :]).replace(" ", "") for x in ["輪休", "主管簽章", "備註", "合計", "人數"]):
@@ -135,15 +135,9 @@ def d_extract_duty(d_file, hour):
                         res['v_name'] = f_map.get(code, f"警員({code})")
                         break
             
-            # 2. 幹部動態 (動態抓取職稱對應之代號)
+            # 2. 幹部動態 (深度偵測 A 欄標題)
             target_cadre_titles = ["所長", "副所長", "隊長", "副隊長", "分隊長", "小隊長", "警務佐"]
-            # 找到所有符合這些職稱的人員代號
-            target_codes = []
-            for code, info in f_map.items():
-                if any(t in info for t in target_cadre_titles):
-                    target_codes.append(code)
-            
-            # 依職稱權重排序，確保報告由大到小
+            target_codes = [c for c, info in f_map.items() if any(t in info for t in target_cadre_titles)]
             target_codes = sorted(target_codes, key=lambda x: ("所長" in f_map[x], "隊長" in f_map[x], "副" in f_map[x], "佐" in f_map[x]), reverse=True)
 
             c_notes = []
@@ -151,31 +145,31 @@ def d_extract_duty(d_file, hour):
                 fname = f_map.get(code, "幹部")
                 is_off = False
                 
-                # 休假偵測 (掃描表格底部輪休欄)
+                # 休假偵測
                 for r in range(max(0, len(df)-20), len(df)):
-                    row_str = "".join(df.iloc[r, :]).upper()
-                    if code in row_str and any(k in "".join(df.iloc[r, :4]) for k in ["休","輪","假","補"]):
+                    if code in str(df.iloc[r, :]).upper() and any(k in "".join(df.iloc[r, :4]) for k in ["休","輪","假","補"]):
                         is_off = True; break
                 
                 if is_off:
                     c_notes.append(f"{fname}休假")
                     continue
 
-                # 勤務與 A 欄標題對位偵測
+                # 🌟 核心修正：往左找尋 A 欄或 B 欄的勤務名稱
                 d_names = set()
                 found_in_duty = False
                 for r in range(tr_idx + 1, footer_start_idx):
                     cell_val = str(df.iloc[r, target_col])
-                    cell_codes = [d_normalize_code(x) for x in re.findall(r'[A-Z0-9]{1,2}', cell_val)]
-                    if code in cell_codes:
+                    if code in [d_normalize_code(x) for x in re.findall(r'[A-Z0-9]{1,2}', cell_val)]:
                         found_in_duty = True
-                        # 抓取 A 欄標題 (通常在第 0 或第 1 欄)
-                        duty_head = str(df.iloc[r, 0]).strip() if df.iloc[r, 0] else ""
-                        if not duty_head or len(duty_head) < 2:
-                             duty_head = str(df.iloc[r, 1]).strip()
-                        
-                        # 清理標題雜訊
-                        duty_head = re.sub(r'[0-9一二三四五六七八九十、\s]', '', duty_head)
+                        duty_head = ""
+                        # 從最左欄往右掃描到 target_col 之前，抓取第一個有意義的文字
+                        for scan_c in range(0, target_col):
+                            cell_text = str(df.iloc[r, scan_c]).strip()
+                            # 過濾掉序號、日期數字與空白
+                            cell_text = re.sub(r'^[0-9一二三四五六七八九十、\s\.]+', '', cell_text)
+                            if cell_text and len(cell_text) >= 2:
+                                duty_head = cell_text
+                                break
                         if duty_head: d_names.add(duty_head)
                 
                 if found_in_duty:
@@ -186,15 +180,12 @@ def d_extract_duty(d_file, hour):
                     c_notes.append(f"{fname}在{loc_term}督勤")
             
             res['cadre_status'] = "；".join(c_notes) + "。"
-        else:
-            res['v_name'] = "時段對位失敗"
-            res['cadre_status'] = f"無法定位 {hour:02d} 點的欄位。"
     except Exception as e: 
         res['cadre_status'] = f"解析發生錯誤：{str(e)}"
     return res
 
 # ==========================================
-# 3. 裝備解析
+# 3. 裝備解析與主介面
 # ==========================================
 def d_extract_equip(e_file, hour):
     try:
@@ -217,9 +208,6 @@ def d_extract_equip(e_file, hour):
                 "vi":get_v("在","vest"), "vo":get_v("出","vest")}
     except: return None
 
-# ==========================================
-# 4. 主介面 UI
-# ==========================================
 st.header("📋 勤務督導報告自動生成系統")
 
 c_s1, c_s2 = st.columns(2)
@@ -277,4 +265,4 @@ with u_tabs[-1]:
             if send_gmail(f"勤務督導報告匯整_{insp_date.strftime('%Y%m%d')}", full_text, target_mail):
                 st.success(f"✅ 報告已成功寄送至 {target_mail}")
     else:
-        st.warning("請先上傳各單位檔案並完成解析。")
+        st.warning("請先上傳各單位檔案。")
