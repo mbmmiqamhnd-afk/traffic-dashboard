@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化解析引擎 (拘留室第8點獨立版)
+# 2. 超進化解析引擎 (人犯用語優化版)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -203,7 +203,7 @@ def d_extract_duty(d_file, hour):
     return res
 
 # ==========================================
-# 3. 裝備解析
+# 3. 裝備解析與主 UI
 # ==========================================
 def d_extract_equip(e_file, hour):
     try:
@@ -224,9 +224,6 @@ def d_extract_equip(e_file, hour):
                 "vi": get_v("在", "vest"), "vo": get_v("出", "vest")}
     except: return None
 
-# ==========================================
-# 4. 主 UI
-# ==========================================
 st.header("📋 勤務督導報告自動生成系統")
 insp_date = st.date_input("選擇督導日期", datetime.now(), key="insp_d")
 num_units = st.number_input("待督導單位數量", 1, 8, 3, key="num_u")
@@ -246,14 +243,10 @@ for i in range(num_units):
             d_e = insp_date - timedelta(days=1)
             d_5, d_3 = (insp_date - timedelta(days=5)), (insp_date - timedelta(days=3))
             
-            # 第 1 項：純值班
             line_1 = f"{u_time.strftime('%H%M')}，{t}{'該時段無值班人員' if dr['v_name'] == '該時段無值班人員' else '值班' + dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。"
             
-            # 第 2 項：監錄設備
-            sys_desc = "駐地監錄設備及天羅地網系統" if dr['has_skyline'] else "駐地監錄設備"
-            line_2 = f"{t}{sys_desc}均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。"
+            line_2 = f"{t}{'駐地監錄設備及天羅地網系統' if dr['has_skyline'] else '駐地監錄設備'}均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。"
             
-            # 基本 7 項
             lns = [
                 line_1,
                 line_2,
@@ -264,12 +257,11 @@ for i in range(num_units):
                 f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
             ]
             
-            # 🌟 警備隊專屬第 8 項
             if dr['is_guard_unit']:
                 if dr['detention_name']:
-                    lns.append(f"拘留室值班警員{dr['detention_name']}，對拘留人員監控良好，無異常狀況發生。")
+                    lns.append(f"拘留室值班警員{dr['detention_name']}，對人犯監控良好，無異常狀況發生。")
                 else:
-                    lns.append(f"{t}拘留室目前無人拘留。")
+                    lns.append(f"{t}目前無人犯。")
             
             final_text = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
             st.session_state.unit_reports[i] = f"【{dr['unit_name']} 督導報告】\n{final_text}"
