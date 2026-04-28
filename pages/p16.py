@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化全天候解析引擎
+# 2. 超進化全天候解析引擎 (修正 NoneType 報錯)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -99,11 +99,18 @@ def d_extract_duty(d_file, hour):
         for m in re.findall(p, all_text):
             f_map[d_normalize_code(m[0])] = f"{m[1]}{m[2]}"
 
-        # C. 時間座標鎖定 (強化版)
+        # C. 🌟 時間座標鎖定 (嚴格防呆，阻絕 NoneType 陷阱)
         t_cols, tr_idx = {}, -1
         for r in range(12):
-            tmp = {c: d_parse_time(df.iloc[r, c]) for c in range(len(df.columns)) if d_parse_time(df.iloc[r, c])}
-            if len(tmp) > len(t_cols): t_cols, tr_idx = tmp, r
+            tmp = {}
+            for c in range(len(df.columns)):
+                sh, eh = d_parse_time(df.iloc[r, c])
+                if sh is not None:  # 明確判斷，絕對不能把 None 塞進去
+                    tmp[c] = (sh, eh)
+            
+            if len(tmp) > len(t_cols): 
+                t_cols = tmp
+                tr_idx = r
 
         adj_h = hour if hour >= 6 else hour + 24
         target_col = -1
@@ -122,16 +129,19 @@ def d_extract_duty(d_file, hour):
             v_found = False
             for r in range(tr_idx + 1, min(footer_idx, len(df))):
                 cell_a = str(df.iloc[r, 0]).strip()
-                if "值班" in cell_a:
-                    mc = re.search(r'^[A-Z][0-9]?$', str(df.iloc[r, target_col]).strip())
+                # 若 A 欄沒有抓到，放寬到掃描標題列
+                row_head = "".join(df.iloc[r, :target_col+1])
+                if "值班" in cell_a or any(x in row_head for x in ["值", "班"]):
+                    mc = re.search(r'[A-Z0-9]{1,2}', str(df.iloc[r, target_col]))
                     if mc:
-                        res['v_name'] = f_map.get(d_normalize_code(mc.group(0)), f"警員({mc.group(0)})")
+                        code = d_normalize_code(mc.group(0))
+                        res['v_name'] = f_map.get(code, f"警員({code})")
                         v_found = True
                         break
             if not v_found:
                 res['v_name'] = "值班欄位未偵測"
 
-            # 2. 🌟 全天候幹部動態追蹤
+            # 2. 全天候幹部動態追蹤
             target_titles = ["所長", "副所長", "隊長", "副隊長", "分隊長", "小隊長", "警務佐"]
             target_codes = sorted(
                 [c for c, info in f_map.items() if any(t in info for t in target_titles)],
@@ -247,7 +257,12 @@ for i in range(num_units):
             ]
             final_text = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
             st.session_state.unit_reports[i] = f"【{dr['unit_name']} 督導報告】\n{final_text}"
-            st.success(f"✅ {dr['unit_name']} 解析完成")
+            
+            if "發生錯誤" in dr['cadre_status'] or "失敗" in dr['v_name']:
+                st.error(f"❌ {dr['unit_name']} 解析發生錯誤：{dr['cadre_status']}")
+            else:
+                st.success(f"✅ {dr['unit_name']} 解析完成")
+                
             st.text_area("預覽報告", final_text, height=350, key=f"preview_{i}")
 
 with u_tabs[-1]:
