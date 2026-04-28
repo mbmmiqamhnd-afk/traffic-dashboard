@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化全天候解析引擎 (值班上列優先與空白判定)
+# 2. 進階解析引擎 (警備隊值班上列優先規則)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -91,6 +91,7 @@ def d_extract_duty(d_file, hour):
                 res['unit_name'] = unit_full
                 break
 
+        is_guard = "警備隊" in unit_full
         if "分隊" in unit_full:
             res['term'] = "該分隊"
         elif "隊" in unit_full:
@@ -132,28 +133,36 @@ def d_extract_duty(d_file, hour):
                 if any(x in "".join(df.iloc[r, :]).replace(" ", "") for x in ["輪休", "主管簽章", "備註", "合計", "人數"]):
                     footer_idx = r; break
 
-            # 1. 🌟 值班偵測 (強制取上列，空白則回報無人)
+            # 1. 🌟 值班偵測邏輯升級
             v_found = False
             for r in range(tr_idx + 1, min(footer_idx, len(df))):
                 cell_a = str(df.iloc[r, 0]).strip()
                 row_head = "".join(df.iloc[r, :target_col+1])
                 
                 if "值班" in cell_a or any(x in row_head for x in ["值", "班"]):
-                    # 取出目標時段的儲存格內容
                     cell_val = str(df.iloc[r, target_col]).strip()
-                    # 如果儲存格內有換行(上/下列)，只取第一行(上列)
-                    top_val = cell_val.split('\n')[0] if '\n' in cell_val else cell_val
                     
-                    mc = re.search(r'[A-Z0-9]{1,2}', top_val)
-                    if mc:
-                        code = d_normalize_code(mc.group(0))
-                        res['v_name'] = f_map.get(code, f"警員({code})")
+                    # 🌟 警備隊專屬邏輯：強制取上列，空白即代表無值班人員
+                    if is_guard:
+                        top_val = cell_val.split('\n')[0] if '\n' in cell_val else cell_val
+                        mc = re.search(r'[A-Z0-9]{1,2}', top_val)
+                        if mc:
+                            code = d_normalize_code(mc.group(0))
+                            res['v_name'] = f_map.get(code, f"警員({code})")
+                        else:
+                            res['v_name'] = "該時段無值班人員"
+                        v_found = True
+                        break # 找到標籤列的上列後即停止
+                    
+                    # 一般單位邏輯：支援下列偵測
                     else:
-                        res['v_name'] = "該時段無值班人員"
-                        
-                    v_found = True
-                    break # 找到第一列(上列)就立刻停止，不看下列
-                    
+                        mc = re.search(r'[A-Z0-9]{1,2}', cell_val)
+                        if mc:
+                            code = d_normalize_code(mc.group(0))
+                            res['v_name'] = f_map.get(code, f"警員({code})")
+                            v_found = True
+                            break
+            
             if not v_found:
                 res['v_name'] = "該時段無值班人員"
 
@@ -178,8 +187,7 @@ def d_extract_duty(d_file, hour):
                             for scan_c in range(0, c_idx):
                                 txt = str(df.iloc[r, scan_c]).strip()
                                 txt = re.sub(r'^[0-9一二三四五六七八九十、\s\.]+', '', txt)
-                                if txt and len(txt) >= 2: 
-                                    duty_parts.append(txt)
+                                if txt and len(txt) >= 2: duty_parts.append(txt)
                             
                             duty_name = "勤務"
                             if duty_parts:
@@ -214,21 +222,19 @@ def d_extract_duty(d_file, hour):
                             merged.append((cs, ce))
                         for ms, me in merged:
                             summary.append(f"{ms:02d}-{(24 if me in [0, 24] else me):02d}{d_name}")
-                    
                     c_notes.append(f"{fname}在{loc_term}督勤，編排" + "、".join(summary) + "勤務")
                 else:
                     c_notes.append(f"{fname}在{loc_term}督勤")
 
             res['cadre_status'] = "；".join(c_notes) + "。"
         else:
-            res['v_name'] = "對位失敗"
-            res['cadre_status'] = f"無法定位 {hour:02d} 點時段。"
+            res['v_name'] = "對位失敗"; res['cadre_status'] = f"無法定位 {hour:02d} 點時段。"
     except Exception as e:
         res['cadre_status'] = f"解析發生錯誤：{str(e)}"
     return res
 
 # ==========================================
-# 3. 裝備解析
+# 3. 裝備解析與主 UI
 # ==========================================
 def d_extract_equip(e_file, hour):
     try:
@@ -237,9 +243,8 @@ def d_extract_equip(e_file, hour):
         col_map = {"gun": 2, "bullet": 3, "radio": 6, "vest": 11}
         for r in range(min(10, len(df))):
             for c in range(len(df.columns)):
-                v = str(df.iloc[r, c])
-                if "手槍" in v: col_map["gun"] = c
-                if "子彈" in v: col_map["bullet"] = c
+                if "手槍" in str(df.iloc[r, c]): col_map["gun"] = c
+                if "子彈" in str(df.iloc[r, c]): col_map["bullet"] = c
         sub = df.iloc[:35]; sub_s = df_s.iloc[:35]
         def get_v(kw, k):
             rows = sub[sub_s.iloc[:, 1].str.contains(kw, na=False)]
@@ -253,12 +258,8 @@ def d_extract_equip(e_file, hour):
             "rf": d_safe_int(r_fix.iloc[-1, col_map["radio"]]) if not r_fix.empty else 0,
             "vi": get_v("在", "vest"), "vo": get_v("出", "vest")
         }
-    except:
-        return None
+    except: return None
 
-# ==========================================
-# 4. 主 UI
-# ==========================================
 st.header("📋 勤務督導報告自動生成系統")
 insp_date = st.date_input("選擇督導日期", datetime.now(), key="insp_d")
 num_units = st.number_input("待督導單位數量", 1, 8, 3, key="num_u")
@@ -268,21 +269,16 @@ for i in range(num_units):
     with u_tabs[i]:
         u_time = st.time_input("抵達時間", datetime.now().time(), key=f"ut_{i}")
         col_f1, col_f2 = st.columns(2)
-        with col_f1: u_duty = st.file_uploader(f"單位 {i+1} 勤務表 (.xlsx)", type=['xlsx'], key=f"ud_{i}")
-        with col_f2: u_eq = st.file_uploader(f"單位 {i+1} 交接簿 (.xlsx)", type=['xlsx'], key=f"ue_{i}")
+        with col_f1: u_duty = st.file_uploader(f"單位 {i+1} 勤務表", type=['xlsx'], key=f"ud_{i}")
+        with col_f2: u_eq = st.file_uploader(f"單位 {i+1} 交接簿", type=['xlsx'], key=f"ue_{i}")
         
         if u_duty and u_eq:
             dr = d_extract_duty(u_duty, u_time.hour)
             er = d_extract_equip(u_eq, u_time.hour)
-            
-            t = dr['term']                  
-            loc_term = dr.get('loc_term', '所') 
-            
+            t = dr['term']; loc_term = dr['loc_term']
             d_e = insp_date - timedelta(days=1)
-            d_5 = insp_date - timedelta(days=5)
-            d_3 = insp_date - timedelta(days=3)
             
-            # 🌟 判斷是否無值班人員並切換語句
+            # 第一項邏輯切換
             if dr['v_name'] == "該時段無值班人員":
                 line_1 = f"{u_time.strftime('%H%M')}，{t}該時段無值班人員。"
             else:
@@ -290,33 +286,26 @@ for i in range(num_units):
             
             lns = [
                 line_1,
-                f"{t}駐地監錄設備及天羅地網系統均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。",
-                f"{t}{d_3.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。",
+                f"{t}駐地監錄設備及天羅地網系統均運作正常，無故障，{(insp_date-timedelta(days=5)).strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。",
+                f"{t}{(insp_date-timedelta(days=3)).strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。",
                 f"{t}環境內務擺設整齊清潔，符合規定。",
                 f"{t}手槍出勤 {er['go'] if er else 0} 把、在{loc_term} {er['gi'] if er else 0} 把，子彈出勤 {er['bo'] if er else 0} 顆、在{loc_term} {er['bi'] if er else 0} 顆，無線電出勤 {er['ro'] if er else 0} 臺、在{loc_term} {er['ri'] if er else 0} 臺；防彈背心出勤 {er['vo'] if er else 0} 件、在{loc_term} {er['vi'] if er else 0} 件，幹部對械彈每日檢查管制良好，符合規定。",
                 f"本日{dr['cadre_status']}",
                 f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
             ]
-            
             final_text = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
-            st.session_state.unit_reports[i] = f"【{dr['unit_name']} 督導報告】\n{final_text}"
-            
-            if "發生錯誤" in dr['cadre_status'] or "失敗" in dr['v_name']:
-                st.error(f"❌ {dr['unit_name']} 解析發生錯誤：{dr['cadre_status']}")
-            else:
-                st.success(f"✅ {dr['unit_name']} 解析完成")
-                
+            st.session_state.unit_reports[i] = f"【{dr['unit_name']} 報告】\n{final_text}"
+            st.success(f"✅ {dr['unit_name']} 解析完成")
             st.text_area("預覽報告", final_text, height=350, key=f"preview_{i}")
 
 with u_tabs[-1]:
     reports_list = [st.session_state.unit_reports[k] for k in sorted(st.session_state.unit_reports.keys()) if k < num_units]
     if reports_list:
         full_text = ("\n\n" + "─" * 40 + "\n\n").join(reports_list)
-        st.subheader("📋 所有單位匯整結果")
+        st.subheader("📋 匯整結果")
         st.text_area("匯整文本", full_text, height=600)
         target_mail = st.text_input("收件信箱", "mbmmiqamhnd@gmail.com")
-        if st.button("🚀 立即寄送郵件"):
+        if st.button("🚀 寄送郵件"):
             if send_gmail(f"勤務督導報告匯整_{insp_date.strftime('%Y%m%d')}", full_text, target_mail):
                 st.success(f"✅ 郵件發送成功")
-    else:
-        st.warning("請先上傳檔案。")
+    else: st.warning("請先上傳檔案。")
