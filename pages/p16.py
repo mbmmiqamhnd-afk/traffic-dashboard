@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 高精準解析引擎 (修正直線分隔符 | 定位問題)
+# 2. 高精準解析引擎 (修正時間軸被編號覆蓋的 Bug)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -69,20 +69,15 @@ def d_normalize_code(c):
 
 def d_parse_time(val):
     val_str = str(val).strip().replace("\n", "").replace(" ", "")
-    # 過濾包含年月日字眼的雜訊
-    if any(x in val_str for x in ["年", "月", "日"]): return None, None
+    # 嚴格過濾雜訊，確保只抓時間區間
+    if any(x in val_str for x in ["年", "月", "日", "號"]): return None, None
     
-    # 🌟 核心修正：加入對 | (直線) 的支援，精準捕捉 06|07 格式
+    # 🌟 核心修正：強制要求必須有分隔符 (- ~ / | : 等)，徹底杜絕抓到「日期」或「流水號」
     m = re.search(r'(?<!\d)(\d{1,2})[:：\-\s~～/|]+(\d{1,2})(?!\d)', val_str)
     if m:
         sh, eh = int(m.group(1)), int(m.group(2))
-        return sh, eh
-        
-    # 支援單一小時數字
-    m_single = re.fullmatch(r'(\d{1,2})', val_str)
-    if m_single:
-        sh = int(m_single.group(1))
-        return sh, sh + 1
+        if 0 <= sh <= 24 and 0 <= eh <= 30:
+            return sh, eh
         
     return None, None
 
@@ -113,13 +108,14 @@ def d_extract_duty(d_file, hour):
         for m in matches:
             f_map[d_normalize_code(m[0])] = f"{m[1]}{m[2]}"
             
-        # C. 時間座標鎖定法
+        # C. 鋼鐵時間座標鎖定法 (只掃描前 10 列，找出包含最多時間區段的列)
         t_cols, tr_idx = {}, -1
-        for r in range(15): 
+        for r in range(10): 
             tmp = {}
             for c in range(len(df.columns)):
                 sh, eh = d_parse_time(df.iloc[r, c])
                 if sh is not None: tmp[c] = (sh, eh)
+            # 只要是標準的 24 小時制或 12 小時制，就會被精準鎖定
             if len(tmp) > len(t_cols): 
                 t_cols = tmp
                 tr_idx = r
@@ -130,7 +126,8 @@ def d_extract_duty(d_file, hour):
         for c, (sh, eh) in t_cols.items():
             s = sh if sh >= 6 else sh + 24
             e = eh if eh > sh else eh + 24
-            if e < s: e += 24 # 跨夜修正
+            if e <= s: e += 24 # 跨夜修正 (如 23-01)
+            # 龍潭分局 06-07 形式，sh=6, eh=7，完全符合
             if s <= adj_h < e: 
                 target_col = c; break
 
@@ -180,7 +177,7 @@ def d_extract_duty(d_file, hour):
             res['cadre_status'] = "；".join(c_notes) + "。"
         else:
             res['v_name'] = "時段對位失敗"
-            res['cadre_status'] = f"無法定位 {hour:02d} 點的欄位。請確認班表第 1-15 列中是否有正確的時間標題列（例如 11-12、12-13 或 12|13）。"
+            res['cadre_status'] = f"無法定位 {hour:02d} 點的欄位。請確認班表第 1-10 列中是否有正確的時間標題列（例如 11-12、12-13 或 12|13）。"
     except Exception as e: 
         res['cadre_status'] = f"解析發生錯誤：{str(e)}"
     return res
