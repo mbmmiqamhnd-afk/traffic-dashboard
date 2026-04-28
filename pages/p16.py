@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 終極解析引擎 (完美融合邊界隔離與錯誤修正)
+# 2. 終極解析引擎 (精簡報告版，移除共同服勤)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -69,16 +69,12 @@ def d_normalize_code(c):
 
 def d_parse_time(val):
     val_str = str(val).strip().replace("\n", "").replace(" ", "")
-    # 嚴格過濾雜訊，確保只抓時間區間
     if any(x in val_str for x in ["年", "月", "日", "號"]): return None, None
-    
-    # 支援 06-07, 06|07, 12-14 等格式
     m = re.search(r'(?<!\d)(\d{1,2})[:：\-\s~～/|]+(\d{1,2})(?!\d)', val_str)
     if m:
         sh, eh = int(m.group(1)), int(m.group(2))
         if 0 <= sh <= 24 and 0 <= eh <= 30:
             return sh, eh
-        
     return None, None
 
 def d_extract_duty(d_file, hour):
@@ -100,7 +96,7 @@ def d_extract_duty(d_file, hour):
         res['term'] = "該隊" if is_guard or "分隊" in unit_full else "該所"
         loc_term = res['term'][1:]
         
-        # B. 全表人員雷達 (放寬姓名間距匹配)
+        # B. 全表人員雷達
         f_map = {}
         all_text = " ".join(df.astype(str).values.flatten())
         p = r'([A-Z0-9]{1,2})\s*(所長|副所長|隊長|副隊長|分隊長|小隊長|巡官|巡佐|警員|實習)[\s\n,]*([\u4e00-\u9fa5]{2,4})'
@@ -108,37 +104,35 @@ def d_extract_duty(d_file, hour):
         for m in matches:
             f_map[d_normalize_code(m[0])] = f"{m[1]}{m[2]}"
             
-        # C. 鋼鐵時間座標鎖定法 (修正 NoneType 報錯)
+        # C. 鋼鐵時間座標鎖定法
         t_cols, tr_idx = {}, -1
         for r in range(12): 
             tmp = {}
             for c in range(len(df.columns)):
                 sh, eh = d_parse_time(df.iloc[r, c])
-                # 🌟 安全寫法：明確判斷不是 None
                 if sh is not None: tmp[c] = (sh, eh)
             if len(tmp) > len(t_cols): 
                 t_cols = tmp
                 tr_idx = r
                 
-        # 對位抵達時間
-        target_col = -1
         adj_h = hour if hour >= 6 else hour + 24
+        target_col = -1
         for c, (sh, eh) in t_cols.items():
             s = sh if sh >= 6 else sh + 24
             e = eh if eh > sh else eh + 24
-            if e <= s: e += 24 # 跨夜修正
+            if e <= s: e += 24 
             if s <= adj_h < e: 
                 target_col = c; break
 
         if target_col != -1 and tr_idx != -1:
-            # 🌟 D. 偵測底部邊界 (防止掃描到人員對照區)
+            # D. 偵測底部邊界
             footer_start_idx = len(df)
             for r in range(len(df)-1, max(0, len(df)-25), -1):
                 row_all = "".join(df.iloc[r, :]).replace(" ", "")
                 if any(x in row_all for x in ["輪休", "主管簽章", "備註", "合計", "人數"]):
                     footer_start_idx = r
 
-            # 1. 值班偵測 (僅在邊界前偵測)
+            # 1. 值班偵測
             for r in range(tr_idx + 1, min(footer_start_idx, len(df))):
                 row_head = "".join(df.iloc[r, :target_col+1])
                 if any(x in row_head for x in ["值", "班"]):
@@ -149,7 +143,7 @@ def d_extract_duty(d_file, hour):
                         res['v_name'] = f_map.get(code, f"警員({code})")
                         break
             
-            # 2. 幹部動態 (僅限所長/副所長層級)
+            # 2. 幹部動態 (回歸乾淨版，不抓其他同事)
             c_codes = ["A", "B"]
             default_t = {"A": "隊長" if is_guard else ("分隊長" if "分隊" in unit_full else "所長"), 
                          "B": "副隊長" if is_guard else ("小隊長" if "分隊" in unit_full else "副所長")}
@@ -160,13 +154,13 @@ def d_extract_duty(d_file, hour):
                 fname = f_map.get(code, default_t.get(code, "幹部"))
                 is_off = False
                 
-                # 休假偵測 (掃描全表底部)
+                # 休假偵測
                 for r in range(max(0, len(df)-20), len(df)):
                     row_str = "".join(df.iloc[r, :]).upper()
                     if code in row_str and any(k in "".join(df.iloc[r, :4]) for k in ["休","輪","假","補"]):
                         is_off = True; break
                 
-                # 勤務偵測 (嚴格限制在 footer_start_idx 之前)
+                # 勤務偵測
                 d_names = set()
                 for r in range(tr_idx + 1, footer_start_idx):
                     cell_val = str(df.iloc[r, target_col])
