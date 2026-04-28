@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化全天候解析引擎 (加入休假攔截器)
+# 2. 超進化全天候解析引擎 (單位稱謂精準修正)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -88,9 +88,15 @@ def d_extract_duty(d_file, hour):
             m = re.search(r'([\u4e00-\u9fa5]+(分局|派出所|分隊|警備隊|隊))', rt)
             if m: unit_full = m.group(1); res['unit_name'] = unit_full; break
 
-        is_guard = "警備隊" in unit_full or ("隊" in unit_full and "分隊" not in unit_full)
-        res['term'] = "該隊" if is_guard or "分隊" in unit_full else "該所"
-        loc_term = res['term'][1:]
+        # 🌟 核心修正：精準區分分隊、隊、所
+        if "分隊" in unit_full:
+            res['term'] = "該分隊"
+        elif "隊" in unit_full:
+            res['term'] = "該隊"
+        else:
+            res['term'] = "該所"
+            
+        loc_term = res['term'][1:] # 切割為 分隊, 隊, 所
 
         # B. 人員雷達
         f_map = {}
@@ -170,7 +176,7 @@ def d_extract_duty(d_file, hour):
                                 if "值班" in duty_name and len(duty_parts) > 1:
                                     duty_name = f"{duty_name}({duty_parts[1]})"
 
-                            # 🌟 核心修正：休假攔截器！若 A 欄為休假類別，直接判定為休假，不排入勤務
+                            # 休假攔截器
                             if any(k in duty_name for k in ["休", "輪", "假", "補", "外宿"]):
                                 is_off = True
                                 continue
@@ -178,14 +184,13 @@ def d_extract_duty(d_file, hour):
                             if duty_name not in duties_found: duties_found[duty_name] = []
                             duties_found[duty_name].append([sh, eh])
 
-                # 若主表未攔截到休假，且也沒找到任何勤務，則掃描底部輪休區
+                # 掃描底部輪休區
                 if not is_off and not duties_found:
                     for r in range(footer_idx, len(df)):
                         row_str = "".join([str(x) for x in df.iloc[r, :]]).upper()
                         if code in row_str and any(k in row_str for k in ["休", "輪", "假", "補"]):
                             is_off = True; break
 
-                # 產出最終文字
                 if is_off and not duties_found:
                     c_notes.append(f"{fname}休假")
                 elif duties_found:
@@ -261,13 +266,12 @@ for i in range(num_units):
         if u_duty and u_eq:
             dr = d_extract_duty(u_duty, u_time.hour)
             er = d_extract_equip(u_eq, u_time.hour)
-            t = dr['term']
+            t = dr['term'] # 此時 t 會根據單位名稱動態為 該所、該隊、該分隊
             
             d_e = insp_date - timedelta(days=1)
             d_5 = insp_date - timedelta(days=5)
             d_3 = insp_date - timedelta(days=3)
             
-            # 🌟 完整還原最初設定的詳細報告內容格式
             lns = [
                 f"{u_time.strftime('%H%M')}，{t}值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。",
                 f"{t}駐地監錄設備及天羅地網系統均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。",
