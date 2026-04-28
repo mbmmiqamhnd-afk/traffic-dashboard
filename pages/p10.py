@@ -221,49 +221,13 @@ st.title("🚔 防制危險駕車專案勤務規劃表")
 p_time = st.text_input("1. 勤務時間", t)
 cmdr_input = st.text_input("2. 交通快打指揮官", cmdr_default)
 
-# --- 核心連動邏輯 (已嚴格修正日期判定邏輯) ---
 if len(ed_ptl) == 0:
     ed_ptl = pd.DataFrame([["", "", "", "", ""]], columns=["勤務時段", "代號", "編組", "服勤人員", "任務分工"])
 
 ed_ptl = ed_ptl.reset_index(drop=True)
 
-date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日(.*)', p_time)
-if date_match and len(ed_ptl) > 0:
-    try:
-        y_val = date_match.group(1)
-        m_val = int(date_match.group(2))
-        d_val = int(date_match.group(3))
-        # 這裡提取出來的是「22時至翌日6時」這類純時段
-        time_part = date_match.group(4).strip() 
-        
-        y_tw = int(y_val) if y_val else (datetime.now().year - 1911)
-        base_dt = datetime(y_tw + 1911, m_val, d_val)
-        next_dt = base_dt + timedelta(days=1)
-        
-        # 專責警力：強制取跨日 (+1天) 的日期
-        dedicated_time = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
-        
-        # 一般警力：強制取當天 (base_dt) 的日期
-        normal_time = f"{base_dt.month}月{base_dt.day}日\n{time_part}"
-        
-        for i in range(len(ed_ptl)):
-            current_time_val = str(ed_ptl.at[i, '勤務時段']).strip()
-            current_group_val = str(ed_ptl.at[i, '編組']).strip()
-            
-            # 只有當下該欄位為空值時才進行配發
-            if current_time_val in ["", "nan", "None"]:
-                # 絕對嚴謹判斷：只有「第 0 列」或是手動打了「專責」的，才給跨日時間
-                if i == 0 or "專責" in current_group_val:
-                    ed_ptl.at[i, '勤務時段'] = dedicated_time
-                else:
-                    # 第二列之後的空白列，絕對給當日時間 (如 4月30日)
-                    ed_ptl.at[i, '勤務時段'] = normal_time
-    except Exception as e: 
-        # 防止解析異常導致崩潰
-        pass
-
+# 判斷代號與單位 (這部分針對第一列維持原樣)
 if len(ed_ptl) > 0:
-    # 判斷代號
     if "分隊" in cmdr_input: base = "隆安99"
     elif "石門" in cmdr_input: base = "隆安8"
     elif "高平" in cmdr_input: base = "隆安9"
@@ -274,7 +238,6 @@ if len(ed_ptl) > 0:
     
     suffix = "1" if ("所長" in cmdr_input and "副所長" not in cmdr_input) or ("分隊長" in cmdr_input and "副分隊長" not in cmdr_input) else "2"
     
-    # 針對第一列(專責)自動填入預設代號與編組
     if str(ed_ptl.at[0, '代號']).strip() in ["", "nan", "None"]:
         ed_ptl.at[0, '代號'] = base + suffix
         
@@ -293,9 +256,43 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).f
 st.subheader("4. 警力佈署")
 if '服勤人員' in ed_ptl.columns: 
     ed_ptl['服勤人員'] = ed_ptl['服勤人員'].apply(format_staff_only)
+    
+# --- 編輯器在此渲染 ---
 res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True).fillna("")
 
-# 6. 預覽
+# --- 強制攔截並修正新增列的日期異常 (避開 Streamlit 自動 +1 天的 Bug) ---
+date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日(.*)', p_time)
+if date_match and len(res_ptl) > 0:
+    try:
+        y_val = date_match.group(1)
+        m_val = int(date_match.group(2))
+        d_val = int(date_match.group(3))
+        time_part = date_match.group(4).strip() 
+        
+        y_tw = int(y_val) if y_val else (datetime.now().year - 1911)
+        base_dt = datetime(y_tw + 1911, m_val, d_val)
+        next_dt = base_dt + timedelta(days=1)
+        
+        dedicated_time = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
+        normal_time = f"{base_dt.month}月{base_dt.day}日\n{time_part}"
+        
+        for i in range(len(res_ptl)):
+            val = str(res_ptl.at[i, '勤務時段']).strip()
+            group = str(res_ptl.at[i, '編組']).strip()
+            
+            # 第一列 (專責警力)
+            if i == 0 or "專責" in group:
+                if val in ["", "nan", "None"] or val == normal_time:
+                    res_ptl.at[i, '勤務時段'] = dedicated_time
+            # 第二列之後 (線上巡邏警力)
+            else:
+                # 若被系統誤以為要遞增 (含有上一列特徵如"零時"或"4時")，一律強制打回當日巡邏時間
+                if val in ["", "nan", "None"] or "零時" in val or "4時" in val:
+                    res_ptl.at[i, '勤務時段'] = normal_time
+    except Exception as e: 
+        pass
+
+# 6. 預覽 (使用修正後的 res_ptl)
 def get_preview(df_c, df_p, cmdr_n, time_s):
     cmd_rows = ""
     for _, r in df_c.iterrows():
