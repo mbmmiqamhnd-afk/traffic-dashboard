@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化全天候解析引擎
+# 2. 超進化全天候解析引擎 (加入 B 欄動態擷取)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -92,14 +92,14 @@ def d_extract_duty(d_file, hour):
         res['term'] = "該隊" if is_guard or "分隊" in unit_full else "該所"
         loc_term = res['term'][1:]
 
-        # B. 人員雷達
+        # B. 人員雷達 (支援警務佐)
         f_map = {}
         all_text = " ".join(df.astype(str).values.flatten())
         p = r'([A-Z0-9]{1,2})\s*(所長|副所長|隊長|副隊長|分隊長|小隊長|警務佐|巡官|巡佐|警員|實習)[\s\n,]*([\u4e00-\u9fa5]{2,4})'
         for m in re.findall(p, all_text):
             f_map[d_normalize_code(m[0])] = f"{m[1]}{m[2]}"
 
-        # C. 時間座標鎖定
+        # C. 時間座標鎖定 (防呆)
         t_cols, tr_idx = {}, -1
         for r in range(12):
             tmp = {}
@@ -120,7 +120,7 @@ def d_extract_duty(d_file, hour):
             # 偵測底部邊界
             footer_idx = len(df)
             for r in range(len(df)-1, max(0, len(df)-25), -1):
-                if any(x in "".join(df.iloc[r, :]).replace(" ", "") for x in ["輪休", "主管簽章", "備註", "合計"]):
+                if any(x in "".join(df.iloc[r, :]).replace(" ", "") for x in ["輪休", "主管簽章", "備註", "合計", "人數"]):
                     footer_idx = r; break
 
             # 1. 當前值班偵測
@@ -135,7 +135,8 @@ def d_extract_duty(d_file, hour):
                         res['v_name'] = f_map.get(code, f"警員({code})")
                         v_found = True
                         break
-            if not v_found: res['v_name'] = "值班欄位未偵測"
+            if not v_found:
+                res['v_name'] = "值班欄位未偵測"
 
             # 2. 全天候幹部動態追蹤
             target_titles = ["所長", "副所長", "隊長", "副隊長", "分隊長", "小隊長", "警務佐"]
@@ -154,11 +155,22 @@ def d_extract_duty(d_file, hour):
                 for c_idx, (sh, eh) in t_cols.items():
                     for r in range(tr_idx + 1, footer_idx):
                         if code in [d_normalize_code(x) for x in re.findall(r'[A-Z0-9]{1,2}', str(df.iloc[r, c_idx]))]:
-                            duty_name = "勤務"
+                            
+                            # 🌟 擷取 A 欄與 B 欄文字
+                            duty_parts = []
                             for scan_c in range(0, c_idx):
                                 txt = str(df.iloc[r, scan_c]).strip()
                                 txt = re.sub(r'^[0-9一二三四五六七八九十、\s\.]+', '', txt)
-                                if txt and len(txt) >= 2: duty_name = txt; break
+                                if txt and len(txt) >= 2: 
+                                    duty_parts.append(txt)
+                            
+                            duty_name = "勤務"
+                            if duty_parts:
+                                duty_name = duty_parts[0]
+                                # 若 A 欄是值班，且抓得到 B 欄，則合併顯示
+                                if "值班" in duty_name and len(duty_parts) > 1:
+                                    duty_name = f"{duty_name}({duty_parts[1]})"
+
                             if duty_name not in duties_found: duties_found[duty_name] = []
                             duties_found[duty_name].append([sh, eh])
 
@@ -184,8 +196,7 @@ def d_extract_duty(d_file, hour):
                             merged.append((cs, ce))
                         for ms, me in merged:
                             summary.append(f"{ms:02d}-{(24 if me in [0, 24] else me):02d}{d_name}")
-                    # 🌟 修正：還原為「在所/隊督勤，編排...」的格式
-                    c_notes.append(f"{fname}在{loc_term}督勤，編排" + "、".join(summary) + "勤務")
+                    c_notes.append(f"{fname}編排" + "、".join(summary) + "勤務")
                 else:
                     c_notes.append(f"{fname}在{loc_term}督勤")
 
@@ -240,28 +251,24 @@ for i in range(num_units):
         col_f1, col_f2 = st.columns(2)
         with col_f1: u_duty = st.file_uploader(f"單位 {i+1} 勤務表 (.xlsx)", type=['xlsx'], key=f"ud_{i}")
         with col_f2: u_eq = st.file_uploader(f"單位 {i+1} 交接簿 (.xlsx)", type=['xlsx'], key=f"ue_{i}")
-        
         if u_duty and u_eq:
             dr = d_extract_duty(u_duty, u_time.hour)
             er = d_extract_equip(u_eq, u_time.hour)
             t = dr['term']
             
-            # 日期變數計算
             d_e = insp_date - timedelta(days=1)
             d_5 = insp_date - timedelta(days=5)
             d_3 = insp_date - timedelta(days=3)
             
-            # 🌟 完整還原報告字句
             lns = [
                 f"{u_time.strftime('%H%M')}，{t}值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。",
                 f"{t}駐地監錄設備及天羅地網系統均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。",
-                f"{t}{d_3.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。",
+                f"{t}{d_3.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}勤前教育，幹部均有宣導「防制員警酒後駕車」等事項。",
                 f"{t}環境內務擺設整齊清潔，符合規定。",
-                f"{t}手槍出勤 {er['go'] if er else 0} 把、在所 {er['gi'] if er else 0} 把，子彈出勤 {er['bo'] if er else 0} 顆、在所 {er['bi'] if er else 0} 顆，無線電出勤 {er['ro'] if er else 0} 臺、在所 {er['ri'] if er else 0} 臺；防彈背心出勤 {er['vo'] if er else 0} 件、在所 {er['vi'] if er else 0} 件，幹部對械彈每日檢查管制良好，符合規定。",
+                f"{t}械彈檢查良好，出勤手槍 {er['go'] if er else 0} 把、在所 {er['gi'] if er else 0} 把。",
                 f"本日{dr['cadre_status']}",
-                f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
+                f"{t}酒測聯單無跳號情形。"
             ]
-            
             final_text = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
             st.session_state.unit_reports[i] = f"【{dr['unit_name']} 督導報告】\n{final_text}"
             
