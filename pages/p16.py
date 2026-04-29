@@ -9,7 +9,7 @@ from email.header import Header
 from datetime import datetime, timedelta
 
 # ==========================================
-# 0. 系統初始化
+# 0. 系統初始化與狀態管理
 # ==========================================
 st.set_page_config(page_title="勤務督導報告自動生成系統", page_icon="🚓", layout="wide")
 
@@ -31,7 +31,7 @@ st.markdown("""
         line-height: 1.7 !important;
         color: #1c1c1c !important;
     }
-    .stTabs [data-baseweb="tab-list"] button { font-size: 18px; font-weight: bold; }
+    .stTabs [data-bas Baseweb="tab-list"] button { font-size: 18px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化解析引擎 (修正語句與背心偵測)
+# 2. 超進化解析引擎 (含拘留室與精確排序)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -134,13 +134,12 @@ def d_extract_duty(d_file, hour):
 
             if not v_found: res['v_name'] = "該時段無值班人員"
 
-            # 幹部動態與時段合併
             target_titles = ["所長", "副所長", "隊長", "副隊長", "分隊長", "小隊長", "警務佐"]
-            def rank(c):
+            def rank_order(c):
                 t = f_map[c]
                 if any(x in t for x in ["所長", "隊長", "分隊長"]) and "副" not in t: return 0
                 return 1 if "副" in t else 2
-            t_codes = sorted([c for c in f_map if any(t in f_map[c] for t in target_titles)], key=rank)
+            t_codes = sorted([c for c in f_map if any(t in f_map[c] for t in target_titles)], key=rank_order)
 
             c_notes = []
             for code in t_codes:
@@ -157,10 +156,6 @@ def d_extract_duty(d_file, hour):
                             if any(k in dn for k in ["休", "輪", "假", "補", "外宿"]): is_off = True; continue
                             d_list.append({'s': sh if sh >= 6 else sh+24, 'e': eh if eh > sh else eh+24, 'n': dn, 'sh': sh, 'eh': eh})
                 
-                if not d_list:
-                    for r in range(footer_idx, len(df)):
-                        if code in "".join(df.iloc[r, :]).upper() and any(k in "".join(df.iloc[r, :]) for k in ["休", "輪", "假"]): is_off = True; break
-
                 if is_off: c_notes.append(f"{fname}休假")
                 elif d_list:
                     d_list.sort(key=lambda x: x['s'])
@@ -179,24 +174,32 @@ def d_extract_duty(d_file, hour):
     return res
 
 # ==========================================
-# 3. 裝備解析 (強化背心偵測)
+# 3. 裝備解析 (強化防彈背心正確對位)
 # ==========================================
 def d_extract_equip(e_file, hour):
     try:
         df = pd.read_excel(e_file, header=None).fillna("")
         df_s = df.astype(str)
-        col_map = {"gun": 2, "bullet": 3, "radio": 6, "vest": 11}
+        # 初始化預設欄位 (若搜尋失敗則使用)
+        col_map = {"gun": 2, "bullet": 3, "radio": 6, "vest": 8} # 預設背心在 I 欄(索引8)
+        
+        # 🌟 精準標題列搜尋 (掃描前 10 列)
         for r in range(min(10, len(df))):
-            for c in range(len(df.columns)):
-                v = str(df.iloc[r, c])
-                if "手槍" in v: col_map["gun"] = c
-                if "子彈" in v: col_map["bullet"] = c
-                if "無線電" in v: col_map["radio"] = c
-                if "背心" in v: col_map["vest"] = c
+            row_vals = [str(x) for x in df.iloc[r].values]
+            for c, val in enumerate(row_vals):
+                if "手槍" in val: col_map["gun"] = c
+                if "子彈" in val: col_map["bullet"] = c
+                if "無線電" in val: col_map["radio"] = c
+                # 確保抓到「背心」且排除「電擊器」或「備註」
+                if "背心" in val and "電" not in val: 
+                    col_map["vest"] = c
+        
         sub = df.iloc[:35]; sub_s = df_s.iloc[:35]
         def get_v(kw, k):
+            # 在第二欄(項目說明)搜尋「在」或「出」
             rows = sub[sub_s.iloc[:, 1].str.contains(kw, na=False)]
             return d_safe_int(rows.iloc[-1, col_map[k]]) if not rows.empty else 0
+            
         return {"gi": get_v("在", "gun"), "go": get_v("出", "gun"),
                 "bi": get_v("在", "bullet"), "bo": get_v("出", "bullet"),
                 "ri": get_v("在", "radio"), "ro": get_v("出", "radio"),
@@ -224,7 +227,7 @@ for i in range(num_units):
             d_e = insp_date - timedelta(days=1)
             d_5, d_3 = (insp_date - timedelta(days=5)), (insp_date - timedelta(days=3))
             
-            # 🌟 第 1 項：無值班語句修復
+            # 第 1 項語句修復
             if dr['v_name'] == "該時段無值班人員":
                 line_1 = f"{u_time.strftime('%H%M')}，{t}該時段無值班人員。"
             else:
@@ -245,7 +248,7 @@ for i in range(num_units):
             final_text = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
             st.session_state.unit_reports[i] = f"【{dr['unit_name']} 督導報告】\n{final_text}"
             st.success(f"✅ {dr['unit_name']} 解析完成")
-            st.text_area("預覽", final_text, height=350, key=f"preview_{i}")
+            st.text_area("預覽報告", final_text, height=350, key=f"preview_{i}")
 
 with u_tabs[-1]:
     reports_list = [st.session_state.unit_reports[k] for k in sorted(st.session_state.unit_reports.keys()) if k < num_units]
