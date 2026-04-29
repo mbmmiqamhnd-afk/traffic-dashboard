@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化解析引擎 (拘留室用語精確版)
+# 2. 超進化解析引擎 (人犯用語優化版)
 # ==========================================
 def d_safe_int(val):
     try: return int(float(str(val).split('.')[0].replace(',', '')))
@@ -130,8 +130,7 @@ def d_extract_duty(d_file, hour):
         if target_col != -1 and tr_idx != -1:
             footer_idx = len(df)
             for r in range(len(df)-1, max(0, len(df)-40), -1):
-                row_all = "".join(df.iloc[r, :]).replace(" ", "")
-                if any(x in row_all for x in ["輪休", "主管簽章", "備註", "合計", "人數"]):
+                if any(x in "".join(df.iloc[r, :]).replace(" ", "") for x in ["輪休", "主管簽章", "備註", "合計", "人數"]):
                     footer_idx = r; break
 
             v_found = False
@@ -204,7 +203,7 @@ def d_extract_duty(d_file, hour):
     return res
 
 # ==========================================
-# 3. 裝備解析
+# 3. 裝備解析與主 UI
 # ==========================================
 def d_extract_equip(e_file, hour):
     try:
@@ -225,9 +224,6 @@ def d_extract_equip(e_file, hour):
                 "vi": get_v("在", "vest"), "vo": get_v("出", "vest")}
     except: return None
 
-# ==========================================
-# 4. 主 UI
-# ==========================================
 st.header("📋 勤務督導報告自動生成系統")
 insp_date = st.date_input("選擇督導日期", datetime.now(), key="insp_d")
 num_units = st.number_input("待督導單位數量", 1, 8, 3, key="num_u")
@@ -261,12 +257,11 @@ for i in range(num_units):
                 f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
             ]
             
-            # 🌟 警備隊專屬第 8 點修正：改為「拘留室目前無人犯」
             if dr['is_guard_unit']:
                 if dr['detention_name']:
                     lns.append(f"拘留室值班警員{dr['detention_name']}，對人犯監控良好，無異常狀況發生。")
                 else:
-                    lns.append("拘留室目前無人犯。")
+                    lns.append(f"{t}目前無人犯。")
             
             final_text = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
             st.session_state.unit_reports[i] = f"【{dr['unit_name']} 督導報告】\n{final_text}"
