@@ -123,23 +123,15 @@ def find_target_col(df, hour):
 _SKIP_DUTY_NAMES = {'勤務\n人員\n代號\n職稱\n姓名', '代號', '職稱', '姓名', '勤務備註', '員警', '時段', '項目'}
 
 def _clean_duty_name(raw):
-    """🌟 清洗掉不應作為勤務名稱的字串，並移除括號說明與贅字"""
+    """清洗掉不應作為勤務名稱的字串，並移除括號說明與贅字"""
     raw = str(raw).strip()
-    
-    # 遇到標題殘影直接回傳 None 跳過
     if raw in _SKIP_DUTY_NAMES or ('代號' in raw and '職稱' in raw):
         return None
-        
-    # 斬斷括號(半形或全形)及其包含的所有內容，例如 "內部管理(監督員" -> "內部管理"
     raw = re.sub(r'[\(（].*$', '', raw).strip()
-    
-    # 若字尾帶有「勤務」則移除，避免最後組裝變成「勤務勤務」
     if raw.endswith('勤務') and len(raw) > 2:
         raw = raw[:-2].strip()
-        
     if not raw:
         return '勤務'
-        
     if len(raw) > 15:
         raw = raw[:15]
     return raw
@@ -190,8 +182,17 @@ def extract_duty_v2(d_file, hour):
             col1 = str(df.iloc[r, 1]).strip()
             
             if col0 == '值班':
-                cell = str(df.iloc[r, target_col]).strip()
-                if not cell or cell == 'nan' or len(cell) > 10: continue
+                cell_raw = str(df.iloc[r, target_col])
+                
+                # 🌟 警備隊專屬：強制只取換行符號前的第一行(上列)
+                if res['is_guard_unit']:
+                    cell = cell_raw.split('\n')[0].strip()
+                else:
+                    cell = cell_raw.strip()
+
+                if not cell or cell == 'nan' or len(cell) > 10: 
+                    continue
+                    
                 codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
                 valid_codes = [c for c in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', c)]
                 if valid_codes:
@@ -243,9 +244,7 @@ def extract_duty_v2(d_file, hour):
                     if code not in [x for x in raw_codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', x)]:
                         continue
 
-                    # 直接傳入 col1 交由 cleaner 判斷與截斷
                     duty_name = col1 if col1 and len(col1) >= 2 else col0
-                    
                     if any(k in duty_name for k in ['休', '輪', '假', '補', '外宿']):
                         is_off = True; continue
 
@@ -265,7 +264,6 @@ def extract_duty_v2(d_file, hour):
                             if code in re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', str(df.iloc[r, c])):
                                 is_off = True; break
 
-            # 勤務優先判定：有勤務就絕不報休假
             if d_list:
                 d_list.sort(key=lambda x: x['s'])
                 merged = []
