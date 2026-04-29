@@ -55,7 +55,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 超進化解析引擎 (修正休假覆蓋勤務的 Bug)
+# 2. 核心工具函式 (v2)
 # ==========================================
 def safe_int(val):
     try:
@@ -123,16 +123,30 @@ def find_target_col(df, hour):
 _SKIP_DUTY_NAMES = {'勤務\n人員\n代號\n職稱\n姓名', '代號', '職稱', '姓名', '勤務備註', '員警', '時段', '項目'}
 
 def _clean_duty_name(raw):
-    """清洗掉不應作為勤務名稱的字串"""
-    raw = raw.strip()
-    if raw in _SKIP_DUTY_NAMES:
+    """🌟 清洗掉不應作為勤務名稱的字串，並移除括號說明與贅字"""
+    raw = str(raw).strip()
+    
+    # 遇到標題殘影直接回傳 None 跳過
+    if raw in _SKIP_DUTY_NAMES or ('代號' in raw and '職稱' in raw):
         return None
-    if '代號' in raw and '職稱' in raw:
-        return None
+        
+    # 斬斷括號(半形或全形)及其包含的所有內容，例如 "內部管理(監督員" -> "內部管理"
+    raw = re.sub(r'[\(（].*$', '', raw).strip()
+    
+    # 若字尾帶有「勤務」則移除，避免最後組裝變成「勤務勤務」
+    if raw.endswith('勤務') and len(raw) > 2:
+        raw = raw[:-2].strip()
+        
+    if not raw:
+        return '勤務'
+        
     if len(raw) > 15:
         raw = raw[:15]
-    return raw or None
+    return raw
 
+# ==========================================
+# 3. 勤務表解析 (v2)
+# ==========================================
 def extract_duty_v2(d_file, hour):
     res = {
         'v_name': '解析失敗', 'detention_name': None,
@@ -168,7 +182,7 @@ def extract_duty_v2(d_file, hour):
             res['v_name'] = '找不到對應時段欄'
             return res
 
-        # ── 4. 值班人員 ──
+        # ── 4. 值班與拘留室人員 ──
         v_found = False
         for r in range(3, 30):
             if r >= len(df): break
@@ -186,7 +200,6 @@ def extract_duty_v2(d_file, hour):
                     v_found = True
                     break
             
-            # 拘留室
             if '拘留' in col1 and res['is_guard_unit']:
                 cell = str(df.iloc[r, target_col]).strip()
                 codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
@@ -230,8 +243,8 @@ def extract_duty_v2(d_file, hour):
                     if code not in [x for x in raw_codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', x)]:
                         continue
 
-                    duty_name = col1[:8] if col1 and len(col1) >= 2 else col0
-                    if not duty_name: duty_name = '勤務'
+                    # 直接傳入 col1 交由 cleaner 判斷與截斷
+                    duty_name = col1 if col1 and len(col1) >= 2 else col0
                     
                     if any(k in duty_name for k in ['休', '輪', '假', '補', '外宿']):
                         is_off = True; continue
@@ -244,7 +257,6 @@ def extract_duty_v2(d_file, hour):
                     if eh == 0: e = 24
                     d_list.append({'sh': sh, 'eh': eh, 's': s, 'e': e, 'n': duty_name})
 
-            # 若完全沒有抓到勤務，才去底下找是否休假
             if not d_list:
                 for r in range(3, len(df)):
                     col0, col1 = str(df.iloc[r, 0]).strip(), str(df.iloc[r, 1]).strip()
@@ -253,7 +265,7 @@ def extract_duty_v2(d_file, hour):
                             if code in re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', str(df.iloc[r, c])):
                                 is_off = True; break
 
-            # 🌟 核心修正：勤務優先判定！有勤務就絕不報休假
+            # 勤務優先判定：有勤務就絕不報休假
             if d_list:
                 d_list.sort(key=lambda x: x['s'])
                 merged = []
@@ -277,7 +289,7 @@ def extract_duty_v2(d_file, hour):
     return res
 
 # ==========================================
-# 3. 交接簿解析 (v2)
+# 4. 交接簿解析 (v2)
 # ==========================================
 def extract_equip_v2(e_file):
     try:
@@ -320,7 +332,7 @@ def extract_equip_v2(e_file):
         return None
 
 # ==========================================
-# 4. 主介面 UI
+# 5. 主介面 UI
 # ==========================================
 st.header("📋 勤務督導報告自動生成系統")
 insp_date = st.date_input("選擇督導日期", datetime.now(), key="insp_d")
