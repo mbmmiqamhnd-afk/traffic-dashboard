@@ -55,13 +55,19 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 核心工具函式 (v2)
+# 2. 超進化解析引擎 (修正休假覆蓋勤務的 Bug)
 # ==========================================
 def safe_int(val):
     try:
         return int(float(str(val).split('.')[0].replace(',', '')))
     except:
         return 0
+
+def d_normalize_code(c):
+    c_str = str(c).strip().upper()
+    c_str = c_str.translate(str.maketrans('０１２３４５６７８９ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ', '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
+    c_str = c_str.replace(".0", "")
+    return str(int(c_str)) if c_str.isdigit() else c_str
 
 def parse_time_header(cell):
     """'06\n|\n07' → (6, 7)"""
@@ -127,9 +133,6 @@ def _clean_duty_name(raw):
         raw = raw[:15]
     return raw or None
 
-# ==========================================
-# 3. 勤務表解析 (v2)
-# ==========================================
 def extract_duty_v2(d_file, hour):
     res = {
         'v_name': '解析失敗', 'detention_name': None,
@@ -151,6 +154,8 @@ def extract_duty_v2(d_file, hour):
                     res['term'] = '該分隊'; res['has_skyline'] = False
                 elif '隊' in unit_full:
                     res['term'] = '該隊'; res['has_skyline'] = False
+                else:
+                    res['term'] = '該所'; res['has_skyline'] = True
                 res['loc_term'] = res['term'][1:]
                 break
 
@@ -163,14 +168,13 @@ def extract_duty_v2(d_file, hour):
             res['v_name'] = '找不到對應時段欄'
             return res
 
-        # ── 4. 值班與拘留室人員 ──
+        # ── 4. 值班人員 ──
         v_found = False
         for r in range(3, 30):
             if r >= len(df): break
             col0 = str(df.iloc[r, 0]).strip()
             col1 = str(df.iloc[r, 1]).strip()
             
-            # 值班判定
             if col0 == '值班':
                 cell = str(df.iloc[r, target_col]).strip()
                 if not cell or cell == 'nan' or len(cell) > 10: continue
@@ -180,9 +184,9 @@ def extract_duty_v2(d_file, hour):
                     code = valid_codes[0]
                     res['v_name'] = fmap.get(code, f'警員({code})')
                     v_found = True
-                    break # 找到首列值班即跳出
+                    break
             
-            # 拘留室判定
+            # 拘留室
             if '拘留' in col1 and res['is_guard_unit']:
                 cell = str(df.iloc[r, target_col]).strip()
                 codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
@@ -211,7 +215,8 @@ def extract_duty_v2(d_file, hour):
         c_notes = []
         for code in cadre_codes:
             fname_full = fmap[code]
-            d_list, is_off = [], False
+            d_list = []
+            is_off = False
 
             for r in range(3, footer_row):
                 col0, col1 = str(df.iloc[r, 0]).strip(), str(df.iloc[r, 1]).strip()
@@ -239,16 +244,17 @@ def extract_duty_v2(d_file, hour):
                     if eh == 0: e = 24
                     d_list.append({'sh': sh, 'eh': eh, 's': s, 'e': e, 'n': duty_name})
 
-            for r in range(3, len(df)):
-                col0, col1 = str(df.iloc[r, 0]).strip(), str(df.iloc[r, 1]).strip()
-                if any(k in col0 + col1 for k in ['輪休', '慰休', '公假', '補休', '事假', '病假']):
-                    for c in range(13, len(df.columns)):
-                        if code in re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', str(df.iloc[r, c])):
-                            is_off = True; break
+            # 若完全沒有抓到勤務，才去底下找是否休假
+            if not d_list:
+                for r in range(3, len(df)):
+                    col0, col1 = str(df.iloc[r, 0]).strip(), str(df.iloc[r, 1]).strip()
+                    if any(k in col0 + col1 for k in ['輪休', '慰休', '公假', '補休', '事假', '病假']):
+                        for c in range(13, len(df.columns)):
+                            if code in re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', str(df.iloc[r, c])):
+                                is_off = True; break
 
-            if is_off:
-                c_notes.append(f'{fname_full}休假')
-            elif d_list:
+            # 🌟 核心修正：勤務優先判定！有勤務就絕不報休假
+            if d_list:
                 d_list.sort(key=lambda x: x['s'])
                 merged = []
                 for d in d_list:
@@ -259,6 +265,8 @@ def extract_duty_v2(d_file, hour):
                         merged.append(dict(d))
                 parts = [f"{m['sh']:02d}-{(24 if m['eh'] == 0 else m['eh']):02d}{m['n']}" for m in merged]
                 c_notes.append(f"{fname_full}在{res['loc_term']}督勤，編排{'、'.join(parts)}勤務")
+            elif is_off:
+                c_notes.append(f'{fname_full}休假')
             else:
                 c_notes.append(f'{fname_full}在{res["loc_term"]}督勤')
 
@@ -269,7 +277,7 @@ def extract_duty_v2(d_file, hour):
     return res
 
 # ==========================================
-# 4. 交接簿解析 (v2)
+# 3. 交接簿解析 (v2)
 # ==========================================
 def extract_equip_v2(e_file):
     try:
@@ -295,7 +303,6 @@ def extract_equip_v2(e_file):
         last_zi = last_zo = -1
         for r in range(3, len(df)):
             lbl = str(df.iloc[r, 1]).replace('\n', '').strip()
-            # 容許「在所」或「在隊」
             if '在' in lbl and any(x in lbl for x in ['所', '隊']): last_zi = r
             if '出' in lbl and '勤' in lbl: last_zo = r
 
@@ -313,7 +320,7 @@ def extract_equip_v2(e_file):
         return None
 
 # ==========================================
-# 5. 主介面 UI
+# 4. 主介面 UI
 # ==========================================
 st.header("📋 勤務督導報告自動生成系統")
 insp_date = st.date_input("選擇督導日期", datetime.now(), key="insp_d")
@@ -331,7 +338,6 @@ for i in range(num_units):
             dr = extract_duty_v2(u_duty, u_time.hour)
             er = extract_equip_v2(u_eq)
             
-            # 若裝備解析失敗，補上全 0 的預設值防止出錯
             if not er:
                 er = {'gi':0, 'go':0, 'bi':0, 'bo':0, 'ri':0, 'ro':0, 'vi':0, 'vo':0}
                 
@@ -339,7 +345,6 @@ for i in range(num_units):
             d_e = insp_date - timedelta(days=1)
             d_5, d_3 = (insp_date - timedelta(days=5)), (insp_date - timedelta(days=3))
             
-            # 第 1 項語句修復：無值班則直接句號斷開
             if dr['v_name'] == "該時段無值班人員":
                 line_1 = f"{u_time.strftime('%H%M')}，{t}該時段無值班人員。"
             else:
@@ -355,7 +360,6 @@ for i in range(num_units):
                 f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
             ]
             
-            # 警備隊專屬第 8 項：拘留室
             if dr['is_guard_unit']:
                 lns.append(f"拘留室值班警員{dr['detention_name']}，對人犯監控良好，無異常狀況發生。" if dr['detention_name'] else "拘留室目前無人犯。")
             
