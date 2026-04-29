@@ -137,7 +137,7 @@ def _clean_duty_name(raw):
     return raw
 
 # ==========================================
-# 3. 勤務表解析 (v2)
+# 3. 勤務表解析 (v2 - 強制鎖定上列版)
 # ==========================================
 def extract_duty_v2(d_file, hour):
     res = {
@@ -174,39 +174,45 @@ def extract_duty_v2(d_file, hour):
             res['v_name'] = '找不到對應時段欄'
             return res
 
-        # ── 4. 值班與拘留室人員 ──
+        # ── 4. 值班與拘留室人員 (🌟 修復強制上列規則) ──
         v_found = False
         for r in range(3, 30):
             if r >= len(df): break
             col0 = str(df.iloc[r, 0]).strip()
             col1 = str(df.iloc[r, 1]).strip()
             
-            if col0 == '值班':
-                cell_raw = str(df.iloc[r, target_col])
-                
-                # 🌟 警備隊專屬：強制只取換行符號前的第一行(上列)
-                if res['is_guard_unit']:
-                    cell = cell_raw.split('\n')[0].strip()
-                else:
-                    cell = cell_raw.strip()
+            # A. 拘留室判定 (警備隊專用)
+            if res['is_guard_unit'] and ('拘留' in col0 or '拘留' in col1):
+                if not res['detention_name']:
+                    cell = str(df.iloc[r, target_col]).strip()
+                    codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
+                    valid_codes = [c for c in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', c)]
+                    if valid_codes:
+                        res['detention_name'] = fmap.get(valid_codes[0], f'警員({valid_codes[0]})')
 
-                if not cell or cell == 'nan' or len(cell) > 10: 
-                    continue
+            # B. 值班判定
+            if not v_found and ('值班' in col0 or '值班' in col1):
+                if res['is_guard_unit']:
+                    # 🌟 警備隊強制指令：遇到第一個值班欄，只取上列(換行前)，若無人直接判定無值班，絕不繼續找！
+                    cell_raw = str(df.iloc[r, target_col])
+                    cell = cell_raw.split('\n')[0].strip()
+                    codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
+                    valid_codes = [c for c in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', c)]
+                    if valid_codes:
+                        res['v_name'] = fmap.get(valid_codes[0], f'警員({valid_codes[0]})')
+                    else:
+                        res['v_name'] = '該時段無值班人員'
                     
-                codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
-                valid_codes = [c for c in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', c)]
-                if valid_codes:
-                    code = valid_codes[0]
-                    res['v_name'] = fmap.get(code, f'警員({code})')
-                    v_found = True
-                    break
-            
-            if '拘留' in col1 and res['is_guard_unit']:
-                cell = str(df.iloc[r, target_col]).strip()
-                codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
-                valid_codes = [c for c in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', c)]
-                if valid_codes:
-                    res['detention_name'] = fmap.get(valid_codes[0], f'警員({valid_codes[0]})')
+                    v_found = True # 強制設為 True，讓迴圈不會再去抓下列的江文頌
+                else:
+                    # 一般單位：若格子是空的，允許系統繼續向下找(處理合併儲存格)
+                    cell = str(df.iloc[r, target_col]).strip()
+                    if cell and cell != 'nan' and len(cell) <= 10:
+                        codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
+                        valid_codes = [c for c in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', c)]
+                        if valid_codes:
+                            res['v_name'] = fmap.get(valid_codes[0], f'警員({valid_codes[0]})')
+                            v_found = True
 
         if not v_found:
             res['v_name'] = '該時段無值班人員'
@@ -264,6 +270,7 @@ def extract_duty_v2(d_file, hour):
                             if code in re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', str(df.iloc[r, c])):
                                 is_off = True; break
 
+            # 勤務優先判定：有勤務就絕不報休假
             if d_list:
                 d_list.sort(key=lambda x: x['s'])
                 merged = []
