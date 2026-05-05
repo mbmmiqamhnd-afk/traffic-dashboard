@@ -170,6 +170,14 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     page_width = A4[0] - 24*mm
     story = []
     
+    # 畫頁尾頁碼的函式
+    def draw_footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 10)
+        page_num_text = f"- {doc.page} -"
+        canvas.drawCentredString(A4[0] / 2, 10 * mm, page_num_text)
+        canvas.restoreState()
+    
     style_title = ParagraphStyle('T', fontName=font, fontSize=16, alignment=1, spaceAfter=8)
     style_info = ParagraphStyle('I', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
     style_th = ParagraphStyle('H', fontName=font, fontSize=16, alignment=1, leading=22)
@@ -237,7 +245,8 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     for l in NOTES.split('\n'):
         if l.strip(): story.append(Paragraph(l.strip(), style_note_hanging))
 
-    doc.build(story)
+    # 加入頁首頁尾渲染
+    doc.build(story, onFirstPage=draw_footer, onLaterPages=draw_footer)
     buf.seek(0)
     return buf
 
