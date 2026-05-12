@@ -11,6 +11,8 @@ def show_sidebar():
         # 2. 核心數據處理
         st.subheader("📊 數據與分析")
         st.page_link("app.py", label="全自動批次處理中心", icon="⚙️")
+        # 👇 這是新加入的時數統計工具 
+        st.page_link("pages/p17.py", label="交通疏導時數彙整", icon="⏱️")
         
         # 3. 勤務與專案規劃
         st.subheader("📅 勤務與專案規劃")
@@ -26,5 +28,4 @@ def show_sidebar():
         st.subheader("🛠️ 輔助工具")
         st.page_link("pages/p05.py", label="商標頁碼工具", icon="🔖")
         st.page_link("pages/p06.py", label="PDF 轉 PPTX 工具", icon="📂")
-        # 👇 這是我們新增的 v7 工具連結 👇
         st.page_link("pages/p16.py", label="督導報告極速生成器 v7.0", icon="📋")
