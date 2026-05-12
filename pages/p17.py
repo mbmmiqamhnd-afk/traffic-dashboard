@@ -7,30 +7,28 @@ import re
 st.set_page_config(page_title="交通疏導時數彙整", page_icon="⏱️", layout="wide")
 
 def run_app():
-    st.title("⏱️ 交通疏導勤務時數彙整 (明細可刪除版)")
+    st.title("⏱️ 交通疏導勤務時數彙整 (人員明細編輯版)")
     st.markdown("---")
 
-    # --- 側邊欄：動態規則設定 ---
+    # --- 側邊欄：規則設定 ---
     st.sidebar.header("⚙️ 篩選規則設定")
     
-    # A. 設定要排除的番號
     exclude_input = st.sidebar.text_input(
         "要排除的番號 (A欄內容)", 
         value="A, B, C", 
-        help="請以逗號分隔多個代號。例如：A, B, 專案, 休息"
+        help="請以逗號分隔多個代號"
     )
     exclude_list = [i.strip().upper() for i in exclude_input.split(',') if i.strip()]
     
     st.sidebar.divider()
 
-    # B. 設定尖峰時段所在的欄位 (C欄=2, D欄=3...)
     am_cols_input = st.sidebar.text_input("上午尖峰欄位索引 (C欄起, 逗號隔開)", value="2, 3")
     pm_cols_input = st.sidebar.text_input("下午尖峰欄位索引 (逗號隔開)", value="12, 13")
     
     try:
         peak_col_indices = [int(i.strip()) for i in (am_cols_input + "," + pm_cols_input).split(',') if i.strip()]
     except:
-        st.sidebar.error("❌ 欄位索引請輸入數字 (例如: 2, 3)")
+        st.sidebar.error("❌ 欄位索引請輸入數字")
         peak_col_indices = [2, 3, 12, 13]
 
     # --- 主介面：檔案處理 ---
@@ -55,72 +53,85 @@ def run_app():
                 for r_idx in range(2, len(df)):
                     row = df.iloc[r_idx]
                     
+                    # 1. 番號過濾
                     shift_code = str(row[0]).strip().upper()
                     if shift_code in exclude_list:
                         continue
                     
+                    # 2. 姓名取得
                     name = str(row[1]).replace('\n', '').replace(' ', '')
                     if name in ['nan', 'None', '', '姓名', '合計', '總計']: 
                         continue
                     
-                    # 只要在尖峰時段內發現「守望」，就記錄一筆明細
+                    # 3. 掃描尖峰欄位 (計算該員當天總尖峰時數)
+                    daily_watch_hours = 0
                     for c_idx in peak_col_indices:
                         if c_idx < len(row):
                             cell_content = str(row[c_idx]).replace('\n', '').replace(' ', '')
                             if "守望" in cell_content:
-                                all_records.append({
-                                    "單位": unit_name,
-                                    "姓名": name,
-                                    "時數": 1,
-                                    "番號": shift_code,
-                                    "來源檔案": file.name,
-                                    "原始座標": f"列{r_idx+1}-欄{c_idx+1}"
-                                })
+                                daily_watch_hours += 1
+                    
+                    # 只要當天有時數，就記錄為一行 (以人/天為單位)
+                    if daily_watch_hours > 0:
+                        all_records.append({
+                            "單位": unit_name,
+                            "姓名": name,
+                            "當日尖峰時數": daily_watch_hours,
+                            "番號": shift_code,
+                            "日期來源": file.name
+                        })
             except Exception as e:
                 st.error(f"解析 {file.name} 失敗：{e}")
 
-        # --- 結果呈現 ---
         if all_records:
-            raw_detail_df = pd.DataFrame(all_records)
+            # 轉換為明細 DataFrame (每人每天佔一列)
+            raw_person_detail_df = pd.DataFrame(all_records)
             
             st.divider()
-            st.subheader("📋 第一步：每日明細編輯區 (可手動刪除列)")
-            st.info("💡 **操作方式**：點擊列最左側選取後按鍵盤 `Delete` 即可刪除。刪除後下方的匯總結果會自動更新。")
             
-            # --- 核心功能：明細層級刪除 ---
+            # --- 第一區：人員明細編輯區 ---
+            st.subheader("📝 第一步：確認每日人員名單 (可整列刪除)")
+            st.info("💡 **操作方式**：如果您發現某天某單位多出了一個人，請點擊該列最左側選取後，按鍵盤 `Delete` 鍵將其整列刪除。")
+            
+            # 使用 data_editor 讓使用者可以刪除多出的人
             edited_detail_df = st.data_editor(
-                raw_detail_df,
+                raw_person_detail_df,
                 use_container_width=True,
-                num_rows="dynamic",  # 允許使用者刪除行
-                key="detail_editor_v2",
+                num_rows="dynamic", # 允許動態刪除行
+                key="person_detail_editor",
                 hide_index=False
             )
 
+            st.divider()
+
+            # --- 第二區：自動重新加總結果 ---
+            st.subheader("📊 第二步：月彙整結果 (根據上方剩餘人員自動計算)")
+            
             if not edited_detail_df.empty:
-                # --- 自動根據刪除後的明細重新彙整 ---
-                summary = edited_detail_df.groupby(['單位', '姓名'])['時數'].sum().reset_index()
-                summary = summary.sort_values(['單位', '時數'], ascending=[True, False])
+                # 根據篩選後的人員名單重新加總
+                summary = edited_detail_df.groupby(['單位', '姓名'])['當日尖峰時數'].sum().reset_index()
+                summary.columns = ['單位', '姓名', '總計尖峰時數']
+                summary = summary.sort_values(['單位', '總計尖峰時數'], ascending=[True, False])
                 
-                st.divider()
-                st.subheader("🏆 第二步：自動更新之彙整結果")
                 st.dataframe(summary, use_container_width=True, hide_index=True)
-                
-                # Excel 下載功能 (下載編輯後的結果)
+
+                # --- 第三區：下載功能 ---
+                st.subheader("📥 第三步：下載最終報表")
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     summary.to_excel(writer, index=False, sheet_name='月彙整總表')
-                    edited_detail_df.to_excel(writer, index=False, sheet_name='修正後明細對帳')
+                    edited_detail_df.to_excel(writer, index=False, sheet_name='人員核銷明細')
                 
                 st.download_button(
-                    label="📥 下載最終修正版 Excel 報表",
+                    label="📥 下載最終修正版 Excel",
                     data=output.getvalue(),
-                    file_name=f"交通疏導統計_修正版_{pd.Timestamp.now().strftime('%m%d')}.xlsx",
+                    file_name=f"交通疏導人員統計_{pd.Timestamp.now().strftime('%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             else:
-                st.warning("⚠️ 明細已被全數刪除，無資料可供統計。")
+                st.warning("⚠️ 名單已被全數刪除。")
         else:
-            st.warning("⚠️ 找不到符合條件的資料。")
+            st.warning("⚠️ 找不到符合條件的人員紀錄。")
 
 if __name__ == "__main__":
     run_app()
