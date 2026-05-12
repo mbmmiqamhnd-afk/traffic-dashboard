@@ -72,17 +72,23 @@ def run_app():
                 else:
                     df = pd.read_excel(file, header=None)
                 
-                # --- 精準提取單位名稱邏輯 ---
-                # 1. 移除日期與數字
-                temp_name = re.sub(r'\d+', '', file.name)
-                # 2. 移除副檔名
-                temp_name = temp_name.replace('.xlsx', '').replace('.csv', '')
-                # 3. 移除常見冗餘字眼 (保持單位欄位純淨)
-                temp_name = re.sub(r'(交通|勤務|明細|彙整|統計|執行|時數|工作|紀錄)', '', temp_name)
-                # 4. 去除多餘空格與特殊符號
-                u_name = temp_name.strip(' _-()（）')
+                # --- 【完美版】專屬單位精準辨識 ---
+                # 直接捕捉龍潭分局的各所隊名稱，忽視所有日期與雜字
+                match = re.search(r'(龍潭|中興|石門|高平|三和|聖亭|交通)(派出所|分隊|所)?', file.name)
                 
-                if not u_name: u_name = "未知單位"
+                if match:
+                    base_name = match.group(1)
+                    if base_name == '交通':
+                        u_name = "交通分隊"
+                    else:
+                        u_name = base_name + "派出所"
+                else:
+                    # 備用方案 (如果上傳了非上述單位的檔案)
+                    temp = re.sub(r'\d+', '', file.name)
+                    temp = re.sub(r'(交通|疏導|勤務|明細|彙整|統計|執行|時數|工作|紀錄|表|年|月|日|\.xlsx|\.csv)', '', temp)
+                    u_name = temp.strip(' _-()（）')
+                    if not u_name: u_name = "未知單位"
+                
                 units_found.add(u_name)
                 
                 all_raw_data.append({"unit": u_name, "df": df, "filename": file.name})
