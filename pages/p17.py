@@ -7,7 +7,7 @@ import re
 st.set_page_config(page_title="交通疏導時數彙整", page_icon="⏱️", layout="wide")
 
 def run_app():
-    st.title("⏱️ 交通疏導勤務時數彙整 (可編輯下載版)")
+    st.title("⏱️ 交通疏導勤務時數彙整 (明細編輯版)")
     st.markdown("---")
 
     # --- 側邊欄設定 ---
@@ -25,12 +25,13 @@ def run_app():
         peak_col_indices = [2, 3, 12, 13]
 
     # --- 主介面 ---
-    uploaded_files = st.file_uploader("請上傳勤務明細檔", accept_multiple_files=True, type=['csv', 'xlsx'])
+    uploaded_files = st.file_uploader("請選取並上傳當月勤務明細檔", accept_multiple_files=True, type=['csv', 'xlsx'])
 
     if uploaded_files:
         all_records = []
         for file in uploaded_files:
             try:
+                # 讀取檔案
                 df = pd.read_csv(file, header=None, encoding='utf-8-sig') if file.name.endswith('.csv') else pd.read_excel(file, header=None)
                 unit_name = re.split(r'\d+', file.name)[0]
 
@@ -42,57 +43,65 @@ def run_app():
                     name = str(row[1]).replace('\n', '').replace(' ', '')
                     if name in ['nan', 'None', '', '姓名', '合計', '總計']: continue
                     
-                    watch_hours = 0
+                    # 統計該行在尖峰時段是否有守望
                     for c_idx in peak_col_indices:
                         if c_idx < len(row):
-                            if "守望" in str(row[c_idx]).replace('\n', ''):
-                                watch_hours += 1
-                    
-                    if watch_hours > 0:
-                        all_records.append({"單位": unit_name, "姓名": name, "時數": watch_hours, "番號": shift_code, "來源檔案": file.name})
+                            cell_val = str(row[c_idx]).replace('\n', '')
+                            if "守望" in cell_val:
+                                all_records.append({
+                                    "單位": unit_name,
+                                    "姓名": name,
+                                    "時數": 1,
+                                    "番號": shift_code,
+                                    "來源檔案": file.name,
+                                    "原始位置": f"列{r_idx+1}-欄{c_idx+1}"
+                                })
             except Exception as e:
                 st.error(f"解析 {file.name} 失敗：{e}")
 
         if all_records:
-            full_df = pd.DataFrame(all_records)
-            # 初始加總彙整
-            summary_df = full_df.groupby(['單位', '姓名'])['時數'].sum().reset_index()
-            summary_df = summary_df.sort_values(['單位', '時數'], ascending=[True, False])
+            initial_df = pd.DataFrame(all_records)
 
             st.divider()
-            st.subheader("📝 統計結果編輯區")
-            st.info("💡 **如何刪除？** 點擊表格左側的小方塊選取該列，按鍵盤 `Backspace` 或 `Delete`；或直接修改儲存格內容。")
+            st.subheader("📝 第一步：編輯/刪除原始明細")
+            st.info("💡 **如何刪除明細？** 點擊最左側勾選想要刪除的列，按鍵盤 `Delete`；或點擊表格左上角全選後取消勾選特定列。")
 
-            # --- 核心功能：可編輯表格 ---
-            # 使用 num_rows="dynamic" 允許使用者刪除整列
-            edited_df = st.data_editor(
-                summary_df, 
-                use_container_width=True, 
-                num_rows="dynamic",
-                key="data_editor_summary",
-                hide_index=True
+            # --- 核心功能：編輯原始明細 ---
+            edited_detail_df = st.data_editor(
+                initial_df,
+                use_container_width=True,
+                num_rows="dynamic", # 允許刪除列
+                key="detail_editor",
+                hide_index=False
             )
 
-            # --- 下載區：使用編輯後的 edited_df ---
-            st.subheader("📥 下載最終報表")
-            col1, col2 = st.columns(2)
-            with col1:
+            # --- 第二步：自動根據編輯後的明細進行加總 ---
+            st.divider()
+            st.subheader("📊 第二步：自動加總結果 (根據上述明細)")
+            
+            if not edited_detail_df.empty:
+                # 重新計算總額
+                final_summary = edited_detail_df.groupby(['單位', '姓名'])['時數'].sum().reset_index()
+                final_summary = final_summary.sort_values(['單位', '時數'], ascending=[True, False])
+                st.dataframe(final_summary, use_container_width=True, hide_index=True)
+
+                # --- 下載區 ---
+                st.subheader("📥 第三步：下載報表")
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    edited_df.to_excel(writer, index=False, sheet_name='月彙整(已手動修正)')
-                    full_df.to_excel(writer, index=False, sheet_name='原始明細對帳')
+                    final_summary.to_excel(writer, index=False, sheet_name='月彙整總表')
+                    edited_detail_df.to_excel(writer, index=False, sheet_name='修正後明細備查')
                 
                 st.download_button(
-                    label="📥 下載修正後的 Excel 報表",
+                    label="📥 下載最終修正版報表",
                     data=output.getvalue(),
-                    file_name=f"交通疏導統計_修正版_{pd.Timestamp.now().strftime('%m%d')}.xlsx",
+                    file_name=f"交通疏導統計_明細修正版_{pd.Timestamp.now().strftime('%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-            
-            with st.expander("🔍 查看原始過濾明細"):
-                st.dataframe(full_df, use_container_width=True, hide_index=True)
+            else:
+                st.warning("明細已被全數刪除，無資料可供統計。")
         else:
-            st.warning("⚠️ 找不到符合條件的資料。")
+            st.warning("⚠️ 找不到符合條件的守望紀錄。")
 
 if __name__ == "__main__":
     run_app()
