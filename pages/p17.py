@@ -14,7 +14,7 @@ from menu import show_sidebar
 # --- 1. 頁面配置 ---
 st.set_page_config(page_title="交通疏導時數彙整", page_icon="⏱️", layout="wide")
 
-# 呼叫側邊欄導航 (僅作跳頁使用)
+# 呼叫側邊欄導航
 show_sidebar()
 
 # --- 2. 郵件發送功能 ---
@@ -83,14 +83,13 @@ def run_app():
 
         st.divider()
         
-        # B. 【全新改版】主畫面設定區塊 (取代原先的側邊欄)
+        # B. 主畫面設定區塊
         st.subheader("🏢 1. 選擇單位與設定規則")
         st.info("💡 下方設定會「自動記憶」。您可以切換不同單位，分別設定專屬的排除番號與欄位！")
         
         col_unit, col_ex, col_am, col_pm = st.columns([2, 2, 1, 1])
         
         with col_unit:
-            # 單位選擇器移到主畫面最顯眼的位置
             target_unit = st.selectbox("🎯 請選擇要校對的單位", sorted(list(units_found)))
         with col_ex:
             u_exclude = st.text_input(f"排除番號 ({target_unit})", value="A, B, C", key=f"ex_{target_unit}")
@@ -171,17 +170,6 @@ def run_app():
                             else: st.error(f"❌ 郵件失敗: {err}")
         else:
             st.warning(f"⚠️ 在目前的設定規則下，找不到『{target_unit}』的有效守望資料。")
-
-    # --- 4. 返回主選單 ---
-    st.divider()
-    col_back, col_msg = st.columns([1, 2])
-    with col_back:
-        if st.button("🏠 返回全自動批次處理中心", use_container_width=True, type="primary"):
-            try:
-                st.switch_page("app.py")
-            except:
-                st.write('<meta http-equiv="refresh" content="0;url=/">', unsafe_allow_html=True)
-                st.rerun()
 
 if __name__ == "__main__":
     run_app()
