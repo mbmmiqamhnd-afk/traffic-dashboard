@@ -72,8 +72,7 @@ def run_app():
                 else:
                     df = pd.read_excel(file, header=None)
                 
-                # --- 【完美版】專屬單位精準辨識 ---
-                # 直接捕捉龍潭分局的各所隊名稱，忽視所有日期與雜字
+                # --- 專屬單位精準辨識 ---
                 match = re.search(r'(龍潭|中興|石門|高平|三和|聖亭|交通)(派出所|分隊|所)?', file.name)
                 
                 if match:
@@ -83,14 +82,12 @@ def run_app():
                     else:
                         u_name = base_name + "派出所"
                 else:
-                    # 備用方案 (如果上傳了非上述單位的檔案)
                     temp = re.sub(r'\d+', '', file.name)
                     temp = re.sub(r'(交通|疏導|勤務|明細|彙整|統計|執行|時數|工作|紀錄|表|年|月|日|\.xlsx|\.csv)', '', temp)
                     u_name = temp.strip(' _-()（）')
                     if not u_name: u_name = "未知單位"
                 
                 units_found.add(u_name)
-                
                 all_raw_data.append({"unit": u_name, "df": df, "filename": file.name})
             except:
                 st.error(f"檔案 {file.name} 讀取失敗")
@@ -117,7 +114,7 @@ def run_app():
         except:
             p_indices = [2, 12]
 
-        # C. 解析資料
+        # C. 解析資料 (移除單位欄位輸出)
         processed_records = []
         for item in all_raw_data:
             if item["unit"] == target_unit:
@@ -137,7 +134,6 @@ def run_app():
                     
                     if h_count > 0:
                         processed_records.append({
-                            "單位": item["unit"], 
                             "姓名": name, 
                             "當日尖峰時數": h_count,
                             "番號": s_code, 
@@ -155,8 +151,9 @@ def run_app():
             edited_df = st.data_editor(final_raw_df, use_container_width=True, num_rows="dynamic", key=f"editor_{target_unit}")
 
             if not edited_df.empty:
-                summary = edited_df.groupby(['單位', '姓名'])['當日尖峰時數'].sum().reset_index()
-                summary.columns = ['單位', '姓名', '總計尖峰時數']
+                # 重新分組 (僅以姓名分組)
+                summary = edited_df.groupby(['姓名'])['當日尖峰時數'].sum().reset_index()
+                summary.columns = ['姓名', '總計尖峰時數']
                 
                 col_result, col_action = st.columns([3, 2])
                 
