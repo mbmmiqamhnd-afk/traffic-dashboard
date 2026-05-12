@@ -9,22 +9,24 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
+from menu import show_sidebar  # 👈 務必確保這一行存在
 
-# --- 1. 頁面配置 (必須在最頂端) ---
+# --- 1. 頁面配置 ---
 st.set_page_config(page_title="交通疏導時數彙整", page_icon="⏱️", layout="wide")
+
+# 呼叫側邊欄選單 (確保左側選單出現)
+show_sidebar() 
 
 # --- 2. 郵件發送功能 ---
 def send_stats_email(filename, summary_df, detail_df):
     try:
         if "email" not in st.secrets:
-            return False, "未偵測到郵件設定 (secrets.toml)"
-        
+            return False, "未偵測到郵件設定"
         sender = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
         
         msg = MIMEMultipart()
-        msg["From"] = sender
-        msg["To"] = sender 
+        msg["From"], msg["To"] = sender, sender
         msg["Subject"] = f"【系統備份】{filename.replace('.xlsx', '')}"
         
         body = f"您好：\n\n附件為修正後的交通疏導統計報表。\n發送時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
@@ -51,9 +53,9 @@ def send_stats_email(filename, summary_df, detail_df):
 # --- 3. 主程式邏輯 ---
 def run_app():
     st.title("⏱️ 交通疏導勤務時數彙整系統")
-    
-    # 檔案上傳
-    uploaded_files = st.file_uploader("請上傳『各單位』勤務明細檔 (可批次拖入多個檔案)", accept_multiple_files=True, type=['csv', 'xlsx'])
+    st.markdown("---")
+
+    uploaded_files = st.file_uploader("請上傳『各單位』勤務明細檔", accept_multiple_files=True, type=['csv', 'xlsx'])
 
     if uploaded_files:
         all_raw_data = []
@@ -83,9 +85,9 @@ def run_app():
         st.sidebar.divider()
         st.sidebar.subheader(f"📍 {target_unit} 專屬規則")
         
-        u_exclude = st.sidebar.text_input(f"排除番號 (如 A,B,C)", value="A, B, C", key=f"ex_{target_unit}")
-        u_am = st.sidebar.text_input(f"上午尖峰欄位索引", value="2, 3", key=f"am_{target_unit}")
-        u_pm = st.sidebar.text_input(f"下午尖峰欄位索引", value="12, 13", key=f"pm_{target_unit}")
+        u_exclude = st.sidebar.text_input(f"排除番號", value="A, B, C", key=f"ex_{target_unit}")
+        u_am = st.sidebar.text_input(f"上午尖峰索引", value="2, 3", key=f"am_{target_unit}")
+        u_pm = st.sidebar.text_input(f"下午尖峰索引", value="12, 13", key=f"pm_{target_unit}")
         
         ex_list = [i.strip().upper() for i in u_exclude.split(',') if i.strip()]
         try:
@@ -93,7 +95,6 @@ def run_app():
         except:
             p_indices = [2, 3, 12, 13]
 
-        # 解析與統計
         processed_records = []
         for item in all_raw_data:
             if item["unit"] == target_unit:
@@ -120,8 +121,6 @@ def run_app():
         if processed_records:
             final_raw_df = pd.DataFrame(processed_records)
             st.subheader(f"📝 {target_unit} - 人員核銷明細")
-            st.info("💡 刪除多出的人員：點選列首按鍵盤 `Delete` 即可。")
-            
             edited_df = st.data_editor(final_raw_df, use_container_width=True, num_rows="dynamic", key=f"editor_{target_unit}")
 
             if not edited_df.empty:
@@ -150,21 +149,14 @@ def run_app():
         else:
             st.warning(f"⚠️ 目前設定下找不到 {target_unit} 的資料。")
 
-    # --- 強力返回區塊 ---
+    # --- 返回按鈕區塊 ---
     st.divider()
-    col_back, col_msg = st.columns([1, 2])
-    with col_back:
-        if st.button("🏠 返回系統首頁", use_container_width=True, type="primary"):
-            # 方法 A: 原生跳轉
-            try:
-                st.switch_page("app.py")
-            except:
-                # 方法 B: 重新整理回根目錄
-                st.write('<meta http-equiv="refresh" content="0;url=/">', unsafe_allow_html=True)
-                st.rerun()
-
-    with col_msg:
-        st.info("💡 若按鈕無反應，請點擊左側邊欄頂部的「⚙️ 全自動批次處理中心」返回。")
+    if st.button("🏠 返回系統首頁", use_container_width=True, type="primary"):
+        try:
+            st.switch_page("app.py")
+        except:
+            st.write('<meta http-equiv="refresh" content="0;url=/">', unsafe_allow_html=True)
+            st.rerun()
 
 if __name__ == "__main__":
     run_app()
