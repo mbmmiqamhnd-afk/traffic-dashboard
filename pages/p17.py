@@ -9,13 +9,13 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-from menu import show_sidebar  # 👈 務必確保這一行存在
+from menu import show_sidebar
 
 # --- 1. 頁面配置 ---
 st.set_page_config(page_title="交通疏導時數彙整", page_icon="⏱️", layout="wide")
 
-# 呼叫側邊欄選單 (確保左側選單出現)
-show_sidebar() 
+# 呼叫側邊欄導航 (僅作跳頁使用)
+show_sidebar()
 
 # --- 2. 郵件發送功能 ---
 def send_stats_email(filename, summary_df, detail_df):
@@ -55,7 +55,8 @@ def run_app():
     st.title("⏱️ 交通疏導勤務時數彙整系統")
     st.markdown("---")
 
-    uploaded_files = st.file_uploader("請上傳『各單位』勤務明細檔", accept_multiple_files=True, type=['csv', 'xlsx'])
+    # A. 檔案上傳區
+    uploaded_files = st.file_uploader("📂 請上傳『各單位』勤務明細檔 (可批次拖入整個月份的檔案)", accept_multiple_files=True, type=['csv', 'xlsx'])
 
     if uploaded_files:
         all_raw_data = []
@@ -71,23 +72,32 @@ def run_app():
                 else:
                     df = pd.read_excel(file, header=None)
                 
-                u_name = re.split(r'\d+', file.name)[0].strip()
+                # 更強大的單位辨識：過濾掉所有數字與副檔名
+                u_name = re.sub(r'\d+', '', file.name).replace('.xlsx', '').replace('.csv', '').strip(' _-')
                 if not u_name: u_name = "未知單位"
                 units_found.add(u_name)
+                
                 all_raw_data.append({"unit": u_name, "df": df, "filename": file.name})
             except:
                 st.error(f"檔案 {file.name} 讀取失敗")
 
-        # 側邊欄規則設定
-        st.sidebar.header("🏢 分單位篩選設定")
-        target_unit = st.sidebar.selectbox("🎯 選擇校對單位", sorted(list(units_found)))
+        st.divider()
         
-        st.sidebar.divider()
-        st.sidebar.subheader(f"📍 {target_unit} 專屬規則")
+        # B. 【全新改版】主畫面設定區塊 (取代原先的側邊欄)
+        st.subheader("🏢 1. 選擇單位與設定規則")
+        st.info("💡 下方設定會「自動記憶」。您可以切換不同單位，分別設定專屬的排除番號與欄位！")
         
-        u_exclude = st.sidebar.text_input(f"排除番號", value="A, B, C", key=f"ex_{target_unit}")
-        u_am = st.sidebar.text_input(f"上午尖峰索引", value="2, 3", key=f"am_{target_unit}")
-        u_pm = st.sidebar.text_input(f"下午尖峰索引", value="12, 13", key=f"pm_{target_unit}")
+        col_unit, col_ex, col_am, col_pm = st.columns([2, 2, 1, 1])
+        
+        with col_unit:
+            # 單位選擇器移到主畫面最顯眼的位置
+            target_unit = st.selectbox("🎯 請選擇要校對的單位", sorted(list(units_found)))
+        with col_ex:
+            u_exclude = st.text_input(f"排除番號 ({target_unit})", value="A, B, C", key=f"ex_{target_unit}")
+        with col_am:
+            u_am = st.text_input("上午尖峰索引", value="2, 3", key=f"am_{target_unit}")
+        with col_pm:
+            u_pm = st.text_input("下午尖峰索引", value="12, 13", key=f"pm_{target_unit}")
         
         ex_list = [i.strip().upper() for i in u_exclude.split(',') if i.strip()]
         try:
@@ -95,6 +105,7 @@ def run_app():
         except:
             p_indices = [2, 3, 12, 13]
 
+        # C. 解析該單位的資料
         processed_records = []
         for item in all_raw_data:
             if item["unit"] == target_unit:
@@ -118,45 +129,59 @@ def run_app():
                             "番號": s_code, "日期來源": item["filename"]
                         })
 
+        # D. 展示、編輯與輸出區塊
+        st.divider()
+        st.subheader(f"📝 2. {target_unit} - 人員核銷明細與彙整")
+        
         if processed_records:
             final_raw_df = pd.DataFrame(processed_records)
-            st.subheader(f"📝 {target_unit} - 人員核銷明細")
+            st.caption("💡 操作提示：若要刪除多出的人員，請點選列表最左側的序號，然後按鍵盤 `Delete`。")
+            
+            # 使用編輯器 (人/天 為單位)
             edited_df = st.data_editor(final_raw_df, use_container_width=True, num_rows="dynamic", key=f"editor_{target_unit}")
 
             if not edited_df.empty:
+                # 即時統計
                 summary = edited_df.groupby(['單位', '姓名'])['當日尖峰時數'].sum().reset_index()
                 summary.columns = ['單位', '姓名', '總計尖峰時數']
                 
-                st.divider()
-                st.subheader("📊 統計結果")
-                st.dataframe(summary.sort_values('總計尖峰時數', ascending=False), use_container_width=True, hide_index=True)
+                # 左右並排顯示彙整結果與下載按鈕
+                col_result, col_action = st.columns([3, 2])
+                
+                with col_result:
+                    st.dataframe(summary.sort_values('總計尖峰時數', ascending=False), use_container_width=True, hide_index=True)
 
-                today = datetime.now().strftime('%m%d')
-                fname = f"{target_unit}_交通疏導統計_{today}.xlsx"
-                
-                col1, col2 = st.columns(2)
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    summary.to_excel(writer, index=False, sheet_name='月彙整')
-                    edited_df.to_excel(writer, index=False, sheet_name='明細')
-                
-                col1.download_button(f"📥 下載 {fname}", output.getvalue(), fname, use_container_width=True)
-                if col2.button(f"📧 寄送最終結果至信箱", use_container_width=True):
-                    with st.spinner("發送中..."):
-                        ok, err = send_stats_email(fname, summary, edited_df)
-                        if ok: st.success("✅ 郵件發送成功！")
-                        else: st.error(f"❌ 郵件失敗: {err}")
+                with col_action:
+                    today = datetime.now().strftime('%m%d')
+                    fname = f"{target_unit}_交通疏導統計_{today}.xlsx"
+                    
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        summary.to_excel(writer, index=False, sheet_name='月彙整')
+                        edited_df.to_excel(writer, index=False, sheet_name='明細')
+                    
+                    st.write("### 📥 輸出報表")
+                    st.download_button(f"📥 下載 {target_unit} 統計 Excel", output.getvalue(), fname, use_container_width=True)
+                    
+                    st.write("---")
+                    if st.button(f"📧 寄送 {target_unit} 報表至信箱", use_container_width=True):
+                        with st.spinner("報表發送中..."):
+                            ok, err = send_stats_email(fname, summary, edited_df)
+                            if ok: st.success("✅ 郵件發送成功！")
+                            else: st.error(f"❌ 郵件失敗: {err}")
         else:
-            st.warning(f"⚠️ 目前設定下找不到 {target_unit} 的資料。")
+            st.warning(f"⚠️ 在目前的設定規則下，找不到『{target_unit}』的有效守望資料。")
 
-    # --- 返回按鈕區塊 ---
+    # --- 4. 返回主選單 ---
     st.divider()
-    if st.button("🏠 返回系統首頁", use_container_width=True, type="primary"):
-        try:
-            st.switch_page("app.py")
-        except:
-            st.write('<meta http-equiv="refresh" content="0;url=/">', unsafe_allow_html=True)
-            st.rerun()
+    col_back, col_msg = st.columns([1, 2])
+    with col_back:
+        if st.button("🏠 返回全自動批次處理中心", use_container_width=True, type="primary"):
+            try:
+                st.switch_page("app.py")
+            except:
+                st.write('<meta http-equiv="refresh" content="0;url=/">', unsafe_allow_html=True)
+                st.rerun()
 
 if __name__ == "__main__":
     run_app()
