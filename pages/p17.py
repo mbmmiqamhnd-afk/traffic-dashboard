@@ -60,7 +60,6 @@ def run_app():
         all_raw_data = []
         units_found = set()
         
-        # 預解析所有上傳檔案
         for file in uploaded_files:
             try:
                 if file.name.endswith('.csv'):
@@ -71,7 +70,6 @@ def run_app():
                 else:
                     df = pd.read_excel(file, header=None)
                 
-                # 自動提取單位名稱 (檔案開頭文字)
                 u_name = re.split(r'\d+', file.name)[0].strip()
                 if not u_name: u_name = "未定義單位"
                 units_found.add(u_name)
@@ -79,7 +77,7 @@ def run_app():
             except:
                 st.error(f"檔案 {file.name} 讀取失敗")
 
-        # B. 側邊欄：分單位獨立設定
+        # B. 側邊欄規則設定
         st.sidebar.header("🏢 單位別規則設定")
         target_unit = st.sidebar.selectbox("請選擇要設定與校對的單位", sorted(list(units_found)))
         
@@ -96,7 +94,7 @@ def run_app():
         except:
             p_indices = [2, 3, 12, 13]
 
-        # C. 依規則解析資料
+        # C. 解析資料
         processed_records = []
         for item in all_raw_data:
             if item["unit"] == target_unit:
@@ -104,7 +102,7 @@ def run_app():
                 for r_idx in range(2, len(df)):
                     row = df.iloc[r_idx]
                     s_code = str(row[0]).strip().upper()
-                    if s_code in ex_list: continue # 排除特定番號
+                    if s_code in ex_list: continue
                     
                     name = str(row[1]).replace('\n', '').replace(' ', '')
                     if name in ['nan', 'None', '', '姓名', '合計', '總計']: continue
@@ -125,9 +123,6 @@ def run_app():
         if processed_records:
             final_raw_df = pd.DataFrame(processed_records)
             st.subheader(f"📝 {target_unit} - 人員明細校對")
-            st.info("💡 操作提示：若要刪除多出的人員，點選列首後按鍵盤 `Delete` 即可。")
-            
-            # 使用人員層級編輯器
             edited_df = st.data_editor(final_raw_df, use_container_width=True, num_rows="dynamic", key=f"editor_{target_unit}")
 
             if not edited_df.empty:
@@ -156,18 +151,22 @@ def run_app():
                         if ok: st.success("✅ 郵件發送成功！")
                         else: st.error(f"❌ 郵件失敗: {err}")
         else:
-            st.warning(f"⚠️ 單位『{target_unit}』依目前規則未偵測到守望資料。")
+            st.warning(f"⚠️ 單位『{target_unit}』依目前規則未偵測到資料。")
 
-    # --- 4. 返回主選單按鈕 (精確連結至 app.py) ---
+    # --- 4. 返回主選單按鈕 (強化跳轉邏輯) ---
     st.divider()
     col_back, _ = st.columns([1, 2])
     with col_back:
-        if st.button("🏠 返回系統主選單", use_container_width=True, type="primary"):
+        if st.button("🏠 返回系統主選選單", use_container_width=True, type="primary"):
+            # 嘗試切換回 app.py (包含回溯路徑嘗試)
             try:
-                # 您的主程式入口是 app.py
                 st.switch_page("app.py")
             except:
-                st.info("💡 請點擊左側邊欄頂部的「全自動批次處理中心」返回。")
+                try:
+                    st.switch_page("pages/../app.py")
+                except:
+                    st.error("導航按鈕暫時失效")
+                    st.info("💡 請直接點擊左側邊欄頂部的「⚙️ 全自動批次處理中心」返回。")
 
 if __name__ == "__main__":
     run_app()
