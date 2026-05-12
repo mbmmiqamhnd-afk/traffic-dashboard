@@ -114,7 +114,7 @@ def run_app():
         except:
             p_indices = [2, 12]
 
-        # C. 解析資料 (移除單位欄位輸出)
+        # C. 解析資料
         processed_records = []
         for item in all_raw_data:
             if item["unit"] == target_unit:
@@ -155,10 +155,13 @@ def run_app():
                 summary = edited_df.groupby(['姓名'])['當日尖峰時數'].sum().reset_index()
                 summary.columns = ['姓名', '總計尖峰時數']
                 
+                # --- 變更點：將彙整表依照姓名(A-Z/筆畫)排序 ---
+                summary = summary.sort_values('姓名', ascending=True)
+                
                 col_result, col_action = st.columns([3, 2])
                 
                 with col_result:
-                    st.dataframe(summary.sort_values('總計尖峰時數', ascending=False), use_container_width=True, hide_index=True)
+                    st.dataframe(summary, use_container_width=True, hide_index=True)
 
                 with col_action:
                     today = datetime.now().strftime('%m%d')
