@@ -13,7 +13,6 @@ except ImportError:
         pass # 若讀取不到側邊欄，維持不報錯繼續執行
 
 def p18_page():
-    # 載入共用側邊欄
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表產生器")
@@ -45,12 +44,12 @@ def p18_page():
                 # ==========================================
                 # A. 處理【交通事故資料】
                 # ==========================================
-                df_acc = pd.read_excel(file_acc, header=4) # 標題在第5行
+                df_acc = pd.read_excel(file_acc, header=4)
                 df_acc['姓名'] = df_acc['姓名'].astype(str).str.strip()
                 df_acc['A2類'] = pd.to_numeric(df_acc['A2類'], errors='coerce').fillna(0)
                 df_acc['A3類'] = pd.to_numeric(df_acc['A3類'], errors='coerce').fillna(0)
                 
-                # 🌟 修復核心：過濾空白姓名，並自動將同名員警的數據加總 (避免 Duplicate Index)
+                # 過濾空白姓名並加總
                 df_acc = df_acc[~df_acc['姓名'].isin(['nan', 'None', '', 'NaN'])]
                 dict_acc = df_acc.groupby('姓名')[['A2類', 'A3類']].sum().to_dict(orient='index')
 
@@ -66,7 +65,7 @@ def p18_page():
                 df_traf_all['姓名'] = df_traf_all['姓名'].astype(str).str.strip()
                 df_traf_all['總計尖峰時數'] = pd.to_numeric(df_traf_all['總計尖峰時數'], errors='coerce').fillna(0)
                 
-                # 🌟 修復核心：同樣過濾空白姓名，並自動加總同名時數
+                # 過濾空白姓名並加總
                 df_traf_all = df_traf_all[~df_traf_all['姓名'].isin(['nan', 'None', '', 'NaN'])]
                 dict_traf = df_traf_all.groupby('姓名')['總計尖峰時數'].sum().to_dict()
 
@@ -74,9 +73,13 @@ def p18_page():
                 # C. 讀取並填寫【基底統計表】
                 # ==========================================
                 dfs = pd.read_excel(file_template, sheet_name=None, header=None)
-                output = io.BytesIO()
                 
-                # 跨分頁的全域大總計
+                # 🌟 修復核心：解除 Pandas 3.0 的嚴格型別鎖定
+                # 將所有分頁的資料格式轉為 object，允許在同一欄內混寫中文字與數字
+                for k in dfs.keys():
+                    dfs[k] = dfs[k].astype(object)
+
+                output = io.BytesIO()
                 g_a2, g_a3, g_acc_p, g_t_h, g_t_p = 0, 0, 0, 0, 0
 
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -84,7 +87,6 @@ def p18_page():
                         header_row = None
                         cols = {}
                         
-                        # 自動尋找表頭列與各欄位座標
                         for idx, row in df.iterrows():
                             vals = [str(x).strip() for x in row.values]
                             if '員警姓名' in vals and '取締件數' in vals:
@@ -96,7 +98,6 @@ def p18_page():
                                 break
                         
                         if header_row is not None:
-                            # 單一分頁(單位)小計
                             s_a2, s_a3, s_acc_p, s_t_h, s_t_p = 0, 0, 0, 0, 0
 
                             for r in range(header_row + 1, len(df)):
@@ -113,7 +114,6 @@ def p18_page():
                                     cite_p = cite_p if not pd.isna(cite_p) else 0
                                     df.iloc[r, cols['個人總點數']] = cite_p + s_acc_p + s_t_p
                                     
-                                    # 加總進全域總計
                                     g_a2 += s_a2; g_a3 += s_a3; g_acc_p += s_acc_p; g_t_h += s_t_h; g_t_p += s_t_p
 
                                 elif name == '總計':
@@ -128,18 +128,15 @@ def p18_page():
                                     df.iloc[r, cols['個人總點數']] = cite_p + g_acc_p + g_t_p
 
                                 elif name not in ['nan', 'None', '', 'NaN']:
-                                    # 1. 抓取外部數據
                                     a2 = dict_acc.get(name, {}).get('A2類', 0)
                                     a3 = dict_acc.get(name, {}).get('A3類', 0)
                                     t_h = dict_traf.get(name, 0)
                                     
-                                    # 2. 計算點數
                                     acc_p = a2 * p_a2 + a3 * p_a3
                                     traf_p = t_h * p_traf
                                     cite_p = pd.to_numeric(df.iloc[r, cols['取締點數']], errors='coerce')
                                     cite_p = cite_p if not pd.isna(cite_p) else 0
                                     
-                                    # 3. 寫回 DataFrame (為維持版面乾淨，0分隱藏為空值)
                                     df.iloc[r, cols['A2件數']] = a2 if a2 > 0 else ""
                                     df.iloc[r, cols['A3件數']] = a3 if a3 > 0 else ""
                                     df.iloc[r, cols['事故點數']] = acc_p if acc_p > 0 else ""
@@ -147,16 +144,13 @@ def p18_page():
                                     df.iloc[r, cols['交整點數']] = traf_p if traf_p > 0 else ""
                                     df.iloc[r, cols['個人總點數']] = cite_p + acc_p + traf_p
                                     
-                                    # 4. 累加進入小計
                                     s_a2 += a2; s_a3 += a3; s_acc_p += acc_p; s_t_h += t_h; s_t_p += traf_p
 
-                        # 將處理完的分頁寫入新的 Excel
                         df.to_excel(writer, sheet_name=sheet_name, header=False, index=False)
 
                 st.success("✅ 報表彙整成功！排版格式已完美保留。")
                 st.balloons()
                 
-                # 提供下載連結
                 st.download_button(
                     label="📥 下載已彙整之 龍潭分局獎勵金統計表.xlsx",
                     data=output.getvalue(),
