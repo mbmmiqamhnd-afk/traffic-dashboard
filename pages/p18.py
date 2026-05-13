@@ -57,16 +57,14 @@ def p18_page():
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表產生器")
-    st.info("系統將自動裁剪報表、修正小計與權重，並自動發送備份至您的信箱。")
+    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統將自動裁剪格式、修正小計並發送郵件。")
 
-    # 1. 點數權重設定 (依照要求預設為 10, 5, 5)
-    with st.expander("⚙️ 點數權重設定", expanded=False):
-        col1, col2, col3 = st.columns(3)
-        p_a2 = col1.number_input("A2 點數/件", value=10.0, step=1.0)
-        p_a3 = col2.number_input("A3 點數/件", value=5.0, step=1.0)
-        p_traf = col3.number_input("交整點數/小時", value=5.0, step=1.0)
+    # --- 權重選項已移除，改為後端固定變數 ---
+    P_A2 = 10.0
+    P_A3 = 5.0
+    P_TRAF = 5.0
 
-    # 2. 檔案上傳
+    # 1. 檔案上傳
     st.subheader("📂 當月原始資料上傳")
     c1, c2 = st.columns(2)
     file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xlsx'])
@@ -104,7 +102,7 @@ def p18_page():
                         if found_date: break
                     if found_date: break
 
-                # --- C. 裁剪與重新計算 (包含交通組強制修正) ---
+                # --- C. 裁剪與重新計算 ---
                 final_sheets = {}
                 summary_rows = []
                 g_cite, g_acc, g_traf, g_all = 0, 0, 0, 0
@@ -112,7 +110,7 @@ def p18_page():
                 for sheet_name, df in dfs_raw.items():
                     if '總表' in sheet_name: continue
                     
-                    # 定位「員警姓名」
+                    # 定位「員警姓名」標題
                     start_r, start_c = None, None
                     for r_idx, row in df.iterrows():
                         row_str = [str(x).strip() for x in row.values]
@@ -121,6 +119,7 @@ def p18_page():
                             break
                     
                     if start_r is not None:
+                        # 裁剪員警姓名左方與上方的內容
                         df_work = df.iloc[start_r:, start_c:].copy()
                         df_work.reset_index(drop=True, inplace=True)
                         df_work.columns = [str(c).strip() for c in df_work.iloc[0]]
@@ -128,7 +127,7 @@ def p18_page():
                         
                         col_map = {c: i for i, c in enumerate(df_work.columns)}
                         
-                        # 擷取員警名單 (排除小計行)
+                        # 擷取員警名單 (排除原本的小計行)
                         member_rows = []
                         for r in range(len(df_work)):
                             name_cell = str(df_work.iloc[r, col_map['員警姓名']]).strip()
@@ -139,21 +138,21 @@ def p18_page():
                         df_members = df_work.iloc[member_rows].copy()
                         s_cite, s_acc, s_traf = 0, 0, 0
                         
-                        # 強制權重重算
+                        # 強制權重重算 (A2=10, A3=5, 交整=5)
                         for idx, row in df_members.iterrows():
                             name = str(row['員警姓名']).strip()
                             a2 = dict_acc.get(name, {}).get('A2類', 0)
                             a3 = dict_acc.get(name, {}).get('A3類', 0)
                             th = dict_traf.get(name, 0)
-                            ap, tp = a2 * p_a2 + a3 * p_a3, th * p_traf
+                            ap, tp = a2 * P_A2 + a3 * P_A3, th * P_TRAF
                             cp = pd.to_numeric(row['取締點數'], errors='coerce') or 0
                             
-                            df_members.at[idx, 'A2件數'] = a2 if a2 > 0 else ""
-                            df_members.at[idx, 'A3件數'] = a3 if a3 > 0 else ""
-                            df_members.at[idx, '事故點數'] = ap if ap > 0 else ""
-                            df_members.at[idx, '交整時數'] = th if th > 0 else ""
-                            df_members.at[idx, '交整點數'] = tp if tp > 0 else ""
-                            df_members.at[idx, '個人總點數'] = cp + ap + tp
+                            if 'A2件數' in col_map: df_members.at[idx, 'A2件數'] = a2 if a2 > 0 else ""
+                            if 'A3件數' in col_map: df_members.at[idx, 'A3件數'] = a3 if a3 > 0 else ""
+                            if '事故點數' in col_map: df_members.at[idx, '事故點數'] = ap if ap > 0 else ""
+                            if '交整時數' in col_map: df_members.at[idx, '交整時數'] = th if th > 0 else ""
+                            if '交整點數' in col_map: df_members.at[idx, '交整點數'] = tp if tp > 0 else ""
+                            if '個人總點數' in col_map: df_members.at[idx, '個人總點數'] = cp + ap + tp
                             s_cite += cp; s_acc += ap; s_traf += tp
 
                         # 建立正確小計列
