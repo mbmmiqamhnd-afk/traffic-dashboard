@@ -6,6 +6,7 @@ pandas
 numpy
 openpyxl
 xlsxwriter
+xlrd
 
 # --- Google Sheets 連線 ---
 gspread
