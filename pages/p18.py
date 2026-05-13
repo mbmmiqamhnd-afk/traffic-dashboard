@@ -17,7 +17,7 @@ def p18_page():
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表產生器")
-    st.info("系統將自動移除各單位分頁「員警姓名」左方與上方的所有內容（含單位名稱欄），並強制產生總表。")
+    st.info("系統將自動移除各單位分頁冗餘內容（含單位名稱與蓋章欄），產出極致純淨的報表並強制產生總表。")
 
     # 1. 點數權重設定
     with st.expander("⚙️ 點數權重設定", expanded=False):
@@ -86,7 +86,15 @@ def p18_page():
                         # 🌟 裁剪：刪除員警姓名上方與左方的所有內容
                         df_clean = df.iloc[start_r:, start_c:].copy()
                         df_clean.reset_index(drop=True, inplace=True)
-                        df_clean.columns = df_clean.iloc[0] # 以第一行作為 Header
+                        
+                        # 清理並設定標題列
+                        clean_cols = [str(c).strip() for c in df_clean.iloc[0]]
+                        df_clean.columns = clean_cols
+                        
+                        # 🌟 新增移除：如果存在「蓋章」欄位，直接整行刪除
+                        if '蓋章' in df_clean.columns:
+                            df_clean = df_clean.drop(columns=['蓋章'])
+                            
                         df_clean = df_clean.astype(object)
                         
                         col_map = {c: i for i, c in enumerate(df_clean.columns)}
