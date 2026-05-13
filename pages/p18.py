@@ -16,27 +16,28 @@ def p18_page():
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表產生器")
-    st.info("本工具會自動比對姓名，將數據填入各分頁，並自動彙整生成「總表」工作表。")
+    st.info("本工具會以當月上傳的統計表為基底，自動比對姓名並填入外部數據，最後自動彙整生成「總表」。")
 
     # 1. 參數設定
-    with st.expander("⚙️ 點數權重設定", expanded=True):
+    with st.expander("⚙️ 點數權重設定 (預設已設定完畢，點擊可展開修改)", expanded=False):
         col1, col2, col3 = st.columns(3)
         p_a2 = col1.number_input("A2 點數/件", value=3.0, step=0.5)
         p_a3 = col2.number_input("A3 點數/件", value=1.0, step=0.5)
         p_traf = col3.number_input("交整點數/小時", value=1.0, step=0.5)
 
     # 2. 檔案上傳
-    st.subheader("📂 原始資料上傳")
+    st.subheader("📂 當月原始資料上傳")
     c1, c2 = st.columns(2)
-    file_template = c1.file_uploader("1. 上傳【F龍潭分局_統計表】(需含各單位分頁及總表分頁)", type=['xlsx'])
-    file_acc = c2.file_uploader("2. 上傳【處理交通事故案件統計表】", type=['xls', 'xlsx'])
+    # 更改了說明文字，符合您實際的操作邏輯
+    file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】\n(內含當月名單與取締數據)", type=['xlsx'])
+    file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】\n(內含 A1/A2/A3 數據)", type=['xls', 'xlsx'])
     
-    file_traf_list = st.file_uploader("3. 上傳【各單位_交通疏導統計】(可多選)", type=['xlsx'], accept_multiple_files=True)
+    file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】\n(可一次框選多個派出所檔案)", type=['xlsx'], accept_multiple_files=True)
 
     # 3. 執行運算
     if st.button("🚀 開始彙整並產生總表", type="primary"):
         if not (file_template and file_acc and file_traf_list):
-            st.error("⚠️ 請確保左側 3 種檔案皆已完成上傳！")
+            st.error("⚠️ 請確保上方 3 種當月檔案皆已完成上傳！")
             return
 
         with st.spinner("正在跨表彙整數據並產生總表..."):
@@ -56,18 +57,18 @@ def p18_page():
                 df_traf_all = df_traf_all[~df_traf_all['姓名'].isin(['nan', 'None', '', 'NaN'])]
                 dict_traf = df_traf_all.groupby('姓名')['總計尖峰時數'].sum().to_dict()
 
-                # --- 讀取範本 ---
+                # --- 讀取當月基底檔案 ---
                 dfs = pd.read_excel(file_template, sheet_name=None, header=None)
                 
                 # 初始化統計容器
-                unit_summary = [] # 用於填寫總表
-                grand_total = {"cite": 0, "acc": 0, "traf": 0, "all": 0} # 全分局合計
+                unit_summary = [] 
+                grand_total = {"cite": 0, "acc": 0, "traf": 0, "all": 0} 
 
                 # 解除型別鎖定
                 for k in dfs.keys():
                     dfs[k] = dfs[k].astype(object)
 
-                # 第一輪：處理所有非「總表」的分頁
+                # 第一輪：處理各單位分頁
                 for sheet_name, df in dfs.items():
                     if '總表' in sheet_name: continue
                     
@@ -91,11 +92,9 @@ def p18_page():
                             if name in ['小計', '總計']:
                                 df.iloc[r, cols['事故點數']] = s_acc if s_acc > 0 else ""
                                 df.iloc[r, cols['交整點數']] = s_traf if s_traf > 0 else ""
-                                # 取締點數若是原本就在範本裡的，需重新讀取累加
                                 c_p = pd.to_numeric(df.iloc[r, cols['取締點數']], errors='coerce') or 0
                                 df.iloc[r, cols['個人總點數']] = c_p + s_acc + s_traf
                                 
-                                # 只有「小計」列的數據要進總表
                                 if name == '小計':
                                     unit_summary.append({
                                         "單位": sheet_name, "取締": c_p, "事故": s_acc, "交整": s_traf, "總計": c_p + s_acc + s_traf
@@ -124,7 +123,7 @@ def p18_page():
                                 
                                 s_acc += ap; s_traf += tp; s_cite += cp; s_all += (cp + ap + tp)
 
-                # 第二輪：精準填寫「總表」分頁
+                # 第二輪：精準填寫「總表」
                 if '總表' in dfs:
                     df_sum = dfs['總表']
                     h_row = None
@@ -148,7 +147,6 @@ def p18_page():
                                 df_sum.iloc[curr_r, s_cols['個人總點數']] = item['總計']
                                 curr_r += 1
                         
-                        # 最後填寫合計列
                         for r_idx in range(curr_r, len(df_sum)):
                             if str(df_sum.iloc[r_idx, s_cols['單位名稱']]).strip() == '合計':
                                 df_sum.iloc[r_idx, s_cols['取締點數']] = grand_total["cite"]
@@ -157,14 +155,22 @@ def p18_page():
                                 df_sum.iloc[r_idx, s_cols['個人總點數']] = grand_total["all"]
                                 break
 
-                # 下載產出
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     for s_name, df_final in dfs.items():
                         df_final.to_excel(writer, sheet_name=s_name, header=False, index=False)
 
-                st.success("✅ 包含「總表」在內的所有數據已彙整完畢！")
-                st.download_button("📥 下載完整統計表(含總表)", output.getvalue(), "龍潭分局獎勵金統計表_含總表.xlsx")
+                st.success("✅ 當月統計表彙整完畢！")
+                
+                # 🌟 極致自動化：直接沿用上傳檔案的名稱！
+                final_filename = file_template.name
+                
+                st.download_button(
+                    label=f"📥 下載彙整完成之統計表", 
+                    data=output.getvalue(), 
+                    file_name=final_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
 
             except Exception as e:
                 st.error(f"❌ 發生錯誤：{str(e)}")
