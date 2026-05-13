@@ -57,7 +57,8 @@ def p18_page():
                 
                 # 移除舊總表
                 for k in list(dfs.keys()):
-                    if '總表' in str(k): del dfs[k]
+                    if '總表' in str(k) or '總計' in str(k): 
+                        del dfs[k]
 
                 # 初始化統計容器
                 unit_summary_list = []
@@ -87,7 +88,9 @@ def p18_page():
                             
                             # 偵測小計行 (包含「小計」字樣)
                             if '小計' in name_val or '總計' in name_val:
-                                c_sub = pd.to_numeric(df.iloc[r, cols['取締點數']], errors='coerce') or 0
+                                c_sub = pd.to_numeric(df.iloc[r, cols['取締點數']], errors='coerce')
+                                c_sub = c_sub if not pd.isna(c_sub) else 0
+                                
                                 df.iloc[r, cols['事故點數']] = s_acc if s_acc > 0 else ""
                                 df.iloc[r, cols['交整點數']] = s_traf if s_traf > 0 else ""
                                 df.iloc[r, cols['個人總點數']] = c_sub + s_acc + s_traf
@@ -107,7 +110,8 @@ def p18_page():
                                 
                                 ap = a2 * p_a2 + a3 * p_a3
                                 tp = t_h * p_traf
-                                cp = pd.to_numeric(df.iloc[r, cols['取締點數']], errors='coerce') or 0
+                                cp = pd.to_numeric(df.iloc[r, cols['取締點數']], errors='coerce')
+                                cp = cp if not pd.isna(cp) else 0
                                 
                                 df.iloc[r, cols['A2件數']] = a2 if a2 > 0 else ""
                                 df.iloc[r, cols['A3件數']] = a3 if a3 > 0 else ""
@@ -126,14 +130,27 @@ def p18_page():
                 sum_rows.append(['合計', g_cite, g_acc, g_traf, g_all])
                 df_summary_final = pd.DataFrame(sum_rows)
 
-                # --- F. 判斷年月 ---
+                # --- F. 🌟 安全地判斷年月 (逐格掃描避免 float 錯誤) ---
                 ext_year, ext_month = "115", "4"
+                found_date = False
                 for s_name, df_scan in dfs.items():
-                    content_str = df_scan.astype(str).values.flatten()
-                    match = re.search(r'開單日期[：:\s]*(\d{3})(\d{2})', "".join(content_str))
-                    if match:
-                        ext_year, ext_month = match.group(1), str(int(match.group(2)))
-                        break
+                    for scan_r in range(min(15, len(df_scan))):
+                        for scan_c in range(min(10, len(df_scan.columns))):
+                            val = str(df_scan.iloc[scan_r, scan_c]).strip()
+                            m = re.search(r'開單日期[：:\s]*(\d{3})(\d{2})', val)
+                            if m:
+                                ext_year = m.group(1)
+                                ext_month = str(int(m.group(2)))
+                                found_date = True
+                                break
+                        if found_date: break
+                    if found_date: break
+                
+                # 如果內文找不到，從檔名找
+                if not found_date:
+                    m_filename = re.search(r'(\d{2,4})[年\.\-/](\d{1,2})月?', file_template.name)
+                    if m_filename:
+                        ext_year, ext_month = m_filename.group(1), m_filename.group(2)
 
                 # --- G. 畫面顯示與預覽 ---
                 st.success(f"✅ 運算完成！已偵測報表日期：{ext_year}年{ext_month}月")
@@ -142,15 +159,15 @@ def p18_page():
                 if unit_summary_list:
                     preview_df = pd.DataFrame(unit_summary_list)
                     preview_df.loc[len(preview_df)] = ['合計', g_cite, g_acc, g_traf, g_all]
-                    st.table(preview_df) # 使用 table 強制完整顯示
+                    st.table(preview_df)
                 else:
-                    st.warning("⚠️ 偵測不到派出所分頁中的『小計』列，請確認範本中員警姓名下方是否有小計字樣。")
+                    st.warning("⚠️ 偵測不到派出所分頁中的『小計』列，請確認名單格式。")
 
                 # --- H. 封裝 Excel ---
                 final_filename = f"桃園市政府警察局龍潭分局{ext_year}年{ext_month}月份處理道路交通安全人員獎勵金點數統計表.xlsx"
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    # 強制將總表放在第一個 Sheet
+                    # 🌟 強制將總表放在第一個 Sheet
                     df_summary_final.to_excel(writer, sheet_name='總表', header=False, index=False)
                     for s_name, df_final in dfs.items():
                         df_final.to_excel(writer, sheet_name=s_name, header=False, index=False)
