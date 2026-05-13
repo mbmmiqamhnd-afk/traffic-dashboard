@@ -17,14 +17,14 @@ def p18_page():
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表產生器")
-    st.warning("【終極修正】已強化「交通組」等單位的小計覆寫邏輯，確保下載檔案數據 100% 正確。")
+    st.success("【權重已更新】A2=10, A3=5, 交整=5。系統將強制修正所有單位(含交通組)的小計數值。")
 
-    # 1. 點數權重設定
-    with st.expander("⚙️ 點數權重設定", expanded=False):
+    # 1. 點數權重設定 (依照您的需求調整預設值)
+    with st.expander("⚙️ 點數權重設定 (目前已設為最新要求)", expanded=False):
         col1, col2, col3 = st.columns(3)
-        p_a2 = col1.number_input("A2 點數/件", value=3.0, step=0.5)
-        p_a3 = col2.number_input("A3 點數/件", value=1.0, step=0.5)
-        p_traf = col3.number_input("交整點數/小時", value=1.0, step=0.5)
+        p_a2 = col1.number_input("A2 點數/件", value=10.0, step=1.0)
+        p_a3 = col2.number_input("A3 點數/件", value=5.0, step=1.0)
+        p_traf = col3.number_input("交整點數/小時", value=5.0, step=1.0)
 
     # 2. 檔案上傳
     st.subheader("📂 當月原始資料上傳")
@@ -39,7 +39,7 @@ def p18_page():
             st.error("⚠️ 請確保上方 3 種資料皆已完成上傳！")
             return
 
-        with st.spinner("正在強制覆寫交通組等單位的小計數據..."):
+        with st.spinner("正在以新權重重新計算交通組等單位的小計..."):
             try:
                 # --- A. 外部數據預處理 ---
                 df_acc = pd.read_excel(file_acc, header=4)
@@ -65,7 +65,7 @@ def p18_page():
                         if found_date: break
                     if found_date: break
 
-                # --- C. 處理分頁與資料覆寫 ---
+                # --- C. 處理分頁與小計強制覆寫 ---
                 final_sheets = {}
                 summary_rows = []
                 g_cite, g_acc, g_traf, g_all = 0, 0, 0, 0
@@ -82,7 +82,7 @@ def p18_page():
                             break
                     
                     if start_r is not None:
-                        # 裁剪
+                        # 裁剪並清理
                         df_work = df.iloc[start_r:, start_c:].copy()
                         df_work.reset_index(drop=True, inplace=True)
                         df_work.columns = [str(c).strip() for c in df_work.iloc[0]]
@@ -91,8 +91,7 @@ def p18_page():
                         col_map = {c: i for i, c in enumerate(df_work.columns)}
                         s_cite, s_acc, s_traf = 0, 0, 0
                         
-                        # 🌟 階段一：處理員警細項
-                        # 建立一個清單記錄哪幾列是真正的員警
+                        # 辨識有效員警與小計行
                         member_indices = []
                         subtotal_idx = None
                         
@@ -100,11 +99,11 @@ def p18_page():
                             name_cell = str(df_work.iloc[r, col_map['員警姓名']]).strip()
                             if '小計' in name_cell or '總計' in name_cell:
                                 subtotal_idx = r
-                                break # 找到小計列就停止處理員警名單
+                                break 
                             if name_cell not in ['nan', 'None', '']:
                                 member_indices.append(r)
 
-                        # 🌟 階段二：填寫並計算正確數值
+                        # 填寫並重新計算數據
                         for r in member_indices:
                             name = str(df_work.iloc[r, col_map['員警姓名']]).strip()
                             a2 = dict_acc.get(name, {}).get('A2類', 0)
@@ -114,7 +113,7 @@ def p18_page():
                             ap, tp = a2 * p_a2 + a3 * p_a3, th * p_traf
                             cp = pd.to_numeric(df_work.iloc[r, col_map['取締點數']], errors='coerce') or 0
                             
-                            # 強制填寫細項
+                            # 強制覆寫所有欄位
                             if 'A2件數' in col_map: df_work.iloc[r, col_map['A2件數']] = a2 if a2 > 0 else ""
                             if 'A3件數' in col_map: df_work.iloc[r, col_map['A3件數']] = a3 if a3 > 0 else ""
                             if '事故點數' in col_map: df_work.iloc[r, col_map['事故點數']] = ap if ap > 0 else ""
@@ -124,23 +123,19 @@ def p18_page():
                             
                             s_acc += ap; s_traf += tp; s_cite += cp
 
-                        # 🌟 階段三：強制覆寫「小計」列 (無論原始資料有沒有錯)
-                        if subtotal_idx is not None:
-                            # 重新計算垂直總和 (只針對 member_indices 的行)
-                            for col_n, c_i in col_map.items():
-                                if col_n in ['員警姓名', '蓋章']: continue
-                                col_sum = pd.to_numeric(df_work.iloc[member_indices, c_i], errors='coerce').sum()
-                                df_work.iloc[subtotal_idx, c_i] = col_sum if col_sum > 0 else 0
-                        else:
-                            # 如果沒找到小計列，則在末端新增一行
-                            new_row = [""] * len(df_work.columns)
-                            new_row[col_map['員警姓名']] = '小計'
-                            df_work.loc[len(df_work)] = new_row
-                            subtotal_idx = len(df_work) - 1
-                            for col_n, c_i in col_map.items():
-                                if col_n in ['員警姓名', '蓋章']: continue
-                                col_sum = pd.to_numeric(df_work.iloc[member_indices, c_i], errors='coerce').sum()
-                                df_work.iloc[subtotal_idx, c_i] = col_sum if col_sum > 0 else 0
+                        # 🌟 強制產出正確的小計列
+                        if subtotal_idx is None:
+                            # 若沒找到小計，手動在名單後新增一行
+                            new_idx = len(df_work)
+                            df_work.loc[new_idx] = [""] * len(df_work.columns)
+                            df_work.iloc[new_idx, col_map['員警姓名']] = '小計'
+                            subtotal_idx = new_idx
+
+                        # 垂直重新加總 (確保數據絕對正確)
+                        for col_n, c_i in col_map.items():
+                            if col_n in ['員警姓名', '蓋章']: continue
+                            col_sum = pd.to_numeric(df_work.iloc[member_indices, c_i], errors='coerce').sum()
+                            df_work.iloc[subtotal_idx, c_i] = col_sum if col_sum > 0 else 0
 
                         summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
                         g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
@@ -148,11 +143,11 @@ def p18_page():
                         if '蓋章' in df_work.columns: df_work = df_work.drop(columns=['蓋章'])
                         final_sheets[sheet_name] = df_work
 
-                # --- D. 總表彙整與輸出 ---
+                # --- D. 總表與輸出 ---
                 sum_header = ['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']
                 df_summary = pd.DataFrame([sum_header] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
 
-                st.success(f"✅ 成功產出 {ext_year}年{ext_month}月 報表，小計已強制修正。")
+                st.success(f"✅ 彙整完畢！日期：{ext_year}年{ext_month}月。權重：A2(10), A3(5), 交整(5)")
                 st.table(pd.DataFrame(summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]], columns=sum_header))
 
                 output = io.BytesIO()
@@ -162,7 +157,7 @@ def p18_page():
                         df_f.to_excel(writer, sheet_name=sn, index=False)
 
                 filename = f"桃園市政府警察局龍潭分局{ext_year}年{ext_month}月份處理道路交通安全人員獎勵金點數統計表.xlsx"
-                st.download_button(label=f"📥 下載統計表 (修正小計列)", data=output.getvalue(), file_name=filename)
+                st.download_button(label=f"📥 下載統計表 (最新權重版)", data=output.getvalue(), file_name=filename)
 
             except Exception as e:
                 st.error(f"❌ 發生錯誤：{str(e)}")
