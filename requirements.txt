@@ -1,3 +1,7 @@
+# --- 基礎編譯工具 (雲端部署必備) ---
+wheel
+setuptools
+
 # --- 基礎與網頁框架 ---
 streamlit
 
