@@ -49,7 +49,10 @@ def p18_page():
                 df_acc['姓名'] = df_acc['姓名'].astype(str).str.strip()
                 df_acc['A2類'] = pd.to_numeric(df_acc['A2類'], errors='coerce').fillna(0)
                 df_acc['A3類'] = pd.to_numeric(df_acc['A3類'], errors='coerce').fillna(0)
-                dict_acc = df_acc.set_index('姓名')[['A2類', 'A3類']].to_dict(orient='index')
+                
+                # 🌟 修復核心：過濾空白姓名，並自動將同名員警的數據加總 (避免 Duplicate Index)
+                df_acc = df_acc[~df_acc['姓名'].isin(['nan', 'None', '', 'NaN'])]
+                dict_acc = df_acc.groupby('姓名')[['A2類', 'A3類']].sum().to_dict(orient='index')
 
                 # ==========================================
                 # B. 處理【交通疏導資料】
@@ -62,7 +65,10 @@ def p18_page():
                 df_traf_all = pd.concat(df_traf_list)
                 df_traf_all['姓名'] = df_traf_all['姓名'].astype(str).str.strip()
                 df_traf_all['總計尖峰時數'] = pd.to_numeric(df_traf_all['總計尖峰時數'], errors='coerce').fillna(0)
-                dict_traf = df_traf_all.set_index('姓名')['總計尖峰時數'].to_dict()
+                
+                # 🌟 修復核心：同樣過濾空白姓名，並自動加總同名時數
+                df_traf_all = df_traf_all[~df_traf_all['姓名'].isin(['nan', 'None', '', 'NaN'])]
+                dict_traf = df_traf_all.groupby('姓名')['總計尖峰時數'].sum().to_dict()
 
                 # ==========================================
                 # C. 讀取並填寫【基底統計表】
@@ -121,7 +127,7 @@ def p18_page():
                                     cite_p = cite_p if not pd.isna(cite_p) else 0
                                     df.iloc[r, cols['個人總點數']] = cite_p + g_acc_p + g_t_p
 
-                                elif name not in ['nan', 'None', '']:
+                                elif name not in ['nan', 'None', '', 'NaN']:
                                     # 1. 抓取外部數據
                                     a2 = dict_acc.get(name, {}).get('A2類', 0)
                                     a3 = dict_acc.get(name, {}).get('A3類', 0)
