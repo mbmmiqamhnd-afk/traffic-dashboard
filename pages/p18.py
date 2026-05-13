@@ -17,7 +17,7 @@ def p18_page():
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表產生器")
-    st.info("系統將自動裁剪報表，並在各單位名單下方自動產生「小計」列進行數值加總。")
+    st.info("系統已優化：自動裁剪標題、移除單位與蓋章欄、自動於名單末端產生小計加總。")
 
     # 1. 點數權重設定
     with st.expander("⚙️ 點數權重設定", expanded=False):
@@ -34,12 +34,12 @@ def p18_page():
     
     file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xlsx'], accept_multiple_files=True)
 
-    if st.button("🚀 執行自動彙整與加總", type="primary"):
+    if st.button("🚀 執行彙整與自動加總", type="primary"):
         if not (file_template and file_acc and file_traf_list):
             st.error("⚠️ 請確保上方 3 種資料皆已上傳！")
             return
 
-        with st.spinner("正在辨識名單結尾、裁剪欄位並計算加總..."):
+        with st.spinner("正在辨識日期、裁剪欄位並計算加總..."):
             try:
                 # --- A. 數據預處理 ---
                 df_acc = pd.read_excel(file_acc, header=4)
@@ -50,19 +50,24 @@ def p18_page():
                 df_traf_all['姓名'] = df_traf_all['姓名'].astype(str).str.strip()
                 dict_traf = df_traf_all.groupby('姓名')['總計尖峰時數'].sum().to_dict()
 
-                # --- B. 讀取並偵測日期 ---
+                # --- B. 讀取並安全偵測日期 ---
                 dfs_raw = pd.read_excel(file_template, sheet_name=None, header=None)
                 ext_year, ext_month = "115", "4"
+                found_date = False
                 for _, df_scan in dfs_raw.items():
-                    content = df_scan.astype(str).values.flatten()
-                    for item in content:
-                        m = re.search(r'開單日期[：:\s]*(\d{3})(\d{2})', item)
-                        if m:
-                            ext_year, ext_month = m.group(1), str(int(m.group(2)))
-                            break
-                    if ext_month: break
+                    # 限制掃描範圍避免效能問題與型別錯誤
+                    for r in range(min(20, len(df_scan))):
+                        for c in range(min(15, len(df_scan.columns))):
+                            cell_val = df_scan.iloc[r, c]
+                            if isinstance(cell_val, str): # 🌟 只對字串進行正則搜尋
+                                m = re.search(r'開單日期[：:\s]*(\d{3})(\d{2})', cell_val)
+                                if m:
+                                    ext_year, ext_month = m.group(1), str(int(m.group(2)))
+                                    found_date = True; break
+                        if found_date: break
+                    if found_date: break
 
-                # --- C. 裁剪與處理分頁 (含自動小計) ---
+                # --- C. 處理分頁與自動小計 ---
                 final_sheets = {}
                 summary_rows = []
                 g_cite, g_acc, g_traf, g_all = 0, 0, 0, 0
@@ -79,20 +84,20 @@ def p18_page():
                             break
                     
                     if start_r is not None:
-                        # 裁剪
+                        # 裁剪：移除上方標題與左側欄位
                         df_clean = df.iloc[start_r:, start_c:].copy()
                         df_clean.reset_index(drop=True, inplace=True)
                         df_clean.columns = [str(c).strip() for c in df_clean.iloc[0]]
-                        df_clean = df_clean.drop(0).astype(object) # 移除標題列
+                        df_clean = df_clean.drop(0).astype(object)
                         
-                        # 過濾掉原有的「小計」或「總計」行，重新計算
-                        df_clean = df_clean[~df_clean['員警姓名'].astype(str).str.contains('小計|總計|合計', na=False)]
-                        df_clean = df_clean.dropna(subset=['員警姓名']) # 移除空白行
+                        # 移除原有的統計行與空白行，確保數據乾淨
+                        df_clean = df_clean[~df_clean['員警姓名'].astype(str).str.contains('小計|總計|合計|nan|None', na=False)]
+                        df_clean = df_clean.dropna(subset=['員警姓名'])
                         
                         col_map = {c: i for i, c in enumerate(df_clean.columns)}
                         s_cite, s_acc, s_traf = 0, 0, 0
                         
-                        # 逐人填寫數值
+                        # 填寫員警個人數據
                         for r in range(len(df_clean)):
                             name = str(df_clean.iloc[r, col_map['員警姓名']]).strip()
                             a2 = dict_acc.get(name, {}).get('A2類', 0)
@@ -102,35 +107,33 @@ def p18_page():
                             ap, tp = a2 * p_a2 + a3 * p_a3, th * p_traf
                             cp = pd.to_numeric(df_clean.iloc[r, col_map['取締點數']], errors='coerce') or 0
                             
-                            df_clean.iloc[r, col_map['A2件數']] = a2 if a2 > 0 else ""
-                            df_clean.iloc[r, col_map['A3件數']] = a3 if a3 > 0 else ""
-                            df_clean.iloc[r, col_map['事故點數']] = ap if ap > 0 else ""
-                            df_clean.iloc[r, col_map['交整時數']] = th if th > 0 else ""
-                            df_clean.iloc[r, col_map['交整點數']] = tp if tp > 0 else ""
-                            df_clean.iloc[r, col_map['個人總點數']] = cp + ap + tp
+                            if 'A2件數' in col_map: df_clean.iloc[r, col_map['A2件數']] = a2 if a2 > 0 else ""
+                            if 'A3件數' in col_map: df_clean.iloc[r, col_map['A3件數']] = a3 if a3 > 0 else ""
+                            if '事故點數' in col_map: df_clean.iloc[r, col_map['事故點數']] = ap if ap > 0 else ""
+                            if '交整時數' in col_map: df_clean.iloc[r, col_map['交整時數']] = th if th > 0 else ""
+                            if '交整點數' in col_map: df_clean.iloc[r, col_map['交整點數']] = tp if tp > 0 else ""
+                            if '個人總點數' in col_map: df_clean.iloc[r, col_map['個人總點數']] = cp + ap + tp
                             
                             s_acc += ap; s_traf += tp; s_cite += cp
 
-                        # 🌟 核心功能：在最後一名員警下方插入小計列
+                        # 🌟 自動插入小計列
                         subtotal_idx = len(df_clean)
-                        # 準備小計資料列
                         subtotal_row = [""] * len(df_clean.columns)
                         subtotal_row[col_map['員警姓名']] = '小計'
                         
-                        # 自動加總所有數字欄位
                         for col_name, c_idx in col_map.items():
                             if col_name in ['員警姓名', '蓋章']: continue
-                            total_val = pd.to_numeric(df_clean.iloc[:, c_idx], errors='coerce').sum()
-                            subtotal_row[c_idx] = total_val if total_val > 0 else 0
+                            # 垂直加總該欄位
+                            v_sum = pd.to_numeric(df_clean.iloc[:, c_idx], errors='coerce').sum()
+                            subtotal_row[c_idx] = v_sum if v_sum > 0 else 0
                         
                         df_clean.loc[subtotal_idx] = subtotal_row
                         
-                        # 儲存到彙整清單
-                        unit_summary_list = [sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf]
-                        summary_rows.append(unit_summary_list)
+                        # 記錄到總表清單
+                        summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
                         g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
                         
-                        # 移除蓋章欄 (如需要)
+                        # 移除蓋章欄
                         if '蓋章' in df_clean.columns:
                             df_clean = df_clean.drop(columns=['蓋章'])
                             
@@ -140,7 +143,7 @@ def p18_page():
                 summary_header = ['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']
                 df_summary = pd.DataFrame([summary_header] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
 
-                # --- E. 畫面預覽與下載 ---
+                # --- E. 顯示結果與下載 ---
                 st.success(f"✅ 成功產出 {ext_year}年{ext_month}月 報表！")
                 st.subheader("📊 總表數據預覽")
                 st.table(pd.DataFrame(summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]], columns=summary_header))
@@ -149,7 +152,6 @@ def p18_page():
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     df_summary.to_excel(writer, sheet_name='總表', header=False, index=False)
                     for s_name, df_f in final_sheets.items():
-                        # 加入 Header
                         df_f.to_excel(writer, sheet_name=s_name, index=False)
 
                 filename = f"桃園市政府警察局龍潭分局{ext_year}年{ext_month}月份處理道路交通安全人員獎勵金點數統計表.xlsx"
