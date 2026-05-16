@@ -272,14 +272,33 @@ def extract_duty_v2(d_file, hour):
 
             # 勤務優先判定：有勤務就絕不報休假
             if d_list:
-                d_list.sort(key=lambda x: x['s'])
-                merged = []
+                # --- 新增：處理重疊勤務（內部管理降級）邏輯 ---
+                grouped_duties = {}
                 for d in d_list:
+                    grouped_duties.setdefault(d['s'], []).append(d)
+
+                filtered_d_list = []
+                for s_time, items in grouped_duties.items():
+                    if len(items) > 1:
+                        non_internal = [x for x in items if '內部管理' not in x['n']]
+                        if non_internal:
+                            filtered_d_list.extend(non_internal)
+                        else:
+                            filtered_d_list.append(items[0])
+                    else:
+                        filtered_d_list.extend(items)
+
+                filtered_d_list.sort(key=lambda x: x['s'])
+                # ----------------------------------------------
+
+                merged = []
+                for d in filtered_d_list:
                     if merged and d['s'] == merged[-1]['e'] and d['n'] == merged[-1]['n']:
                         merged[-1]['e'] = d['e']
                         merged[-1]['eh'] = d['eh']
                     else:
                         merged.append(dict(d))
+                        
                 parts = [f"{m['sh']:02d}-{(24 if m['eh'] == 0 else m['eh']):02d}{m['n']}" for m in merged]
                 c_notes.append(f"{fname_full}在{res['loc_term']}督勤，編排{'、'.join(parts)}勤務")
             elif is_off:
