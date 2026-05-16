@@ -4,6 +4,7 @@ import io
 import re
 import gspread
 import traceback
+import time
 from datetime import datetime, timedelta
 
 # ==========================================
@@ -26,6 +27,18 @@ try:
     GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
 except:
     GCP_CREDS = None
+
+# --- [快取 Google Sheets 連線，避免 429 API 限制] ---
+@st.cache_resource
+def get_gsheet_connection():
+    if GCP_CREDS:
+        try:
+            gc = gspread.service_account_from_dict(GCP_CREDS)
+            sh = gc.open_by_url(GOOGLE_SHEET_URL)
+            return sh
+        except Exception as e:
+            st.error(f"⚠️ Google Sheets 連線失敗: {e}")
+    return None
 
 # --- [重大違規常數] ---
 MAJOR_UNIT_ORDER = ['科技執法', '聖亭所', '龍潭所', '中興所', '石門所', '高平所', '三和所', '警備隊', '交通分隊']
@@ -81,7 +94,7 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
 # ==========================================
 
 # ----------------- [1. 科技執法] -----------------
-def process_tech_enforcement(files):
+def process_tech_enforcement(files, sh):
     f = files[0]
     f.seek(0)
     df = pd.read_csv(f, encoding='cp950') if f.name.endswith('.csv') else pd.read_excel(f)
@@ -102,9 +115,7 @@ def process_tech_enforcement(files):
     st.write("📊 **科技執法路段排行：**")
     st.dataframe(loc_summary, hide_index=True)
     
-    if GCP_CREDS:
-        gc = gspread.service_account_from_dict(GCP_CREDS)
-        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+    if sh:
         ws_name = "科技執法-路段排行"
         ws = sh.worksheet(ws_name) if ws_name in [s.title for s in sh.worksheets()] else sh.add_worksheet(title=ws_name, rows="100", cols="20")
         ws.clear()
@@ -119,7 +130,7 @@ def process_tech_enforcement(files):
         sh.batch_update(reqs)
 
 # ----------------- [2. 超載統計] -----------------
-def process_overload(files):
+def process_overload(files, sh):
     f_wk, f_yt, f_ly = None, None, None
     for f in files:
         if "(1)" in f.name: f_yt = f
@@ -166,9 +177,7 @@ def process_overload(files):
     st.write("📊 **超載統計結果：**")
     st.dataframe(df_final, hide_index=True)
 
-    if GCP_CREDS:
-        gc = gspread.service_account_from_dict(GCP_CREDS)
-        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+    if sh:
         ws = sh.get_worksheet(1)
         ws.update(range_name='A1', values=[['取締超載違規件數統計表']])
         ws.update(range_name='A2', values=[df_final.columns.tolist()] + df_final.values.tolist())
@@ -190,7 +199,7 @@ def process_overload(files):
         if requests: sh.batch_update({"requests": requests})
 
 # ----------------- [3. 重大交通違規 (CSV三報表終極引擎版)] -----------------
-def process_major(files):
+def process_major(files, sh):
     if len(files) < 2:
         st.error("❌ 請上傳『本期』與『年累計』報表。若要精確比較細項，請一併上傳第三份『去年累計』報表。")
         return
@@ -320,11 +329,12 @@ def process_major(files):
     st.dataframe(df_result, use_container_width=True)
 
     # =========================================================
-    # 第二部分：處理「6大違規細項表」
+    # 第二部分：處理「7大違規細項表」(補足嚴重超速辨識)
     # =========================================================
     DETAIL_CATEGORIES = {
         "酒駕": ["酒駕", "酒後", "35條"],
         "闖紅燈": ["闖紅燈", "53條"],
+        "嚴重超速": ["嚴重超速", "嚴重", "超速", "43條", "40條", "度超過"], # 解決 Font bug 問題新增的字詞與法條對應
         "逆向行駛": ["逆向", "45條"],
         "轉彎未依規定": ["轉彎", "48條"],
         "蛇行惡意逼車": ["蛇行", "逼車", "惡意", "43條"],
@@ -339,7 +349,7 @@ def process_major(files):
             header_idx = -1
             for i in range(min(15, len(df))):
                 row_str = "".join([str(x) for x in df.iloc[i].values if pd.notna(x)])
-                if sum(1 for kw in ["酒駕", "闖紅燈", "逆向行駛", "轉彎"] if kw in row_str) >= 2:
+                if sum(1 for kw in ["酒駕", "闖紅燈", "逆向行駛", "轉彎", "超速"] if kw in row_str) >= 2:
                     header_idx = i; break
                     
             if header_idx != -1:
@@ -401,7 +411,7 @@ def process_major(files):
         rows.insert(0, tot_row)
         cat_dfs[cat] = pd.DataFrame(rows, columns=pd.MultiIndex.from_arrays([h1_cat, h2_cat]))
 
-    with st.expander("🔍 檢視 6 大項重大違規細表 (點擊展開)"):
+    with st.expander("🔍 檢視 7 大項重大違規細表 (點擊展開)"):
         if not dfs_ly: 
             st.info("💡 提醒：因為您未上傳單獨的『去年累計』報表，細項的去年欄位將暫時以 0 計算。")
         for cat, df_c in cat_dfs.items():
@@ -409,12 +419,10 @@ def process_major(files):
             st.dataframe(df_c, use_container_width=True)
 
     # =========================================================
-    # 第三部分：雲端同步 (包含總表與六大細項表)
+    # 第三部分：雲端同步 (包含總表與細項表)
     # =========================================================
-    if GCP_CREDS:
+    if sh:
         try:
-            gc = gspread.service_account_from_dict(GCP_CREDS)
-            sh = gc.open_by_url(GOOGLE_SHEET_URL)
             existing_sheets = [s.title for s in sh.worksheets()]
             requests = []
             
@@ -441,7 +449,7 @@ def process_major(files):
                 fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
                 requests.append({"repeatCell": {"range": {"sheetId": ws_main.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 7, "endColumnIndex": 8}, "cell": {"userEnteredFormat": fmt}, "fields": "userEnteredFormat.textFormat.foregroundColor"}})
 
-            # --- 3-2. 同步 6 個細項分頁 ---
+            # --- 3-2. 同步 7 個細項分頁 ---
             for cat, df_c in cat_dfs.items():
                 ws_name = f"重大違規-{cat}"
                 ws_cat = sh.worksheet(ws_name) if ws_name in existing_sheets else sh.add_worksheet(title=ws_name, rows="30", cols="15")
@@ -504,13 +512,13 @@ def process_major(files):
                         requests.append({"repeatCell": {"range": {"sheetId": ws_cat.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": c_idx, "endColumnIndex": c_idx + 1}, "cell": {"userEnteredFormat": fmt}, "fields": "userEnteredFormat.textFormat.foregroundColor"}})
 
             if requests: sh.batch_update({"requests": requests})
-            st.write("✅ 重大違規 (含原先總表及 6 項獨立分頁) 雲端同步完成！")
+            st.write("✅ 重大違規 (含原先總表及 7 項獨立分頁) 雲端同步完成！")
         except Exception as e:
             st.error(f"雲端同步出錯：{e}")
             st.write(traceback.format_exc())
 
 # ----------------- [4. 強化專案] -----------------
-def process_project(files):
+def process_project(files, sh):
     f1 = next((f for f in files if any(k in f.name for k in ["強化", "法條", "自選匯出"])), None)
     f2_list = [f for f in files if any(k in f.name.upper() for k in ["R17", "砂石", "大貨"])]
 
@@ -593,9 +601,8 @@ def process_project(files):
     st.write(f"📊 **{PROJECT_NAME} 統計結果：**")
     st.dataframe(df_f, hide_index=True)
 
-    if GCP_CREDS:
-        gc = gspread.service_account_from_dict(GCP_CREDS)
-        ws = gc.open_by_url(GOOGLE_SHEET_URL).worksheet(PROJECT_NAME)
+    if sh:
+        ws = sh.worksheet(PROJECT_NAME)
         full_t = f"{PROJECT_NAME} (統計期間：{date_str})"
         ws.clear()
         ws.update(range_name='A1', values=[[full_t] + [""] * 18, [""] + [c for c in PROJECT_CATS for _ in range(3)], ["單位"] + ["取締件數", "目標值", "達成率"] * 6] + df_f.values.tolist())
@@ -636,7 +643,7 @@ def process_project(files):
         st.write("✅ 強化專案雲端同步完成 (未達100%自動標示紅字)")
 
 # ----------------- [5. 交通事故] -----------------
-def process_accident(files):
+def process_accident(files, sh):
     meta = []
     for f in files:
         f.seek(0)
@@ -681,9 +688,7 @@ def process_accident(files):
     c1.write("📊 **A1 死亡人數統計**"); c1.dataframe(a1_res, hide_index=True)
     c2.write("📊 **A2 受傷人數統計**"); c2.dataframe(a2_res, hide_index=True)
 
-    if GCP_CREDS:
-        gc = gspread.service_account_from_dict(GCP_CREDS)
-        sh = gc.open_by_url(GOOGLE_SHEET_URL)
+    if sh:
         RED_FMT = {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}
         BLACK_FMT = {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}}}
 
@@ -711,7 +716,7 @@ def process_accident(files):
         st.write("✅ 交通事故雲端已更新")
 
 # ----------------- [6. 靜桃計畫] -----------------
-def process_jing_tao(files):
+def process_jing_tao(files, sh):
     df = None
     for f in files:
         f.seek(0)
@@ -800,10 +805,8 @@ def process_jing_tao(files):
     st.write("📊 **「靜桃計畫」大執法專案統計表：**")
     st.dataframe(df_res, use_container_width=True)
 
-    if GCP_CREDS:
+    if sh:
         try:
-            gc = gspread.service_account_from_dict(GCP_CREDS)
-            sh = gc.open_by_url(GOOGLE_SHEET_URL)
             ws_name = "靜桃計畫"
             ws = sh.worksheet(ws_name) if ws_name in [s.title for s in sh.worksheets()] else sh.add_worksheet(title=ws_name, rows="30", cols="10")
             ws.clear()
@@ -830,8 +833,11 @@ def process_jing_tao(files):
 # ==========================================
 # 4. 首頁與側邊欄選單
 # ==========================================
-from menu import show_sidebar
-show_sidebar()
+try:
+    from menu import show_sidebar
+    show_sidebar()
+except ImportError:
+    pass # 若本機沒有 menu 模組則略過
 
 st.header("📈 交通執法數據全自動批次處理中心")
 st.info("💡 請將所需報表全選後，直接拖曳至下方區域即可自動分流處理。")
@@ -858,29 +864,37 @@ if uploads:
             elif any(k in name for k in ["靜桃", "噪音", "改裝車", "總表", "詳細資料"]): cat_files["靜桃計畫"].append(f)
 
         try:
+            # 取得全域連線，並傳入各個處理函式
+            sh = get_gsheet_connection()
+            
             if cat_files["科技執法"]:
                 with st.status("📸 處理【科技執法】...", expanded=True):
-                    process_tech_enforcement(cat_files["科技執法"])
+                    process_tech_enforcement(cat_files["科技執法"], sh)
+                    time.sleep(1.5) # 加入緩衝時間，避免 429 Error
             
             if cat_files["超載統計"]:
                 with st.status("🚛 處理【超載統計】...", expanded=True):
-                    process_overload(cat_files["超載統計"])
+                    process_overload(cat_files["超載統計"], sh)
+                    time.sleep(1.5)
             
             if cat_files["重大違規"]:
                 with st.status("🚨 處理【重大交通違規】...", expanded=True):
-                    process_major(cat_files["重大違規"])
+                    process_major(cat_files["重大違規"], sh)
+                    time.sleep(1.5)
             
             if cat_files["強化專案"]:
                 with st.status("🔥 處理【強化專案】...", expanded=True):
-                    process_project(cat_files["強化專案"])
+                    process_project(cat_files["強化專案"], sh)
+                    time.sleep(1.5)
             
             if cat_files["交通事故"]:
                 with st.status("🚑 處理【交通事故】...", expanded=True):
-                    process_accident(cat_files["交通事故"])
+                    process_accident(cat_files["交通事故"], sh)
+                    time.sleep(1.5)
             
             if cat_files["靜桃計畫"]:
                 with st.status("🤫 處理【靜桃計畫】...", expanded=True):
-                    process_jing_tao(cat_files["靜桃計畫"])
+                    process_jing_tao(cat_files["靜桃計畫"], sh)
 
             st.session_state["last_processed_hash"] = file_hash
             st.balloons()
