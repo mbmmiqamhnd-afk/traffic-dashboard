@@ -366,12 +366,21 @@ def auto_assign_radio_code(df):
     prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
     for idx, row in df.iterrows():
         unit, person = str(row.get('單位', '')), str(row.get('服勤人員', ''))
+        current_radio = str(row.get('無線電', '')).strip()
+        
         first_unit = re.split(r'[\n、 ]', unit.strip())[0]
         base_pfx = next((v for k, v in prefixes.items() if k in first_unit), "")
+        
         if base_pfx:
-            if "副所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}2"
-            elif "所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}1"
-            elif not str(row.get('無線電','')).startswith(f"隆安{base_pfx}"): df.at[idx, '無線電'] = f"隆安{base_pfx}0"
+            if current_radio.startswith(f"隆安{base_pfx}"):
+                continue 
+            
+            if "副所長" in person: 
+                df.at[idx, '無線電'] = f"隆安{base_pfx}2"
+            elif "所長" in person: 
+                df.at[idx, '無線電'] = f"隆安{base_pfx}1"
+            else: 
+                df.at[idx, '無線電'] = f"隆安{base_pfx}0"
     return df
 
 res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
