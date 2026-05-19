@@ -57,7 +57,6 @@ def extract_duty_v2(file, current_hour: int) -> dict:
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     pdf_file.seek(0)
     
-    # 解除單頁封印，讀取 PDF 所有頁面
     images = convert_from_bytes(pdf_file.read(), dpi=150)
     results = []
     roster_str = "、".join(roster)
@@ -67,13 +66,11 @@ def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     
     for i, img in enumerate(images):
         try:
-            # 移除 15 秒等待，直接全速發送 API 請求
             st.info(f"AI 正在全速辨識第 {i+1}/{total_pages} 頁...")
             
             response = model.generate_content([prompt, img])
             raw_text = response.text.replace("```json", "").replace("```", "").strip()
             
-            # 避免空資料引發錯誤
             if raw_text and raw_text != "{}":
                 results.append(json.loads(raw_text))
                 
@@ -98,7 +95,20 @@ if u_duty and u_pdf:
             cases = parse_crime_pdf_gemini(u_pdf, dr.get('roster', []))
         
         lns = [f"{u_time.strftime('%H%M')}，{dr['term']}值班{dr['v_name']}。"]
-        for case in cases:
-            lns.append(f"優蹟紀錄：{dr['term']}同仁 {case.get('查獲員警','')} 於 {case.get('查獲地點','')} 查獲 {case.get('嫌疑人','')}。")
         
-        st.text_area("報告預覽", "\n".join(lns), height=200)
+        # 將 AI 抓取的詳細資訊組合成通順的句子
+        for case in cases:
+            # 如果 AI 把員警變成 List 格式，自動轉成頓號連接的字串
+            officers = case.get('查獲員警', '')
+            if isinstance(officers, list):
+                officers = "、".join(officers)
+                
+            case_time = case.get('查獲時間', '')
+            case_loc = case.get('查獲地點', '')
+            suspect = case.get('嫌疑人', '')
+            crime = case.get('觸犯法條', '')
+            
+            # 加入時間與法條的完整敘述
+            lns.append(f"優蹟紀錄：{dr['term']}同仁 {officers} 於 {case_time} 在 {case_loc} 查獲 {suspect} 涉嫌 {crime} 案。")
+        
+        st.text_area("報告預覽", "\n".join(lns), height=300)
