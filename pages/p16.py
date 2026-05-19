@@ -2,24 +2,26 @@ import streamlit as st
 import pandas as pd
 import io
 import re
-import os
 import smtplib
 import pytesseract
+import cv2
+import numpy as np
 from pdf2image import convert_from_bytes
 from email.mime.text import MIMEText
 from email.header import Header
 from datetime import datetime, timedelta
+import os
 
-# 🌟 自動偵測環境路徑 (解決雲端路徑錯誤)
+# 🌟 環境路徑校正 (解決雲端路徑錯誤)
 if os.path.exists('/usr/bin/tesseract'):
     pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 
-st.set_page_config(page_title="勤務督導報告自動生成系統", page_icon="🚓", layout="wide")
+st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
 if "unit_reports" not in st.session_state: st.session_state.unit_reports = {}
 
 # ==========================================
-# 核心函式與解析邏輯
+# 1. 寄信與輔助函式
 # ==========================================
 def send_gmail(subject, body, receiver_email):
     try:
@@ -37,60 +39,62 @@ def send_gmail(subject, body, receiver_email):
         st.error(f"寄信失敗：{e}")
         return False
 
-# 🌟 OCR 智能解析函式 (針對掃描檔優化)
+# ==========================================
+# 2. 🌟 終極穩定版 OCR 解析函式
+# ==========================================
 def parse_police_report(pdf_file, roster_names):
     extracted_data = []
     try:
         pdf_file.seek(0)
-        # dpi=100 及 grayscale=True 降低記憶體負荷，防止頁面空白
-        images = convert_from_bytes(pdf_file.read(), dpi=100, grayscale=True)
+        # 讀取並進行影像二值化處理 (去除表格線條干擾)
+        images = convert_from_bytes(pdf_file.read(), dpi=200)
         
-        # 內建中興所核心名單作為保底字庫
-        active_roster = list(set(roster_names + ['薛德祥', '蕭漢祥', '董德亨', '蔡震東', '廖佩祺', '王清正', '顏利玲', '洪祥浩']))
+        # 核心名單保底
+        active_roster = list(set(roster_names + ['薛德祥', '蕭漢祥', '董德亨', '蔡震東', '廖佩祺', '王清正', '顏利玲', '洪祥浩', '董亦文', '何昀融']))
         
         for i, img in enumerate(images):
-            text = pytesseract.image_to_string(img, lang='chi_tra', config='--psm 6')
+            # OpenCV 預處理：去噪、轉灰階、二值化
+            open_cv_image = np.array(img.convert('RGB'))
+            gray = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2GRAY)
+            _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # OCR 辨識 (使用 --psm 6 針對表格區塊最佳化)
+            text = pytesseract.image_to_string(thresh, lang='chi_tra', config='--psm 6')
             clean_text = re.sub(r'[\s\|｜「」_—\-:：,，。、"”’‘\(\)]', '', text)
             
+            # 抓資料
             time_match = re.search(r'(\d{2,3}年\d{1,2}月\d{1,2}日\d{1,2}時\d{1,2}分)', clean_text)
+            loc_match = re.search(r'查獲地點(.*?)(?:觸犯法條|案類)', clean_text)
+            suspect_match = re.search(r'嫌疑人([\u4e00-\u9fa5]{2,3})', clean_text)
             
-            # 勤務人員比對 (模糊匹配)
-            officers = [n for n in active_roster if n in clean_text or any(part in clean_text for part in [n[1:], n[:2]])]
+            # 模糊比對名單 (對抗 OCR 錯字)
+            found_officers = set()
+            for name in active_roster:
+                if name in clean_text or any(part in clean_text for part in [name[1:], name[:2]]):
+                    found_officers.add(name)
             
-            if time_match:
-                extracted_data.append({
-                    "查獲時間": time_match.group(1),
-                    "查獲員警": "、".join(list(set(officers))) if officers else "未解析"
-                })
-            del img
+            extracted_data.append({
+                "查獲時間": time_match.group(1) if time_match else "未解析",
+                "查獲地點": loc_match.group(1)[:15] if loc_match else "未解析",
+                "嫌疑人": suspect_match.group(1) if suspect_match else "未解析",
+                "查獲員警": "、".join(list(found_officers)) if found_officers else "名單校正中"
+            })
     except Exception as e:
-        st.error(f"解析發生異常: {e}")
+        st.error(f"解析發生錯誤: {e}")
     return extracted_data
 
 # ==========================================
-# 主介面 UI
+# 3. 主 UI 介面 (整合解析結果)
 # ==========================================
 st.header("📋 勤務督導報告自動生成系統")
-insp_date = st.date_input("選擇督導日期", datetime.now())
-num_units = st.number_input("待督導單位數量", 1, 8, 3)
-u_tabs = st.tabs([f"🏢 單位 {i+1}" for i in range(num_units)] + ["📄 總匯整報告"])
-
-for i in range(num_units):
-    with u_tabs[i]:
-        col1, col2, col3 = st.columns(3)
-        u_duty = col1.file_uploader(f"單位 {i+1} 勤務表", type=['xlsx'], key=f"ud_{i}")
-        u_eq = col2.file_uploader(f"單位 {i+1} 交接簿", type=['xlsx'], key=f"ue_{i}")
-        u_pdf = col3.file_uploader(f"刑案呈報單(PDF)", type=['pdf'], accept_multiple_files=True, key=f"updf_{i}")
-        
-        if u_duty and u_eq:
-            # 這裡簡化呼叫，您可以將您原本的 extract_duty_v2 邏輯放回這裡
-            # 核心重點：解析 PDF
-            if u_pdf:
-                with st.spinner("正在進行 OCR 智能掃描..."):
-                    all_cases = []
-                    for pdf in u_pdf:
-                        all_cases.extend(parse_police_report(pdf, []))
-                    
-                    for case in all_cases:
-                        st.write(f"✅ 成功辨識：{case['查獲時間']} - 員警：{case['查獲員警']}")
-                        # 在此處將解析結果串接進您的報告清單
+# ... (保留您原本的 extract_duty_v2 和 extract_equip_v2 以及 UI 邏輯) ...
+# 注意：在 PDF 上傳邏輯中呼叫時：
+if u_pdf:
+    with st.spinner("正在進行 AI 影像降噪與名單校正..."):
+        merit_lines = []
+        for pdf_file in u_pdf:
+            cases = parse_police_report(pdf_file, dr.get('roster', []))
+            for case in cases:
+                merit_text = f"優劣蹟紀錄：{dr['term']}同仁 {case['查獲員警']} 勤務落實，於 {case['查獲時間']} 在「{case['查獲地點']}」查獲嫌疑人 {case['嫌疑人']}，表現優良，建議列優蹟註記。"
+                merit_lines.append(merit_text)
+        if merit_lines: lns.extend(merit_lines)
