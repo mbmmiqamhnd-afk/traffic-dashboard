@@ -4,8 +4,8 @@ import io
 import re
 import traceback
 import smtplib
-import pytesseract  # OCR 文字辨識核心
-from pdf2image import convert_from_bytes  # 將 PDF 轉成圖片的工具
+import pytesseract  
+from pdf2image import convert_from_bytes  
 from email.mime.text import MIMEText
 from email.header import Header
 from datetime import datetime, timedelta
@@ -140,7 +140,8 @@ def extract_duty_v2(d_file, hour):
     res = {
         'v_name': '解析失敗', 'detention_name': None,
         'cadre_status': '無幹部資料', 'unit_name': '未偵測單位',
-        'term': '該所', 'loc_term': '所', 'has_skyline': True, 'is_guard_unit': False
+        'term': '該所', 'loc_term': '所', 'has_skyline': True, 'is_guard_unit': False,
+        'roster': [] # 🌟 新增：儲存今天上班的所有員警名單
     }
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna('')
@@ -162,6 +163,8 @@ def extract_duty_v2(d_file, hour):
                 break
 
         fmap = build_fmap(df)
+        res['roster'] = list(set(fmap.values())) # 🌟 把名單存起來給 OCR 當作弊小抄
+
         target_col, t_cols = find_target_col(df, hour)
         if target_col == -1:
             res['v_name'] = '找不到對應時段欄'
@@ -339,10 +342,10 @@ def extract_equip_v2(e_file):
         return None
 
 # ==========================================
-# 🌟 4.5 新增：PDF 刑案呈報單解析功能 (AI 智能掃描版)
+# 🌟 4.5 新增：PDF 刑案呈報單解析功能 (勤務表交叉比對校正版)
 # ==========================================
-def parse_police_report(pdf_file):
-    """處理表格直式讀取錯位，改用全域智能關鍵字掃描"""
+def parse_police_report(pdf_file, roster_names):
+    """利用勤務表上的名單，強制校正 OCR 讀錯的員警名字"""
     extracted_data = []
     try:
         pdf_file.seek(0)
@@ -353,43 +356,50 @@ def parse_police_report(pdf_file):
             st.error(f"❌ {pdf_file.name} 無法轉換為圖片。")
             return []
             
-        st.info(f"📄 {pdf_file.name} 成功轉換為 {len(images)} 頁圖片，正在進行 OCR 全文智能掃描...")
+        st.info(f"📄 {pdf_file.name} 成功轉換為 {len(images)} 頁圖片，正在進行 OCR 與名單交叉比對...")
         
         for i, img in enumerate(images):
             text = pytesseract.image_to_string(img, lang='chi_tra')
             if not text.strip(): 
                 continue
             
-            # 1. 強制消除所有表格、空白及換行，使中文字緊密相連以利搜尋
             clean_text = re.sub(r'[\s\|｜「」_—\-:：,，。、"”’‘\(\)]', '', text)
             
-            # 2. 智能追蹤案發/查獲時間
+            # 1. 智能追蹤時間
             time_match = re.search(r'(\d{2,3}年\d{1,2}月\d{1,2}日\d{1,2}時\d{1,2}分)', clean_text)
             time_str = time_match.group(1) if time_match else "時間未解析"
-            # 修正掃描辨識常見的月份或字元漏讀狀況
             time_str = time_str.replace('0月', '05月').replace('06月18日', '05月18日')
             
-            # 3. 智能交叉比對法條字典 (無視欄位錯位)
+            # 2. 修正法條贅字
             law_str = ""
             common_laws = ['毒品危害防制條例', '公共危險', '刑事訴訟法', '竊盜', '通緝', '毒駕', '詐欺', '洗錢防制法', '社會秩序維護法', '刑法']
             found_laws = [law for law in common_laws if law in clean_text]
             if found_laws:
-                law_str = "、".join(found_laws)
-                if '刑事訴訟法' in law_str and '通緝' in clean_text:
-                    law_str += '(通緝)'
+                law_str = "、".join(set([l for l in found_laws if l not in ['通緝', '毒駕', '竊盜']])) # 去除贅字
+                if '刑事訴訟法' in law_str and '通緝' in clean_text: law_str += '(通緝)'
+                if '毒品' in law_str and '公共危險' in law_str: law_str += '(毒駕)'
             else:
                 law_m = re.search(r'觸犯法條(.*?)(?:違反|達反|連反|附送|案件)', clean_text)
                 law_str = law_m.group(1)[:15] if law_m and len(law_m.group(1)) > 2 else "法條未解析"
                     
-            # 4. 智能定位職稱與同仁姓名編組
-            officers = []
-            officer_matches = re.findall(r'(警員|巡佐|副所長|所長|偵查佐|小隊長|分隊長|隊長)([\u4e00-\u9fa5]{2,3})', clean_text)
-            for title, name in officer_matches:
-                if name not in ['姓名', '簽章', '承辦', '主管', '無異常'] and len(name) >= 2:
-                    full_name = f"{title}{name}"
-                    if full_name not in officers:
-                        officers.append(full_name)
-                        
+            # 3. 🌟 終極殺手鐧：利用勤務表名單進行模糊校正 (Fuzzy Match)
+            officers = set()
+            for name in roster_names:
+                if not name or len(name) < 2: continue
+                # 如果完全命中
+                if name in clean_text:
+                    officers.add(name)
+                # 模糊比對：名字有3個字時，只要中了2個字就算是他 (如: 蔡震東 -> 迷震東)
+                elif len(name) == 3:
+                    if (name[0]+name[1] in clean_text) or (name[1]+name[2] in clean_text):
+                        officers.add(name)
+                    else:
+                        # 處理頭尾字正確但中間讀錯的狀況
+                        idx1 = clean_text.find(name[0])
+                        idx2 = clean_text.find(name[2])
+                        if idx1 != -1 and idx2 != -1 and 0 < (idx2 - idx1) <= 4:
+                            officers.add(name)
+
             officer_str = "、".join(officers) if officers else "員警未解析"
 
             extracted_data.append({
@@ -397,7 +407,7 @@ def parse_police_report(pdf_file):
                 "觸犯法條": law_str,
                 "查獲員警": officer_str
             })
-            st.success(f"🎯 第 {i+1} 頁 AI 擷取完畢：{time_str} / {law_str} / {officer_str}")
+            st.success(f"🎯 第 {i+1} 頁校正成功：{time_str} / {law_str} / 查獲員警：{officer_str}")
             
     except Exception as e:
         st.error(f"❌ 解析 {pdf_file.name} 發生錯誤：\n{str(e)}")
@@ -451,10 +461,11 @@ for i in range(num_units):
                 lns.append(f"拘留室值班警員{dr['detention_name']}，對人犯監控良好，無異常狀況發生。" if dr['detention_name'] else "拘留室目前無人犯。")
             
             if u_pdf:
-                with st.spinner("正在辨識掃描檔文字，請稍候..."):
+                with st.spinner("正在將名單與掃描文字進行交叉比對..."):
                     merit_lines = []
+                    # 將當天上班的員警名單 (dr['roster']) 傳入函數進行比對
                     for pdf_file in u_pdf:
-                        cases = parse_police_report(pdf_file)
+                        cases = parse_police_report(pdf_file, dr.get('roster', []))
                         for case in cases:
                             merit_text = f"優劣蹟紀錄：{t}同仁 {case['查獲員警']} 勤務落實，於 {case['查獲時間']} 查獲 {case['觸犯法條']} 案，表現優良，建議列優蹟註記。"
                             merit_lines.append(merit_text)
@@ -468,7 +479,7 @@ for i in range(num_units):
             if "中斷" in dr['cadre_status'] or "失敗" in dr['v_name']:
                 st.error(f"⚠️ {dr['unit_name']} 解析可能不完全：{dr['cadre_status']}")
             else:
-                st.success(f"✅ {dr['unit_name']} 解析完成" + (" (包含掃描檔全域智能掃描)" if u_pdf else ""))
+                st.success(f"✅ {dr['unit_name']} 解析完成" + (" (已完成名單交叉校正)" if u_pdf else ""))
                 
             st.text_area("預覽報告", final_text, height=350, key=f"preview_{i}")
 
