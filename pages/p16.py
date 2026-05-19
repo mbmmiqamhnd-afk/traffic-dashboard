@@ -8,17 +8,28 @@ from datetime import datetime
 from pdf2image import convert_from_bytes
 
 # ==========================================
-# 0. 設定與權限
+# 0. 設定與權限 (動態偵測 + 容錯版)
 # ==========================================
 st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
 try:
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
-    # 強制鎖定 Flash 模型，這是最穩定的選擇
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    # 動態獲取可用模型，解決 404 Not Found
+    found_model = None
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_methods:
+            found_model = m.name
+            break
+            
+    if not found_model:
+        raise Exception("API 金鑰有效，但未找到任何可用的生成模型。")
+    
+    model = genai.GenerativeModel(found_model)
+    st.sidebar.info(f"系統已連線: {found_model}")
 except Exception as e:
-    st.error(f"系統初始化失敗: {e}")
+    st.error(f"初始化失敗: {e}")
     st.stop()
 
 # ==========================================
@@ -50,26 +61,26 @@ def extract_duty_v2(file, current_hour: int) -> dict:
         return {'term': '本所', 'v_name': '（解析失敗）', 'roster': [], '_error': str(e)}
 
 # ==========================================
-# 2. Gemini Vision (防限流、單頁辨識版)
+# 2. Gemini Vision (強制間隔 + 單頁辨識)
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     pdf_file.seek(0)
-    # 只抓取第一頁，大幅減少 API 消耗
     images = convert_from_bytes(pdf_file.read(), dpi=150, first_page=1, last_page=1)
     results = []
     roster_str = "、".join(roster)
-    prompt = f"分析此刑案呈報單，提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警。名冊：{roster_str}。僅回傳標準 JSON，勿用 Markdown。"
+    prompt = f"請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警。員警名冊：{roster_str}。僅回傳標準 JSON。"
     
     for img in images:
         try:
-            # 請求前強制休息，確保不觸發 5 RPM 限制
-            st.info("AI 正在辨識中，請勿關閉網頁...")
+            # 強制間隔以符合免費版 API 每分鐘 5 次請求限制
+            st.info("處理中，請稍候 15 秒...")
             time.sleep(15) 
             response = model.generate_content([prompt, img])
             raw_text = response.text.replace("```json", "").replace("```", "").strip()
             results.append(json.loads(raw_text))
         except Exception as e:
             st.error(f"辨識失敗: {e}")
+            break
     return results
 
 # ==========================================
@@ -77,15 +88,16 @@ def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
 # ==========================================
 st.header("📋 勤務督導報告自動生成系統")
 u_time = st.time_input("抵達時間", datetime.now().time())
-u_duty = st.file_uploader("勤務表", type=['xlsx'])
-u_pdf = st.file_uploader("刑案單 (請一次上傳一份)", type=['pdf'])
+u_duty = st.file_uploader("勤務表 (XLSX)", type=['xlsx'])
+u_pdf = st.file_uploader("刑案單 (PDF)", type=['pdf'])
 
 if u_duty and u_pdf:
     if st.button("開始 AI 辨識"):
         dr = extract_duty_v2(u_duty, u_time.hour)
-        with st.spinner("AI 正在分析影像內容 (需 15 秒)..."):
-            cases = parse_crime_pdf_gemini(u_pdf, dr.get('roster', []))
-            lns = [f"{u_time.strftime('%H%M')}，{dr['term']}值班{dr['v_name']}。"]
-            for case in cases:
-                lns.append(f"優蹟紀錄：{dr['term']}同仁 {case.get('查獲員警','')} 於 {case.get('查獲地點','')} 查獲 {case.get('嫌疑人','')}。")
-            st.text_area("報告預覽", "\n".join(lns), height=200)
+        cases = parse_crime_pdf_gemini(u_pdf, dr.get('roster', []))
+        
+        lns = [f"{u_time.strftime('%H%M')}，{dr['term']}值班{dr['v_name']}。"]
+        for case in cases:
+            lns.append(f"優蹟紀錄：{dr['term']}同仁 {case.get('查獲員警','')} 於 {case.get('查獲地點','')} 查獲 {case.get('嫌疑人','')}。")
+        
+        st.text_area("報告預覽", "\n".join(lns), height=200)
