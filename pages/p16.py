@@ -13,19 +13,19 @@ from email.header import Header
 from datetime import datetime, timedelta
 from pdf2image import convert_from_bytes
 
+# 自動將上層目錄加入路徑 (相容您的系統架構)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+try:
+    from menu import show_sidebar
+except ImportError:
+    def show_sidebar():
+        pass 
+
 # ==========================================
 # 0. 系統初始化與狀態管理
 # ==========================================
-st.set_page_config(page_title="勤務督導報告自動生成系統", page_icon="🚓", layout="wide")
-
 if "unit_reports" not in st.session_state:
     st.session_state.unit_reports = {}
-
-try:
-    from menu import show_sidebar
-    show_sidebar()
-except:
-    pass
 
 # 初始化 Gemini 2.5 Flash API
 try:
@@ -34,20 +34,14 @@ try:
     model = genai.GenerativeModel('gemini-2.5-flash')
 except Exception as e:
     st.error(f"Gemini API 初始化失敗，請檢查 secrets 設定: {e}")
-    st.stop()
 
-st.markdown("""
-    <style>
-    @font-face { font-family: 'Kaiu'; src: url('kaiu.ttf'); }
-    .stTextArea textarea {
-        font-family: 'Kaiu', "標楷體", sans-serif !important;
-        font-size: 19px !important;
-        line-height: 1.7 !important;
-        color: #1c1c1c !important;
-    }
-    .stTabs [data-baseweb="tab-list"] button { font-size: 18px; font-weight: bold; }
-    </style>
-    """, unsafe_allow_html=True)
+# 🛑 關鍵防護 1：關閉所有安全攔截，避免真實姓名(如葉煥堂)被誤判為洩漏個資而阻擋
+safety_settings = [
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+]
 
 # ==========================================
 # 1. 寄信功能
@@ -340,32 +334,26 @@ def extract_equip_v2(e_file):
 # ==========================================
 # 3. Gemini 2.5 Vision 刑案單強效辨識核心
 # ==========================================
-# 🛑 關鍵防護 1：關閉所有安全攔截，避免真實姓名(如葉煥堂)被誤判為洩漏個資而阻擋
-safety_settings = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-]
-
 def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
     pdf_file.seek(0)
     images = convert_from_bytes(pdf_file.read(), dpi=150)
     results = []
     roster_str = "、".join(roster)
     
-    prompt = f"""請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警(請完整提取「職稱+姓名」，例如「警員蕭漢祥」)。
-    名冊供比對參考：{roster_str}。
-    請嚴格回傳 JSON Array (列表) 格式，即使只有一筆資料也要放在陣列中，例如：
-    [
-      {{
-        "嫌疑人": "王大明",
-        "查獲時間": "115年05月18日 10時00分",
-        "查獲地點": "桃園市龍潭區某路段",
-        "觸犯法條": "公共危險",
-        "查獲員警": "警員李小華、巡佐張大山"
-      }}
-    ]"""
+    prompt = (
+        f"請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警(請完整提取「職稱+姓名」，例如「警員蕭漢祥」)。\n"
+        f"名冊供比對參考：{roster_str}。\n"
+        "請嚴格回傳 JSON Array (列表) 格式，即使只有一筆資料也要放在陣列中，例如：\n"
+        "[\n"
+        "  {\n"
+        '    "嫌疑人": "王大明",\n'
+        '    "查獲時間": "115年05月18日 10時00分",\n'
+        '    "查獲地點": "桃園市龍潭區某路段",\n'
+        '    "觸犯法條": "公共危險",\n'
+        '    "查獲員警": "警員李小華、巡佐張大山"\n'
+        "  }\n"
+        "]"
+    )
     
     total_pages = len(images)
     for i, img in enumerate(images):
@@ -374,7 +362,6 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
             response = model.generate_content([prompt, img], safety_settings=safety_settings)
             raw_text = response.text.strip()
             
-            # 清理 Markdown 標籤
             if raw_text.startswith("```"):
                 raw_text = re.sub(r'^
 http://googleusercontent.com/immersive_entry_chip/0
