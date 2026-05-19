@@ -8,7 +8,7 @@ from datetime import datetime
 from pdf2image import convert_from_bytes
 
 # ==========================================
-# 0. 設定與權限 (退回有免費額度的 1.5-flash)
+# 0. 設定與權限 (終極自動抓取模型版)
 # ==========================================
 st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
@@ -16,11 +16,27 @@ try:
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # 必須使用 1.5-flash 才有免費額度
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    st.sidebar.info("系統狀態: 已連結至 Gemini 1.5 Flash (免費層級)")
+    # 1. 直接取得 Google 給這把金鑰的所有模型完整清單
+    available_models = [m.name for m in genai.list_models()]
+    
+    # 2. 在清單中搜尋包含 '1.5-flash' 的確切名字 (例如 models/gemini-1.5-flash-001)
+    target_model = next((m for m in available_models if '1.5-flash' in m), None)
+    
+    # 如果真的沒有 1.5-flash，就退而求其次找任何 flash 模型，再沒有就抓第一個
+    if not target_model:
+        target_model = next((m for m in available_models if 'flash' in m), available_models[0])
+        
+    # 3. 把 'models/' 前綴刪除，符合 SDK 的呼叫標準
+    clean_model_name = target_model.replace('models/', '')
+    
+    # 4. 初始化模型
+    model = genai.GenerativeModel(clean_model_name)
+    st.sidebar.success(f"✅ 成功連結模型: {clean_model_name}")
+
 except Exception as e:
-    st.error(f"系統初始化失敗: {e}")
+    # 萬一失敗，直接把清單印在螢幕上給我們看
+    model_list_str = str(available_models) if 'available_models' in locals() else '無法取得清單'
+    st.error(f"系統初始化失敗: {e}\n\n您帳號目前可用的模型有: {model_list_str}")
     st.stop()
 
 # ==========================================
@@ -52,7 +68,7 @@ def extract_duty_v2(file, current_hour: int) -> dict:
         return {'term': '本所', 'v_name': '（解析失敗）', 'roster': [], '_error': str(e)}
 
 # ==========================================
-# 2. Gemini Vision
+# 2. Gemini Vision (免費額度保護版)
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     pdf_file.seek(0)
@@ -63,7 +79,7 @@ def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     
     for img in images:
         try:
-            # 配合 1.5-flash 的免費限制，強制等待 15 秒
+            # 免費版保護機制：強制等待 15 秒，避免 429 錯誤
             st.info("AI 正在辨識中，請稍候 15 秒...")
             time.sleep(15) 
             response = model.generate_content([prompt, img])
