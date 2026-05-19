@@ -8,7 +8,7 @@ from datetime import datetime
 from pdf2image import convert_from_bytes
 
 # ==========================================
-# 0. 設定與權限 (已更新為 gemini-2.0-flash)
+# 0. 設定與權限 (退回有免費額度的 1.5-flash)
 # ==========================================
 st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
@@ -16,9 +16,9 @@ try:
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # 直接更新為 gemini-2.0-flash
-    model = genai.GenerativeModel('gemini-2.0-flash')
-    st.sidebar.info("系統狀態: 已連結至 Gemini 2.0 Flash")
+    # 必須使用 1.5-flash 才有免費額度
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    st.sidebar.info("系統狀態: 已連結至 Gemini 1.5 Flash (免費層級)")
 except Exception as e:
     st.error(f"系統初始化失敗: {e}")
     st.stop()
@@ -52,7 +52,7 @@ def extract_duty_v2(file, current_hour: int) -> dict:
         return {'term': '本所', 'v_name': '（解析失敗）', 'roster': [], '_error': str(e)}
 
 # ==========================================
-# 2. Gemini Vision (防限流、單頁辨識版)
+# 2. Gemini Vision
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     pdf_file.seek(0)
@@ -63,8 +63,8 @@ def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     
     for img in images:
         try:
-            # 依舊保留節流機制，確保不會超出配額
-            st.info("AI 正在使用 Gemini 2.0 Flash 辨識中...")
+            # 配合 1.5-flash 的免費限制，強制等待 15 秒
+            st.info("AI 正在辨識中，請稍候 15 秒...")
             time.sleep(15) 
             response = model.generate_content([prompt, img])
             raw_text = response.text.replace("```json", "").replace("```", "").strip()
