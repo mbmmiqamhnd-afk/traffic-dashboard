@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pdf2image import convert_from_bytes
 
 # ==========================================
-# 0. 系統初始化與狀態管理 (整合 Gemini 2.5)
+# 0. 系統初始化與狀態管理
 # ==========================================
 st.set_page_config(page_title="勤務督導報告自動生成系統", page_icon="🚓", layout="wide")
 
@@ -338,121 +338,43 @@ def extract_equip_v2(e_file):
         return None
 
 # ==========================================
-# 3. Gemini 2.5 Vision 刑案單多頁辨識核心
+# 3. Gemini 2.5 Vision 刑案單強效辨識核心
 # ==========================================
+# 🛑 關鍵防護 1：關閉所有安全攔截，避免真實姓名(如葉煥堂)被誤判為洩漏個資而阻擋
+safety_settings = [
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+]
+
 def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
     pdf_file.seek(0)
     images = convert_from_bytes(pdf_file.read(), dpi=150)
     results = []
     roster_str = "、".join(roster)
     
-    prompt = f"請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警(請完整提取「職稱+姓名」，例如「警員蕭漢祥」、「巡佐董倢亨」)。名冊供比對錯別字參考：{roster_str}。僅回傳標準 JSON。"
+    prompt = f"""請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警(請完整提取「職稱+姓名」，例如「警員蕭漢祥」)。
+    名冊供比對參考：{roster_str}。
+    請嚴格回傳 JSON Array (列表) 格式，即使只有一筆資料也要放在陣列中，例如：
+    [
+      {{
+        "嫌疑人": "王大明",
+        "查獲時間": "115年05月18日 10時00分",
+        "查獲地點": "桃園市龍潭區某路段",
+        "觸犯法條": "公共危險",
+        "查獲員警": "警員李小華、巡佐張大山"
+      }}
+    ]"""
     
     total_pages = len(images)
     for i, img in enumerate(images):
         try:
-            st.info(f"單位 {unit_idx+1} AI 正在全速辨識刑案單第 {i+1}/{total_pages} 頁...")
-            response = model.generate_content([prompt, img])
-            raw_text = response.text.replace("```json", "").replace("```", "").strip()
+            st.info(f"單位 {unit_idx+1} 🚀 AI 正在辨識刑案單第 {i+1}/{total_pages} 頁...")
+            response = model.generate_content([prompt, img], safety_settings=safety_settings)
+            raw_text = response.text.strip()
             
-            if raw_text and raw_text != "{}":
-                results.append(json.loads(raw_text))
-        except Exception as e:
-            st.error(f"單位 {unit_idx+1} 刑案單第 {i+1} 頁辨識失敗: {e}")
-            
-    return results
-
-# ==========================================
-# 4. 主介面 UI 整合多單位與 AI 辨識
-# ==========================================
-insp_date = st.date_input("選擇督導日期", datetime.now(), key="insp_d")
-num_units = st.number_input("待督導單位數量", 1, 8, 3, key="num_u")
-u_tabs = st.tabs([f"🏢 單位 {i+1}" for i in range(num_units)] + ["📄 總匯整報告"])
-
-for i in range(num_units):
-    with u_tabs[i]:
-        u_time = st.time_input("抵達時間", datetime.now().time(), key=f"ut_{i}")
-        
-        col_f1, col_f2, col_f3 = st.columns(3)
-        with col_f1: u_duty = st.file_uploader(f"單位 {i+1} 勤務表 (XLSX)", type=['xlsx'], key=f"ud_{i}")
-        with col_f2: u_eq = st.file_uploader(f"單位 {i+1} 交接簿 (XLSX)", type=['xlsx'], key=f"ue_{i}")
-        with col_f3: u_pdf = st.file_uploader(f"單位 {i+1} 刑案單優蹟 (PDF選填)", type=['pdf'], key=f"up_{i}")
-        
-        if u_duty and u_eq:
-            dr = extract_duty_v2(u_duty, u_time.hour)
-            er = extract_equip_v2(u_eq)
-            
-            if not er:
-                er = {'gi':0, 'go':0, 'bi':0, 'bo':0, 'ri':0, 'ro':0, 'vi':0, 'vo':0}
-                
-            t, loc = dr['term'], dr['loc_term']
-            d_e = insp_date - timedelta(days=1)
-            d_5, d_3 = (insp_date - timedelta(days=5)), (insp_date - timedelta(days=3))
-            
-            if dr['v_name'] == "該時段無值班人員":
-                line_1 = f"{u_time.strftime('%H%M')}，{t}該時段無值班人員。"
-            else:
-                line_1 = f"{u_time.strftime('%H%M')}，{t}值班{dr['v_name']}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。"
-            
-            lns = [
-                line_1,
-                f"{t}{'駐地監錄設備及天羅地網系統' if dr['has_skyline'] else '駐地監錄設備'}均運作正常，無故障，{d_5.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}有逐日檢測2次以上紀錄。",
-                f"{t}{d_3.strftime('%m月%d日')}至{d_e.strftime('%m月%d日')}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。",
-                f"{t}環境內務擺設整齊清潔，符合規定。",
-                f"{t}手槍出勤 {er['go']} 把、在{loc} {er['gi']} 把，子彈出勤 {er['bo']} 顆、在{loc} {er['bi']} 顆，無線電出勤 {er['ro']} 臺、在{loc} {er['ri']} 臺；防彈背心出勤 {er['vo']} 件、在{loc} {er['vi']} 件，幹部對械彈每日檢查管制良好，符合規定。",
-                f"本日{dr['cadre_status']}",
-                f"{t}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
-            ]
-            
-            if dr['is_guard_unit']:
-                lns.append(f"拘留室值班警員{dr['detention_name']}，對人犯監控良好，無異常狀況發生。" if dr['detention_name'] else "拘留室目前無人犯。")
-            
-            # 🌟 整合 Gemini 2.5 刑案單辨識紀錄 (即使無上傳也保證程式往下走)
-            if u_pdf:
-                try:
-                    with st.spinner(f"單位 {i+1} 刑案單優蹟影像全速分析中..."):
-                        cases = parse_crime_pdf_gemini(u_pdf, dr.get('roster', []), i)
-                    if cases:
-                        for case in cases:
-                            officers = case.get('查獲員警', '')
-                            if isinstance(officers, list):
-                                officers = "、".join(officers)
-                            case_time = case.get('查獲時間', '')
-                            case_loc = case.get('查獲地點', '')
-                            suspect = case.get('嫌疑人', '')
-                            crime = case.get('觸犯法條', '')
-                            
-                            lns.append(f"優蹟紀錄：{dr['unit_name']}同仁 {officers} 於 {case_time} 在 {case_loc} 查獲 {suspect} 涉嫌 {crime} 案。")
-                except Exception as ai_err:
-                    st.error(f"AI 辨識發生預期外錯誤: {ai_err}")
-
-            # 🌟 核心修正：將「1、 2、」流水號與前置代碼整併，確保 final_text 穩定生成
-            final_lines = []
-            for idx, line in enumerate(lns):
-                final_lines.append(f"{idx+1}、{line}")
-                
-            final_text = "\n".join(final_lines)
-            st.session_state.unit_reports[i] = f"【{dr['unit_name']} 督導報告】\n{final_text}"
-            
-            if "中斷" in dr['cadre_status'] or "失敗" in dr['v_name']:
-                st.error(f"⚠️ {dr['unit_name']} 解析可能不完全：{dr['cadre_status']}")
-            else:
-                st.success(f"✅ {dr['unit_name']} 報告輸出完成")
-                
-            st.text_area("預覽報告", final_text, height=350, key=f"preview_{i}")
-
-# ==========================================
-# 5. 總匯整報告分頁與寄信
-# ==========================================
-with u_tabs[-1]:
-    reports_list = [st.session_state.unit_reports[k] for k in sorted(st.session_state.unit_reports.keys()) if k < num_units]
-    if reports_list:
-        full_text = ("\n\n" + "─" * 40 + "\n\n").join(reports_list)
-        st.subheader("📋 匯整結果")
-        st.text_area("匯整文本", full_text, height=600)
-        target_mail = st.text_input("收件信箱", "mbmmiqamhnd@gmail.com")
-        if st.button("🚀 立即寄送郵件"):
-            if send_gmail(f"勤務督導報告匯整_{insp_date.strftime('%Y%m%d')}", full_text, target_mail):
-                st.success(f"✅ 郵件發送成功")
-    else:
-        st.warning("請先上傳檔案並生成報告。")
+            # 清理 Markdown 標籤
+            if raw_text.startswith("```"):
+                raw_text = re.sub(r'^
+http://googleusercontent.com/immersive_entry_chip/0
