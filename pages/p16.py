@@ -15,17 +15,10 @@ st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 try:
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
-    
-    # 動態選取模型
-    all_models = [m.name for m in genai.list_models()]
-    target_model = next((m for m in all_models if 'gemini-1.5-flash' in m), None)
-    if not target_model:
-        target_model = next((m for m in all_models if 'gemini-1.5-pro' in m), all_models[0])
-    
-    model = genai.GenerativeModel(target_model)
-    st.sidebar.info(f"系統已連線: {target_model}")
+    # 強制鎖定 Flash 模型，這是最穩定的選擇
+    model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"系統初始化錯誤: {e}")
+    st.error(f"系統初始化失敗: {e}")
     st.stop()
 
 # ==========================================
@@ -57,53 +50,42 @@ def extract_duty_v2(file, current_hour: int) -> dict:
         return {'term': '本所', 'v_name': '（解析失敗）', 'roster': [], '_error': str(e)}
 
 # ==========================================
-# 2. Gemini Vision (具備流量節流機制)
+# 2. Gemini Vision (防限流、單頁辨識版)
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     pdf_file.seek(0)
-    images = convert_from_bytes(pdf_file.read(), dpi=200)
+    # 只抓取第一頁，大幅減少 API 消耗
+    images = convert_from_bytes(pdf_file.read(), dpi=150, first_page=1, last_page=1)
     results = []
     roster_str = "、".join(roster)
-    prompt = "請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警。回傳純 JSON。"
+    prompt = f"分析此刑案呈報單，提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警。名冊：{roster_str}。僅回傳標準 JSON，勿用 Markdown。"
     
     for img in images:
-        for attempt in range(3): # 最多嘗試 3 次
-            try:
-                response = model.generate_content([prompt, img])
-                raw_text = response.text.replace("```json", "").replace("```", "").strip()
-                results.append(json.loads(raw_text))
-                break # 成功則跳出重試迴圈
-            except Exception as e:
-                if "429" in str(e):
-                    st.warning(f"流量已達上限，自動等待 12 秒後重試... (第 {attempt+1} 次)")
-                    time.sleep(12) 
-                else:
-                    st.error(f"解析發生錯誤: {e}")
-                    break
+        try:
+            # 請求前強制休息，確保不觸發 5 RPM 限制
+            st.info("AI 正在辨識中，請勿關閉網頁...")
+            time.sleep(15) 
+            response = model.generate_content([prompt, img])
+            raw_text = response.text.replace("```json", "").replace("```", "").strip()
+            results.append(json.loads(raw_text))
+        except Exception as e:
+            st.error(f"辨識失敗: {e}")
     return results
 
 # ==========================================
 # 3. UI 介面
 # ==========================================
-st.header("📋 勤務督導報告系統")
-num_units = st.number_input("待督導單位數量", 1, 8, 3)
-u_tabs = st.tabs([f"單位 {i+1}" for i in range(num_units)] + ["匯整"])
+st.header("📋 勤務督導報告自動生成系統")
+u_time = st.time_input("抵達時間", datetime.now().time())
+u_duty = st.file_uploader("勤務表", type=['xlsx'])
+u_pdf = st.file_uploader("刑案單 (請一次上傳一份)", type=['pdf'])
 
-for i in range(num_units):
-    with u_tabs[i]:
-        u_time = st.time_input("抵達時間", datetime.now().time(), key=f"ut_{i}")
-        c1, c2, c3 = st.columns(3)
-        u_duty = c1.file_uploader("勤務表", type=['xlsx'], key=f"ud_{i}")
-        u_eq = c2.file_uploader("交接簿", type=['xlsx'], key=f"ue_{i}")
-        u_pdf = c3.file_uploader("刑案單", type=['pdf'], accept_multiple_files=True, key=f"updf_{i}")
-        
-        if u_duty:
-            dr = extract_duty_v2(u_duty, u_time.hour)
+if u_duty and u_pdf:
+    if st.button("開始 AI 辨識"):
+        dr = extract_duty_v2(u_duty, u_time.hour)
+        with st.spinner("AI 正在分析影像內容 (需 15 秒)..."):
+            cases = parse_crime_pdf_gemini(u_pdf, dr.get('roster', []))
             lns = [f"{u_time.strftime('%H%M')}，{dr['term']}值班{dr['v_name']}。"]
-            if u_pdf:
-                with st.spinner("AI 正在分析..."):
-                    for f in u_pdf:
-                        for case in parse_crime_pdf_gemini(f, dr.get('roster', [])):
-                            lns.append(f"優蹟紀錄：{dr['term']}同仁 {case.get('查獲員警','')} 於 {case.get('查獲地點','')} 查獲 {case.get('嫌疑人','')}。")
-            
-            st.text_area("預覽", "\n".join(lns), height=200, key=f"prev_{i}")
+            for case in cases:
+                lns.append(f"優蹟紀錄：{dr['term']}同仁 {case.get('查獲員警','')} 於 {case.get('查獲地點','')} 查獲 {case.get('嫌疑人','')}。")
+            st.text_area("報告預覽", "\n".join(lns), height=200)
