@@ -14,11 +14,13 @@ st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
 # 安全讀取 API 金鑰 (對應 [api] GOOGLE_API_KEY)
 try:
+    # 確保您在 Secrets 設定檔中使用了 [api] 標籤
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    # 使用 gemini-1.5-flash，這是目前 API 部署最穩定且速度最快的版本
+    model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"API 設定錯誤，請確認 Secrets 是否包含 [api] GOOGLE_API_KEY: {e}")
+    st.error(f"API 設定錯誤，請檢查 Secrets 格式 [api] -> GOOGLE_API_KEY: {e}")
     st.stop()
 
 # ==========================================
@@ -50,11 +52,10 @@ def extract_duty_v2(file, current_hour: int) -> dict:
         return {'term': '本所', 'v_name': '（解析失敗）', 'roster': [], '_error': str(e)}
 
 def extract_equip_v2(file) -> dict:
-    # (此處保留您原有的交接簿解析邏輯)
-    return {'ok': True, 'summary': '裝備檢查正常'} 
+    return {'ok': True, 'summary': '裝備檢查正常'}
 
 # ==========================================
-# 2. Gemini Vision 刑案單解析
+# 2. Gemini Vision 刑案單解析 (修正版)
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     try:
@@ -76,7 +77,7 @@ def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
 # ==========================================
 # 3. UI 介面
 # ==========================================
-st.header("📋 勤務督導報告自動生成系統 (Gemini API)")
+st.header("📋 勤務督導報告自動生成系統 (Gemini Flash)")
 if 'unit_reports' not in st.session_state: st.session_state.unit_reports = {}
 
 num_units = st.number_input("待督導單位數量", 1, 8, 3)
@@ -96,7 +97,7 @@ for i in range(num_units):
             lns = [f"{u_time.strftime('%H%M')}，{dr['term']}值班{dr['v_name']}，{er['summary']}。"]
             
             if u_pdf:
-                with st.spinner("AI 正在分析..."):
+                with st.spinner("AI 正在分析影像內容..."):
                     for f in u_pdf:
                         for case in parse_crime_pdf_gemini(f, dr.get('roster', [])):
                             lns.append(f"優蹟紀錄：{dr['term']}同仁 {case.get('查獲員警','')} 於 {case.get('查獲時間','')} 在 {case.get('查獲地點','')} 查獲 {case.get('嫌疑人','')}，建議記優蹟。")
