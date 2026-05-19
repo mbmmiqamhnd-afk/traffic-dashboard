@@ -17,14 +17,15 @@ gspread
 gspread-formatting
 google-auth
 
-# --- PDF 讀取與生成 (WeasyPrint / ReportLab) ---
+# --- PDF 讀取與生成 ---
 pypdf
 reportlab
 weasyprint
 matplotlib
 pdfplumber
+pdf2image
+pytesseract
 
 # --- PDF 轉 PPT 核心 ---
-pdf2image
 python-pptx
 Pillow
