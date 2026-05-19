@@ -22,6 +22,7 @@ pypdf
 reportlab
 weasyprint
 matplotlib
+pdfplumber
 
 # --- PDF 轉 PPT 核心 ---
 pdf2image
