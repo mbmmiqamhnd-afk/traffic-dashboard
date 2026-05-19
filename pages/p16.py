@@ -4,7 +4,8 @@ import io
 import re
 import traceback
 import smtplib
-import pdfplumber  # 🌟 處理 PDF 的關鍵套件
+import pytesseract  # 🌟 新增：OCR 文字辨識核心
+from pdf2image import convert_from_bytes  # 🌟 新增：將 PDF 轉成圖片的工具
 from email.mime.text import MIMEText
 from email.header import Header
 from datetime import datetime, timedelta
@@ -338,32 +339,50 @@ def extract_equip_v2(e_file):
         return None
 
 # ==========================================
-# 🌟 4.5 新增：PDF 刑案呈報單解析功能 (高容錯版)
+# 🌟 4.5 新增：PDF 刑案呈報單解析功能 (OCR 視覺辨識版)
 # ==========================================
 def parse_police_report(pdf_file):
-    """讀取上傳的 PDF 檔案，透過正則表達式擷取關鍵案情資訊 (高容錯版)"""
+    """讀取上傳的掃描版 PDF 檔案，轉成圖片後透過 OCR 擷取關鍵案情資訊"""
     extracted_data = []
-    with pdfplumber.open(pdf_file) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text()
-            if not text:
-                continue
+    
+    try:
+        # 1. 把 PDF 轉換成圖片 (Streamlit 讀取上傳檔案的 bytes)
+        images = convert_from_bytes(pdf_file.read())
+        
+        for img in images:
+            # 2. 啟動 OCR 辨識圖片文字，指定繁體中文
+            text = pytesseract.image_to_string(img, lang='chi_tra')
             
-            # 放寬比對條件：允許中間有各種空白或換行 (\s*)
-            date_match = re.search(r'查獲時間.*?中華民國\s*(\d{2,3}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日.*?分)', text, re.DOTALL)
-            law_match = re.search(r'觸犯法條\s*(.*?)(?=\n|違反事實|附送刑案)', text, re.DOTALL)
-            officers_match = re.search(r'查獲員警\s*(.*?)(?:承辦單位主管|$)', text, re.DOTALL)
+            if not text.strip():
+                continue
+                
+            # 3. 容錯正則表達式擷取
+            time_match = re.search(r'(\d{2,3}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日\s*\d{1,2}\s*時\s*\d{1,2}\s*分)', text)
+            law_match = re.search(r'觸犯法條[\s"\,]*([^\n\,]+)', text)
+            officer_match = re.search(r'查獲員警[\s"\,]*(.*?)(?:案件編號|承辦單位主管|$)', text, re.DOTALL)
 
-            if date_match and law_match:
+            if time_match and law_match:
+                officers = officer_match.group(1) if officer_match else "未解析"
+                officers = re.sub(r'["\,\n「]', ' ', officers)
+                officers = re.sub(r'\s+', ' ', officers).strip()
+                
+                law = law_match.group(1)
+                law = re.sub(r'["\,「]', '', law).strip()
+                
+                time_str = time_match.group(1).replace(' ', '')
+                
                 data = {
-                    "查獲時間": date_match.group(1).replace('\n', '').replace(' ', ''),
-                    "觸犯法條": law_match.group(1).replace('\n', '').strip(),
-                    "查獲員警": officers_match.group(1).replace('\n', ' ').strip() if officers_match else "未解析",
+                    "查獲時間": time_str,
+                    "觸犯法條": law,
+                    "查獲員警": officers
                 }
                 extracted_data.append(data)
             else:
-                st.warning(f"⚠️ {pdf_file.name} 無法成功擷取！這頁的前幾行文字長這樣：\n{text[:100]}")
+                st.warning(f"⚠️ {pdf_file.name} 辨識成功但無法抓取重點，以下為 OCR 讀取到的前 100 字：\n{text[:100]}")
                 
+    except Exception as e:
+        st.error(f"❌ 解析 {pdf_file.name} 時發生錯誤，請確認 packages.txt 與 requirements.txt 已正確設定：\n{str(e)}")
+        
     return extracted_data
 
 # ==========================================
@@ -378,11 +397,10 @@ for i in range(num_units):
     with u_tabs[i]:
         u_time = st.time_input("抵達時間", datetime.now().time(), key=f"ut_{i}")
         
-        # 🌟 調整版面：將原本的 2 欄改成 3 欄，加入 PDF 呈報單上傳區
         col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1: u_duty = st.file_uploader(f"單位 {i+1} 勤務表", type=['xlsx'], key=f"ud_{i}")
         with col_f2: u_eq = st.file_uploader(f"單位 {i+1} 交接簿", type=['xlsx'], key=f"ue_{i}")
-        with col_f3: u_pdf = st.file_uploader(f"優良事蹟(刑案單/選填)", type=['pdf'], accept_multiple_files=True, key=f"updf_{i}")
+        with col_f3: u_pdf = st.file_uploader(f"優良事蹟(刑案單/掃描檔)", type=['pdf'], accept_multiple_files=True, key=f"updf_{i}")
         
         if u_duty and u_eq:
             dr = extract_duty_v2(u_duty, u_time.hour)
@@ -413,27 +431,25 @@ for i in range(num_units):
             if dr['is_guard_unit']:
                 lns.append(f"拘留室值班警員{dr['detention_name']}，對人犯監控良好，無異常狀況發生。" if dr['detention_name'] else "拘留室目前無人犯。")
             
-            # 🌟 新增邏輯：若有上傳 PDF，則解析並自動將「優缺點」接續在報告最後
             if u_pdf:
-                merit_lines = []
-                for pdf_file in u_pdf:
-                    cases = parse_police_report(pdf_file)
-                    for case in cases:
-                        merit_text = f"優劣蹟紀錄：{t}同仁 {case['查獲員警']} 勤務落實，於 {case['查獲時間']} 查獲 {case['觸犯法條']} 案，表現優良，建議列優蹟註記。"
-                        merit_lines.append(merit_text)
-                
-                # 將產生的優良事蹟附接至主報告清單
-                if merit_lines:
-                    lns.extend(merit_lines)
+                with st.spinner("正在辨識掃描檔文字，請稍候..."):
+                    merit_lines = []
+                    for pdf_file in u_pdf:
+                        cases = parse_police_report(pdf_file)
+                        for case in cases:
+                            merit_text = f"優劣蹟紀錄：{t}同仁 {case['查獲員警']} 勤務落實，於 {case['查獲時間']} 查獲 {case['觸犯法條']} 案，表現優良，建議列優蹟註記。"
+                            merit_lines.append(merit_text)
+                    
+                    if merit_lines:
+                        lns.extend(merit_lines)
 
-            # 將所有項目加上編號並合併
             final_text = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
             st.session_state.unit_reports[i] = f"【{dr['unit_name']} 督導報告】\n{final_text}"
             
             if "中斷" in dr['cadre_status'] or "失敗" in dr['v_name']:
                 st.error(f"⚠️ {dr['unit_name']} 解析可能不完全：{dr['cadre_status']}")
             else:
-                st.success(f"✅ {dr['unit_name']} 解析完成" + (" (包含刑案優良事蹟)" if u_pdf else ""))
+                st.success(f"✅ {dr['unit_name']} 解析完成" + (" (包含掃描檔文字辨識)" if u_pdf else ""))
                 
             st.text_area("預覽報告", final_text, height=350, key=f"preview_{i}")
 
