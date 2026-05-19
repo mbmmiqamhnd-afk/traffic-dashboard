@@ -8,7 +8,7 @@ from datetime import datetime
 from pdf2image import convert_from_bytes
 
 # ==========================================
-# 0. 設定與權限 (強制鎖定每日 1500 次免費額度的 1.5-flash)
+# 0. 設定與權限 (模型自由切換版)
 # ==========================================
 st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
@@ -16,18 +16,21 @@ try:
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # 動態抓取模型清單，並強迫系統只准找 '1.5-flash'
-    # 這能完美避開 2.0/2.5 每日僅有 20 次的限制，並解決 404 找不到模型的問題
-    available_models = [m.name for m in genai.list_models()]
-    target_model = next((m for m in available_models if '1.5-flash' in m), None)
-    
-    if not target_model:
-        raise Exception("找不到 1.5-flash 模型，請確認 API 金鑰狀態。")
-        
-    # 清理模型名稱字串以符合呼叫標準
-    clean_model_name = target_model.replace('models/', '')
-    model = genai.GenerativeModel(clean_model_name)
-    st.sidebar.success(f"✅ 成功連結: {clean_model_name} \n\n(享有每日 1500 次免費額度)")
+    # 動態抓取您的金鑰真正支援的所有生成模型
+    available_models = []
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_methods:
+            available_models.append(m.name.replace('models/', ''))
+            
+    if not available_models:
+        st.error("您的 API 金鑰無法存取任何生成模型，請檢查 Google AI Studio 權限。")
+        st.stop()
+
+    # 在側邊欄建立一個下拉式選單，讓您自己決定要用哪個模型
+    st.sidebar.header("⚙️ 系統設定")
+    selected_model = st.sidebar.selectbox("選擇 AI 模型", available_models)
+    model = genai.GenerativeModel(selected_model)
+    st.sidebar.success(f"✅ 目前就緒: {selected_model}")
 
 except Exception as e:
     st.error(f"系統初始化失敗: {e}")
@@ -62,11 +65,10 @@ def extract_duty_v2(file, current_hour: int) -> dict:
         return {'term': '本所', 'v_name': '（解析失敗）', 'roster': [], '_error': str(e)}
 
 # ==========================================
-# 2. Gemini Vision (防限流保護版)
+# 2. Gemini Vision 
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     pdf_file.seek(0)
-    # 僅擷取第一頁，減少 API 消耗與記憶體負擔
     images = convert_from_bytes(pdf_file.read(), dpi=150, first_page=1, last_page=1)
     results = []
     roster_str = "、".join(roster)
@@ -74,14 +76,13 @@ def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     
     for img in images:
         try:
-            # 配合 1.5-flash 的免費限制 (每分鐘 5 次)，強制等待 15 秒
-            st.info("AI 正在辨識中，請稍候 15 秒...")
+            st.info(f"AI 正在使用 {selected_model} 辨識中，請稍候 15 秒...")
             time.sleep(15) 
             response = model.generate_content([prompt, img])
             raw_text = response.text.replace("```json", "").replace("```", "").strip()
             results.append(json.loads(raw_text))
         except Exception as e:
-            st.warning(f"AI 辨識失敗: {e}")
+            st.error(f"辨識失敗: {e}")
     return results
 
 # ==========================================
