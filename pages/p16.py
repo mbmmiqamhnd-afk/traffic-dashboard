@@ -8,28 +8,20 @@ from datetime import datetime
 from pdf2image import convert_from_bytes
 
 # ==========================================
-# 0. 設定與權限 (動態偵測 + 容錯版)
+# 0. 設定與權限 (終極穩定版)
 # ==========================================
 st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
 try:
+    # 讀取 Secrets
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # 動態獲取可用模型，解決 404 Not Found
-    found_model = None
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_methods:
-            found_model = m.name
-            break
-            
-    if not found_model:
-        raise Exception("API 金鑰有效，但未找到任何可用的生成模型。")
-    
-    model = genai.GenerativeModel(found_model)
-    st.sidebar.info(f"系統已連線: {found_model}")
+    # 直接指定模型名稱，避開所有動態偵測屬性的錯誤
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    st.sidebar.info("系統狀態: 已連結至 Gemini 1.5 Flash")
 except Exception as e:
-    st.error(f"初始化失敗: {e}")
+    st.error(f"系統初始化失敗: {e}")
     st.stop()
 
 # ==========================================
@@ -61,26 +53,24 @@ def extract_duty_v2(file, current_hour: int) -> dict:
         return {'term': '本所', 'v_name': '（解析失敗）', 'roster': [], '_error': str(e)}
 
 # ==========================================
-# 2. Gemini Vision (強制間隔 + 單頁辨識)
+# 2. Gemini Vision (防限流、單頁辨識版)
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     pdf_file.seek(0)
     images = convert_from_bytes(pdf_file.read(), dpi=150, first_page=1, last_page=1)
     results = []
     roster_str = "、".join(roster)
-    prompt = f"請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警。員警名冊：{roster_str}。僅回傳標準 JSON。"
+    prompt = f"請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警。名冊：{roster_str}。僅回傳標準 JSON。"
     
     for img in images:
         try:
-            # 強制間隔以符合免費版 API 每分鐘 5 次請求限制
-            st.info("處理中，請稍候 15 秒...")
+            # 為了避開 429 錯誤，請求前強制等待
             time.sleep(15) 
             response = model.generate_content([prompt, img])
             raw_text = response.text.replace("```json", "").replace("```", "").strip()
             results.append(json.loads(raw_text))
         except Exception as e:
-            st.error(f"辨識失敗: {e}")
-            break
+            st.warning(f"AI 辨識頁面失敗: {e}")
     return results
 
 # ==========================================
