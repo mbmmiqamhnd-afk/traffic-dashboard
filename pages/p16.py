@@ -8,19 +8,27 @@ from datetime import datetime
 from pdf2image import convert_from_bytes
 
 # ==========================================
-# 0. 設定與權限
+# 0. 設定與權限 (動態模型偵測)
 # ==========================================
 st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
-# 安全讀取 API 金鑰 (對應 [api] GOOGLE_API_KEY)
 try:
-    # 確保您在 Secrets 設定檔中使用了 [api] 標籤
+    # 從 Secrets 讀取 (確保您的 Secrets 包含 [api] GOOGLE_API_KEY)
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
-    # 使用 gemini-1.5-flash，這是目前 API 部署最穩定且速度最快的版本
-    model = genai.GenerativeModel('gemini-1.5-flash')
+
+    # 動態偵測可用模型，避開 404 名稱錯誤
+    models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_methods]
+    if not models:
+        raise Exception("找不到任何可用的生成模型")
+    
+    # 優先嘗試 gemini-1.5-flash，若無則抓取清單第一個可用的
+    model_name = 'gemini-1.5-flash' if 'gemini-1.5-flash' in models else models[0]
+    model = genai.GenerativeModel(model_name)
+    st.sidebar.success(f"目前運行模型: {model_name}")
+
 except Exception as e:
-    st.error(f"API 設定錯誤，請檢查 Secrets 格式 [api] -> GOOGLE_API_KEY: {e}")
+    st.error(f"系統初始化錯誤: {e}")
     st.stop()
 
 # ==========================================
@@ -55,7 +63,7 @@ def extract_equip_v2(file) -> dict:
     return {'ok': True, 'summary': '裝備檢查正常'}
 
 # ==========================================
-# 2. Gemini Vision 刑案單解析 (修正版)
+# 2. Gemini Vision 刑案單解析 (動態模型)
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     try:
@@ -63,7 +71,7 @@ def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
         images = convert_from_bytes(pdf_file.read(), dpi=150)
         results = []
         roster_str = "、".join(roster)
-        prompt = f"請辨識刑案呈報單，並回傳純 JSON (keys: 嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警)。員警名冊：{roster_str}。若不詳請填「不詳」。"
+        prompt = f"請辨識刑案呈報單，回傳純 JSON (keys: 嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警)。名冊：{roster_str}。若不詳填「不詳」。"
         
         for img in images:
             response = model.generate_content([prompt, img])
@@ -77,7 +85,7 @@ def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
 # ==========================================
 # 3. UI 介面
 # ==========================================
-st.header("📋 勤務督導報告自動生成系統 (Gemini Flash)")
+st.header("📋 勤務督導報告自動生成系統")
 if 'unit_reports' not in st.session_state: st.session_state.unit_reports = {}
 
 num_units = st.number_input("待督導單位數量", 1, 8, 3)
