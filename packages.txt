@@ -1,6 +1,15 @@
+# --- PDF 轉圖片核心 ---
 poppler-utils
 libpoppler-cpp-dev
+
+# --- OCR 文字辨識引擎 (處理掃描檔必備) ---
+tesseract-ocr
+tesseract-ocr-chi-tra
+
+# --- 中文字型支援 ---
 fonts-noto-cjk
+
+# --- WeasyPrint / 圖形渲染底層 ---
 libpango-1.0-0
 libpangoft2-1.0-0
 libgdk-pixbuf-2.0-0
