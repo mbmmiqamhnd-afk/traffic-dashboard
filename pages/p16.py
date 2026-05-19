@@ -1,7 +1,6 @@
 import streamlit as st
 import openpyxl
 import re
-import io
 import json
 import google.generativeai as genai
 from datetime import datetime
@@ -13,15 +12,23 @@ from pdf2image import convert_from_bytes
 st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
 try:
-    # 確保 Secrets 檔案中已設定 [api] GOOGLE_API_KEY
+    # 從 Secrets 讀取設定
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # 直接呼叫最穩定的 Flash 模型
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    st.sidebar.success("系統已成功連結至 Gemini 1.5 Flash")
+    # 嘗試列出可用模型並自動選擇，避免硬編碼名稱導致 404
+    # 我們不檢查 supported_methods，直接抓取清單中的模型
+    all_models = [m.name for m in genai.list_models()]
+    
+    # 優先順序：尋找 Flash 或 Pro 版本
+    target_model = next((m for m in all_models if 'gemini-1.5-flash' in m), None)
+    if not target_model:
+        target_model = next((m for m in all_models if 'gemini-1.5-pro' in m), all_models[0])
+    
+    model = genai.GenerativeModel(target_model)
+    st.sidebar.info(f"系統已連線至: {target_model}")
 except Exception as e:
-    st.error(f"系統初始化失敗: {e}")
+    st.error(f"系統初始化錯誤: {e}")
     st.stop()
 
 # ==========================================
