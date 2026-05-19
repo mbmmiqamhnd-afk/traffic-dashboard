@@ -2,6 +2,7 @@ import streamlit as st
 import openpyxl
 import re
 import json
+import time
 import google.generativeai as genai
 from datetime import datetime
 from pdf2image import convert_from_bytes
@@ -15,7 +16,7 @@ try:
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # 自動抓取帳號下可用的模型
+    # 動態選取模型
     all_models = [m.name for m in genai.list_models()]
     target_model = next((m for m in all_models if 'gemini-1.5-flash' in m), None)
     if not target_model:
@@ -28,7 +29,7 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 1. 勤務與交接解析函式
+# 1. 勤務與交接解析
 # ==========================================
 def extract_duty_v2(file, current_hour: int) -> dict:
     try:
@@ -56,27 +57,29 @@ def extract_duty_v2(file, current_hour: int) -> dict:
         return {'term': '本所', 'v_name': '（解析失敗）', 'roster': [], '_error': str(e)}
 
 # ==========================================
-# 2. Gemini Vision 刑案單解析 (加入偵錯輸出)
+# 2. Gemini Vision (具備流量節流機制)
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
-    try:
-        pdf_file.seek(0)
-        images = convert_from_bytes(pdf_file.read(), dpi=200)
-        results = []
-        roster_str = "、".join(roster)
-        prompt = f"請分析刑案呈報單圖片，提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警。員警名冊：{roster_str}。僅回傳乾淨的 JSON，不要 Markdown。"
-        
-        for img in images:
-            response = model.generate_content([prompt, img])
-            raw_text = response.text.replace("```json", "").replace("```", "").strip()
-            
+    pdf_file.seek(0)
+    images = convert_from_bytes(pdf_file.read(), dpi=200)
+    results = []
+    roster_str = "、".join(roster)
+    prompt = "請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警。回傳純 JSON。"
+    
+    for img in images:
+        for attempt in range(3): # 最多嘗試 3 次
             try:
-                data = json.loads(raw_text)
-                results.append(data)
-            except:
-                st.warning(f"AI 未回傳有效 JSON。原始輸出: {raw_text}")
-    except Exception as e:
-        st.error(f"解析失敗: {e}")
+                response = model.generate_content([prompt, img])
+                raw_text = response.text.replace("```json", "").replace("```", "").strip()
+                results.append(json.loads(raw_text))
+                break # 成功則跳出重試迴圈
+            except Exception as e:
+                if "429" in str(e):
+                    st.warning(f"流量已達上限，自動等待 12 秒後重試... (第 {attempt+1} 次)")
+                    time.sleep(12) 
+                else:
+                    st.error(f"解析發生錯誤: {e}")
+                    break
     return results
 
 # ==========================================
@@ -98,7 +101,7 @@ for i in range(num_units):
             dr = extract_duty_v2(u_duty, u_time.hour)
             lns = [f"{u_time.strftime('%H%M')}，{dr['term']}值班{dr['v_name']}。"]
             if u_pdf:
-                with st.spinner("AI 正在分析刑案單..."):
+                with st.spinner("AI 正在分析..."):
                     for f in u_pdf:
                         for case in parse_crime_pdf_gemini(f, dr.get('roster', [])):
                             lns.append(f"優蹟紀錄：{dr['term']}同仁 {case.get('查獲員警','')} 於 {case.get('查獲地點','')} 查獲 {case.get('嫌疑人','')}。")
