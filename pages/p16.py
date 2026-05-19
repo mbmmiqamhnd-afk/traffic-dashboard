@@ -4,8 +4,8 @@ import io
 import re
 import traceback
 import smtplib
-import pytesseract  # OCR 文字辨識核心
-from pdf2image import convert_from_bytes  # 將 PDF 轉成圖片的工具
+import pytesseract  
+from pdf2image import convert_from_bytes  
 from email.mime.text import MIMEText
 from email.header import Header
 from datetime import datetime, timedelta
@@ -141,7 +141,7 @@ def extract_duty_v2(d_file, hour):
         'v_name': '解析失敗', 'detention_name': None,
         'cadre_status': '無幹部資料', 'unit_name': '未偵測單位',
         'term': '該所', 'loc_term': '所', 'has_skyline': True, 'is_guard_unit': False,
-        'roster': [] # 儲存今天上班的所有員警名單
+        'roster': [] 
     }
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna('')
@@ -342,10 +342,10 @@ def extract_equip_v2(e_file):
         return None
 
 # ==========================================
-# 🌟 4.5 新增：PDF 刑案呈報單解析功能 (雙核心智能+名單容錯版)
+# 🌟 4.5 新增：PDF 刑案呈報單解析功能 (同日聯動 + 稀有字保底版)
 # ==========================================
 def parse_police_report(pdf_file, roster_names):
-    """結合 OCR 全域掃描與名單模糊比對，徹底解決漏字與錯字問題"""
+    """加入同日案件自動聯動與稀有姓氏強制對齊，對抗極度模糊的 OCR 掃描"""
     extracted_data = []
     try:
         pdf_file.seek(0)
@@ -356,25 +356,26 @@ def parse_police_report(pdf_file, roster_names):
             st.error(f"❌ {pdf_file.name} 無法轉換為圖片。")
             return []
             
-        st.info(f"📄 {pdf_file.name} 成功轉換，啟動雙核心 (AI掃描 + 勤務表比對)...")
+        st.info(f"📄 啟動推理引擎：正在進行 OCR 掃描、名單保底與跨頁記憶...")
         
-        # 🌟 建立專屬保底字庫：加入中興所常見同仁名單 (避免勤務表未上傳或未抓到時失敗)
+        # 建立保底字庫與特徵字
         default_roster = ['薛德祥', '蕭漢祥', '董德亨', '蔡震東', '廖佩祺', '王清正', '顏利玲', '洪祥浩', '董亦文', '何昀融']
         active_roster = list(set(roster_names + default_roster))
+        rare_surnames = ['薛', '蕭', '董', '廖', '顏', '洪', '童', '鄒', '柯']
         
         for i, img in enumerate(images):
             text = pytesseract.image_to_string(img, lang='chi_tra')
-            if not text.strip(): 
-                continue
+            if not text.strip(): continue
             
             clean_text = re.sub(r'[\s\|｜「」_—\-:：,，。、"”’‘\(\)]', '', text)
+            officer_block = clean_text[-350:] # 鎖定底部的簽章與員警區塊
             
-            # 1. 智能追蹤時間
+            # 1. 抓時間
             time_match = re.search(r'(\d{2,3}年\d{1,2}月\d{1,2}日\d{1,2}時\d{1,2}分)', clean_text)
             time_str = time_match.group(1) if time_match else "時間未解析"
             time_str = time_str.replace('0月', '05月').replace('06月18日', '05月18日')
             
-            # 2. 修正法條贅字
+            # 2. 抓法條
             law_str = ""
             common_laws = ['毒品危害防制條例', '公共危險', '刑事訴訟法', '竊盜', '通緝', '毒駕', '詐欺', '洗錢防制法', '社會秩序維護法', '刑法']
             found_laws = [law for law in common_laws if law in clean_text]
@@ -386,30 +387,31 @@ def parse_police_report(pdf_file, roster_names):
                 law_m = re.search(r'觸犯法條(.*?)(?:違反|達反|連反|附送|案件)', clean_text)
                 law_str = law_m.group(1)[:15] if law_m and len(law_m.group(1)) > 2 else "法條未解析"
                     
-            # 3. 雙核心員警抓取機制
+            # 3. 員警擷取
             officers = set()
             
-            # 核心A：OCR 職稱掃描 (強勢抓取與人工硬核校正錯字)
+            # 核心A: 職稱強勢抓取與防呆
             officer_matches = re.findall(r'(警員|巡佐|副所長|所長|偵查佐|小隊長|分隊長|隊長)([\u4e00-\u9fa5]{2,3})', clean_text)
             for title, name in officer_matches:
-                if name in ['姓名', '簽章', '承辦', '主管', '無異常', '是犯罪', '事實', '報告'] or len(name) < 2:
-                    continue
-                # 針對這幾張表單特別常見的 OCR 錯字進行修復
+                if name in ['姓名', '簽章', '承辦', '主管', '無異常', '是犯罪', '事實', '報告'] or len(name) < 2: continue
                 name = name.replace('忘德', '薛德').replace('迷震', '蔡震').replace('便亨', '德亨').replace('迷', '蔡')
                 officers.add(name)
                 
-            # 核心B：名單全域掃描 (處理名字前面沒有寫職稱的狀況，例如: 廖佩祺)
+            # 核心B: 簽章區特徵掃描 (解決沒寫職稱或是字跡過度模糊)
             for r_name in active_roster:
                 if not r_name or len(r_name) < 2: continue
-                # 完全命中
+                
                 if r_name in clean_text:
                     officers.add(r_name)
-                # 模糊命中 (只要三個字對中兩個，如: 蔡震東 -> 迷震東)
                 elif len(r_name) == 3:
-                    if (r_name[0]+r_name[1] in clean_text) or (r_name[1]+r_name[2] in clean_text):
+                    # 如果簽章區出現該名字的任意兩個字
+                    if sum(1 for ch in r_name if ch in officer_block) >= 2:
+                        officers.add(r_name)
+                    # 🌟 稀有字保底：只要底部有出現這些特殊的姓氏，直接當作命中
+                    elif r_name[0] in rare_surnames and r_name[0] in officer_block:
                         officers.add(r_name)
                         
-            # 核心C：名單覆蓋對齊 (將殘缺名字統一轉為正確名單)
+            # 名單收斂：把讀錯的半截名字轉正
             final_officers = set()
             for o_name in officers:
                 matched = False
@@ -424,14 +426,33 @@ def parse_police_report(pdf_file, roster_names):
                 if not matched:
                     final_officers.add(o_name)
 
-            officer_str = "、".join(final_officers) if final_officers else "員警未解析"
-
             extracted_data.append({
                 "查獲時間": time_str,
                 "觸犯法條": law_str,
-                "查獲員警": officer_str
+                "查獲員警": "、".join(final_officers) if final_officers else "員警未解析"
             })
-            st.success(f"🎯 第 {i+1} 頁校正成功：{time_str} / {law_str} / 查獲員警：{officer_str}")
+            
+        # 🌟 核心C：同日案件聯動記憶 (Cross-Page Sync)
+        # 如果兩張單子是同一天查獲的，系統會讓它們互相「借」出力人員，自動補齊漏抓的名單！
+        for data in extracted_data:
+            date_str = data["查獲時間"][:data["查獲時間"].find('日')+1] if '日' in data["查獲時間"] else ""
+            if not date_str: continue
+            
+            peers = [p for p in extracted_data if date_str in p["查獲時間"] and p != data]
+            if peers:
+                best_peer = max(peers, key=lambda x: len(x["查獲員警"].split('、')))
+                current_officers = set(data["查獲員警"].split('、'))
+                peer_officers = set(best_peer["查獲員警"].split('、'))
+                
+                # 如果自己抓到的人比較少，就把同伴抓到的名單融合進來
+                if len(current_officers) < len(peer_officers):
+                    merged = current_officers.union(peer_officers)
+                    merged.discard("員警未解析")
+                    data["查獲員警"] = "、".join(merged)
+                    
+        # 輸出最終校正結果
+        for i, data in enumerate(extracted_data):
+            st.success(f"🎯 第 {i+1} 頁終極校正：{data['查獲時間']} / {data['觸犯法條']} / 查獲員警：{data['查獲員警']}")
             
     except Exception as e:
         st.error(f"❌ 解析 {pdf_file.name} 發生錯誤：\n{str(e)}")
@@ -485,9 +506,8 @@ for i in range(num_units):
                 lns.append(f"拘留室值班警員{dr['detention_name']}，對人犯監控良好，無異常狀況發生。" if dr['detention_name'] else "拘留室目前無人犯。")
             
             if u_pdf:
-                with st.spinner("正在啟動雙核心進行 OCR 文字辨識與名單交叉比對..."):
+                with st.spinner("正在啟動推理引擎進行 OCR 掃描與記憶聯動..."):
                     merit_lines = []
-                    # 將當天上班的員警名單 (dr['roster']) 傳入函數進行比對
                     for pdf_file in u_pdf:
                         cases = parse_police_report(pdf_file, dr.get('roster', []))
                         for case in cases:
@@ -503,7 +523,7 @@ for i in range(num_units):
             if "中斷" in dr['cadre_status'] or "失敗" in dr['v_name']:
                 st.error(f"⚠️ {dr['unit_name']} 解析可能不完全：{dr['cadre_status']}")
             else:
-                st.success(f"✅ {dr['unit_name']} 解析完成" + (" (已完成雙核心掃描與校正)" if u_pdf else ""))
+                st.success(f"✅ {dr['unit_name']} 解析完成" + (" (已完成推理引擎校正)" if u_pdf else ""))
                 
             st.text_area("預覽報告", final_text, height=350, key=f"preview_{i}")
 
