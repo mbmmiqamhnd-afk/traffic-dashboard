@@ -15,7 +15,6 @@ try:
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # 直接指定最新的 2.5-flash 模型
     model = genai.GenerativeModel('gemini-2.5-flash')
     st.sidebar.success("✅ 目前就緒: gemini-2.5-flash (付費全速模式)")
 
@@ -52,15 +51,16 @@ def extract_duty_v2(file, current_hour: int) -> dict:
         return {'term': '本所', 'v_name': '（解析失敗）', 'roster': [], '_error': str(e)}
 
 # ==========================================
-# 2. Gemini Vision (全速多頁版)
+# 2. Gemini Vision (加上職稱要求)
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     pdf_file.seek(0)
-    
     images = convert_from_bytes(pdf_file.read(), dpi=150)
     results = []
     roster_str = "、".join(roster)
-    prompt = f"請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警。名冊：{roster_str}。僅回傳標準 JSON。"
+    
+    # 【關鍵修改】：明確要求 AI 提取「職稱+姓名」
+    prompt = f"請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警(請完整提取「職稱+姓名」，例如「警員蕭漢祥」、「巡佐董倢亨」)。名冊供比對錯別字參考：{roster_str}。僅回傳標準 JSON。"
     
     total_pages = len(images)
     
@@ -96,9 +96,7 @@ if u_duty and u_pdf:
         
         lns = [f"{u_time.strftime('%H%M')}，{dr['term']}值班{dr['v_name']}。"]
         
-        # 將 AI 抓取的詳細資訊組合成通順的句子
         for case in cases:
-            # 如果 AI 把員警變成 List 格式，自動轉成頓號連接的字串
             officers = case.get('查獲員警', '')
             if isinstance(officers, list):
                 officers = "、".join(officers)
@@ -108,7 +106,6 @@ if u_duty and u_pdf:
             suspect = case.get('嫌疑人', '')
             crime = case.get('觸犯法條', '')
             
-            # 加入時間與法條的完整敘述
             lns.append(f"優蹟紀錄：{dr['term']}同仁 {officers} 於 {case_time} 在 {case_loc} 查獲 {suspect} 涉嫌 {crime} 案。")
         
         st.text_area("報告預覽", "\n".join(lns), height=300)
