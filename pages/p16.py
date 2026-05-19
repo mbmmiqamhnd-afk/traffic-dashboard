@@ -164,7 +164,7 @@ def extract_duty_v2(d_file, hour):
                 break
 
         fmap = build_fmap(df)
-        res['roster'] = list(fmap.values()) # 導出名冊給 Gemini 比對
+        res['roster'] = list(fmap.values()) 
 
         target_col, t_cols = find_target_col(df, hour)
         if target_col == -1:
@@ -407,29 +407,37 @@ for i in range(num_units):
             if dr['is_guard_unit']:
                 lns.append(f"拘留室值班警員{dr['detention_name']}，對人犯監控良好，無異常狀況發生。" if dr['detention_name'] else "拘留室目前無人犯。")
             
-            # 🌟 整合 Gemini 2.5 刑案單辨識紀錄
+            # 🌟 整合 Gemini 2.5 刑案單辨識紀錄 (即使無上傳也保證程式往下走)
             if u_pdf:
-                with st.spinner(f"單位 {i+1} 刑案單優蹟影像全速分析中..."):
-                    cases = parse_crime_pdf_gemini(u_pdf, dr.get('roster', []), i)
-                if cases:
-                    for case in cases:
-                        officers = case.get('查獲員警', '')
-                        if isinstance(officers, list):
-                            officers = "、".join(officers)
-                        case_time = case.get('查獲時間', '')
-                        case_loc = case.get('查獲地點', '')
-                        suspect = case.get('嫌疑人', '')
-                        crime = case.get('觸犯法條', '')
-                        
-                        lns.append(f"優蹟紀錄：{dr['unit_name']}同仁 {officers} 於 {case_time} 在 {case_loc} 查獲 {suspect} 涉嫌 {crime} 案。")
+                try:
+                    with st.spinner(f"單位 {i+1} 刑案單優蹟影像全速分析中..."):
+                        cases = parse_crime_pdf_gemini(u_pdf, dr.get('roster', []), i)
+                    if cases:
+                        for case in cases:
+                            officers = case.get('查獲員警', '')
+                            if isinstance(officers, list):
+                                officers = "、".join(officers)
+                            case_time = case.get('查獲時間', '')
+                            case_loc = case.get('查獲地點', '')
+                            suspect = case.get('嫌疑人', '')
+                            crime = case.get('觸犯法條', '')
+                            
+                            lns.append(f"優蹟紀錄：{dr['unit_name']}同仁 {officers} 於 {case_time} 在 {case_loc} 查獲 {suspect} 涉嫌 {crime} 案。")
+                except Exception as ai_err:
+                    st.error(f"AI 辨識發生預期外錯誤: {ai_err}")
 
-            final_text = "\n".join([f"{idx+1}、{line}" for idx, line in enumerate(lns)])
+            # 🌟 核心修正：將「1、 2、」流水號與前置代碼整併，確保 final_text 穩定生成
+            final_lines = []
+            for idx, line in enumerate(lns):
+                final_lines.append(f"{idx+1}、{line}")
+                
+            final_text = "\n".join(final_lines)
             st.session_state.unit_reports[i] = f"【{dr['unit_name']} 督導報告】\n{final_text}"
             
             if "中斷" in dr['cadre_status'] or "失敗" in dr['v_name']:
                 st.error(f"⚠️ {dr['unit_name']} 解析可能不完全：{dr['cadre_status']}")
             else:
-                st.success(f"✅ {dr['unit_name']} 解析與 AI 辨識完成")
+                st.success(f"✅ {dr['unit_name']} 報告輸出完成")
                 
             st.text_area("預覽報告", final_text, height=350, key=f"preview_{i}")
 
