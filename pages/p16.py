@@ -8,7 +8,7 @@ from datetime import datetime
 from pdf2image import convert_from_bytes
 
 # ==========================================
-# 0. 設定與權限 (模型自由切換版)
+# 0. 設定與權限 (移除所有屬性檢查)
 # ==========================================
 st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
@@ -16,17 +16,19 @@ try:
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # 動態抓取您的金鑰真正支援的所有生成模型
+    # 直接抓取所有模型，不檢查 supported_methods，避免 AttributeError
     available_models = []
     for m in genai.list_models():
-        if 'generateContent' in m.supported_methods:
-            available_models.append(m.name.replace('models/', ''))
+        name = m.name.replace('models/', '')
+        # 只保留名字裡有 gemini 的模型，過濾掉一些不能用的嵌入模型
+        if 'gemini' in name:
+            available_models.append(name)
             
     if not available_models:
-        st.error("您的 API 金鑰無法存取任何生成模型，請檢查 Google AI Studio 權限。")
+        st.error("您的 API 金鑰無法存取任何 Gemini 模型，請檢查設定。")
         st.stop()
 
-    # 在側邊欄建立一個下拉式選單，讓您自己決定要用哪個模型
+    # 在側邊欄建立下拉式選單
     st.sidebar.header("⚙️ 系統設定")
     selected_model = st.sidebar.selectbox("選擇 AI 模型", available_models)
     model = genai.GenerativeModel(selected_model)
