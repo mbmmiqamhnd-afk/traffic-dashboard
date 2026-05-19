@@ -4,8 +4,8 @@ import io
 import re
 import traceback
 import smtplib
-import pytesseract  # 🌟 新增：OCR 文字辨識核心
-from pdf2image import convert_from_bytes  # 🌟 新增：將 PDF 轉成圖片的工具
+import pytesseract  # OCR 文字辨識核心
+from pdf2image import convert_from_bytes  # 將 PDF 轉成圖片的工具
 from email.mime.text import MIMEText
 from email.header import Header
 from datetime import datetime, timedelta
@@ -339,49 +339,63 @@ def extract_equip_v2(e_file):
         return None
 
 # ==========================================
-# 🌟 4.5 新增：PDF 刑案呈報單解析功能 (OCR 視覺辨識版)
+# 🌟 4.5 新增：PDF 刑案呈報單解析功能 (強制讀取＋防呆追蹤版)
 # ==========================================
 def parse_police_report(pdf_file):
-    """讀取上傳的掃描版 PDF 檔案，轉成圖片後透過 OCR 擷取關鍵案情資訊"""
+    """讀取掃描版 PDF 檔案，將 OCR 辨識出的文字移除所有空白後進行精準擷取"""
     extracted_data = []
     
     try:
-        # 1. 把 PDF 轉換成圖片 (Streamlit 讀取上傳檔案的 bytes)
-        images = convert_from_bytes(pdf_file.read())
+        # 🌟 關鍵修復：把檔案讀取指針強制移回原點，避免讀到空白檔案
+        pdf_file.seek(0)
+        file_bytes = pdf_file.read()
         
-        for img in images:
-            # 2. 啟動 OCR 辨識圖片文字，指定繁體中文
+        # 1. 把 PDF 轉換成圖片
+        images = convert_from_bytes(file_bytes)
+        
+        if not images:
+            st.error(f"❌ {pdf_file.name} 無法轉換為圖片，檔案可能已損毀。")
+            return []
+            
+        st.info(f"📄 {pdf_file.name} 成功轉換為 {len(images)} 頁圖片，正在進行 OCR 文字辨識...")
+        
+        for i, img in enumerate(images):
+            # 2. 啟動 OCR 辨識圖片文字
             text = pytesseract.image_to_string(img, lang='chi_tra')
             
             if not text.strip():
+                st.warning(f"⚠️ {pdf_file.name} 第 {i+1} 頁完全辨識不出任何文字！請確認圖片是否太模糊。")
                 continue
+            
+            # 把 OCR 產生的所有換行、空格、Tab 通通刪除，變成一長串純文字
+            clean_text = re.sub(r'\s+', '', text)
                 
-            # 3. 容錯正則表達式擷取
-            time_match = re.search(r'(\d{2,3}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日\s*\d{1,2}\s*時\s*\d{1,2}\s*分)', text)
-            law_match = re.search(r'觸犯法條[\s"\,]*([^\n\,]+)', text)
-            officer_match = re.search(r'查獲員警[\s"\,]*(.*?)(?:案件編號|承辦單位主管|$)', text, re.DOTALL)
+            # 3. 在完全沒有空白的字串中尋找目標
+            time_match = re.search(r'(\d{2,3}年\d{1,2}月\d{1,2}日\d{1,2}時\d{1,2}分)', clean_text)
+            law_match = re.search(r'觸犯法條(.*?)(?:違反事實|附送|移送|案件編號|刑事訴訟法第)', clean_text)
+            officer_match = re.search(r'查獲員警(.*?)(?:案件編號|承辦|主管|$)', clean_text)
 
             if time_match and law_match:
+                # 取得資料並清理多餘的括號或標點符號
                 officers = officer_match.group(1) if officer_match else "未解析"
-                officers = re.sub(r'["\,\n「]', ' ', officers)
-                officers = re.sub(r'\s+', ' ', officers).strip()
+                officers = re.sub(r'[「」\'\":：]', ' ', officers).strip()
                 
                 law = law_match.group(1)
-                law = re.sub(r'["\,「]', '', law).strip()
-                
-                time_str = time_match.group(1).replace(' ', '')
+                law = re.sub(r'[「」\'\":：]', '', law).strip()
                 
                 data = {
-                    "查獲時間": time_str,
+                    "查獲時間": time_match.group(1),
                     "觸犯法條": law,
                     "查獲員警": officers
                 }
                 extracted_data.append(data)
+                st.success(f"🎯 第 {i+1} 頁成功抓取：{time_match.group(1)} / {law}")
             else:
-                st.warning(f"⚠️ {pdf_file.name} 辨識成功但無法抓取重點，以下為 OCR 讀取到的前 100 字：\n{text[:100]}")
+                # 如果還是抓不到，把壓縮後的字印出來看看
+                st.warning(f"⚠️ {pdf_file.name} 第 {i+1} 頁辨識格式有落差，系統看到的純文字如下：\n{clean_text[:200]}")
                 
     except Exception as e:
-        st.error(f"❌ 解析 {pdf_file.name} 時發生錯誤，請確認 packages.txt 與 requirements.txt 已正確設定：\n{str(e)}")
+        st.error(f"❌ 解析 {pdf_file.name} 時發生錯誤：\n{str(e)}")
         
     return extracted_data
 
