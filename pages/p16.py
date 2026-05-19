@@ -7,26 +7,22 @@ from datetime import datetime
 from pdf2image import convert_from_bytes
 
 # ==========================================
-# 0. 設定與權限 (終極穩定版)
+# 0. 設定與權限
 # ==========================================
 st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
 try:
-    # 從 Secrets 讀取設定
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # 嘗試列出可用模型並自動選擇，避免硬編碼名稱導致 404
-    # 我們不檢查 supported_methods，直接抓取清單中的模型
+    # 自動抓取帳號下可用的模型
     all_models = [m.name for m in genai.list_models()]
-    
-    # 優先順序：尋找 Flash 或 Pro 版本
     target_model = next((m for m in all_models if 'gemini-1.5-flash' in m), None)
     if not target_model:
         target_model = next((m for m in all_models if 'gemini-1.5-pro' in m), all_models[0])
     
     model = genai.GenerativeModel(target_model)
-    st.sidebar.info(f"系統已連線至: {target_model}")
+    st.sidebar.info(f"系統已連線: {target_model}")
 except Exception as e:
     st.error(f"系統初始化錯誤: {e}")
     st.stop()
@@ -59,37 +55,36 @@ def extract_duty_v2(file, current_hour: int) -> dict:
     except Exception as e:
         return {'term': '本所', 'v_name': '（解析失敗）', 'roster': [], '_error': str(e)}
 
-def extract_equip_v2(file) -> dict:
-    return {'ok': True, 'summary': '裝備檢查正常'}
-
 # ==========================================
-# 2. Gemini Vision 刑案單解析
+# 2. Gemini Vision 刑案單解析 (加入偵錯輸出)
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     try:
         pdf_file.seek(0)
-        images = convert_from_bytes(pdf_file.read(), dpi=150)
+        images = convert_from_bytes(pdf_file.read(), dpi=200)
         results = []
         roster_str = "、".join(roster)
-        prompt = f"請辨識刑案呈報單，回傳純 JSON (keys: 嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警)。名冊：{roster_str}。若不詳填「不詳」。"
+        prompt = f"請分析刑案呈報單圖片，提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警。員警名冊：{roster_str}。僅回傳乾淨的 JSON，不要 Markdown。"
         
         for img in images:
             response = model.generate_content([prompt, img])
-            raw = response.text.replace("```json", "").replace("```", "").strip()
-            results.append(json.loads(raw))
+            raw_text = response.text.replace("```json", "").replace("```", "").strip()
+            
+            try:
+                data = json.loads(raw_text)
+                results.append(data)
+            except:
+                st.warning(f"AI 未回傳有效 JSON。原始輸出: {raw_text}")
     except Exception as e:
-        st.warning(f"AI 解析失敗: {e}")
-        return []
+        st.error(f"解析失敗: {e}")
     return results
 
 # ==========================================
 # 3. UI 介面
 # ==========================================
-st.header("📋 勤務督導報告自動生成系統")
-if 'unit_reports' not in st.session_state: st.session_state.unit_reports = {}
-
+st.header("📋 勤務督導報告系統")
 num_units = st.number_input("待督導單位數量", 1, 8, 3)
-u_tabs = st.tabs([f"🏢 單位 {i+1}" for i in range(num_units)] + ["📄 總匯整"])
+u_tabs = st.tabs([f"單位 {i+1}" for i in range(num_units)] + ["匯整"])
 
 for i in range(num_units):
     with u_tabs[i]:
@@ -99,17 +94,13 @@ for i in range(num_units):
         u_eq = c2.file_uploader("交接簿", type=['xlsx'], key=f"ue_{i}")
         u_pdf = c3.file_uploader("刑案單", type=['pdf'], accept_multiple_files=True, key=f"updf_{i}")
         
-        if u_duty and u_eq:
+        if u_duty:
             dr = extract_duty_v2(u_duty, u_time.hour)
-            er = extract_equip_v2(u_eq)
-            lns = [f"{u_time.strftime('%H%M')}，{dr['term']}值班{dr['v_name']}，{er['summary']}。"]
-            
+            lns = [f"{u_time.strftime('%H%M')}，{dr['term']}值班{dr['v_name']}。"]
             if u_pdf:
-                with st.spinner("AI 正在分析影像內容..."):
+                with st.spinner("AI 正在分析刑案單..."):
                     for f in u_pdf:
                         for case in parse_crime_pdf_gemini(f, dr.get('roster', [])):
-                            lns.append(f"優蹟紀錄：{dr['term']}同仁 {case.get('查獲員警','')} 於 {case.get('查獲時間','')} 在 {case.get('查獲地點','')} 查獲 {case.get('嫌疑人','')}，建議記優蹟。")
+                            lns.append(f"優蹟紀錄：{dr['term']}同仁 {case.get('查獲員警','')} 於 {case.get('查獲地點','')} 查獲 {case.get('嫌疑人','')}。")
             
-            report = "\n".join([f"{idx+1}、{l}" for idx, l in enumerate(lns)])
-            st.text_area("報告預覽", report, height=300, key=f"prev_{i}")
-            st.session_state.unit_reports[i] = report
+            st.text_area("預覽", "\n".join(lns), height=200, key=f"prev_{i}")
