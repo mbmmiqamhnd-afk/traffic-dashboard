@@ -4,7 +4,7 @@ import io
 import re
 import traceback
 import smtplib
-import pdfplumber  # 🌟 新增：請確保有安裝 pip install pdfplumber
+import pdfplumber  # 🌟 處理 PDF 的關鍵套件
 from email.mime.text import MIMEText
 from email.header import Header
 from datetime import datetime, timedelta
@@ -56,7 +56,7 @@ def send_gmail(subject, body, receiver_email):
         return False
 
 # ==========================================
-# 2. 核心工具函式 (v2)
+# 2. 核心工具函式
 # ==========================================
 def safe_int(val):
     try:
@@ -133,7 +133,7 @@ def _clean_duty_name(raw):
     return raw
 
 # ==========================================
-# 3. 勤務表解析 (v2 - 強制鎖定上列版)
+# 3. 勤務表解析
 # ==========================================
 def extract_duty_v2(d_file, hour):
     res = {
@@ -144,7 +144,6 @@ def extract_duty_v2(d_file, hour):
     try:
         df = pd.read_excel(d_file, header=None, dtype=str).fillna('')
 
-        # ── 1. 單位名稱 ──
         for r in range(3):
             rt = str(df.iloc[r, 0]).replace(' ', '')
             m = re.search(r'([\u4e00-\u9fa5]+(派出所|分駐所|警備隊|分隊|中隊|大隊))', rt)
@@ -161,23 +160,18 @@ def extract_duty_v2(d_file, hour):
                 res['loc_term'] = res['term'][1:]
                 break
 
-        # ── 2. 人員對照表 ──
         fmap = build_fmap(df)
-
-        # ── 3. 時段欄 ──
         target_col, t_cols = find_target_col(df, hour)
         if target_col == -1:
             res['v_name'] = '找不到對應時段欄'
             return res
 
-        # ── 4. 值班與拘留室人員 ──
         v_found = False
         for r in range(3, 30):
             if r >= len(df): break
             col0 = str(df.iloc[r, 0]).strip()
             col1 = str(df.iloc[r, 1]).strip()
             
-            # A. 拘留室判定
             if res['is_guard_unit'] and ('拘留' in col0 or '拘留' in col1):
                 if not res['detention_name']:
                     cell = str(df.iloc[r, target_col]).strip()
@@ -186,7 +180,6 @@ def extract_duty_v2(d_file, hour):
                     if valid_codes:
                         res['detention_name'] = fmap.get(valid_codes[0], f'警員({valid_codes[0]})')
 
-            # B. 值班判定
             if not v_found and ('值班' in col0 or '值班' in col1):
                 if res['is_guard_unit']:
                     cell_raw = str(df.iloc[r, target_col])
@@ -210,7 +203,6 @@ def extract_duty_v2(d_file, hour):
         if not v_found:
             res['v_name'] = '該時段無值班人員'
 
-        # ── 5. 幹部動態 ──
         target_titles = ['所長', '副所長', '隊長', '副隊長', '分隊長', '小隊長', '警務佐']
         def rank(code):
             t = fmap.get(code, '')
@@ -303,7 +295,7 @@ def extract_duty_v2(d_file, hour):
     return res
 
 # ==========================================
-# 4. 交接簿解析 (v2)
+# 4. 交接簿解析
 # ==========================================
 def extract_equip_v2(e_file):
     try:
@@ -345,12 +337,11 @@ def extract_equip_v2(e_file):
     except Exception:
         return None
 
-
 # ==========================================
-# 🌟 4.5 新增：PDF 刑案呈報單解析功能
+# 🌟 4.5 新增：PDF 刑案呈報單解析功能 (高容錯版)
 # ==========================================
 def parse_police_report(pdf_file):
-    """讀取上傳的 PDF 檔案，透過正則表達式擷取關鍵案情資訊"""
+    """讀取上傳的 PDF 檔案，透過正則表達式擷取關鍵案情資訊 (高容錯版)"""
     extracted_data = []
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
@@ -358,21 +349,22 @@ def parse_police_report(pdf_file):
             if not text:
                 continue
             
-            # 使用 Regex 抓取重點欄位
-            date_match = re.search(r'查獲時間.*?中華民國(\d+年\d+月\d+日\d+時\d+分)', text, re.DOTALL)
-            law_match = re.search(r'觸犯法條\s*(.*?)\n', text)
+            # 放寬比對條件：允許中間有各種空白或換行 (\s*)
+            date_match = re.search(r'查獲時間.*?中華民國\s*(\d{2,3}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日.*?分)', text, re.DOTALL)
+            law_match = re.search(r'觸犯法條\s*(.*?)(?=\n|違反事實|附送刑案)', text, re.DOTALL)
             officers_match = re.search(r'查獲員警\s*(.*?)(?:承辦單位主管|$)', text, re.DOTALL)
 
             if date_match and law_match:
                 data = {
-                    "查獲時間": date_match.group(1),
-                    "觸犯法條": law_match.group(1).strip(),
-                    # 去除換行符號以維持排版
-                    "查獲員警": officers_match.group(1).strip().replace('\n', ' ') if officers_match else "未解析",
+                    "查獲時間": date_match.group(1).replace('\n', '').replace(' ', ''),
+                    "觸犯法條": law_match.group(1).replace('\n', '').strip(),
+                    "查獲員警": officers_match.group(1).replace('\n', ' ').strip() if officers_match else "未解析",
                 }
                 extracted_data.append(data)
+            else:
+                st.warning(f"⚠️ {pdf_file.name} 無法成功擷取！這頁的前幾行文字長這樣：\n{text[:100]}")
+                
     return extracted_data
-
 
 # ==========================================
 # 5. 主介面 UI
@@ -427,7 +419,6 @@ for i in range(num_units):
                 for pdf_file in u_pdf:
                     cases = parse_police_report(pdf_file)
                     for case in cases:
-                        # 將解析出的資訊轉化為督導用語
                         merit_text = f"優劣蹟紀錄：{t}同仁 {case['查獲員警']} 勤務落實，於 {case['查獲時間']} 查獲 {case['觸犯法條']} 案，表現優良，建議列優蹟註記。"
                         merit_lines.append(merit_text)
                 
