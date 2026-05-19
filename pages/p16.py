@@ -51,7 +51,7 @@ def extract_duty_v2(file, current_hour: int) -> dict:
         return {'term': '本所', 'v_name': '（解析失敗）', 'roster': [], '_error': str(e)}
 
 # ==========================================
-# 2. Gemini Vision (加上職稱要求)
+# 2. Gemini Vision (精準提取職稱)
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     pdf_file.seek(0)
@@ -59,7 +59,6 @@ def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     results = []
     roster_str = "、".join(roster)
     
-    # 【關鍵修改】：明確要求 AI 提取「職稱+姓名」
     prompt = f"請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警(請完整提取「職稱+姓名」，例如「警員蕭漢祥」、「巡佐董倢亨」)。名冊供比對錯別字參考：{roster_str}。僅回傳標準 JSON。"
     
     total_pages = len(images)
@@ -80,10 +79,19 @@ def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     return results
 
 # ==========================================
-# 3. UI 介面
+# 3. UI 介面與完整報告框架
 # ==========================================
 st.header("📋 勤務督導報告自動生成系統")
-u_time = st.time_input("抵達時間", datetime.now().time())
+
+# 增加日期與人員的輸入欄位，讓報告更完整
+col1, col2, col3 = st.columns(3)
+with col1:
+    u_date = st.date_input("督導日期", datetime.now())
+with col2:
+    u_time = st.time_input("抵達時間", datetime.now().time())
+with col3:
+    u_inspector = st.text_input("督考人員", "交通組 ")
+
 u_duty = st.file_uploader("勤務表 (XLSX)", type=['xlsx'])
 u_pdf = st.file_uploader("刑案單 (PDF)", type=['pdf'])
 
@@ -94,18 +102,36 @@ if u_duty and u_pdf:
         with st.spinner("AI 影像全速分析中..."):
             cases = parse_crime_pdf_gemini(u_pdf, dr.get('roster', []))
         
-        lns = [f"{u_time.strftime('%H%M')}，{dr['term']}值班{dr['v_name']}。"]
+        # 轉換為民國年
+        tw_year = u_date.year - 1911
+        date_str = f"{tw_year}年{u_date.month:02d}月{u_date.day:02d}日"
+        time_str = u_time.strftime('%H時%M分')
         
-        for case in cases:
-            officers = case.get('查獲員警', '')
-            if isinstance(officers, list):
-                officers = "、".join(officers)
+        # 建立完整督導報告框架
+        lns = [
+            "【勤務督考報告】",
+            f"一、受考單位：{dr['term']}",
+            f"二、督考時間：{date_str} {time_str}",
+            f"三、督考人員：{u_inspector}",
+            "四、督考情形：",
+            f"（一）{u_time.strftime('%H%M')}，{dr['term']}值班{dr['v_name']}，員警服裝儀容整齊，應對進退得宜，駐地內外環境整潔，各項勤務均能按表操課。",
+            "（二）優蹟紀錄："
+        ]
+        
+        if cases:
+            # 依序填入 AI 辨識出的優蹟紀錄
+            for idx, case in enumerate(cases):
+                officers = case.get('查獲員警', '')
+                if isinstance(officers, list):
+                    officers = "、".join(officers)
+                    
+                case_time = case.get('查獲時間', '')
+                case_loc = case.get('查獲地點', '')
+                suspect = case.get('嫌疑人', '')
+                crime = case.get('觸犯法條', '')
                 
-            case_time = case.get('查獲時間', '')
-            case_loc = case.get('查獲地點', '')
-            suspect = case.get('嫌疑人', '')
-            crime = case.get('觸犯法條', '')
-            
-            lns.append(f"優蹟紀錄：{dr['term']}同仁 {officers} 於 {case_time} 在 {case_loc} 查獲 {suspect} 涉嫌 {crime} 案。")
+                lns.append(f"      {idx+1}. {dr['term']}同仁 {officers} 於 {case_time} 在 {case_loc} 查獲 {suspect} 涉嫌 {crime} 案。")
+        else:
+            lns.append("      無特殊優蹟紀錄。")
         
-        st.text_area("報告預覽", "\n".join(lns), height=300)
+        st.text_area("報告預覽", "\n".join(lns), height=400)
