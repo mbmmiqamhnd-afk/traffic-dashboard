@@ -1,4 +1,4 @@
-# --- 基礎編譯工具 (雲端部署必備) ---
+# --- 基礎編譯工具 ---
 wheel
 setuptools
 
@@ -25,8 +25,13 @@ matplotlib
 pdfplumber
 pdf2image
 pytesseract
-
-# --- PDF 轉 PPT 核心 ---
-python-pptx
 Pillow
+
+# --- 影像處理 (解決 OCR 雜訊與部署依賴) ---
 opencv-python-headless
+
+# --- AI API 連接 ---
+google-generativeai
+
+# --- PPT 生成 ---
+python-pptx
