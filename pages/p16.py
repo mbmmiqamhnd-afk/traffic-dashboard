@@ -35,7 +35,6 @@ try:
 except Exception as e:
     st.error(f"Gemini API 初始化失敗，請檢查 secrets 設定: {e}")
 
-# 🛑 關鍵防護 1：關閉所有安全攔截，避免真實姓名(如葉煥堂)被誤判為洩漏個資而阻擋
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -340,20 +339,11 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
     results = []
     roster_str = "、".join(roster)
     
-    prompt = (
-        f"請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警(請完整提取「職稱+姓名」，例如「警員蕭漢祥」)。\n"
-        f"名冊供比對參考：{roster_str}。\n"
-        "請嚴格回傳 JSON Array (列表) 格式，即使只有一筆資料也要放在陣列中，例如：\n"
-        "[\n"
-        "  {\n"
-        '    "嫌疑人": "王大明",\n'
-        '    "查獲時間": "115年05月18日 10時00分",\n'
-        '    "查獲地點": "桃園市龍潭區某路段",\n'
-        '    "觸犯法條": "公共危險",\n'
-        '    "查獲員警": "警員李小華、巡佐張大山"\n'
-        "  }\n"
-        "]"
-    )
+    # 使用純字串組合，避開 triple-quotes 帶來的解析器錯誤
+    prompt = "請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警(請完整提取「職稱+姓名」，例如「警員蕭漢祥」)。\n"
+    prompt += f"名冊供比對參考：{roster_str}。\n"
+    prompt += "請嚴格回傳 JSON Array 格式，即使只有一筆資料也要放在陣列中，例如：\n"
+    prompt += '[{"嫌疑人": "王大明", "查獲時間": "10時00分", "查獲地點": "某路段", "觸犯法條": "公共危險", "查獲員警": "警員李小華"}]'
     
     total_pages = len(images)
     for i, img in enumerate(images):
