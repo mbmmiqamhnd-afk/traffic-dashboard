@@ -8,27 +8,20 @@ from datetime import datetime
 from pdf2image import convert_from_bytes
 
 # ==========================================
-# 0. 設定與權限 (動態模型偵測)
+# 0. 設定與權限 (終極穩定版)
 # ==========================================
 st.set_page_config(page_title="勤務督導報告系統", layout="wide")
 
 try:
-    # 從 Secrets 讀取 (確保您的 Secrets 包含 [api] GOOGLE_API_KEY)
+    # 確保 Secrets 檔案中已設定 [api] GOOGLE_API_KEY
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
-
-    # 動態偵測可用模型，避開 404 名稱錯誤
-    models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_methods]
-    if not models:
-        raise Exception("找不到任何可用的生成模型")
     
-    # 優先嘗試 gemini-1.5-flash，若無則抓取清單第一個可用的
-    model_name = 'gemini-1.5-flash' if 'gemini-1.5-flash' in models else models[0]
-    model = genai.GenerativeModel(model_name)
-    st.sidebar.success(f"目前運行模型: {model_name}")
-
+    # 直接呼叫最穩定的 Flash 模型
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    st.sidebar.success("系統已成功連結至 Gemini 1.5 Flash")
 except Exception as e:
-    st.error(f"系統初始化錯誤: {e}")
+    st.error(f"系統初始化失敗: {e}")
     st.stop()
 
 # ==========================================
@@ -63,7 +56,7 @@ def extract_equip_v2(file) -> dict:
     return {'ok': True, 'summary': '裝備檢查正常'}
 
 # ==========================================
-# 2. Gemini Vision 刑案單解析 (動態模型)
+# 2. Gemini Vision 刑案單解析
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list) -> list:
     try:
