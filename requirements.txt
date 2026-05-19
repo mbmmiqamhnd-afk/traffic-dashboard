@@ -29,3 +29,4 @@ pytesseract
 # --- PDF 轉 PPT 核心 ---
 python-pptx
 Pillow
+opencv-python-headless
