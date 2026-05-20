@@ -220,7 +220,7 @@ def extract_duty_v2(d_file, hour):
                         valid_codes = [c for c in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', c)]
                         if valid_codes:
                             c = valid_codes[0]
-                            base_name = fmap.get(c, c)
+                            base_name = fmap.get(c, f"({c})")
                             # 清理重複職稱或簡單格式化
                             if not any(title in base_name for title in ['警員', '巡佐', '隊長', '所長', '副所長']):
                                 res['v_name'] = f"警員 {base_name}"
@@ -517,6 +517,9 @@ def build_report(duty_info: dict, equip: dict, crimes: list, time_str: str, sup_
             officer = c.get('查獲員警', '不明')
             if isinstance(officer, list):
                 officer = "、".join(officer)
+            else:
+                # 若 AI 回傳的是字串，將其中的半形/全形逗號替換為頓號，格式更美觀
+                officer = str(officer).replace(', ', '、').replace(',', '、').replace('，', '、')
             lines.append(f"{idx}、優蹟紀錄：{term}同仁 {officer} 於 {t} 在 {loc} 查獲 {suspect} 涉嫌 {law} 案。")
             idx += 1
 
