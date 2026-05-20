@@ -219,10 +219,13 @@ def extract_duty_v2(d_file, hour):
                         codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
                         valid_codes = [c for c in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', c)]
                         if valid_codes:
-                            res['v_name'] = fmap.get(valid_codes[0], f'警員 {fmap[code]}' if '警員' not in fmap[code] else fmap[code])
+                            c = valid_codes[0]
+                            base_name = fmap.get(c, c)
                             # 清理重複職稱或簡單格式化
-                            if '警員' not in res['v_name'] and '巡佐' not in res['v_name'] and '隊長' not in res['v_name'] and '所長' not in res['v_name']:
-                                res['v_name'] = f"警員 {res['v_name']}"
+                            if not any(title in base_name for title in ['警員', '巡佐', '隊長', '所長', '副所長']):
+                                res['v_name'] = f"警員 {base_name}"
+                            else:
+                                res['v_name'] = base_name
                             v_found = True
 
         if not v_found:
