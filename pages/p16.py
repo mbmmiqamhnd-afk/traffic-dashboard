@@ -151,7 +151,7 @@ def _clean_duty_name(raw):
     return raw
 
 # ==========================================
-# 4. 勤務表解析 (整合刑事大隊與偵查隊精簡邏輯)
+# 4. 勤務表解析 (含偵查隊過濾邏輯)
 # ==========================================
 def extract_duty_v2(d_file, hour):
     res = {
@@ -165,16 +165,17 @@ def extract_duty_v2(d_file, hour):
 
         for r in range(3):
             rt = str(df.iloc[r, 0]).replace(' ', '')
-            # 增強正則表達式，確保能準確捕捉到 派出所、偵查隊、大隊、警備隊 等不同單位
             m = re.search(r'([\u4e00-\u9fa5]+(派出所|分駐所|警備隊|偵查隊|分隊|中隊|大隊|隊))', rt)
             if m:
                 unit_full = m.group(1)
+                # 強制轉換名稱
+                if '刑事警察大隊' in unit_full or '刑警大隊' in unit_full:
+                    unit_full = unit_full.replace('刑事警察大隊', '龍潭分局偵查隊').replace('刑警大隊', '龍潭分局偵查隊')
+                
                 res['unit_name'] = unit_full
                 res['is_guard_unit'] = '警備隊' in unit_full
                 if '分隊' in unit_full:
                     res['term'] = '該分隊'; res['has_skyline'] = False
-                elif '大隊' in unit_full:
-                    res['term'] = '該大隊'; res['has_skyline'] = False
                 elif '隊' in unit_full:
                     res['term'] = '該隊'; res['has_skyline'] = False
                 else:
@@ -226,7 +227,8 @@ def extract_duty_v2(d_file, hour):
                             base_name = fmap.get(matched_code, f'({matched_code})').strip()
                             base_name = re.sub(r'\s+', ' ', base_name)
                             
-                            if not any(title in base_name for title in ['警員', '巡佐', '隊長', '所長', '副所長', '分隊長', '小隊長', '警務佐']):
+                            # 增加 '偵查佐' 的防呆，避免變成 "警員 偵查佐 XXX"
+                            if not any(title in base_name for title in ['警員', '巡佐', '隊長', '所長', '副所長', '分隊長', '小隊長', '警務佐', '偵查佐']):
                                 res['v_name'] = f"警員 {base_name}"
                             else:
                                 res['v_name'] = base_name
@@ -237,27 +239,29 @@ def extract_duty_v2(d_file, hour):
 
         def rank(personnel_code):
             t = fmap.get(personnel_code, '')
-            if any(x in t for x in ['所長', '隊長', '大隊長', '分隊長']) and '副' not in t:
+            if any(x in t for x in ['所長', '隊長', '分隊長', '大隊長']) and '副' not in t:
                 return 0
             if '副' in t:
                 return 1
             return 2
 
-        # 判斷是否為 偵查隊 或 刑事警察大隊 / 刑警大隊
+        # 刑事/偵查單位幹部過濾
         is_investigation_unit = any(x in res['unit_name'] for x in ['偵查隊', '刑事警察大隊', '刑警大隊'])
 
         if is_investigation_unit:
-            # 偵查隊 / 刑事大隊：僅保留「隊長/大隊長」與「副隊長/副大隊長」，完全排除「分隊長」與「小隊長」
+            # 僅保留隊長/副隊長，排除小隊長與分隊長
             cadre_codes = sorted(
-                [c for c in fmap 
-                 if ('隊長' in fmap[c] or '大隊長' in fmap[c]) and '小隊長' not in fmap[c] and '分隊長' not in fmap[c]],
+                [personnel_code for personnel_code in fmap
+                 if ('隊長' in fmap[personnel_code] or '大隊長' in fmap[personnel_code])
+                 and '小隊長' not in fmap[personnel_code] 
+                 and '分隊長' not in fmap[personnel_code]],
                 key=rank
             )
         else:
-            # 一般單位：保留所有常規幹部（所長、副所長、小隊長、分隊長、警務佐等）
             target_titles = ['所長', '副所長', '隊長', '副隊長', '分隊長', '小隊長', '警務佐']
             cadre_codes = sorted(
-                [c for c in fmap if any(t in fmap[c] for t in target_titles)],
+                [personnel_code for personnel_code in fmap
+                 if any(t in fmap[personnel_code] for t in target_titles)],
                 key=rank
             )
 
@@ -535,7 +539,7 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
         if detention:
             lines.append(f"{idx}、拘留室值班{detention}，對人犯監控良好，無異常狀況發生。")
         else:
-            lines.append(f"{idx}、拘留室目前無人犯. ")
+            lines.append(f"{idx}、拘留室目前無人犯。")
         idx += 1
 
     if crimes:
