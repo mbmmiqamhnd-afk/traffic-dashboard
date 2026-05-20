@@ -220,7 +220,6 @@ def extract_duty_v2(d_file, hour):
                         valid_codes = [vc for vc in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', vc)]
                         if valid_codes:
                             matched_code = valid_codes[0]
-                            # 加入清理空白邏輯，避免 "警員警員" 或是多餘全形空格
                             base_name = fmap.get(matched_code, f'({matched_code})').strip()
                             base_name = re.sub(r'\s+', ' ', base_name)
                             
@@ -243,7 +242,6 @@ def extract_duty_v2(d_file, hour):
                 return 1
             return 2
 
-        # 用 personnel_code 避免與外層 col 變數衝突
         cadre_codes = sorted(
             [personnel_code for personnel_code in fmap
              if any(t in fmap[personnel_code] for t in target_titles)],
@@ -397,7 +395,7 @@ def extract_equip_v2(e_file):
         return None
 
 # ==========================================
-# 6. Gemini 2.5 Vision 刑案單辨識核心
+# 6. Gemini 2.5 Vision 強效刑案單辨識核心
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
     if model is None:
@@ -411,8 +409,8 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
 
     prompt = "請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警(請完整提取「職稱+姓名」，例如「警員蕭漢祥」)。\n"
     prompt += "名冊供比對參考：" + roster_str + "。\n"
-    prompt += "請嚴格回傳 JSON Array 格式，即使只有一筆資料也要放在陣列中，例如：\n"
-    prompt += '[{"嫌疑人": "王大明", "查獲時間": "10時00分", "查獲地點": "某路段", "觸犯法條": "公共危險", "查獲員警": "警員李小華"}]'
+    prompt += "請務必嚴格回傳 JSON Array 格式，不要加入任何對話或說明文字，例如：\n"
+    prompt += '[\n  {\n    "嫌疑人": "王大明",\n    "查獲時間": "10時00分",\n    "查獲地點": "某路段",\n    "觸犯法條": "公共危險",\n    "查獲員警": "警員李小華"\n  }\n]'
 
     total_pages = len(images)
     for i, img in enumerate(images):
@@ -421,21 +419,25 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
             response = model.generate_content([prompt, img], safety_settings=safety_settings)
             raw_text = response.text.strip()
 
-            lines = raw_text.splitlines()
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            raw_text = "\n".join(lines).strip()
+            # 使用強效 Regex 正規表達式，強制吸取包含在 [ ] 或 { } 內的 JSON 區塊
+            match_array = re.search(r'\[\s*\{.*?\}\s*\]', raw_text, re.DOTALL)
+            match_obj = re.search(r'\{.*?\}', raw_text, re.DOTALL)
 
-            if raw_text and raw_text not in ("[]", "{}"):
-                parsed = json.loads(raw_text)
+            if match_array:
+                json_str = match_array.group(0)
+                parsed = json.loads(json_str)
                 if isinstance(parsed, list):
                     results.extend(parsed)
-                elif isinstance(parsed, dict):
+            elif match_obj:
+                json_str = match_obj.group(0)
+                parsed = json.loads(json_str)
+                if isinstance(parsed, dict):
                     results.append(parsed)
+            else:
+                st.warning(f"第 {i+1} 頁無法找到有效 JSON 結構，AI 回傳：{raw_text[:100]}...")
+
         except json.JSONDecodeError:
-            st.warning(f"第 {i+1} 頁 JSON 解析失敗，略過。原始回傳：{raw_text[:200]}")
+            st.warning(f"第 {i+1} 頁 JSON 解析失敗，請確認圖片清晰度。")
         except Exception as e:
             st.warning(f"第 {i+1} 頁辨識失敗：{e}")
 
@@ -596,6 +598,8 @@ if st.button("🚀 生成督導報告", type="primary"):
             crimes = []
             if p_file and model is not None:
                 crimes = parse_crime_pdf_gemini(p_file, duty_info.get('roster', []), i)
+                if not crimes:
+                    st.warning(f"⚠️ 單位 {i+1} 刑案單已上傳，但 AI 未能提取出任何有效資料。")
 
             time_str = u_time.strftime("%H%M")
             report_text = build_report(duty_info, equip, crimes, time_str, sup_date)
