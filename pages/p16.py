@@ -656,32 +656,39 @@ if st.session_state.unit_reports:
             )
             st.session_state.unit_reports[idx]['report'] = edited
 
-            col_dl, col_mail = st.columns(2)
-            with col_dl:
-                st.download_button(
-                    label="⬇️ 下載報告 (.txt)",
-                    data=edited.encode('utf-8-sig'),
-                    file_name=f"{data['unit_name']}_督導報告_{sup_date_str}.txt",
-                    mime="text/plain",
-                    key=f"dl_{idx}"
-                )
-            with col_mail:
-                receiver = st.text_input("收件人 Email", key=f"mail_{idx}")
-                if st.button("📧 寄送報告", key=f"send_{idx}"):
-                    if receiver:
-                        subject = f"【督導報告】{data['unit_name']} {sup_date_str}"
-                        if send_gmail(subject, edited, receiver):
-                            st.success("郵件已寄出！")
-                    else:
-                        st.warning("請填寫收件人 Email。")
+            st.download_button(
+                label="⬇️ 下載此單位報告 (.txt)",
+                data=edited.encode('utf-8-sig'),
+                file_name=f"{data['unit_name']}_督導報告_{sup_date_str}.txt",
+                mime="text/plain",
+                key=f"dl_{idx}"
+            )
 
+    # --- 總匯整：合併下載與一次寄送全部 ---
     st.markdown("---")
+    st.subheader("📦 總匯整處理 (合併所有單位報告)")
+    
+    # 組合所有報告的文字
     all_text = "\n\n────────────────────────────────────────\n\n".join(
         [v['report'] for v in st.session_state.unit_reports.values()]
     )
-    st.download_button(
-        label="⬇️ 下載全部報告（合併）",
-        data=all_text.encode('utf-8-sig'),
-        file_name=f"督導報告_全部_{sup_date_str}.txt",
-        mime="text/plain"
-    )
+    
+    col_all_dl, col_all_mail = st.columns(2)
+    with col_all_dl:
+        st.download_button(
+            label="⬇️ 下載全部報告（合併）",
+            data=all_text.encode('utf-8-sig'),
+            file_name=f"督導報告_全部_{sup_date_str}.txt",
+            mime="text/plain",
+            use_container_width=True
+        )
+    with col_all_mail:
+        receiver_all = st.text_input("收件人 Email (發送合併報告)", key="mail_all")
+        if st.button("📧 一次寄送全部報告", type="primary", use_container_width=True):
+            if receiver_all:
+                subject_all = f"【勤務督導報告彙整】{sup_date_str}"
+                with st.spinner("正在寄送合併報告..."):
+                    if send_gmail(subject_all, all_text, receiver_all):
+                        st.success("✅ 合併報告已成功寄出！")
+            else:
+                st.warning("⚠️ 請填寫收件人 Email。")
