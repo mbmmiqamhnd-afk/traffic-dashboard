@@ -233,28 +233,29 @@ def extract_duty_v2(d_file, hour):
         if not v_found:
             res['v_name'] = '該時段無值班人員'
 
-        # === 針對「偵查隊」特製的幹部過濾邏輯 ===
         def rank(personnel_code):
             t = fmap.get(personnel_code, '')
-            if any(x in t for x in ['所長', '隊長', '分隊長']) and '副' not in t:
+            if any(x in t for x in ['所長', '隊長', '大隊長', '分隊長']) and '副' not in t:
                 return 0
             if '副' in t:
                 return 1
             return 2
 
-        if '偵查隊' in res['unit_name']:
-            # 偵查隊：僅保留「隊長」與「副隊長」，排除「小隊長」及「分隊長」
+        # 判斷是否為偵查隊或刑事警察大隊
+        is_investigation_unit = any(x in res['unit_name'] for x in ['偵查隊', '刑事警察大隊', '刑警大隊'])
+
+        if is_investigation_unit:
+            # 偵查隊 / 刑大：僅保留「隊長」與「副隊長（或大隊長、副大隊長）」，排除「小隊長」及「分隊長」
             cadre_codes = sorted(
-                [code for code in fmap 
-                 if '副隊長' in fmap[code] or ('隊長' in fmap[code] and '小隊長' not in fmap[code] and '分隊長' not in fmap[code])],
+                [c for c in fmap 
+                 if ('隊長' in fmap[c] or '大隊長' in fmap[c]) and '小隊長' not in fmap[c] and '分隊長' not in fmap[c]],
                 key=rank
             )
         else:
             # 一般單位：保留所有常規幹部
             target_titles = ['所長', '副所長', '隊長', '副隊長', '分隊長', '小隊長', '警務佐']
             cadre_codes = sorted(
-                [code for code in fmap
-                 if any(t in fmap[code] for t in target_titles)],
+                [c for c in fmap if any(t in fmap[c] for t in target_titles)],
                 key=rank
             )
 
