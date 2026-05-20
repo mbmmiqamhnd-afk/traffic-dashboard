@@ -220,9 +220,12 @@ def extract_duty_v2(d_file, hour):
                         valid_codes = [vc for vc in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', vc)]
                         if valid_codes:
                             matched_code = valid_codes[0]
-                            base_name = fmap.get(matched_code, f'({matched_code})')
+                            # 加入清理空白邏輯，避免 "警員警員" 或是多餘全形空格
+                            base_name = fmap.get(matched_code, f'({matched_code})').strip()
+                            base_name = re.sub(r'\s+', ' ', base_name)
+                            
                             if not any(title in base_name for title in ['警員', '巡佐', '隊長', '所長', '副所長', '分隊長', '小隊長', '警務佐']):
-                                res['v_name'] = f"警員{base_name}"
+                                res['v_name'] = f"警員 {base_name}"
                             else:
                                 res['v_name'] = base_name
                             v_found = True
@@ -418,7 +421,6 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
             response = model.generate_content([prompt, img], safety_settings=safety_settings)
             raw_text = response.text.strip()
 
-            # 移除 markdown code fence（不使用反引號字元，避免檔案截斷問題）
             lines = raw_text.splitlines()
             if lines and lines[0].startswith("```"):
                 lines = lines[1:]
@@ -453,7 +455,6 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
     is_guard = duty_info.get('is_guard_unit', False)
     detention = duty_info.get('detention_name')
 
-    # 日期相對計算
     d_e  = (sup_date - timedelta(days=1)).strftime("%m月%d日")
     d_3  = (sup_date - timedelta(days=3)).strftime("%m月%d日")
     d_5  = (sup_date - timedelta(days=5)).strftime("%m月%d日")
@@ -463,7 +464,6 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
 
     idx = 1
 
-    # 第 1 點：值班情形
     if "無值班人員" in v_name:
         lines.append(f"{idx}、{time_str}，{term}該時段無值班人員。")
     else:
@@ -473,7 +473,6 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
         )
     idx += 1
 
-    # 第 2 點：駐地監錄設備
     skyline_str = "及天羅地網系統" if has_skyline else ""
     lines.append(
         f"{idx}、{term}駐地監錄設備{skyline_str}均運作正常，無故障，"
@@ -481,18 +480,15 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
     )
     idx += 1
 
-    # 第 3 點：勤前教育
     lines.append(
         f"{idx}、{term}{d_3}至{d_e}勤前教育，幹部均有宣導「防制員警酒後駕車」、"
         f"「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。"
     )
     idx += 1
 
-    # 第 4 點：環境內務
     lines.append(f"{idx}、{term}環境內務擺設整齊清潔，符合規定。")
     idx += 1
 
-    # 第 5 點：警械裝備
     if not equip:
         equip = {'gi': 0, 'go': 0, 'bi': 0, 'bo': 0, 'ri': 0, 'ro': 0, 'vi': 0, 'vo': 0}
 
@@ -510,17 +506,14 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
     )
     idx += 1
 
-    # 第 6 點：幹部督勤
     lines.append(f"{idx}、本日{cadre}")
     idx += 1
 
-    # 第 7 點：酒測聯單
     lines.append(
         f"{idx}、{term}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
     )
     idx += 1
 
-    # 第 8 點：拘留室（警備隊專用）
     if is_guard:
         if detention:
             lines.append(f"{idx}、拘留室值班{detention}，對人犯監控良好，無異常狀況發生。")
@@ -528,7 +521,6 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
             lines.append(f"{idx}、拘留室目前無人犯。")
         idx += 1
 
-    # 優蹟紀錄：AI 刑案單
     if crimes:
         for crime in crimes:
             suspect = crime.get('嫌疑人', '不明')
