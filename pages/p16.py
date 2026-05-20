@@ -80,8 +80,8 @@ def safe_int(val):
     except:
         return 0
 
-def d_normalize_code(c):
-    c_str = str(c).strip().upper()
+def d_normalize_code(raw_c):
+    c_str = str(raw_c).strip().upper()
     c_str = c_str.translate(str.maketrans(
         '０１２３４５６７８９ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ',
         '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
@@ -106,33 +106,33 @@ def build_fmap(df):
             for rr in range(r, min(r + 20, len(df))):
                 if '代號' not in str(df.iloc[rr, 0]):
                     continue
-                c = 1
-                while c < len(df.columns) - 1:
-                    code = str(df.iloc[rr, c]).strip()
-                    name = str(df.iloc[rr, c + 1]).strip() if c + 1 < len(df.columns) else ''
+                col = 1
+                while col < len(df.columns) - 1:
+                    code = str(df.iloc[rr, col]).strip()
+                    name = str(df.iloc[rr, col + 1]).strip() if col + 1 < len(df.columns) else ''
                     name = re.sub(r'\s+\d{1,2}$', '', name).strip()
                     if (code and name and code not in ('', 'nan') and name not in ('', 'nan') and
                             re.match(r'^[A-Za-z0-9甲乙丙丁]{1,3}$', code)):
                         fmap[code] = name
-                    c += 6
+                    col += 6
     return fmap
 
 def find_target_col(df, hour):
     TIME_ROW = 2
     t_cols = {}
-    for c in range(13, len(df.columns)):
-        h1, h2 = parse_time_header(df.iloc[TIME_ROW, c])
+    for col in range(13, len(df.columns)):
+        h1, h2 = parse_time_header(df.iloc[TIME_ROW, col])
         if h1 is not None:
-            t_cols[c] = (h1, h2)
+            t_cols[col] = (h1, h2)
 
     adj_h = adj(hour)
-    for c, (sh, eh) in sorted(t_cols.items()):
+    for col, (sh, eh) in sorted(t_cols.items()):
         s = adj(sh)
         e = adj(eh) if eh != sh else adj(sh) + 1
         if eh == 0:
             e = 24
         if s <= adj_h < e:
-            return c, t_cols
+            return col, t_cols
     return -1, t_cols
 
 _SKIP_DUTY_NAMES = {'勤務\n人員\n代號\n職稱\n姓名', '代號', '職稱', '姓名', '勤務備註', '員警', '時段', '項目'}
@@ -198,7 +198,7 @@ def extract_duty_v2(d_file, hour):
                 if not res['detention_name']:
                     cell = str(df.iloc[r, target_col]).strip()
                     codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
-                    valid_codes = [c for c in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', c)]
+                    valid_codes = [vc for vc in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', vc)]
                     if valid_codes:
                         res['detention_name'] = fmap.get(valid_codes[0], f'警員({valid_codes[0]})')
 
@@ -207,7 +207,7 @@ def extract_duty_v2(d_file, hour):
                     cell_raw = str(df.iloc[r, target_col])
                     cell = cell_raw.split('\n')[0].strip()
                     codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
-                    valid_codes = [c for c in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', c)]
+                    valid_codes = [vc for vc in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', vc)]
                     if valid_codes:
                         res['v_name'] = fmap.get(valid_codes[0], f'警員({valid_codes[0]})')
                     else:
@@ -217,13 +217,12 @@ def extract_duty_v2(d_file, hour):
                     cell = str(df.iloc[r, target_col]).strip()
                     if cell and cell != 'nan' and len(cell) <= 10:
                         codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell)
-                        valid_codes = [c for c in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', c)]
+                        valid_codes = [vc for vc in codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', vc)]
                         if valid_codes:
-                            c = valid_codes[0]
-                            base_name = fmap.get(c, f"({c})")
-                            # 清理重複職稱或簡單格式化
-                            if not any(title in base_name for title in ['警員', '巡佐', '隊長', '所長', '副所長']):
-                                res['v_name'] = f"警員 {base_name}"
+                            matched_code = valid_codes[0]
+                            base_name = fmap.get(matched_code, f'({matched_code})')
+                            if not any(title in base_name for title in ['警員', '巡佐', '隊長', '所長', '副所長', '分隊長', '小隊長', '警務佐']):
+                                res['v_name'] = f"警員{base_name}"
                             else:
                                 res['v_name'] = base_name
                             v_found = True
@@ -233,16 +232,18 @@ def extract_duty_v2(d_file, hour):
 
         target_titles = ['所長', '副所長', '隊長', '副隊長', '分隊長', '小隊長', '警務佐']
 
-        def rank(code):
-            t = fmap.get(code, '')
+        def rank(personnel_code):
+            t = fmap.get(personnel_code, '')
             if any(x in t for x in ['所長', '隊長', '分隊長']) and '副' not in t:
                 return 0
             if '副' in t:
                 return 1
             return 2
 
+        # 用 personnel_code 避免與外層 col 變數衝突
         cadre_codes = sorted(
-            [c for c in fmap if any(t in fmap[c] for t in target_titles)],
+            [personnel_code for personnel_code in fmap
+             if any(t in fmap[personnel_code] for t in target_titles)],
             key=rank
         )
 
@@ -254,23 +255,24 @@ def extract_duty_v2(d_file, hour):
                 break
 
         c_notes = []
-        for code in cadre_codes:
-            fname_full = fmap[code]
+        for personnel_code in cadre_codes:
+            fname_full = fmap[personnel_code]
             d_list = []
             is_off = False
 
             for r in range(3, footer_row):
-                col0, col1 = str(df.iloc[r, 0]).strip(), str(df.iloc[r, 1]).strip()
+                col0 = str(df.iloc[r, 0]).strip()
+                col1 = str(df.iloc[r, 1]).strip()
                 if not col0:
                     continue
 
-                for c, (sh, eh) in t_cols.items():
-                    cell_val = str(df.iloc[r, c]).strip()
+                for tcol, (sh, eh) in t_cols.items():
+                    cell_val = str(df.iloc[r, tcol]).strip()
                     if not cell_val or cell_val == 'nan':
                         continue
 
                     raw_codes = re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', cell_val)
-                    if code not in [x for x in raw_codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', x)]:
+                    if personnel_code not in [x for x in raw_codes if re.match(r'^[A-Z0-9甲乙丙丁]{1,3}$', x)]:
                         continue
 
                     duty_name = col1 if col1 and len(col1) >= 2 else col0
@@ -290,10 +292,11 @@ def extract_duty_v2(d_file, hour):
 
             if not d_list:
                 for r in range(3, len(df)):
-                    col0, col1 = str(df.iloc[r, 0]).strip(), str(df.iloc[r, 1]).strip()
+                    col0 = str(df.iloc[r, 0]).strip()
+                    col1 = str(df.iloc[r, 1]).strip()
                     if any(k in col0 + col1 for k in ['輪休', '慰休', '公假', '補休', '事假', '病假']):
-                        for c in range(13, len(df.columns)):
-                            if code in re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', str(df.iloc[r, c])):
+                        for tcol in range(13, len(df.columns)):
+                            if personnel_code in re.findall(r'[A-Z甲乙丙丁][0-9]?|[0-9]{2}', str(df.iloc[r, tcol])):
                                 is_off = True
                                 break
 
@@ -303,7 +306,7 @@ def extract_duty_v2(d_file, hour):
                     grouped_duties.setdefault(d['s'], []).append(d)
 
                 filtered_d_list = []
-                for s_time, items in grouped_duties.items():
+                for _s_time, items in grouped_duties.items():
                     if len(items) > 1:
                         non_internal = [x for x in items if '內部管理' not in x['n']]
                         if non_internal:
@@ -333,7 +336,7 @@ def extract_duty_v2(d_file, hour):
         res['cadre_status'] = '；'.join(c_notes) + '。' if c_notes else '無幹部資料。'
 
     except Exception as e:
-        res['cadre_status'] = f'解析中斷：{e}'
+        res['cadre_status'] = f'解析中斷：{traceback.format_exc()}'
     return res
 
 # ==========================================
@@ -344,29 +347,29 @@ def extract_equip_v2(e_file):
         df = pd.read_excel(e_file, header=None).fillna('')
         header_row, col_map = 2, {}
 
-        for c in range(len(df.columns)):
-            v = str(df.iloc[header_row, c]).replace('\n', '').replace(' ', '')
+        for col in range(len(df.columns)):
+            v = str(df.iloc[header_row, col]).replace('\n', '').replace(' ', '')
             if v == '手槍':
-                col_map['gun'] = c
+                col_map['gun'] = col
             if '子彈' in v:
-                prev = str(df.iloc[header_row, c - 1]).replace('\n', '') if c > 0 else ''
+                prev = str(df.iloc[header_row, col - 1]).replace('\n', '') if col > 0 else ''
                 if '手槍' in prev:
-                    col_map['bullet'] = c
+                    col_map['bullet'] = col
             if '無線電' in v:
-                col_map['radio'] = c
+                col_map['radio'] = col
             if '防彈背心' in v:
-                col_map['vest'] = c
+                col_map['vest'] = col
 
-        for c in range(2, len(df.columns)):
-            v = str(df.iloc[header_row, c]).replace('\n', '')
+        for col in range(2, len(df.columns)):
+            v = str(df.iloc[header_row, col]).replace('\n', '')
             if 'gun' not in col_map and '手槍' in v and '子彈' not in v:
-                col_map['gun'] = c
-            if 'bullet' not in col_map and '子彈' in v and '手槍' in str(df.iloc[header_row, c - 1]).replace('\n', ''):
-                col_map['bullet'] = c
+                col_map['gun'] = col
+            if 'bullet' not in col_map and '子彈' in v and '手槍' in str(df.iloc[header_row, col - 1]).replace('\n', ''):
+                col_map['bullet'] = col
             if 'radio' not in col_map and '無線電' in v:
-                col_map['radio'] = c
+                col_map['radio'] = col
             if 'vest' not in col_map and '防彈背心' in v:
-                col_map['vest'] = c
+                col_map['vest'] = col
 
         last_zi = last_zo = -1
         for r in range(3, len(df)):
@@ -415,7 +418,7 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
             response = model.generate_content([prompt, img], safety_settings=safety_settings)
             raw_text = response.text.strip()
 
-            # 移除 markdown code fence
+            # 移除 markdown code fence（不使用反引號字元，避免檔案截斷問題）
             lines = raw_text.splitlines()
             if lines and lines[0].startswith("```"):
                 lines = lines[1:]
@@ -437,9 +440,10 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
     return results
 
 # ==========================================
-# 7. 報告組合 (完全對齊您的目標格式)
+# 7. 報告組合
 # ==========================================
-def build_report(duty_info: dict, equip: dict, crimes: list, time_str: str, sup_date: datetime) -> str:
+def build_report(duty_info: dict, equip: dict, crimes: list,
+                 time_str: str, sup_date) -> str:
     unit = duty_info.get('unit_name', '未知單位')
     term = duty_info.get('term', '該所')
     loc_term = duty_info.get('loc_term', '所')
@@ -449,30 +453,39 @@ def build_report(duty_info: dict, equip: dict, crimes: list, time_str: str, sup_
     is_guard = duty_info.get('is_guard_unit', False)
     detention = duty_info.get('detention_name')
 
-    # 時間格式處理
-    d_e = (sup_date - timedelta(days=1)).strftime("%m月%d日")
-    d_3 = (sup_date - timedelta(days=3)).strftime("%m月%d日")
-    d_5 = (sup_date - timedelta(days=5)).strftime("%m月%d日")
+    # 日期相對計算
+    d_e  = (sup_date - timedelta(days=1)).strftime("%m月%d日")
+    d_3  = (sup_date - timedelta(days=3)).strftime("%m月%d日")
+    d_5  = (sup_date - timedelta(days=5)).strftime("%m月%d日")
 
     lines = []
     lines.append(f"【{unit} 督導報告】")
-    
+
     idx = 1
-    
+
     # 第 1 點：值班情形
     if "無值班人員" in v_name:
         lines.append(f"{idx}、{time_str}，{term}該時段無值班人員。")
     else:
-        lines.append(f"{idx}、{time_str}，{term}值班{v_name}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
+        lines.append(
+            f"{idx}、{time_str}，{term}值班{v_name}服裝整齊，佩件齊全，"
+            f"對槍、彈、無線電等裝備管制良好，領用情形均熟悉。"
+        )
     idx += 1
 
     # 第 2 點：駐地監錄設備
     skyline_str = "及天羅地網系統" if has_skyline else ""
-    lines.append(f"{idx}、{term}駐地監錄設備{skyline_str}均運作正常，無故障，{d_5}至{d_e}有逐日檢測2次以上紀錄。")
+    lines.append(
+        f"{idx}、{term}駐地監錄設備{skyline_str}均運作正常，無故障，"
+        f"{d_5}至{d_e}有逐日檢測2次以上紀錄。"
+    )
     idx += 1
 
     # 第 3 點：勤前教育
-    lines.append(f"{idx}、{term}{d_3}至{d_e}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
+    lines.append(
+        f"{idx}、{term}{d_3}至{d_e}勤前教育，幹部均有宣導「防制員警酒後駕車」、"
+        f"「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。"
+    )
     idx += 1
 
     # 第 4 點：環境內務
@@ -481,14 +494,20 @@ def build_report(duty_info: dict, equip: dict, crimes: list, time_str: str, sup_
 
     # 第 5 點：警械裝備
     if not equip:
-        equip = {'gi':0, 'go':0, 'bi':0, 'bo':0, 'ri':0, 'ro':0, 'vi':0, 'vo':0}
-    
+        equip = {'gi': 0, 'go': 0, 'bi': 0, 'bo': 0, 'ri': 0, 'ro': 0, 'vi': 0, 'vo': 0}
+
     gi, go = equip.get('gi', 0), equip.get('go', 0)
     bi, bo = equip.get('bi', 0), equip.get('bo', 0)
     ri, ro = equip.get('ri', 0), equip.get('ro', 0)
     vi, vo = equip.get('vi', 0), equip.get('vo', 0)
-    
-    lines.append(f"{idx}、{term}手槍出勤 {go} 把、在{loc_term} {gi} 把，子彈出勤 {bo} 顆、在{loc_term} {bi} 顆，無線電出勤 {ro} 臺、在{loc_term} {ri} 臺；防彈背心出勤 {vo} 件、在{loc_term} {vi} 件，幹部對械彈每日檢查管制良好，符合規定。")
+
+    lines.append(
+        f"{idx}、{term}手槍出勤 {go} 把、在{loc_term} {gi} 把，"
+        f"子彈出勤 {bo} 顆、在{loc_term} {bi} 顆，"
+        f"無線電出勤 {ro} 臺、在{loc_term} {ri} 臺；"
+        f"防彈背心出勤 {vo} 件、在{loc_term} {vi} 件，"
+        f"幹部對械彈每日檢查管制良好，符合規定。"
+    )
     idx += 1
 
     # 第 6 點：幹部督勤
@@ -496,10 +515,12 @@ def build_report(duty_info: dict, equip: dict, crimes: list, time_str: str, sup_
     idx += 1
 
     # 第 7 點：酒測聯單
-    lines.append(f"{idx}、{term}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。")
+    lines.append(
+        f"{idx}、{term}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
+    )
     idx += 1
 
-    # 第 8 點：拘留室 (警備隊專用)
+    # 第 8 點：拘留室（警備隊專用）
     if is_guard:
         if detention:
             lines.append(f"{idx}、拘留室值班{detention}，對人犯監控良好，無異常狀況發生。")
@@ -507,20 +528,22 @@ def build_report(duty_info: dict, equip: dict, crimes: list, time_str: str, sup_
             lines.append(f"{idx}、拘留室目前無人犯。")
         idx += 1
 
-    # 接續點：AI 刑案單優蹟紀錄
+    # 優蹟紀錄：AI 刑案單
     if crimes:
-        for c in crimes:
-            suspect = c.get('嫌疑人', '不明')
-            t = c.get('查獲時間', '不明')
-            loc = c.get('查獲地點', '不明')
-            law = c.get('觸犯法條', '不明')
-            officer = c.get('查獲員警', '不明')
+        for crime in crimes:
+            suspect = crime.get('嫌疑人', '不明')
+            t       = crime.get('查獲時間', '不明')
+            loc     = crime.get('查獲地點', '不明')
+            law     = crime.get('觸犯法條', '不明')
+            officer = crime.get('查獲員警', '不明')
             if isinstance(officer, list):
                 officer = "、".join(officer)
             else:
-                # 若 AI 回傳的是字串，將其中的半形/全形逗號替換為頓號，格式更美觀
                 officer = str(officer).replace(', ', '、').replace(',', '、').replace('，', '、')
-            lines.append(f"{idx}、優蹟紀錄：{term}同仁 {officer} 於 {t} 在 {loc} 查獲 {suspect} 涉嫌 {law} 案。")
+            lines.append(
+                f"{idx}、優蹟紀錄：{term}同仁 {officer} 於 {t} "
+                f"在 {loc} 查獲 {suspect} 涉嫌 {law} 案。"
+            )
             idx += 1
 
     return "\n".join(lines)
@@ -549,20 +572,20 @@ num_units = st.number_input("本次督導單位數量", min_value=1, max_value=1
 unit_inputs = []
 for i in range(num_units):
     with st.expander(f"第 {i+1} 個單位", expanded=(i == 0)):
-        u_time = st.time_input(f"抵達時間 (單位 {i+1})", value=datetime.now().time(), key=f"time_{i}")
+        u_time = st.time_input(f"抵達時間（單位 {i+1}）", value=datetime.now().time(), key=f"time_{i}")
         c1, c2, c3 = st.columns(3)
         with c1:
-            d_file = st.file_uploader(f"勤務表 (Excel)", type=["xlsx", "xls"], key=f"duty_{i}")
+            d_file = st.file_uploader("勤務表 (Excel)", type=["xlsx", "xls"], key=f"duty_{i}")
         with c2:
-            e_file = st.file_uploader(f"交接簿 (Excel，選填)", type=["xlsx", "xls"], key=f"equip_{i}")
+            e_file = st.file_uploader("交接簿 (Excel，選填)", type=["xlsx", "xls"], key=f"equip_{i}")
         with c3:
-            p_file = st.file_uploader(f"刑案單 (PDF，選填)", type=["pdf"], key=f"crime_{i}")
+            p_file = st.file_uploader("刑案單 (PDF，選填)", type=["pdf"], key=f"crime_{i}")
         unit_inputs.append((u_time, d_file, e_file, p_file))
 
 # --- 生成按鈕 ---
 st.markdown("---")
 if st.button("🚀 生成督導報告", type="primary"):
-    all_ready = all(d is not None for u_time, d, e, p in unit_inputs)
+    all_ready = all(d is not None for _t, d, _e, _p in unit_inputs)
     if not all_ready:
         st.error("每個單位都必須至少上傳【勤務表】。")
         st.stop()
@@ -572,23 +595,19 @@ if st.button("🚀 生成督導報告", type="primary"):
 
     for i, (u_time, d_file, e_file, p_file) in enumerate(unit_inputs):
         with st.spinner(f"正在處理第 {i+1} 個單位..."):
-            # 勤務表解析
             duty_info = extract_duty_v2(io.BytesIO(d_file.read()), u_time.hour)
 
-            # 交接簿解析
             equip = None
             if e_file:
                 equip = extract_equip_v2(io.BytesIO(e_file.read()))
 
-            # 刑案單辨識
             crimes = []
             if p_file and model is not None:
                 crimes = parse_crime_pdf_gemini(p_file, duty_info.get('roster', []), i)
 
-            # 組合報告 (傳入格式化的抵達時間，例如 "1545")
             time_str = u_time.strftime("%H%M")
             report_text = build_report(duty_info, equip, crimes, time_str, sup_date)
-            
+
             st.session_state.unit_reports[i] = {
                 'unit_name': duty_info.get('unit_name', f'單位{i+1}'),
                 'report': report_text,
@@ -635,9 +654,10 @@ if st.session_state.unit_reports:
                     else:
                         st.warning("請填寫收件人 Email。")
 
-    # 合併下載
     st.markdown("---")
-    all_text = "\n\n────────────────────────────────────────\n\n".join([v['report'] for v in st.session_state.unit_reports.values()])
+    all_text = "\n\n────────────────────────────────────────\n\n".join(
+        [v['report'] for v in st.session_state.unit_reports.values()]
+    )
     st.download_button(
         label="⬇️ 下載全部報告（合併）",
         data=all_text.encode('utf-8-sig'),
