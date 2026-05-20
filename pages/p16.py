@@ -165,7 +165,8 @@ def extract_duty_v2(d_file, hour):
 
         for r in range(3):
             rt = str(df.iloc[r, 0]).replace(' ', '')
-            m = re.search(r'([\u4e00-\u9fa5]+(派出所|分駐所|警備隊|分隊|中隊|大隊))', rt)
+            # 增強正則表達式，確保能準確捕捉到「偵查隊」
+            m = re.search(r'([\u4e00-\u9fa5]+(派出所|分駐所|隊))', rt)
             if m:
                 unit_full = m.group(1)
                 res['unit_name'] = unit_full
@@ -232,8 +233,7 @@ def extract_duty_v2(d_file, hour):
         if not v_found:
             res['v_name'] = '該時段無值班人員'
 
-        target_titles = ['所長', '副所長', '隊長', '副隊長', '分隊長', '小隊長', '警務佐']
-
+        # === 針對「偵查隊」特製的幹部過濾邏輯 ===
         def rank(personnel_code):
             t = fmap.get(personnel_code, '')
             if any(x in t for x in ['所長', '隊長', '分隊長']) and '副' not in t:
@@ -242,11 +242,21 @@ def extract_duty_v2(d_file, hour):
                 return 1
             return 2
 
-        cadre_codes = sorted(
-            [personnel_code for personnel_code in fmap
-             if any(t in fmap[personnel_code] for t in target_titles)],
-            key=rank
-        )
+        if '偵查隊' in res['unit_name']:
+            # 偵查隊：僅保留「隊長」與「副隊長」，排除「小隊長」及「分隊長」
+            cadre_codes = sorted(
+                [code for code in fmap 
+                 if '副隊長' in fmap[code] or ('隊長' in fmap[code] and '小隊長' not in fmap[code] and '分隊長' not in fmap[code])],
+                key=rank
+            )
+        else:
+            # 一般單位：保留所有常規幹部
+            target_titles = ['所長', '副所長', '隊長', '副隊長', '分隊長', '小隊長', '警務佐']
+            cadre_codes = sorted(
+                [code for code in fmap
+                 if any(t in fmap[code] for t in target_titles)],
+                key=rank
+            )
 
         footer_row = len(df)
         for r in range(3, len(df)):
@@ -419,7 +429,6 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
             response = model.generate_content([prompt, img], safety_settings=safety_settings)
             raw_text = response.text.strip()
 
-            # 使用最暴力的物理鎖定法，無視任何 Markdown 或多餘對話
             s_idx = raw_text.find('[')
             e_idx = raw_text.rfind(']')
             
@@ -429,7 +438,6 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
                 if isinstance(parsed, list):
                     results.extend(parsed)
             else:
-                # 備用方案：若 AI 只回傳了單一的 JSON 物件 {}
                 s_idx = raw_text.find('{')
                 e_idx = raw_text.rfind('}')
                 if s_idx != -1 and e_idx != -1 and e_idx > s_idx:
@@ -534,12 +542,18 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
             loc     = crime.get('查獲地點', '不明')
             law     = crime.get('觸犯法條', '不明')
             officer = crime.get('查獲員警', '不明')
+            
+            if not any(x in str(t) for x in ['年', '月', '日']):
+                full_time = f"{sup_date.year - 1911} 年 {sup_date.month} 月 {sup_date.day} 日 {t}"
+            else:
+                full_time = t
+
             if isinstance(officer, list):
                 officer = "、".join(officer)
             else:
                 officer = str(officer).replace(', ', '、').replace(',', '、').replace('，', '、')
             lines.append(
-                f"{idx}、優蹟紀錄：{term}同仁 {officer} 於 {t} "
+                f"{idx}、優蹟紀錄：{term}同仁 {officer} 於 {full_time} "
                 f"在 {loc} 查獲 {suspect} 涉嫌 {law} 案。"
             )
             idx += 1
