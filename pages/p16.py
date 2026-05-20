@@ -409,8 +409,8 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
 
     prompt = "請提取：嫌疑人, 查獲時間, 查獲地點, 觸犯法條, 查獲員警(請完整提取「職稱+姓名」，例如「警員蕭漢祥」)。\n"
     prompt += "名冊供比對參考：" + roster_str + "。\n"
-    prompt += "請務必嚴格回傳 JSON Array 格式，不要加入任何對話或說明文字，例如：\n"
-    prompt += '[\n  {\n    "嫌疑人": "王大明",\n    "查獲時間": "10時00分",\n    "查獲地點": "某路段",\n    "觸犯法條": "公共危險",\n    "查獲員警": "警員李小華"\n  }\n]'
+    prompt += "請務必嚴格回傳 JSON Array 格式，不要加入任何對話或說明文字，多名員警請一律使用頓號「、」分隔，例如：\n"
+    prompt += '[\n  {\n    "嫌疑人": "王大明",\n    "查獲時間": "10時00分",\n    "查獲地點": "某路段",\n    "觸犯法條": "公共危險",\n    "查獲員警": "警員李小華、巡佐張大山"\n  }\n]'
 
     total_pages = len(images)
     for i, img in enumerate(images):
@@ -419,22 +419,26 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
             response = model.generate_content([prompt, img], safety_settings=safety_settings)
             raw_text = response.text.strip()
 
-            # 使用強效 Regex 正規表達式，強制吸取包含在 [ ] 或 { } 內的 JSON 區塊
-            match_array = re.search(r'\[\s*\{.*?\}\s*\]', raw_text, re.DOTALL)
-            match_obj = re.search(r'\{.*?\}', raw_text, re.DOTALL)
-
-            if match_array:
-                json_str = match_array.group(0)
+            # 使用最暴力的物理鎖定法，無視任何 Markdown 或多餘對話
+            s_idx = raw_text.find('[')
+            e_idx = raw_text.rfind(']')
+            
+            if s_idx != -1 and e_idx != -1 and e_idx > s_idx:
+                json_str = raw_text[s_idx:e_idx+1]
                 parsed = json.loads(json_str)
                 if isinstance(parsed, list):
                     results.extend(parsed)
-            elif match_obj:
-                json_str = match_obj.group(0)
-                parsed = json.loads(json_str)
-                if isinstance(parsed, dict):
-                    results.append(parsed)
             else:
-                st.warning(f"第 {i+1} 頁無法找到有效 JSON 結構，AI 回傳：{raw_text[:100]}...")
+                # 備用方案：若 AI 只回傳了單一的 JSON 物件 {}
+                s_idx = raw_text.find('{')
+                e_idx = raw_text.rfind('}')
+                if s_idx != -1 and e_idx != -1 and e_idx > s_idx:
+                    json_str = raw_text[s_idx:e_idx+1]
+                    parsed = json.loads(json_str)
+                    if isinstance(parsed, dict):
+                        results.append(parsed)
+                else:
+                    st.warning(f"第 {i+1} 頁無法找到有效 JSON 結構，AI 回傳：{raw_text[:100]}...")
 
         except json.JSONDecodeError:
             st.warning(f"第 {i+1} 頁 JSON 解析失敗，請確認圖片清晰度。")
