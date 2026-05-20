@@ -560,9 +560,9 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
             else:
                 officer = str(officer).replace(', ', '、').replace(',', '、').replace('，', '、')
             lines.append(
-                f"{idx}、優蹟紀錄：{term}同仁 {officer} 於 {full_time} "
-                f"在 {loc} 查獲 {suspect} 涉嫌 {law} 案。"
-            )
+    f"{idx}、優蹟紀錄：{officer} 於 {full_time} "
+    f"在 {loc} 查獲 {suspect} 涉嫌 {law} 案。"
+)
             idx += 1
 
     return "\n".join(lines)
