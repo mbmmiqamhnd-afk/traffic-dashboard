@@ -4,8 +4,11 @@ import streamlit as st
 st.set_page_config(page_title="專案勤務規劃系統", layout="wide", page_icon="🚓")
 
 # 呼叫側邊欄 (確保在 config 之後)
-from menu import show_sidebar
-show_sidebar()
+try:
+    from menu import show_sidebar
+    show_sidebar()
+except ImportError:
+    st.sidebar.warning("找不到 menu.py，跳過側邊欄載入。")
 
 import pandas as pd
 import gspread
@@ -86,7 +89,7 @@ def get_client():
 def load_data():
     try:
         client = get_client()
-        if client is None: return None, None, None, None, "權限不足"
+        if client is None: return None, None, None, None, "權限不足或未設定 Secrets"
         sh = client.open_by_key(SHEET_ID)
         try:
             ws_set = sh.worksheet("三合一_設定")
@@ -116,7 +119,13 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         try: ws_set = sh.worksheet("三合一_設定")
         except: ws_set = sh.add_worksheet(title="三合一_設定", rows="50", cols="5")
         ws_set.clear()
-        ws_set.update(range_name='A1', values=[["Key", "Value"], ["unit_name", unit], ["plan_full_time", time_str], ["project_name", project], ["briefing_info", briefing], ["stats_cmd", str(stats['cmd'])], ["stats_ptl", str(stats['ptl'])], ["stats_inv", str(stats['inv'])], ["stats_civ", str(stats['civ'])], ["briefing_time", str(stats['b_time'])], ["briefing_loc", str(stats['b_loc'])], ["loc_1", str(stats['loc_1'])], ["loc_2", str(stats['loc_2'])], ["loc_3", str(stats['loc_3'])], ["ptl_focus", ptl_f], ["cp_focus", cp_f]])
+        ws_set.update(range_name='A1', values=[
+            ["Key", "Value"], ["unit_name", unit], ["plan_full_time", time_str], ["project_name", project],
+            ["briefing_info", briefing], ["stats_cmd", str(stats['cmd'])], ["stats_ptl", str(stats['ptl'])],
+            ["stats_inv", str(stats['inv'])], ["stats_civ", str(stats['civ'])], ["briefing_time", str(stats['b_time'])],
+            ["briefing_loc", str(stats['b_loc'])], ["loc_1", str(stats['loc_1'])], ["loc_2", str(stats['loc_2'])],
+            ["loc_3", str(stats['loc_3'])], ["ptl_focus", ptl_f], ["cp_focus", cp_f]
+        ])
         
         # 指揮/巡邏/臨檢 頁
         for ws_name, df in [("三合一_指揮組", df_cmd), ("三合一_巡邏組", df_ptl), ("三合一_擴大臨檢組", df_cp)]:
