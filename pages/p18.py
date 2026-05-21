@@ -41,7 +41,8 @@ def send_report_email_auto(file_data, filename, year, month):
         part = MIMEBase('application', 'octet-stream')
         part.set_payload(file_data)
         encoders.encode_base64(part)
-        # 處理中文檔名
+        
+        # 處理中文檔名 (RFC 2231 規範)
         part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(filename)}")
         msg.attach(part)
         
@@ -98,7 +99,8 @@ def p18_page():
                             m = re.search(r'開單日期[：:\s]*(\d{3})(\d{2})', v)
                             if m:
                                 ext_year, ext_month = m.group(1), str(int(m.group(2)))
-                                found_date = True; break
+                                found_date = True
+                                break
                         if found_date: break
                     if found_date: break
 
@@ -145,7 +147,8 @@ def p18_page():
                             a3 = dict_acc.get(name, {}).get('A3類', 0)
                             th = dict_traf.get(name, 0)
                             ap, tp = a2 * P_A2 + a3 * P_A3, th * P_TRAF
-                            cp = pd.to_numeric(row['取締點數'], errors='coerce') or 0
+                            cp = pd.to_numeric(row['取締點數'], errors='coerce')
+                            cp = cp if pd.notna(cp) else 0
                             
                             if 'A2件數' in col_map: df_members.at[idx, 'A2件數'] = a2 if a2 > 0 else ""
                             if 'A3件數' in col_map: df_members.at[idx, 'A3件數'] = a3 if a3 > 0 else ""
@@ -153,7 +156,10 @@ def p18_page():
                             if '交整時數' in col_map: df_members.at[idx, '交整時數'] = th if th > 0 else ""
                             if '交整點數' in col_map: df_members.at[idx, '交整點數'] = tp if tp > 0 else ""
                             if '個人總點數' in col_map: df_members.at[idx, '個人總點數'] = cp + ap + tp
-                            s_cite += cp; s_acc += ap; s_traf += tp
+                            
+                            s_cite += cp
+                            s_acc += ap
+                            s_traf += tp
 
                         # 建立正確小計列
                         sub_row_data = {c: "" for c in df_work.columns}
