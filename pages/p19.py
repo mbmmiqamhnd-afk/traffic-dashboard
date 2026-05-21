@@ -39,7 +39,7 @@ DEFAULT_TIME    = "115年4月11日 19時至23時"
 DEFAULT_PROJ    = "0411取締酒後駕車與防制危險駕車及噪音車輛專案"
 DEFAULT_BRIEF   = "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，落實「人犯戒護安全、案件程序安全、執法者及民眾安全」。\n二、 臨檢合法性：依《警察職權行使法》第6條辦理。\n三、 攔停規範：依《警察職權行使法》第8條辦理。\n四、 全程蒐證：務必全程連續錄音或錄影。\n五、 異議處理：依《警察職權行使法》第29條製作紀錄。"
 
-DEFAULT_PTL_FOCUS = "於各定點實施路檢，針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。"
+DEFAULT_PTL_FOCUS = "於各定點實施路檢，針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引引導至「警政大樓廣場」交由環保局檢驗。"
 DEFAULT_CP_FOCUS = "由第一階段之第1至第4組機動警力，會合偵查隊專案人員，於21時30分準時進入目標場所執行威力掃蕩。"
 
 DEFAULT_CMD = pd.DataFrame([
@@ -51,13 +51,12 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "交通組", "通訊代號": "隆安 13號", "任務目標": "機動督導第一階段路檢組", "負責人員": "交通組長 楊孟竟", "共同執行人員": "警務員 盧冠仁"},
 ])
 
-# ★ 第一階段改為定點路檢格式：每人一列，組別/無線電代號/臨檢目標同組共用
 DEFAULT_PTL = pd.DataFrame([
     # 第1路檢組
     {"組別": "第1路檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "所長", "姓名": "鄭榮捷", "任務分工": "帶班兼管制", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢目標": "北龍路319號前\n（攔檢中興路往龍潭市區方向）\n20時20分分局一樓集合出發臨檢"},
     {"組別": "第1路檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",  "姓名": "詹宗澤", "任務分工": "指揮管制",   "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢目標": "北龍路319號前\n（攔檢中興路往龍潭市區方向）\n20時20分分局一樓集合出發臨檢"},
     {"組別": "第1路檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",  "姓名": "劉柏延", "任務分工": "攔檢盤查",   "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢目標": "北龍路319號前\n（攔檢中興路往龍潭市區方向）\n20時20分分局一樓集合出發臨檢"},
-    {"組別": "第1路檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",  "姓名": "林宸緯", "任務分工": "攔檢盤查",   "攜行裝備": "小電腦、密錄器",                "臨檢目標": "北龍路319號前\n（攔檢中興路往龍潭市區方向）\n20時20分分局一樓集合出發臨檢"},
+    {"組別": "第1路檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",  "姓名": "林宸緯", "任務分工": "攔檢盤查",   "攜行裝備": "小電腦、密錄器",                                "臨檢目標": "北龍路319號前\n（攔檢中興路往龍潭市區方向）\n20時20分分局一樓集合出發臨檢"},
     {"組別": "第1路檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",  "姓名": "黃丞穎", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢目標": "北龍路319號前\n（攔檢中興路往龍潭市區方向）\n20時20分分局一樓集合出發臨檢"},
     # 第2路檢組
     {"組別": "第2路檢組", "無線電代號": "隆安82", "派遣單位": "石門所", "職別": "副所長", "姓名": "林榮裕", "任務分工": "帶班兼管制", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢目標": "北龍路319號隊面前\n（攔檢龍潭市區往中興路方向）\n20時20分分局一樓集合出發臨檢"},
@@ -70,17 +69,23 @@ DEFAULT_PTL = pd.DataFrame([
 
 CP_COLS = ["組別", "無線電代號", "派遣單位", "職別", "姓名", "任務分工", "臨檢目標場所"]
 
+# ★ 修正點 1：補齊預設的「第2臨檢組」資料，避免預設無資料輸出
 DEFAULT_CHECKPOINT = pd.DataFrame([
     # 第1臨檢組
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "所長",   "姓名": "鄭榮捷", "任務分工": "帶班",                     "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "所長",   "姓名": "鄭榮捷", "任務分工": "帶班",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",               "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",   "姓名": "劉柏延", "任務分工": "盤查兼蒐證",                 "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",   "姓名": "黃丞穎", "任務分工": "大門警戒兼蒐證",               "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "偵查佐", "姓名": "賴享宏", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "張峻銨", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "偵查佐", "姓名": "賴享宏", "任務分工": "刑案偵防、社維法案件處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "張峻銨", "任務分工": "刑案偵防、社維法案件處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
+    # 第2臨檢組
+    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所", "職別": "所長",   "姓名": "蘇文彥", "任務分工": "帶班",                      "臨檢目標場所": "A. 凱悅KTV（大昌路二段100號）\nB. 快樂網咖（中正路200號）"},
+    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所", "職別": "警員",   "姓名": "陳祺",   "任務分工": "製作臨檢紀錄",               "臨檢目標場所": "A. 凱悅KTV（大昌路二段100號）\nB. 快樂網咖（中正路200號）"},
+    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "中興所", "職別": "警員",   "姓名": "江益德", "任務分工": "盤查兼蒐證",                 "臨檢目標場所": "A. 凱悅KTV（大昌路二段100號）\nB. 快樂網咖（中正路200號）"},
+    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "交通分隊", "職別": "警員",   "姓名": "吳沛軒", "任務分工": "大門警戒兼蒐證",               "臨檢目標場所": "A. 凱悅KTV（大昌路二段100號）\nB. 快樂網咖（中正路200號）"}
 ])
 
-# --- 2. 輔助函數 ---
+# --- 2. 輔育函數 ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
@@ -147,7 +152,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
             ["loc_3", str(stats['loc_3'])], ["ptl_focus", ptl_f], ["cp_focus", cp_f]
         ])
 
-        # ★ 路檢組（原巡邏組）直接儲存含組別/無線電代號欄位的完整資料
         for ws_name, df in [("三合一_指揮組", df_cmd), ("三合一_巡邏組", df_ptl), ("三合一_擴大臨檢組", df_cp)]:
             if df is None: continue
             try: ws = sh.worksheet(ws_name)
@@ -216,7 +220,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
 
-    # ★ 4. 第一階段（定點路檢）— 多人跨列、合併組別/無線電代號/臨檢目標
+    # 4. 第一階段（定點路檢）
     story.append(Paragraph("<b>肆、【第一階段】定點路檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text))
 
@@ -225,17 +229,15 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
                    page_width*0.08, page_width*0.12, page_width*0.17, page_width*0.27]
 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ptl_headers]]
-
     rows_ptl = df_ptl.reset_index(drop=True)
-    # 記錄各組在 table 中的列範圍（含 header offset=1）
-    merge_groups = []  # list of (row_start, row_end) in table index (1-based)
+    
+    merge_groups = []
     prev_group = None
     grp_start_idx = 1
 
     for i, r in rows_ptl.iterrows():
         grp = safe_str(r.get('組別', ''))
-        table_row_idx = i + 1  # header is row 0
-
+        table_row_idx = i + 1
         if grp != prev_group:
             if prev_group is not None:
                 merge_groups.append((grp_start_idx, table_row_idx - 1))
@@ -253,7 +255,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             Paragraph(clean(r.get('臨檢目標','')),   style_cell_left),
         ])
 
-    # 最後一組
     if prev_group is not None:
         merge_groups.append((grp_start_idx, len(rows_ptl)))
 
@@ -264,7 +265,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#f2f2f2')),
         ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
     ]
-    # 合併同組的：組別(col0)、無線電代號(col1)、臨檢目標(col7)
     for (rs, re) in merge_groups:
         if re > rs:
             for col in [0, 1, 7]:
@@ -272,17 +272,19 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_ptl.setStyle(TableStyle(ts_ptl))
     story.append(t_ptl)
 
-    # 5. 第二階段（擴大臨檢）— 多列展開，合併組別/無線電/臨檢目標，任務分工不合併
+    # ★ 5. 第二階段（擴大臨檢）— 修正點 2：優化欄位配置比例，防範文字多行截斷
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
+    
     if df_cp is not None and not df_cp.empty:
         cp_headers = ["組別", "無線電\n代號", "派遣\n單位", "職別", "姓名", "任務分工", "臨檢目標場所"]
+        # 微調分配：給予目標場所更多的寬度 (0.38)，優化任務分工 (0.18)，確保能裝下長文字
         col_w_cp   = [page_width*0.10, page_width*0.10, page_width*0.09, page_width*0.07,
-                      page_width*0.08, page_width*0.20, page_width*0.36]
+                      page_width*0.08, page_width*0.18, page_width*0.38]
 
         data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in cp_headers]]
-
         rows_cp = df_cp.reset_index(drop=True)
+        
         cp_merge_groups = []
         cp_prev_group = None
         cp_grp_start = 1
@@ -295,15 +297,17 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
                     cp_merge_groups.append((cp_grp_start, tbl_row - 1))
                 cp_prev_group = grp
                 cp_grp_start = tbl_row
+                
             data_cp.append([
                 Paragraph(clean(r.get('組別','')),        style_cell),
                 Paragraph(clean(r.get('無線電代號','')),   style_cell),
                 Paragraph(clean(r.get('派遣單位','')),     style_cell),
                 Paragraph(clean(r.get('職別','')),         style_cell),
                 Paragraph(clean(r.get('姓名','')),         style_cell),
-                Paragraph(clean(r.get('任務分工','')),     style_cell_left),
+                Paragraph(clean(r.get('任務分工','')),     style_cell_left), # 改用靠左，排版更美觀
                 Paragraph(clean(r.get('臨檢目標場所','')), style_cell_left),
             ])
+            
         if cp_prev_group is not None:
             cp_merge_groups.append((cp_grp_start, len(rows_cp)))
 
@@ -312,9 +316,9 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             ('FONTNAME',   (0,0), (-1,-1), font),
             ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
             ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#e6e6e6')),
-            ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+            ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'), # 確保合併單元格時垂直居中且不壓迫
         ]
-        # 合併：組別(col0)、無線電代號(col1)、臨檢目標場所(col6)；任務分工(col5)不合併
+        
         for (rs, re) in cp_merge_groups:
             if re > rs:
                 for col in [0, 1, 6]:
@@ -426,7 +430,6 @@ else:
         'loc_3':  int(d.get("loc_3", 0)),
     })
     ed_cmd = df_cmd if not df_cmd.empty else DEFAULT_CMD.copy()
-    # ★ 路檢格式：直接讀回，不再 drop 組別欄
     if not df_ptl.empty and all(c in df_ptl.columns for c in PTL_COLS):
         ed_ptl = df_ptl[PTL_COLS]
     else:
