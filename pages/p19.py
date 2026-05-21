@@ -33,7 +33,6 @@ from reportlab.lib.units import mm
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
-# ★ 常數定義挪至最上方，徹底解決 NameError 變數未定義問題
 PTL_COLS = ["組別", "無線電代號", "派遣單位", "職別", "姓名", "任務分工", "攜行裝備", "臨檢目標"]
 CP_COLS  = ["組別", "無線電代號", "派遣單位", "職別", "姓名", "任務分工", "臨檢目標場所"]
 
@@ -75,7 +74,7 @@ DEFAULT_PTL = pd.DataFrame([
 ])
 
 DEFAULT_CHECKPOINT = pd.DataFrame([
-    # 第1臨檢組 (隆安51) - 5/29 真實臨檢目標
+    # 第1臨檢組 (隆安51)
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "所長",   "姓名": "鄭榮捷", "任務分工": "帶班",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",               "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",   "姓名": "劉柏延", "任務分工": "盤查兼蒐證",                 "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
@@ -83,8 +82,7 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",   "姓名": "黃丞穎", "任務分工": "大門警戒兼蒐證",             "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "偵查佐", "姓名": "賴享宏", "任務分工": "刑案偵防、社維法案件處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "張峻銨", "任務分工": "刑案偵防、社維法案件處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
-    
-    # 第2臨檢組 (隆安82) - 對齊第一階段路檢同仁，手動完整回填
+    # 第2臨檢組 (隆安82)
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所", "職別": "副所長", "姓名": "林榮裕", "任務分工": "帶班",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nF. 憤怒鳥網咖（中興路269號）\nG. 真情男女養生館（中興路387號）\nH. 萬紫千紅舒壓館（中興路491-3號）"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所", "職別": "警員",   "姓名": "陳琦",   "任務分工": "製作臨檢紀錄",               "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nF. 憤怒鳥網咖（中興路269號）\nG. 真情男女養生館（中興路387號）\nH. 萬紫千紅舒壓館（中興路491-3號）"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "中興所", "職別": "巡佐",   "姓名": "蕭漢祥", "任務分工": "盤查兼蒐證",                 "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nF. 憤怒鳥網咖（中興路269號）\nG. 真情男女養生館（中興路387號）\nH. 萬紫千紅舒壓館（中興路491-3號）"},
@@ -124,22 +122,40 @@ def load_data():
         client = get_client()
         if client is None: return None, None, None, None, "權限不足或未設定 Secrets"
         sh = client.open_by_key(SHEET_ID)
+        
+        # 載入設定頁
         try:
             ws_set = sh.worksheet("三合一_設定")
             df_set = pd.DataFrame(ws_set.get_all_records()).fillna("")
-        except: df_set = None
+        except: 
+            df_set = None
+
+        # ★ 修正點 1：依據歷史專案名稱，全面動態路由「路檢組」與「擴大臨檢組」的工作表分頁
+        ptl_ws_name = "三合一_巡邏組"
+        cp_ws_name  = "三合一_擴大臨檢組"
+        
+        if df_set is not None and not df_set.empty:
+            d_temp = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
+            past_project_name = d_temp.get("project_name", "")
+            if "二合一" in past_project_name:
+                ptl_ws_name = "二合一_路檢組"
+                cp_ws_name  = "二合一_擴大臨檢組"
+
         try:
             ws_cmd = sh.worksheet("三合一_指揮組")
             df_cmd = pd.DataFrame(ws_cmd.get_all_records()).fillna("")
         except: df_cmd = pd.DataFrame()
+            
         try:
-            ws_ptl = sh.worksheet("三合一_巡邏組")
+            ws_ptl = sh.worksheet(ptl_ws_name)
             df_ptl = pd.DataFrame(ws_ptl.get_all_records()).fillna("")
         except: df_ptl = pd.DataFrame()
+            
         try:
-            ws_cp = sh.worksheet("三合一_擴大臨檢組")
+            ws_cp = sh.worksheet(cp_ws_name)
             df_cp = pd.DataFrame(ws_cp.get_all_records()).fillna("")
         except: df_cp = None
+            
         return df_set, df_cmd, df_ptl, df_cp, None
     except Exception as e: return None, None, None, None, str(e)
 
@@ -148,6 +164,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         client = get_client()
         sh = client.open_by_key(SHEET_ID)
 
+        # 設定頁儲存
         try: ws_set = sh.worksheet("三合一_設定")
         except: ws_set = sh.add_worksheet(title="三合一_設定", rows="50", cols="5")
         ws_set.clear()
@@ -159,7 +176,15 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
             ["loc_3", str(stats['loc_3'])], ["ptl_focus", ptl_f], ["cp_focus", cp_f]
         ])
 
-        for ws_name, df in [("三合一_指揮組", df_cmd), ("三合一_巡邏組", df_ptl), ("三合一_擴大臨檢組", df_cp)]:
+        # ★ 修正點 2：儲存時依據目前畫面填寫的專案名稱，精準動態儲存到對應的分頁
+        if "二合一" in project:
+            ptl_ws_name = "二合一_路檢組"
+            cp_ws_name  = "二合一_擴大臨檢組"
+        else:
+            ptl_ws_name = "三合一_巡邏組"
+            cp_ws_name  = "三合一_擴大臨檢組"
+
+        for ws_name, df in [("三合一_指揮組", df_cmd), (ptl_ws_name, df_ptl), (cp_ws_name, df_cp)]:
             if df is None: continue
             try: ws = sh.worksheet(ws_name)
             except: ws = sh.add_worksheet(title=ws_name, rows="100", cols="20")
@@ -406,7 +431,6 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 # ─────────────── Streamlit 介面 ───────────────
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
 
-# 調整 5/29 專案真實警力統計初始數據
 default_stats = {
     'cmd': 7, 'ptl': 16, 'inv': 3, 'civ': 0,
     'b_time': '18時30分至19時00分', 'b_loc': '分局二樓會議室',
