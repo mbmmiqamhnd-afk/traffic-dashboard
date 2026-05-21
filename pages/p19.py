@@ -200,7 +200,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in headers]]
     
     for _, r in df_ptl_clean.iterrows():
-        # 如果欄位名稱包含新格式就取用，否則與舊欄位保持安全對接相容
         code = r.get('無線電') if '無線電' in df_ptl_clean.columns else r.get('通訊代號', '')
         分工 = r.get('任務分工') if '任務分工' in df_ptl_clean.columns else r.get('路檢地點與責任區', '')
         
@@ -215,7 +214,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_ptl.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_ptl)
 
-    # 5. 第二階段 (完全無修改)
+    # 5. 第二階段
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     df_cp_clean = clean_df(df_cp)
@@ -316,7 +315,6 @@ else:
     if not df_ptl.empty:
         ed_ptl = df_ptl.copy()
         if "組別" in ed_ptl.columns: ed_ptl = ed_ptl.drop(columns=["組別"])
-        # 若雲端留有舊名稱則更名對接
         if "路檢地點與責任區" in ed_ptl.columns:
             ed_ptl = ed_ptl.rename(columns={"路檢地點與責任區": "任務分工"})
         if "攜行裝備" in ed_ptl.columns:
@@ -350,7 +348,6 @@ with tab1:
     res_ptl = st.data_editor(ed_ptl, num_rows="dynamic", use_container_width=True, key="ptl_ed").dropna(how='all').fillna("").reset_index(drop=True)
     if not res_ptl.empty: 
         res_ptl['編組'] = [f"第{i+1}組" for i in range(len(res_ptl))]
-        # 確保順序美觀，讓編組與無線電代號排在前頭
         cols = ['編組', '無線電', '單位', '服勤人員', '任務分工']
         res_ptl = res_ptl[[c for c in cols if c in res_ptl.columns]]
 with tab2:
