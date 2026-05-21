@@ -68,8 +68,16 @@ DEFAULT_PTL = pd.DataFrame([
     {"組別": "第2路檢組", "無線電代號": "隆安82", "派遣單位": "交通分隊", "職別": "警員",   "姓名": "吳沛軒", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢目標": "北龍路319號隊面前\n（攔檢龍潭市區往中興路方向）\n20時20分分局一樓集合出發臨檢"},
 ])
 
+CP_COLS = ["組別", "無線電代號", "派遣單位", "職別", "姓名", "任務分工", "臨檢目標場所"]
+
 DEFAULT_CHECKPOINT = pd.DataFrame([
-    {"組別": "第1臨檢組", "單位": "聖亭所\n龍潭所", "服勤人員": "所長 鄭榮捷\n所長 孫祥愷", "任務分工": "帶班 製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館\nB. 台灣麻將協會"},
+    # 第1臨檢組
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "所長",   "姓名": "鄭榮捷", "任務分工": "帶班",                     "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",               "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",   "姓名": "劉柏延", "任務分工": "盤查兼蒐證",                 "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",   "姓名": "黃丞穎", "任務分工": "大門警戒兼蒐證",               "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "偵查佐", "姓名": "賴享宏", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "張峻銨", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）\nB. 台灣麻將協會（中豐路558之1號）\nC. 丹陽泰養生館（中豐路281號）"},
 ])
 
 # --- 2. 輔助函數 ---
@@ -264,21 +272,54 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_ptl.setStyle(TableStyle(ts_ptl))
     story.append(t_ptl)
 
-    # 5. 第二階段（擴大臨檢）
+    # 5. 第二階段（擴大臨檢）— 多列展開，合併組別/無線電/臨檢目標，任務分工不合併
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     if df_cp is not None and not df_cp.empty:
-        data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["組別", "單位", "服勤人員", "任務分工", "臨檢場所"]]]
-        for _, r in df_cp.iterrows():
+        cp_headers = ["組別", "無線電\n代號", "派遣\n單位", "職別", "姓名", "任務分工", "臨檢目標場所"]
+        col_w_cp   = [page_width*0.10, page_width*0.10, page_width*0.09, page_width*0.07,
+                      page_width*0.08, page_width*0.20, page_width*0.36]
+
+        data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in cp_headers]]
+
+        rows_cp = df_cp.reset_index(drop=True)
+        cp_merge_groups = []
+        cp_prev_group = None
+        cp_grp_start = 1
+
+        for i, r in rows_cp.iterrows():
+            grp = safe_str(r.get('組別', ''))
+            tbl_row = i + 1
+            if grp != cp_prev_group:
+                if cp_prev_group is not None:
+                    cp_merge_groups.append((cp_grp_start, tbl_row - 1))
+                cp_prev_group = grp
+                cp_grp_start = tbl_row
             data_cp.append([
-                Paragraph(clean(r.get('組別','')), style_cell),
-                Paragraph(clean(r.get('單位','')), style_cell),
-                Paragraph(clean(r.get('服勤人員','')), style_cell_left),
-                Paragraph(clean(r.get('任務分工','')), style_cell_left),
-                Paragraph(clean(r.get('臨檢目標場所','')), style_cell_left)
+                Paragraph(clean(r.get('組別','')),        style_cell),
+                Paragraph(clean(r.get('無線電代號','')),   style_cell),
+                Paragraph(clean(r.get('派遣單位','')),     style_cell),
+                Paragraph(clean(r.get('職別','')),         style_cell),
+                Paragraph(clean(r.get('姓名','')),         style_cell),
+                Paragraph(clean(r.get('任務分工','')),     style_cell_left),
+                Paragraph(clean(r.get('臨檢目標場所','')), style_cell_left),
             ])
-        t_cp = Table(data_cp, colWidths=[page_width*0.11, page_width*0.12, page_width*0.24, page_width*0.24, page_width*0.29])
-        t_cp.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+        if cp_prev_group is not None:
+            cp_merge_groups.append((cp_grp_start, len(rows_cp)))
+
+        t_cp = Table(data_cp, colWidths=col_w_cp)
+        ts_cp = [
+            ('FONTNAME',   (0,0), (-1,-1), font),
+            ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
+            ('BACKGROUND', (0,0), (-1, 0), colors.HexColor('#e6e6e6')),
+            ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+        ]
+        # 合併：組別(col0)、無線電代號(col1)、臨檢目標場所(col6)；任務分工(col5)不合併
+        for (rs, re) in cp_merge_groups:
+            if re > rs:
+                for col in [0, 1, 6]:
+                    ts_cp.append(('SPAN', (col, rs), (col, re)))
+        t_cp.setStyle(TableStyle(ts_cp))
         story.append(t_cp)
 
     # 6. 宣導
@@ -390,7 +431,10 @@ else:
         ed_ptl = df_ptl[PTL_COLS]
     else:
         ed_ptl = DEFAULT_PTL.copy()
-    ed_cp = df_cp if (df_cp is not None and not df_cp.empty) else DEFAULT_CHECKPOINT.copy()
+    if df_cp is not None and not df_cp.empty and all(c in df_cp.columns for c in CP_COLS):
+        ed_cp = df_cp[CP_COLS]
+    else:
+        ed_cp = DEFAULT_CHECKPOINT.copy()
 
 st.title("🚓 專案勤務規劃系統")
 p_time = st.text_input("勤務時間", t)
@@ -438,11 +482,22 @@ with tab1:
 
 with tab2:
     res_cp_focus = st.text_area("【伍】勤務重點", p_cp_focus, height=80, key="cp_focus_input")
+    st.caption("💡 同一臨檢組的多名人員請填寫相同的「組別」與「無線電代號」，PDF 輸出時該欄會自動合併。")
     res_cp = st.data_editor(
-        ed_cp, num_rows="dynamic", use_container_width=True, key="cp_ed"
+        ed_cp,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="cp_ed",
+        column_config={
+            "組別":      st.column_config.TextColumn("組別",      width="small"),
+            "無線電代號": st.column_config.TextColumn("無線電代號", width="small"),
+            "派遣單位":   st.column_config.TextColumn("派遣單位",   width="small"),
+            "職別":      st.column_config.TextColumn("職別",      width="small"),
+            "姓名":      st.column_config.TextColumn("姓名",      width="small"),
+            "任務分工":   st.column_config.TextColumn("任務分工",   width="medium"),
+            "臨檢目標場所": st.column_config.TextColumn("臨檢目標場所", width="large"),
+        }
     ).dropna(how='all').fillna("").reset_index(drop=True)
-    if not res_cp.empty and "組別" not in res_cp.columns:
-        res_cp.insert(0, "組別", [f"第{i+1}臨檢組" for i in range(len(res_cp))])
 
 st.markdown("---")
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats, res_ptl_focus, res_cp_focus)
