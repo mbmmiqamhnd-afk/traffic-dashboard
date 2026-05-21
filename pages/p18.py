@@ -20,9 +20,9 @@ except ImportError:
     def show_sidebar():
         pass 
 
-def send_report_email_auto(file_data, filename, year, month):
+def send_report_email_auto(files, year, month):
     """
-    自動從 st.secrets 讀取設定並寄信給自己
+    自動從 st.secrets 讀取設定，並支援夾帶多個附件寄信給自己
     """
     try:
         if "email" not in st.secrets:
@@ -36,14 +36,16 @@ def send_report_email_auto(file_data, filename, year, month):
         msg['To'] = sender
         msg['Subject'] = f"【系統備份】龍潭分局 {year}年{month}月 獎勵金點數統計表暨印領清冊"
         
-        body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的獎勵金點數彙整與印領清冊產出。\n附件為最新產出的統計報表，請查收。"
+        body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共兩份 Excel 檔案，請查收。"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
-        part = MIMEBase('application', 'octet-stream')
-        part.set_payload(file_data)
-        encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(filename)}")
-        msg.attach(part)
+        # 處理多個附件
+        for file_data, filename in files:
+            part = MIMEBase('application', 'octet-stream')
+            part.set_payload(file_data)
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(filename)}")
+            msg.attach(part)
         
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
@@ -56,7 +58,7 @@ def p18_page():
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統將自動裁剪格式、計算獎金、產出清冊並發送郵件。")
+    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統將自動裁剪格式、計算獎金、產出雙報表並一起發送郵件附件。")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -83,14 +85,12 @@ def p18_page():
         {"單位": "交通組", "職別": "交通業務承辦人", "姓名": "盧冠仁", "金額": 298, "蓋章": ""},
         {"單位": "交通組", "職別": "交通業務承辦人", "姓名": "李峯甫", "金額": 298, "蓋章": ""},
         {"單位": "會計室", "職別": "主計", "姓名": "郭貞彣", "金額": 77, "蓋章": ""}
-        # 你可以在此處繼續補充其他固定班底
     ]
     df_coworkers_default = pd.DataFrame(default_coworkers_data)
 
-    # 顯示互動式資料表
     edited_df_coworkers = st.data_editor(
         df_coworkers_default,
-        num_rows="dynamic", # 允許動態新增/刪除行
+        num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -103,7 +103,7 @@ def p18_page():
             st.error("⚠️ 請確保上方 3 種點數統計資料皆已完成上傳！")
             return
 
-        with st.spinner("正在計算數據、產出印領清冊並發送郵件..."):
+        with st.spinner("正在計算數據、產出報表並將雙檔案發送至信箱..."):
             try:
                 # --- A. 點數數據預處理 ---
                 df_acc_raw = pd.read_excel(file_acc, header=4)
@@ -133,8 +133,6 @@ def p18_page():
                 final_sheets = {}
                 summary_rows = []
                 g_cite, g_acc, g_traf, g_all = 0, 0, 0, 0
-                
-                # 用於印領清冊的「直接執行人員」清單
                 direct_exec_list = []
 
                 for sheet_name, df in dfs_raw.items():
@@ -186,7 +184,7 @@ def p18_page():
                             
                             s_cite += cp; s_acc += ap; s_traf += tp
                             
-                            # 蒐集印領清冊資料 (直接執行人員)
+                            # 蒐集印領清冊資料
                             if total_pts > 0:
                                 reward = int(np.round(total_pts * point_value))
                                 direct_exec_list.append({
@@ -224,13 +222,10 @@ def p18_page():
                 df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
                 direct_total_money = df_direct_exec['實領獎金'].sum()
                 
-                # 處理共同作業人員 (來自前端 Data Editor)
+                # 處理共同作業人員
                 df_coworkers_final = edited_df_coworkers.copy()
-                # 濾除所有欄位都是空值的行，避免匯出多餘空白行
                 df_coworkers_final.dropna(how='all', inplace=True)
-                # 自動產生序號，插在最前面
                 df_coworkers_final.insert(0, '序號', range(1, len(df_coworkers_final) + 1))
-                
                 coworkers_total_money = pd.to_numeric(df_coworkers_final['金額'], errors='coerce').fillna(0).sum()
 
                 # 產生支領一覽表
@@ -243,7 +238,6 @@ def p18_page():
                 df_payroll_summary = pd.DataFrame(summary_data)
 
                 # --- E. 封裝成兩個 Excel 檔案 ---
-                # 1. 點數統計表
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
@@ -253,7 +247,6 @@ def p18_page():
                 pts_excel_data = pts_output.getvalue()
                 pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
 
-                # 2. 印領清冊
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                     df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
@@ -263,11 +256,15 @@ def p18_page():
                 payroll_excel_data = payroll_output.getvalue()
                 payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
 
-                # --- F. 自動發送郵件 ---
-                ok, err = send_report_email_auto(payroll_excel_data, payroll_filename, ext_year, ext_month)
+                # --- F. 自動發送郵件 (同時夾帶兩份附件) ---
+                files_to_attach = [
+                    (pts_excel_data, pts_filename),
+                    (payroll_excel_data, payroll_filename)
+                ]
+                ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success(f"✅ 雙報表產出成功！印領清冊已自動備份至您的信箱。")
+                    st.success(f"✅ 雙報表產出成功！點數統計表與印領清冊已共同夾帶備份至您的信箱。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
