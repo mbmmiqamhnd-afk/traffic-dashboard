@@ -417,6 +417,7 @@ st.subheader("勤務執行編組 (兩階段)")
 tab1, tab2 = st.tabs(["肆、【第一階段】定點路檢", "伍、【第二階段】擴大臨檢"])
 
 with tab1:
+    res_ptl_focus = st.text_area("【肆】勤務重點", p_ptl_focus, height=80, key="ptl_focus_input")
     st.caption("💡 同一路檢組的多名人員請填寫相同的「組別」與「無線電代號」，PDF 輸出時該欄會自動合併。")
     res_ptl = st.data_editor(
         ed_ptl,
@@ -424,18 +425,19 @@ with tab1:
         use_container_width=True,
         key="ptl_ed",
         column_config={
-            "組別":     st.column_config.TextColumn("組別",     width="small"),
+            "組別":      st.column_config.TextColumn("組別",      width="small"),
             "無線電代號": st.column_config.TextColumn("無線電代號", width="small"),
-            "派遣單位":  st.column_config.TextColumn("派遣單位",  width="small"),
-            "職別":     st.column_config.TextColumn("職別",     width="small"),
-            "姓名":     st.column_config.TextColumn("姓名",     width="small"),
-            "任務分工":  st.column_config.TextColumn("任務分工",  width="medium"),
-            "攜行裝備":  st.column_config.TextColumn("攜行裝備",  width="medium"),
-            "臨檢目標":  st.column_config.TextColumn("臨檢目標",  width="large"),
+            "派遣單位":   st.column_config.TextColumn("派遣單位",   width="small"),
+            "職別":      st.column_config.TextColumn("職別",      width="small"),
+            "姓名":      st.column_config.TextColumn("姓名",      width="small"),
+            "任務分工":   st.column_config.TextColumn("任務分工",   width="medium"),
+            "攜行裝備":   st.column_config.TextColumn("攜行裝備",   width="medium"),
+            "臨檢目標":   st.column_config.TextColumn("臨檢目標",   width="large"),
         }
     ).dropna(how='all').fillna("").reset_index(drop=True)
 
 with tab2:
+    res_cp_focus = st.text_area("【伍】勤務重點", p_cp_focus, height=80, key="cp_focus_input")
     res_cp = st.data_editor(
         ed_cp, num_rows="dynamic", use_container_width=True, key="cp_ed"
     ).dropna(how='all').fillna("").reset_index(drop=True)
@@ -443,12 +445,12 @@ with tab2:
         res_cp.insert(0, "組別", [f"第{i+1}臨檢組" for i in range(len(res_cp))])
 
 st.markdown("---")
-pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats, p_ptl_focus, p_cp_focus)
+pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats, res_ptl_focus, res_cp_focus)
 st.download_button("📝 下載規劃表", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
-    if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats, p_ptl_focus, p_cp_focus):
-        ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats, p_ptl_focus, p_cp_focus)
+    if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats, res_ptl_focus, res_cp_focus):
+        ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats, res_ptl_focus, res_cp_focus)
         if ok: st.success("✅ 已同步並寄出！")
         else:  st.warning(f"⚠️ 同步成功但郵件失敗: {mail_err}")
     else:
