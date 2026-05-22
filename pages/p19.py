@@ -33,6 +33,7 @@ from reportlab.lib.units import mm
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
+# 欄位常數定義
 PTL_COLS = ["組別", "無線電代號", "派遣單位", "職別", "姓名", "任務分工", "攜行裝備", "臨檢目標"]
 CP_COLS  = ["組別", "無線電代號", "派遣單位", "職別", "姓名", "任務分工", "臨檢目標場所"]
 
@@ -65,7 +66,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "勤務指導", "通訊代號": "隆安 685號", "任務目標": "指導各路檢點、攔檢點，指導各檢查組勤務執行及狀況處置", "負責人員": "教官 郭文義", "共同執行人員": "勤務指導人員"},
     {"項目": "聯絡組", "通訊代號": "隆安", "任務目標": "擔任通訊聯絡、指揮管制事宜", "負責人員": "勤指主任 蔡奇青", "共同執行人員": "執勤官 江文頌、值勤員 曾嘉偉 (18-20時)"},
     {"項目": "偵訊組", "通訊代號": "隆安 10號", "任務目標": "負責按捺指紋、照相及移送案件相關事宜", "負責人員": "偵查佐 賴享宏、警員 張峻銨", "共同執行人員": "在隊待命受理移送案件"},
-    {"項目": "作業組", "通訊代號": "", "任務目標": "負責勤務後勤、勤教場地布置相關事宜", "負責人員": "警員 葉俊宏、警務員 曾盛鉉", "共同執行人員": "巡官 吳國棟、巡佐 許裕、警員 呂紹臺"}
+    {"項目": "作業組", "通訊代號": "", "任務目標": "負責勤務後勤、勤教場地布置相關事宜", "負責人員": "警員 葉俊宏、警務員 曾盛鉉", "共同執行人員": "巡官 吳國棟、巡佐 許榮裕、警員 呂紹臺"}
 ])
 
 DEFAULT_PTL = pd.DataFrame([
@@ -99,21 +100,22 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "駿宏",   "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"}
 ])
 
-# --- 2. 輔助函數 ---
+# ★ 關鍵修正：移至頂層的基礎輔助函數，防範 Python 執行 NameError 斷流
+def _get_font():
+    fname = "kaiu"
+    if fname in pdfmetrics.getRegisteredFontNames(): return fname
+    font_paths = ["./kaiu.ttf", "kaiu.ttf", "/usr/share/fonts/truetype/custom/kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]
+    for p in font_paths:
+        if os.path.exists(p):
+            pdfmetrics.registerFont(TTFont(fname, p))
+            return fname
+    return "Helvetica"
+
 def safe_str(val):
     if pd.isna(val) or val is None or str(val).strip().lower() == "nan": return ""
     return str(val)
 
-@st.cache_resource
-def get_client():
-    if "gcp_service_account" not in st.secrets: return None
-    try:
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-        return gspread.authorize(creds)
-    except: return None
-
+# 純二合一專屬後台資料載入
 @st.cache_data(ttl=10)
 def load_data():
     try:
@@ -145,6 +147,7 @@ def load_data():
         return df_set, df_cmd, df_ptl, df_cp, None
     except Exception as e: return None, None, None, None, str(e)
 
+# 純二合一專屬後台資料同步儲存
 def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     try:
         client = get_client()
@@ -189,9 +192,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     style_cell_left= ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=17, alignment=0, wordWrap='CJK')
     style_cp_target = ParagraphStyle('CpTarget', fontName=font, fontSize=10, leading=14, alignment=0, wordWrap='CJK')
 
-    # ★ 核心修正點：利用 leftIndent 與 firstLineIndent 實現凸排。
-    # leftIndent=22pt 表示整段往右推 22 點空間；firstLineIndent=-22pt 表示唯獨第一行編號（如「一、」）往左突回 22 點。
-    # 這樣第二行以後的文字首字，就會齊平第一行的第一個內文字！
+    # 法令宣導懸掛凸排樣式
     style_briefing_hang = ParagraphStyle(
         'BriefingHang', 
         fontName=font, 
@@ -356,7 +357,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
     for line in str(briefing).split('\n'):
         if line.strip(): 
-            # ★ 修正點：使用套用了 leftIndent 懸掛凸排的全新樣式渲染法令文字
             story.append(Paragraph(clean(line), style_briefing_hang))
 
     def add_footer(canvas, doc):
