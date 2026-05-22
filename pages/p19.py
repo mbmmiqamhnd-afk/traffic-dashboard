@@ -52,7 +52,7 @@ DEFAULT_PROJ    = "0325「雷霆除暴專案」暨自辦擴大臨檢與取締酒
 DEFAULT_BRIEF   = (
     "一、 工作重點任務提示：同仁執行盤查、臨檢及路檢勤務過程中，應強化敵情觀念，提高危機意識，"
     "並特別注意人犯戒護，落實「人犯戒護安全、案件程序安全、執法者及民眾安全」之「三安」要求。\n"
-    "二、 行動要領：除法律另有規定外，警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所、"
+    "二、 行動要領：除法律另有規定外，警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所 Regel、"
     "交通工具或公共場所為之。\n"
     "三、 盤查規範：確實依司法院大法官釋字第535號解釋及「警察職權行使法」對於盤查人、車以及實施臨檢之相關規定，"
     "應注意遵守比例原則及考量民眾觀感，不得逾越必要程度。\n"
@@ -109,7 +109,7 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "副所長", "姓名": "林榮裕", "任務分工": "帶班",                           "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "警員",   "姓名": "陳琦",   "任務分工": "製作臨檢紀錄",                    "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "巡佐",   "姓名": "蕭漢祥", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
-    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "忠興所",   "職別": "警員",   "姓名": "江益德", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
+    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "警員",   "姓名": "江益德", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "交通分隊", "職別": "小隊長", "姓名": "林振生", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "交通分隊", "職別": "警員",   "姓名": "吳沛軒", "任務分工": "大門警(車)戒兼蒐證",              "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "偵查隊",   "職別": "警員",   "姓名": "駿宏",   "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
@@ -272,6 +272,9 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
 # ─────────────── PDF 生成：規劃表 ───────────────
 
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
+    # ★ 內聚導入 re 模組，避免 Streamlit 執行環境中因區域範疇污染引發 UnboundLocalError 
+    import re
+    
     font = _get_font()
     buf  = io.BytesIO()
     doc  = SimpleDocTemplate(
@@ -357,12 +360,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
 
     story.append(Paragraph("<b>二、 地點統計：</b>", style_sub_section))
     
-    # 1. 動態計算不重複的「路檢點」總數 (依據不重複組別計算)
+    # 1. 動態計算不重複的「路檢點」總數
     ptl_count = 0
     if not df_ptl.empty and "組別" in df_ptl.columns:
         ptl_count = df_ptl["組別"].dropna().loc[lambda x: x.astype(str).str.strip() != ""].nunique()
         
-    # 2. 精準動態計算不重複的「臨檢場所」總數 (利用Regex精確擷取 A. B. C. 分類標題，排除多行地址造成的重複計算)
+    # 2. 精準動態計算不重複的「臨檢場所」總數 (利用 Regex 擷取 A. B. C. 項目標題)
     cp_count = 0
     if df_cp is not None and not df_cp.empty and "臨檢目標場所" in df_cp.columns:
         raw_targets = df_cp["臨檢目標場所"].dropna().unique()
@@ -370,16 +373,15 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         for target in raw_targets:
             target_clean = str(target).strip()
             if target_clean and target_clean.lower() != "nan":
-                # 抓取如 A. B. C. 或 1. 2. 3. 開頭的治安要點標題列
+                # 使用 MULTILINE 模式精確掃描 A. B. C. 型態開頭的各個獨立場所
                 matches = re.findall(r'(?:^[A-Z0-9熱點]\s*[\.\、\-\：]\s*|[A-Z0-9熱點]\s*[\.\、\-\：]\s*)([^\n]+)', target_clean, re.MULTILINE)
                 for item in matches:
-                    # 擷取名稱前15個字做唯一去重，防止因細微備註不同重複計算
                     place_title = item.strip().split("（")[0].split("(")[0][:15]
                     if place_title:
                         found_places.add(place_title)
-        cp_count = len(found_places) if found_places else 8 # 確保防呆基底為 8 處
+        cp_count = len(found_places) if found_places else 8 
 
-    # 建立橫向統計表，標題與數據完美對齊
+    # 建立橫向數量統計表
     data_locs = [
         [Paragraph("<b>路檢點</b>", style_cell), Paragraph("<b>臨檢場所</b>", style_cell)],
         [Paragraph(f"{ptl_count} 處", style_cell), Paragraph(f"{cp_count} 處", style_cell)]
@@ -388,7 +390,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_locs.setStyle(TableStyle([
         ("FONTNAME",   (0,0),(-1,-1), font),
         ("GRID",       (0,0),(-1,-1), 0.5, colors.black),
-        ("BACKGROUND", (0,0),( -1, 0), colors.HexColor("#f2f2f2")),
+        ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#f2f2f2")),
         ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
         ("BOTTOMPADDING", (0,0),(-1,-1), 6),
         ("TOPPADDING", (0,0),(-1,-1), 6),
