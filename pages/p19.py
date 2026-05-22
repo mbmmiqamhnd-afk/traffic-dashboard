@@ -69,11 +69,11 @@ DEFAULT_CP_FOCUS = (
 )
 
 DEFAULT_CMD = pd.DataFrame([
-    {"項目": "指揮官",     "通訊代號": "隆安 1 號",  "任務目標": "重點機動督導",                                                  "負責人員": "分局長 施宇峰",     "共同執行人員": "秘書 陳鵬翔、警員 張庭溱"},
-    {"項目": "副指揮官",   "通訊代號": "隆安 2 號",  "任務目標": "重點機動督導",                                                  "負責人員": "副分局長 何憶雯",   "共同執行人員": "警務佐 曾威仁"},
-    {"項目": "副指揮官",   "通訊代號": "隆安 3 號",  "任務目標": "重點機動督導",                                                  "負責人員": "副分局長 蔡志明",   "共同執行人員": "警員 陳明祥"},
-    {"項目": "上級督導官", "通訊代號": "建興",        "任務目標": "重點機動督導",                                                  "負責人員": "督察 孫三陽",       "共同執行人員": ""},
-    {"項目": "偵查隊",     "通訊代號": "隆安 11號",  "任務目標": "在隊督辦刑案",                                                  "負責人員": "隊長 柯志賢",       "共同執行人員": "偵查員 施明輝"},
+    {"項目": "指揮官",     "通訊代號": "隆安 1 號",  "任務目標": "重點機動督導",                                                   "負責人員": "分局長 施宇峰",     "共同執行人員": "秘書 陳鵬翔、警員 張庭溱"},
+    {"項目": "副指揮官",   "通訊代號": "隆安 2 號",  "任務目標": "重點機動督導",                                                   "負責人員": "副分局長 何憶雯",   "共同執行人員": "警務佐 曾威仁"},
+    {"項目": "副指揮官",   "通訊代號": "隆安 3 號",  "任務目標": "重點機動督導",                                                   "負責人員": "副分局長 蔡志明",   "共同執行人員": "警員 陳明祥"},
+    {"項目": "上級督導官", "通訊代號": "建興",        "任務目標": "重點機動督導",                                                   "負責人員": "督察 孫三陽",       "共同執行人員": ""},
+    {"項目": "偵查隊",     "通訊代號": "隆安 11號",  "任務目標": "在隊督辦刑案",                                                   "負責人員": "隊長 柯志賢",       "共同執行人員": "偵查員 施明輝"},
     {"項目": "行政組",     "通訊代號": "隆安 5 號",  "任務目標": "督導第一階段臨檢組",                                            "負責人員": "組長 周金柱",       "共同執行人員": "巡官 蕭凱文、警務佐 曾威仁、警員 謝明展"},
     {"項目": "督察組",     "通訊代號": "隆安 6 號",  "任務目標": "機動督導第二階段時檢組",                                        "負責人員": "組長 黃長旗",       "共同執行人員": "警務員 陳冠彰"},
     {"項目": "保安民防組", "通訊代號": "隆安 9 號",  "任務目標": "機動督導第一階段臨檢組；機動督導第二階段路檢組",              "負責人員": "組長 林良鍾",       "共同執行人員": "巡官 古家杰"},
@@ -142,7 +142,7 @@ def safe_str(val):
 def clean_df_to_list(df):
     return df.astype(str).values.tolist()
 
-# ─────────────── ★ get_client（補上原缺失函數）───────────────
+# ─────────────── ★ get_client ───────────────
 
 @st.cache_resource
 def get_client():
@@ -265,7 +265,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         return True
 
     except Exception as e:
-        # ★ 顯示完整錯誤，方便排查
         st.error(f"❌ 同步失敗原因：{e}")
         st.code(traceback.format_exc())
         return False
@@ -283,12 +282,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     page_width = A4[0] - 20*mm
     story = []
 
-    style_title     = ParagraphStyle("Title",     fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=8,    wordWrap="CJK")
-    style_section   = ParagraphStyle("Section",   fontName=font, fontSize=14, leading=20, alignment=0, spaceAfter=2*mm, spaceBefore=4*mm, wordWrap="CJK")
-    style_text      = ParagraphStyle("Text",      fontName=font, fontSize=14, leading=20, alignment=0, wordWrap="CJK")
-    style_cell      = ParagraphStyle("Cell",      fontName=font, fontSize=12, leading=17, alignment=1, wordWrap="CJK")
-    style_cell_left = ParagraphStyle("CellLeft",  fontName=font, fontSize=12, leading=17, alignment=0, wordWrap="CJK")
-    style_cp_target = ParagraphStyle("CpTarget",  fontName=font, fontSize=10, leading=14, alignment=0, wordWrap="CJK")
+    style_title      = ParagraphStyle("Title",      fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=8,    wordWrap="CJK")
+    style_section    = ParagraphStyle("Section",    fontName=font, fontSize=14, leading=20, alignment=0, spaceAfter=2*mm, spaceBefore=4*mm, wordWrap="CJK")
+    style_text       = ParagraphStyle("Text",       fontName=font, fontSize=14, leading=20, alignment=0, wordWrap="CJK")
+    style_cell       = ParagraphStyle("Cell",       fontName=font, fontSize=12, leading=17, alignment=1, wordWrap="CJK")
+    style_cell_left  = ParagraphStyle("CellLeft",   fontName=font, fontSize=12, leading=17, alignment=0, wordWrap="CJK")
+    style_cp_target  = ParagraphStyle("CpTarget",   fontName=font, fontSize=10, leading=14, alignment=0, wordWrap="CJK")
     style_briefing_hang = ParagraphStyle(
         "BriefingHang",
         fontName=font, fontSize=14, leading=22, alignment=0,
@@ -329,8 +328,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     ]))
     story.append(t_basic)
 
-    # 貳、統計表
+    # ★ 貳、統計表 (全新重構：分列為 一、警力統計 與 二、地點統計)
     story.append(Paragraph("<b>貳、 警力統計及地點統計</b>", style_section))
+    
+    style_sub_section = ParagraphStyle("SubSection", fontName=font, fontSize=12, leading=18, alignment=0, spaceAfter=1*mm, spaceBefore=2*mm, wordWrap="CJK")
+    story.append(Paragraph("<b>一、 警力統計：</b>", style_sub_section))
+    
     data_stats = [
         [Paragraph(h, style_cell) for h in ["督導組","攔臨組","偵訊組","小計","民力","總計"]],
         [
@@ -342,7 +345,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             Paragraph(str(stats["total"]), style_cell),
         ],
     ]
-    t_stats = Table(data_stats, colWidths=[page_width*0.16]*6)
+    t_stats = Table(data_stats, colWidths=[page_width*0.166]*6)
     t_stats.setStyle(TableStyle([
         ("FONTNAME",   (0,0),(-1,-1), font),
         ("GRID",       (0,0),(-1,-1), 0.5, colors.black),
@@ -350,6 +353,52 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
     ]))
     story.append(t_stats)
+    story.append(Spacer(1, 2*mm))
+
+    story.append(Paragraph("<b>二、 地點統計：</b>", style_sub_section))
+    
+    # 動態解析路檢點名稱 (取第一行核心文字，進行不重複篩選)
+    ptl_locs = []
+    if not df_ptl.empty and "臨檢目標" in df_ptl.columns:
+        raw_locs = df_ptl["臨檢目標"].dropna().unique()
+        for loc in raw_locs:
+            loc_clean = str(loc).strip()
+            if loc_clean and loc_clean.lower() != "nan":
+                first_line = loc_clean.split("\n")[0]
+                if first_line not in ptl_locs:
+                    ptl_locs.append(first_line)
+                    
+    # 動態解析擴大臨檢場所名稱 (將單一儲存格內的多行 A. B. C. 自動拆分出來去重)
+    cp_locs = []
+    if df_cp is not None and not df_cp.empty and "臨檢目標場所" in df_cp.columns:
+        raw_targets = df_cp["臨檢目標場所"].dropna().unique()
+        for target in raw_targets:
+            target_clean = str(target).strip()
+            if target_clean and target_clean.lower() != "nan":
+                lines = target_clean.split("\n")
+                for line in lines:
+                    line = line.strip()
+                    if line and line not in cp_locs:
+                        cp_locs.append(line)
+
+    ptl_loc_para = "<br/>".join([f"．{l}" for l in ptl_locs]) if ptl_locs else "無設定定點路檢"
+    cp_loc_para = "<br/>".join([f"．{l}" for l in cp_locs]) if cp_locs else "無設定臨檢場所"
+
+    data_locs = [
+        [Paragraph("<b>路檢點欄 (第一階段)</b>", style_cell), Paragraph("<b>臨檢場所欄 (第二階段)</b>", style_cell)],
+        [Paragraph(ptl_loc_para, style_cell_left), Paragraph(cp_loc_para, style_cell_left)]
+    ]
+    t_locs = Table(data_locs, colWidths=[page_width*0.5, page_width*0.5])
+    t_locs.setStyle(TableStyle([
+        ("FONTNAME",   (0,0),(-1,-1), font),
+        ("GRID",       (0,0),(-1,-1), 0.5, colors.black),
+        ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#f2f2f2")),
+        ("VALIGN",     (0,0),(-1,-1), "TOP"),
+        ("BOTTOMPADDING", (0,1),(-1,-1), 6),
+        ("TOPPADDING", (0,1),(-1,-1), 6),
+    ]))
+    story.append(t_locs)
+    story.append(Spacer(1, 2*mm))
 
     # 參、指揮組
     story.append(Paragraph("<b>參、 督導及其他任務編組表</b>", style_section))
@@ -705,6 +754,7 @@ with tab2:
 # ── 操作按鈕
 st.markdown("---")
 
+# 下載按鈕觸發時，將編輯器中最新的真實動態 DataFrame（res_ptl, res_cp）直接傳入 PDF 生成器
 pdf_plan = generate_pdf_from_data(
     u, p_name, p_time, DEFAULT_BRIEF,
     res_cmd, res_ptl, res_cp,
@@ -736,4 +786,3 @@ if st.button("💾 同步雲端並發送郵件", use_container_width=True):
             st.success("✅ 資料已同步至 Google Sheets，郵件發送成功！")
         else:
             st.warning(f"⚠️ 同步成功，但郵件發送失敗：{mail_err}")
-    # save_data 失敗時已在函數內顯示 st.error，此處不再重複
