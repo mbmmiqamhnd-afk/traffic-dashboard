@@ -14,7 +14,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import smtplib, io, os, traceback
+import smtplib, io, os, traceback, re
 import urllib.parse as _ul
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -105,7 +105,7 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",   "姓名": "林宸緯", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",   "姓名": "黃丞穎", "任務分工": "大門警(車)戒兼蒐證",              "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "偵查佐", "姓名": "賴享宏", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "張峻銨", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "張峻銨", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（重豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "副所長", "姓名": "林榮裕", "任務分工": "帶班",                           "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "警員",   "姓名": "陳琦",   "任務分工": "製作臨檢紀錄",                    "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "巡佐",   "姓名": "蕭漢祥", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
@@ -308,7 +308,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     time_str_only = clean(time_str.split(" ")[1] if " " in time_str else "18時至22時")
     briefing_time_loc_str = f"{stats['b_time']}<br/>{stats['b_loc']}"
 
-    # ★ 調整欄寬權重：實施日期(0.19)、指揮官(0.19)分配足夠寬度，可從容容納 8 個中文字不折行
     data_basic = [
         [Paragraph(f"<b>{h}</b>", style_cell) for h in ["實施日期", "勤務時間", "指揮官", "勤務編組", "勤前教育時間地點"]],
         [
@@ -365,7 +364,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     if not df_ptl.empty and "組別" in df_ptl.columns:
         ptl_count = df_ptl["組別"].dropna().loc[lambda x: x.astype(str).str.strip() != ""].nunique()
         
-    # 2. 精準動態計算不重複的「臨檢場所」總數 (利用 Regex 擷取標題)
+    # 2. 精準動態計算不重複的「臨檢場所」總數
     cp_count = 0
     if df_cp is not None and not df_cp.empty and "臨檢目標場所" in df_cp.columns:
         raw_targets = df_cp["臨檢目標場所"].dropna().unique()
@@ -678,7 +677,25 @@ if err:
 
 # ── 基本資訊
 p_time = st.text_input("勤務時間", t)
-p_name = st.text_input("專案名稱", p)
+
+# ★【關鍵修改】網頁前端隱藏 4 碼數字：利用 Regex 把最前方的「4碼數字與引號」(例如 0325「) 濾掉後顯示
+display_project_name = re.sub(r'^\d{4}「?', '', p)
+p_input = st.text_input("專案名稱", display_project_name)
+
+# ★【關鍵修改】背景自動組裝 4 碼數字：不論使用者在網頁怎麼改，背景自動抓取勤務時間或當前日期的 4 碼，重新拼裝成符合規範的官方名稱
+date_match = re.search(r'(\d+)年(\d+)月(\d+)日', p_time)
+if date_match:
+    # 如果勤務時間欄位內有日期，直接擷取該日期的月日轉成 4 碼（例如 3月25日 -> 0325）
+    auto_4_digit = f"{int(date_match.group(2)):02d}{int(date_match.group(3)):02d}"
+else:
+    # 沒對齊到日期就用當天時間當防呆
+    auto_4_digit = datetime.now().strftime("%m%d")
+
+# 確保補回引號與 4 碼（如果使用者自己沒打「」就自動補上，防呆健全）
+if not p_input.startswith("「"):
+    p_name = f"{auto_4_digit}「{p_input}"
+else:
+    p_name = f"{auto_4_digit}{p_input}"
 
 # ── 統計
 st.subheader("貳、 警力統計及地點統計")
@@ -751,6 +768,7 @@ with tab2:
 # ── 操作按鈕
 st.markdown("---")
 
+# 下載與儲存時，全部直接傳入已經在背景完美重組好的官方完整專案名稱 `p_name`
 pdf_plan = generate_pdf_from_data(
     u, p_name, p_time, DEFAULT_BRIEF,
     res_cmd, res_ptl, res_cp,
