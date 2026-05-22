@@ -14,7 +14,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import smtplib, io, os, traceback, re
+import smtplib, io, os, traceback
 import urllib.parse as _ul
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -52,7 +52,7 @@ DEFAULT_PROJ    = "0325「雷霆除暴專案」暨自辦擴大臨檢與取締酒
 DEFAULT_BRIEF   = (
     "一、 工作重點任務提示：同仁執行盤查、臨檢及路檢勤務過程中，應強化敵情觀念，提高危機意識，"
     "並特別注意人犯戒護，落實「人犯戒護安全、案件程序安全、執法者及民眾安全」之「三安」要求。\n"
-    "二、 行動要領：除法律另有規定外，警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所 Regel、"
+    "二、 行動要領：除法律另有規定外，警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所、"
     "交通工具或公共場所為之。\n"
     "三、 盤查規範：確實依司法院大法官釋字第535號解釋及「警察職權行使法」對於盤查人、車以及實施臨檢之相關規定，"
     "應注意遵守比例原則及考量民眾觀感，不得逾越必要程度。\n"
@@ -272,7 +272,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
 # ─────────────── PDF 生成：規劃表 ───────────────
 
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
-    # ★ 內聚導入 re 模組，避免 Streamlit 執行環境中因區域範疇污染引發 UnboundLocalError 
     import re
     
     font = _get_font()
@@ -309,6 +308,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     time_str_only = clean(time_str.split(" ")[1] if " " in time_str else "18時至22時")
     briefing_time_loc_str = f"{stats['b_time']}<br/>{stats['b_loc']}"
 
+    # ★ 調整欄寬權重：實施日期(0.19)、指揮官(0.19)分配足夠寬度，可從容容納 8 個中文字不折行
     data_basic = [
         [Paragraph(f"<b>{h}</b>", style_cell) for h in ["實施日期", "勤務時間", "指揮官", "勤務編組", "勤前教育時間地點"]],
         [
@@ -320,8 +320,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         ],
     ]
     t_basic = Table(data_basic, colWidths=[
-        page_width*0.15, page_width*0.18, page_width*0.15,
-        page_width*0.15, page_width*0.37,
+        page_width*0.19, page_width*0.15, page_width*0.19,
+        page_width*0.13, page_width*0.34,
     ])
     t_basic.setStyle(TableStyle([
         ("FONTNAME",   (0,0),(-1,-1), font),
@@ -331,7 +331,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     ]))
     story.append(t_basic)
 
-    # ★ 貳、統計表 (分列為 一、警力統計 與 二、地點處所數量統計)
+    # 貳、統計表 (分列為 一、警力統計 與 二、地點處所數量統計)
     story.append(Paragraph("<b>貳、 警力統計及地點統計</b>", style_section))
     
     style_sub_section = ParagraphStyle("SubSection", fontName=font, fontSize=12, leading=18, alignment=0, spaceAfter=1*mm, spaceBefore=2*mm, wordWrap="CJK")
@@ -365,7 +365,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     if not df_ptl.empty and "組別" in df_ptl.columns:
         ptl_count = df_ptl["組別"].dropna().loc[lambda x: x.astype(str).str.strip() != ""].nunique()
         
-    # 2. 精準動態計算不重複的「臨檢場所」總數 (利用 Regex 擷取 A. B. C. 項目標題)
+    # 2. 精準動態計算不重複的「臨檢場所」總數 (利用 Regex 擷取標題)
     cp_count = 0
     if df_cp is not None and not df_cp.empty and "臨檢目標場所" in df_cp.columns:
         raw_targets = df_cp["臨檢目標場所"].dropna().unique()
@@ -373,7 +373,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         for target in raw_targets:
             target_clean = str(target).strip()
             if target_clean and target_clean.lower() != "nan":
-                # 使用 MULTILINE 模式精確掃描 A. B. C. 型態開頭的各個獨立場所
                 matches = re.findall(r'(?:^[A-Z0-9熱點]\s*[\.\、\-\：]\s*|[A-Z0-9熱點]\s*[\.\、\-\：]\s*)([^\n]+)', target_clean, re.MULTILINE)
                 for item in matches:
                     place_title = item.strip().split("（")[0].split("(")[0][:15]
@@ -390,7 +389,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_locs.setStyle(TableStyle([
         ("FONTNAME",   (0,0),(-1,-1), font),
         ("GRID",       (0,0),(-1,-1), 0.5, colors.black),
-        ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#f2f2f2")),
+        ("BACKGROUND", (0,0),( -1, 0), colors.HexColor("#f2f2f2")),
         ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
         ("BOTTOMPADDING", (0,0),(-1,-1), 6),
         ("TOPPADDING", (0,0),(-1,-1), 6),
