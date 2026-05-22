@@ -33,7 +33,6 @@ from reportlab.lib.units import mm
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
-# ★ 嚴格對齊核心欄位定義
 PTL_COLS = ["組別", "無線電代號", "派遣單位", "職別", "姓名", "任務分工", "攜行裝備", "臨檢目標"]
 CP_COLS  = ["組別", "無線電代號", "派遣單位", "職別", "姓名", "任務分工", "臨檢目標場所"]
 
@@ -76,9 +75,7 @@ DEFAULT_PTL = pd.DataFrame([
     {"組別": "第2路檢組", "無線電代號": "隆安82", "派遣單位": "交通分隊", "職別": "警員",   "姓名": "吳沛軒", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢目標": "北龍路319號隊面前\n（攔檢龍潭市區往中興路方向）\n20時20分分局一樓集合出發臨檢"}
 ])
 
-# ★ 嚴格校正對齊 CP_COLS 欄位格式（7欄），解決同步 NameError 斷流問題
 DEFAULT_CHECKPOINT = pd.DataFrame([
-    # 第1臨檢組 (隆安51)
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "所長",   "姓名": "鄭榮捷", "任務分工": "帶班",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",               "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",   "姓名": "劉柏延", "任務分工": "盤查兼蒐證",                 "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
@@ -128,7 +125,7 @@ def load_data():
         if client is None: return None, None, None, None, "權限不足或未設定 Secrets"
         sh = client.open_by_key(SHEET_ID)
         
-        # 智慧雙軌制：優先嘗試讀取「二合一_設定」，失敗再抓「三合一_設定」
+        # 智慧路由第一步：先盲讀「二合一_設定」確認當前啟用的專案體系
         set_ws_name = "三合一_設定"
         try:
             ws_set = sh.worksheet("二合一_設定")
@@ -142,6 +139,7 @@ def load_data():
             except:
                 df_set = None
 
+        # 智慧路由第二步：全面分流 4 張獨立工作表
         cmd_ws_name = "三合一_指揮組"
         ptl_ws_name = "三合一_巡邏組"
         cp_ws_name  = "三合一_擴大臨檢組"
@@ -155,6 +153,7 @@ def load_data():
                 ptl_ws_name = "二合一_路檢組"
                 cp_ws_name  = "二合一_擴大臨檢組"
 
+        # 依照精準路由名稱正式載入
         try:
             ws_set_final = sh.worksheet(set_ws_name)
             df_set = pd.DataFrame(ws_set_final.get_all_records()).fillna("")
@@ -178,12 +177,13 @@ def load_data():
         return df_set, df_cmd, df_ptl, df_cp, None
     except Exception as e: return None, None, None, None, str(e)
 
+# ★ 修正點：save_data 內部的工作表批次更新列表完全綁定動態分流路由名稱
 def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     try:
         client = get_client()
         sh = client.open_by_key(SHEET_ID)
 
-        # ★ 完美對齊二合一分頁路由：設定、指揮、路檢、臨檢 4 個分頁全部導流
+        # 依據畫面的 project 專案名稱，判定本次要儲存的目的地路由
         if "二合一" in project:
             set_ws_name = "二合一_設定"
             cmd_ws_name = "二合一_指揮組"
@@ -195,6 +195,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
             ptl_ws_name = "三合一_巡邏組"
             cp_ws_name  = "三合一_擴大臨檢組"
 
+        # 儲存「設定頁」
         try: ws_set = sh.worksheet(set_ws_name)
         except: ws_set = sh.add_worksheet(title=set_ws_name, rows="50", cols="5")
         ws_set.clear()
@@ -206,6 +207,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
             ["loc_3", str(stats['loc_3'])], ["ptl_focus", ptl_f], ["cp_focus", cp_f]
         ])
 
+        # ★ 關鍵修正：將對應的 DataFrame 動態映射寫入各自獨立的分頁，不再串錯、混用
         for ws_name, df in [(cmd_ws_name, df_cmd), (ptl_ws_name, df_ptl), (cp_ws_name, df_cp)]:
             if df is None: continue
             try: ws = sh.worksheet(ws_name)
@@ -462,7 +464,7 @@ default_stats = {
 }
 
 if err or df_set is None:
-    u, t, p, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF
+    u, t, p = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ
     ed_cmd, ed_ptl, ed_cp = DEFAULT_CMD.copy(), DEFAULT_PTL.copy(), DEFAULT_CHECKPOINT.copy()
     p_ptl_focus, p_cp_focus = DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS
 else:
@@ -470,7 +472,6 @@ else:
     u  = d.get("unit_name", DEFAULT_UNIT)
     t  = d.get("plan_full_time", DEFAULT_TIME)
     p  = d.get("project_name", DEFAULT_PROJ)
-    b  = d.get("briefing_info", DEFAULT_BRIEF)
     p_ptl_focus = d.get("ptl_focus", DEFAULT_PTL_FOCUS)
     p_cp_focus  = d.get("cp_focus",  DEFAULT_CP_FOCUS)
     default_stats.update({
@@ -557,13 +558,13 @@ with tab2:
     ).dropna(how='all').fillna("").reset_index(drop=True)
 
 st.markdown("---")
-pdf_plan = generate_pdf_from_data(u, p_name, p_time, b, res_cmd, res_ptl, res_cp, current_stats, res_ptl_focus, res_cp_focus)
+pdf_plan = generate_pdf_from_data(u, p_name, p_time, DEFAULT_BRIEF, res_cmd, res_ptl, res_cp, current_stats, res_ptl_focus, res_cp_focus)
 st.download_button("📝 下載規劃表", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
-    if save_data(u, p_time, p_name, b, res_cmd, res_ptl, res_cp, current_stats, res_ptl_focus, res_cp_focus):
-        ok, mail_err = send_report_email(u, p_name, p_time, b, res_cmd, res_ptl, res_cp, current_stats, res_ptl_focus, res_cp_focus)
-        if ok: st.success("✅ 已同步並寄出！")
+    if save_data(u, p_time, p_name, DEFAULT_BRIEF, res_cmd, res_ptl, res_cp, current_stats, res_ptl_focus, res_cp_focus):
+        ok, mail_err = send_report_email(u, p_name, p_time, DEFAULT_BRIEF, res_cmd, res_ptl, res_cp, current_stats, res_ptl_focus, res_cp_focus)
+        if ok: st.success("✅ 已獨立同步至正確分頁並寄出！")
         else:  st.warning(f"⚠️ 同步成功但郵件失敗: {mail_err}")
     else:
         st.error("❌ 同步失敗，請確認 Google Sheets 權限設定。")
