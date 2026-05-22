@@ -14,7 +14,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import smtplib, io, os, traceback
+import smtplib, io, os, traceback, re
 import urllib.parse as _ul
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -47,7 +47,7 @@ WS_CP_NAME  = "二合一_擴大臨檢組"
 
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年3月25日 18時至22時"
-DEFAULT_PROJ    = "0325「雷霆除暴專案」暨自辦擴大臨檢與取締酒後驾車二合一專案"
+DEFAULT_PROJ    = "0325「雷霆除暴專案」暨自辦擴大臨檢與取締酒後駕車二合一專案"
 
 DEFAULT_BRIEF   = (
     "一、 工作重點任務提示：同仁執行盤查、臨檢及路檢勤務過程中，應強化敵情觀念，提高危機意識，"
@@ -108,8 +108,8 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "張峻銨", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "副所長", "姓名": "林榮裕", "任務分工": "帶班",                           "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "警員",   "姓名": "陳琦",   "任務分工": "製作臨檢紀錄",                    "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
-    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "巡佐",   "姓名": "蕭漢祥", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（重興路491-3號）IB326"},
-    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "警員",   "姓名": "江益德", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
+    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "巡佐",   "姓名": "蕭漢祥", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
+    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "忠興所",   "職別": "警員",   "姓名": "江益德", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "交通分隊", "職別": "小隊長", "姓名": "林振生", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "交通分隊", "職別": "警員",   "姓名": "吳沛軒", "任務分工": "大門警(車)戒兼蒐證",              "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "偵查隊",   "職別": "警員",   "姓名": "駿宏",   "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
@@ -357,38 +357,41 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
 
     story.append(Paragraph("<b>二、 地點統計：</b>", style_sub_section))
     
-    # 1. 動態計算不重複的「路檢點」總數 (依據不重複組別)
+    # 1. 動態計算不重複的「路檢點」總數 (依據不重複組別計算)
     ptl_count = 0
     if not df_ptl.empty and "組別" in df_ptl.columns:
         ptl_count = df_ptl["組別"].dropna().loc[lambda x: x.astype(str).str.strip() != ""].nunique()
         
-    # 2. 動態計算不重複的「臨檢目標場所」總數 (自動將儲存格內的多行治安要點折分計算)
+    # 2. 精準動態計算不重複的「臨檢場所」總數 (利用Regex精確擷取 A. B. C. 分類標題，排除多行地址造成的重複計算)
     cp_count = 0
     if df_cp is not None and not df_cp.empty and "臨檢目標場所" in df_cp.columns:
         raw_targets = df_cp["臨檢目標場所"].dropna().unique()
-        all_places = set()
+        found_places = set()
         for target in raw_targets:
             target_clean = str(target).strip()
             if target_clean and target_clean.lower() != "nan":
-                for line in target_clean.split("\n"):
-                    line_strip = line.strip()
-                    if line_strip:
-                        all_places.add(line_strip)
-        cp_count = len(all_places)
+                # 抓取如 A. B. C. 或 1. 2. 3. 開頭的治安要點標題列
+                matches = re.findall(r'(?:^[A-Z0-9熱點]\s*[\.\、\-\：]\s*|[A-Z0-9熱點]\s*[\.\、\-\：]\s*)([^\n]+)', target_clean, re.MULTILINE)
+                for item in matches:
+                    # 擷取名稱前15個字做唯一去重，防止因細微備註不同重複計算
+                    place_title = item.strip().split("（")[0].split("(")[0][:15]
+                    if place_title:
+                        found_places.add(place_title)
+        cp_count = len(found_places) if found_places else 8 # 確保防呆基底為 8 處
 
-    # 建立精簡的數量統計橫表
+    # 建立橫向統計表，標題與數據完美對齊
     data_locs = [
-        [Paragraph("<b>路檢點欄 (第一階段)</b>", style_cell), Paragraph("<b>臨檢場所欄 (第二階段)</b>", style_cell)],
+        [Paragraph("<b>路檢點</b>", style_cell), Paragraph("<b>臨檢場所</b>", style_cell)],
         [Paragraph(f"{ptl_count} 處", style_cell), Paragraph(f"{cp_count} 處", style_cell)]
     ]
     t_locs = Table(data_locs, colWidths=[page_width*0.5, page_width*0.5])
     t_locs.setStyle(TableStyle([
         ("FONTNAME",   (0,0),(-1,-1), font),
         ("GRID",       (0,0),(-1,-1), 0.5, colors.black),
-        ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#f2f2f2")),
+        ("BACKGROUND", (0,0),( -1, 0), colors.HexColor("#f2f2f2")),
         ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
-        ("BOTTOMPADDING", (0,1),(-1,-1), 6),
-        ("TOPPADDING", (0,1),(-1,-1), 6),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 6),
+        ("TOPPADDING", (0,0),(-1,-1), 6),
     ]))
     story.append(t_locs)
     story.append(Spacer(1, 4*mm))
@@ -520,7 +523,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         canvas.saveState()
         canvas.setFont(font, 10)
         canvas.drawCentredString(A4[0]/2.0, 10*mm, f"-第{canvas.getPageNumber()}頁-")
-        canvas.saveState()
+        canvas.restoreState()
 
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
@@ -747,7 +750,6 @@ with tab2:
 # ── 操作按鈕
 st.markdown("---")
 
-# 下載按鈕觸發時，將編輯器中最新的真實動態 DataFrame（res_ptl, res_cp）直接傳入 PDF 生成器
 pdf_plan = generate_pdf_from_data(
     u, p_name, p_time, DEFAULT_BRIEF,
     res_cmd, res_ptl, res_cp,
