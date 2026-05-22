@@ -100,16 +100,6 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
 ])
 
 # --- 2. 輔助函數 ---
-def _get_font():
-    fname = "kaiu"
-    if fname in pdfmetrics.getRegisteredFontNames(): return fname
-    font_paths = ["./kaiu.ttf", "kaiu.ttf", "/usr/share/fonts/truetype/custom/kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]
-    for p in font_paths:
-        if os.path.exists(p):
-            pdfmetrics.registerFont(TTFont(fname, p))
-            return fname
-    return "Helvetica"
-
 def safe_str(val):
     if pd.isna(val) or val is None or str(val).strip().lower() == "nan": return ""
     return str(val)
@@ -199,6 +189,21 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     style_cell_left= ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=17, alignment=0, wordWrap='CJK')
     style_cp_target = ParagraphStyle('CpTarget', fontName=font, fontSize=10, leading=14, alignment=0, wordWrap='CJK')
 
+    # ★ 核心修正點：利用 leftIndent 與 firstLineIndent 實現凸排。
+    # leftIndent=22pt 表示整段往右推 22 點空間；firstLineIndent=-22pt 表示唯獨第一行編號（如「一、」）往左突回 22 點。
+    # 這樣第二行以後的文字首字，就會齊平第一行的第一個內文字！
+    style_briefing_hang = ParagraphStyle(
+        'BriefingHang', 
+        fontName=font, 
+        fontSize=14, 
+        leading=22, 
+        alignment=0, 
+        leftIndent=22, 
+        firstLineIndent=-22, 
+        spaceAfter=4,
+        wordWrap='CJK'
+    )
+
     def clean(t): return safe_str(t).replace("\n", "<br/>")
 
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", style_title))
@@ -247,7 +252,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text))
 
     ptl_headers = ["組別", "無線電\n代號", "派遣\n單位", "職別", "姓名", "任務分工", "攜行裝備", "臨檢目標"]
-    # ★ 調整點一：擴大第一階段「職別(0.10)」、「姓名(0.11)」欄寬，給予容納至少三個字的充足空間
     col_w_ptl   = [page_width*0.10, page_width*0.09, page_width*0.09, page_width*0.10,
                    page_width*0.11, page_width*0.12, page_width*0.15, page_width*0.24]
 
@@ -301,7 +305,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     if df_cp is not None and not df_cp.empty:
         cp_headers = ["組別", "無線電\n代號", "派遣\n單位", "職別", "姓名", "任務分工", "臨檢目標場所"]
-        # ★ 調整點二：擴大第二階段「職別(0.10)」、「姓名(0.11)」欄寬，保證能裝下三個中文字
         col_w_cp   = [page_width*0.10, page_width*0.09, page_width*0.09, page_width*0.10,
                       page_width*0.11, page_width*0.16, page_width*0.35]
 
@@ -352,7 +355,9 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     # 6. 宣導
     story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
     for line in str(briefing).split('\n'):
-        if line.strip(): story.append(Paragraph(clean(line), style_text))
+        if line.strip(): 
+            # ★ 修正點：使用套用了 leftIndent 懸掛凸排的全新樣式渲染法令文字
+            story.append(Paragraph(clean(line), style_briefing_hang))
 
     def add_footer(canvas, doc):
         canvas.saveState()
