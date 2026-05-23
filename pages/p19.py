@@ -99,7 +99,7 @@ DEFAULT_PTL = pd.DataFrame([
 
 DEFAULT_CHECKPOINT = pd.DataFrame([
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "所長",   "姓名": "鄭榮捷", "任務分工": "帶班",                           "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",                    "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（死中正路506號）IA318"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",                    "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（慢中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "劉柏延", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",   "姓名": "林宸緯", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",   "姓名": "黃丞穎", "任務分工": "大門警(車)戒兼蒐證",              "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
@@ -687,10 +687,11 @@ if not p_input.startswith("「"):
 else:
     p_name = f"{auto_4_digit}{p_input}"
 
-# ── 指揮組及編輯器區塊（往前移以供警力統計即時重算）
+# ── 指揮組編輯器區塊
 st.subheader("參、 指揮編組與重點宣導")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
 
+# ── 勤務兩階段編輯器區塊
 st.subheader("勤務執行編組 (兩階段)")
 tab1, tab2 = st.tabs(["肆、【第一階段】定點路檢", "伍、【第二階段】場所臨檢"])
 
@@ -733,28 +734,28 @@ with tab2:
         },
     ).dropna(how="all").fillna("").reset_index(drop=True)
 
-# ── 動態計算警力統計數據 (修正：全面採取可重複人數累加) ──
+# ── 動態計算警力統計數據 (全面採取可重複人次累加，已修復向量字串操作屬性 Bug) ──
 # 1. 督導組：計算指揮組負責人員欄位有填寫名字的總列數
 if not res_cmd.empty and "負責人員" in res_cmd.columns:
     cmd_series = res_cmd["負責人員"].astype(str).str.strip()
-    calc_cmd_count = int(cmd_series[lambda x: (x != "") & (x.lower() != "nan")].count())
+    calc_cmd_count = int(cmd_series[(cmd_series != "") & (cmd_series.str.lower() != "nan")].count())
 else:
     calc_cmd_count = 0
 
-# 2. 攔臨組：第一階段與第二階段姓名欄位有填寫名字的總列數加總 (可重複人次)
+# 2. 攔臨組：第一階段與第二階段姓名欄位有填寫名字的總列數加總 (計入重複人次)
 ptl_count_raw = 0
 if not res_ptl.empty and "姓名" in res_ptl.columns:
     ptl_series = res_ptl["姓名"].astype(str).str.strip()
-    ptl_count_raw = ptl_series[lambda x: (x != "") & (x.lower() != "nan")].count()
+    ptl_count_raw = ptl_series[(ptl_series != "") & (ptl_series.str.lower() != "nan")].count()
 
 cp_count_raw = 0
 if not res_cp.empty and "姓名" in res_cp.columns:
     cp_series = res_cp["姓名"].astype(str).str.strip()
-    cp_count_raw = cp_series[lambda x: (x != "") & (x.lower() != "nan")].count()
+    cp_count_raw = cp_series[(cp_series != "") & (cp_series.str.lower() != "nan")].count()
 
 calc_ptl_count = int(ptl_count_raw + cp_count_raw)
 
-# ── 貳、警力統計與地點統計顯示區塊 (無小計欄位) ──
+# ── 貳、警力統計與地點統計顯示區塊 (已移除小計欄位) ──
 st.subheader("貳、 警力統計及地點統計")
 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 
