@@ -99,7 +99,7 @@ DEFAULT_PTL = pd.DataFrame([
 
 DEFAULT_CHECKPOINT = pd.DataFrame([
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "所長",   "姓名": "鄭榮捷", "任務分工": "帶班",                           "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",                    "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（慢中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",                    "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（死中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "劉柏延", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",   "姓名": "林宸緯", "任務分工": "盤查兼蒐證",                      "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",   "姓名": "黃丞穎", "任務分工": "大門警(車)戒兼蒐證",              "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
@@ -271,7 +271,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
 
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     import re
-    
+
     font = _get_font()
     buf  = io.BytesIO()
     doc  = SimpleDocTemplate(
@@ -328,12 +328,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     ]))
     story.append(t_basic)
 
-    # 貳、統計表 (已移除「小計」欄位)
+    # 貳、統計表
     story.append(Paragraph("<b>貳、 警力統計及地點統計</b>", style_section))
-    
+
     style_sub_section = ParagraphStyle("SubSection", fontName=font, fontSize=12, leading=18, alignment=0, spaceAfter=1*mm, spaceBefore=2*mm, wordWrap="CJK")
     story.append(Paragraph("<b>一、 警力統計：</b>", style_sub_section))
-    
+
     data_stats = [
         [Paragraph(h, style_cell) for h in ["督導組", "攔臨組", "偵訊組", "民力", "總計"]],
         [
@@ -355,11 +355,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Spacer(1, 2*mm))
 
     story.append(Paragraph("<b>二、 地點統計：</b>", style_sub_section))
-    
+
     ptl_count = 0
     if not df_ptl.empty and "組別" in df_ptl.columns:
         ptl_count = df_ptl["組別"].dropna().loc[lambda x: x.astype(str).str.strip() != ""].nunique()
-        
+
     cp_count = 0
     if df_cp is not None and not df_cp.empty and "臨檢目標場所" in df_cp.columns:
         raw_targets = df_cp["臨檢目標場所"].dropna().unique()
@@ -372,7 +372,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
                     place_title = item.strip().split("（")[0].split("(")[0][:15]
                     if place_title:
                         found_places.add(place_title)
-        cp_count = len(found_places) if found_places else 8 
+        cp_count = len(found_places) if found_places else 8
 
     data_locs = [
         [Paragraph("<b>路檢點</b>", style_cell), Paragraph("<b>臨檢場所</b>", style_cell)],
@@ -401,7 +401,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             Paragraph(clean(r.get("負責人員","")),    style_cell),
             Paragraph(clean(r.get("共同執行人員","")),style_cell),
         ])
-        
+
     t_cmd = Table(data_cmd, colWidths=[
         page_width*0.13, page_width*0.14, page_width*0.26,
         page_width*0.25, page_width*0.22,
@@ -687,11 +687,10 @@ if not p_input.startswith("「"):
 else:
     p_name = f"{auto_4_digit}{p_input}"
 
-# ── 指揮組編輯器區塊
+# ── 指揮組及編輯器區塊（往前移以供警力統計即時重算）
 st.subheader("參、 指揮編組與重點宣導")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
 
-# ── 勤務兩階段編輯器區塊
 st.subheader("勤務執行編組 (兩階段)")
 tab1, tab2 = st.tabs(["肆、【第一階段】定點路檢", "伍、【第二階段】場所臨檢"])
 
@@ -734,28 +733,30 @@ with tab2:
         },
     ).dropna(how="all").fillna("").reset_index(drop=True)
 
-# ── 動態計算警力統計數據 (全面採取可重複人次累加，已修復向量字串操作屬性 Bug) ──
-# 1. 督導組：計算指揮組負責人員欄位有填寫名字的總列數
+# ── 動態計算警力統計數據（修正：使用向量化 str 方法，不用 lambda）──
+
+# 1. 督導組：指揮組「負責人員」欄有填寫的列數
 if not res_cmd.empty and "負責人員" in res_cmd.columns:
     cmd_series = res_cmd["負責人員"].astype(str).str.strip()
     calc_cmd_count = int(cmd_series[(cmd_series != "") & (cmd_series.str.lower() != "nan")].count())
 else:
     calc_cmd_count = 0
 
-# 2. 攔臨組：第一階段與第二階段姓名欄位有填寫名字的總列數加總 (計入重複人次)
+# 2. 攔臨組：第一階段「姓名」有填寫的列數
 ptl_count_raw = 0
 if not res_ptl.empty and "姓名" in res_ptl.columns:
     ptl_series = res_ptl["姓名"].astype(str).str.strip()
-    ptl_count_raw = ptl_series[(ptl_series != "") & (ptl_series.str.lower() != "nan")].count()
+    ptl_count_raw = int(ptl_series[(ptl_series != "") & (ptl_series.str.lower() != "nan")].count())
 
+# 3. 攔臨組：第二階段「姓名」有填寫的列數
 cp_count_raw = 0
 if not res_cp.empty and "姓名" in res_cp.columns:
     cp_series = res_cp["姓名"].astype(str).str.strip()
-    cp_count_raw = cp_series[(cp_series != "") & (cp_series.str.lower() != "nan")].count()
+    cp_count_raw = int(cp_series[(cp_series != "") & (cp_series.str.lower() != "nan")].count())
 
-calc_ptl_count = int(ptl_count_raw + cp_count_raw)
+calc_ptl_count = ptl_count_raw + cp_count_raw
 
-# ── 貳、警力統計與地點統計顯示區塊 (已移除小計欄位) ──
+# ── 貳、警力統計與地點統計顯示區塊 ──
 st.subheader("貳、 警力統計及地點統計")
 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 
