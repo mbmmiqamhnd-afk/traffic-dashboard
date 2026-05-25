@@ -12,16 +12,14 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
-import pdfplumber
+from pdf2image import convert_from_bytes
 
-# 嘗試載入 OCR 相關套件
+# --- 導入 Gemini API ---
 try:
-    import pdf2image
-    import pytesseract
-    from PIL import Image
-    HAS_OCR = True
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
 except ImportError:
-    HAS_OCR = False
+    GENAI_AVAILABLE = False
 
 # 自動將上層目錄加入路徑
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -31,6 +29,28 @@ except ImportError:
     def show_sidebar():
         pass 
 
+# ==========================================
+# 1. Gemini API 初始化與設定
+# ==========================================
+model = None
+try:
+    if GENAI_AVAILABLE and "api" in st.secrets and "GOOGLE_API_KEY" in st.secrets["api"]:
+        api_key = st.secrets["api"]["GOOGLE_API_KEY"]
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+except Exception as e:
+    st.error(f"Gemini API 初始化失敗，請檢查 secrets 設定: {e}")
+
+safety_settings = [
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+]
+
+# ==========================================
+# 2. 自動寄信功能
+# ==========================================
 def send_report_email_auto(files, year, month):
     try:
         if "email" not in st.secrets:
@@ -61,11 +81,14 @@ def send_report_email_auto(files, year, month):
     except Exception as e:
         return False, str(e)
 
+# ==========================================
+# 3. 主頁面邏輯
+# ==========================================
 def p18_page():
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統將自動裁剪格式、計算獎金、產出雙報表並一起發送郵件附件。")
+    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統將自動裁剪格式、透過 AI 解析分配表、產出雙報表並一起發送郵件附件。")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -77,66 +100,46 @@ def p18_page():
     
     st.subheader("📝 2. 印領清冊設定")
     
-    file_alloc = st.file_uploader("📥 (選用) 上傳【獎勵金分配表】(PDF) 自動抓取每點金額", type=['pdf'])
+    file_alloc = st.file_uploader("📥 (選用) 上傳【獎勵金分配表】(PDF) AI 自動抓取每點金額", type=['pdf'])
     auto_point_val = 1.905
     
     if file_alloc is not None:
-        try:
-            pdf_bytes = file_alloc.read()
-            pdf_text = ""
-            
-            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-                for page in pdf.pages:
-                    extracted = page.extract_text()
-                    if extracted:
-                        pdf_text += extracted + "\n"
+        if model is None:
+            st.error("Gemini 模型未初始化，無法自動辨識 PDF。")
+        else:
+            try:
+                pdf_bytes = file_alloc.read()
+                
+                with st.spinner("🕵️‍♂️ 正在呼叫 Gemini 視覺引擎解析分配表..."):
+                    # 將 PDF 第一頁轉為圖片
+                    images = convert_from_bytes(pdf_bytes, first_page=1, last_page=1, dpi=200)
                     
-            # 💡 終極防呆：只要內容沒有「分局」、「點數」或「獎金」，這絕對是外星亂碼！
-            is_garbled = not bool(re.search(r'(分局|點數|獎金|桃園|中壢|交整)', pdf_text))
-                    
-            if len(pdf_text.strip()) < 10 or is_garbled:
-                if HAS_OCR:
-                    with st.spinner("🕵️‍♂️ 偵測到 PDF 編碼異常，已過濾亂碼，強制啟動高解析度 OCR 引擎..."):
-                        pdf_text = ""  # 清空外星文
-                        images = pdf2image.convert_from_bytes(pdf_bytes, first_page=1, last_page=1, dpi=300)
-                        if images:
-                            # 嘗試掛載英文與中文引擎，提升數字 (1.375) 的辨識精準度
-                            try:
-                                ocr_text = pytesseract.image_to_string(images[0], lang='chi_tra+eng', config='--psm 6')
-                            except:
-                                ocr_text = pytesseract.image_to_string(images[0], lang='chi_tra')
-                            pdf_text += ocr_text
-                else:
-                    st.warning("⚠️ 偵測到此 PDF 存在編碼問題，但伺服器尚缺乏 OCR 套件。")
-            
-            with st.expander("🔍 點我看系統從 PDF 讀取到的原始文字 (除錯用)"):
-                st.text(pdf_text if pdf_text.strip() else "無文字內容")
-            
-            # 處理全形數字
-            trans_table = str.maketrans('０１２３４５６７８９．，', '0123456789.,')
-            pdf_text_half = pdf_text.translate(trans_table)
-            
-            # 💡 精準尋找：找 0~5 開頭，接著小數點(或誤判逗號)，加上 2~4 位小數的數字
-            # 這樣就能抓到 1.375，並完美避開 108,332 這種執法點數！
-            matches = re.findall(r'(?<!\d)([0-5][\.\,]\d{2,4})(?!\d)', pdf_text_half)
-            
-            if matches:
-                # 將可能誤判的逗號替換為小數點
-                clean_matches = [m.replace(',', '.') for m in matches]
-                # 找出分配表中重複出現最多次的那個小數點數字
-                most_common_val = Counter(clean_matches).most_common(1)[0][0]
-                auto_point_val = float(most_common_val)
-                st.success(f"✅ 系統已成功解析分配表，獲取每點金額為：**{auto_point_val}**")
-            else:
-                fallback_match = re.search(r'(?:每點|點值|單價|發給)[^\d]{0,10}?(\d+\.\d+|\d+)', pdf_text_half)
-                if fallback_match:
-                    auto_point_val = float(fallback_match.group(1))
-                    st.success(f"✅ 系統已自動讀取到每點金額：**{auto_point_val}**")
-                else:
-                    st.warning("⚠️ 無法自動識別 PDF 中的金額格式，請在下方手動輸入。")
-                    
-        except Exception as e:
-            st.error(f"❌ 讀取或辨識 PDF 發生錯誤：{e}")
+                    if images:
+                        # 給 Gemini 的精準 Prompt
+                        prompt = (
+                            "這是一張警察局的獎勵金分配表或公文影像。請幫我從中找出「每點獎金」（或是「點值」、「每點發給多少元」）。\n"
+                            "請『只』回傳阿拉伯數字本身（例如：1.375 或 1.905），絕對不要加入任何其他文字、符號或解釋。\n"
+                            "如果真的完全找不到，請回傳字串 None。"
+                        )
+                        
+                        response = model.generate_content([prompt, images[0]], safety_settings=safety_settings)
+                        raw_text = response.text.strip()
+                        
+                        with st.expander("🔍 點我看 AI 原始回傳結果 (除錯用)"):
+                            st.text(raw_text)
+                        
+                        # 從回傳結果中精準提取小數
+                        match = re.search(r'(\d+\.\d{2,4})', raw_text)
+                        if match:
+                            auto_point_val = float(match.group(1))
+                            st.success(f"✅ 系統已透過 Gemini AI 成功解析分配表，獲取每點金額為：**{auto_point_val}**")
+                        else:
+                            st.warning(f"⚠️ AI 無法辨識出有效的數字格式，回傳內容為：{raw_text}，請在下方手動輸入。")
+                    else:
+                        st.error("❌ PDF 轉換圖片失敗。")
+                        
+            except Exception as e:
+                st.error(f"❌ 解析 PDF 發生錯誤：{e}")
 
     point_value = st.number_input("💵 每點獎金金額", value=auto_point_val, format="%.3f", step=0.001)
 
