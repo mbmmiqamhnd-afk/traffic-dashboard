@@ -79,7 +79,7 @@ DEFAULT_SIGN_POINTS = "巡簽地點：\n1. 中油高原交流道站（龍源路2
 DEFAULT_NOTES = "一、各編組執行前由帶班人員在駐地實施勤前教育。\n二、攔檢、盤查車輛時，應隨時注意自身安全及執勤態度。\n三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。\n四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"
 
 # =========================
-# 字體
+# 字體與 Google Sheets
 # =========================
 @st.cache_resource
 def _get_font():
@@ -95,9 +95,6 @@ def _get_font():
                 pass
     return "Helvetica"
 
-# =========================
-# Google Sheets
-# =========================
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets:
@@ -170,7 +167,7 @@ def save_data(settings_dict, cmd, ptl):
         return False
 
 # =========================
-# PDF 生成（已新增交通快打指揮官列）
+# PDF 生成 - 交通快打指揮官在第2列（跨全部欄位）
 # =========================
 def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, notes):
     font = _get_font()
@@ -193,7 +190,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     story.append(Paragraph(f"勤務時間：{time_str}", s_sub))
     story.append(Spacer(1, 3*mm))
 
-    # 任務編組
+    # 任務編組表
     cmd_clean = cmd_df.dropna(how="all").fillna("")
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", s_th), "", "", ""]]
     data_cmd.append([Paragraph(f"<b>{h}</b>", s_th) for h in CMD_COLS])
@@ -207,7 +204,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     story.append(t_cmd)
     story.append(Spacer(1, 4*mm))
 
-    # 警力佈署 - 新增交通快打指揮官列
+    # 警力佈署表格
     ptl_clean = ptl_df.copy()
     if len(ptl_clean) < 3:
         ptl_clean = DEFAULT_PTL.copy()
@@ -215,18 +212,14 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
         ptl_clean = ptl_clean[ptl_clean["勤務時段"].astype(str).str.strip() != ""].reset_index(drop=True)
 
     data_ptl = [[Paragraph("<b>警 力 佈 署</b>", s_th), "", "", "", ""]]
+
+    # 第2列：交通快打指揮官（跨全部欄位）
+    data_ptl.append([Paragraph(f"<b>交通快打指揮官：{fast_cmd}</b>", s_th), "", "", "", ""])
+
+    # 第3列：欄位標題
     data_ptl.append([Paragraph(f"<b>{h}</b>", s_th) for h in PTL_COLS])
 
-    # 新增交通快打指揮官列
-    data_ptl.append([
-        c("交通快打指揮官"),
-        c(""),
-        c(""),
-        c(fast_cmd if fast_cmd.strip() else " "),
-        c("")
-    ])
-
-    # 一般警力佈署資料
+    # 警力資料
     for _, row in ptl_clean.iterrows():
         data_ptl.append([
             c(row.get("勤務時段", "")),
@@ -236,8 +229,8 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
             c(row.get("任務分工", ""), s_left)
         ])
 
-    # 合併
-    merge_groups = [(2, 3)]  # 合併快打指揮官的第一欄
+    # 合併設定
+    merge_groups = [(1, 2)]  # 交通快打指揮官跨全部欄位
     i = 3
     while i < len(data_ptl):
         j = i + 1
@@ -252,13 +245,15 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
         ("FONTNAME", (0,0), (-1,-1), font),
         ("GRID", (0,0), (-1,-1), 0.5, colors.black),
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("SPAN", (0,0), (-1,0)),
-        ("BACKGROUND", (0,0), (-1,1), colors.HexColor("#e6e6e6")),
+        ("SPAN", (0,0), (-1,0)),           # 總標題
+        ("SPAN", (0,1), (-1,1)),           # 交通快打指揮官跨全部欄位
+        ("BACKGROUND", (0,0), (-1,2), colors.HexColor("#e6e6e6")),
     ]
     for start, end in merge_groups:
-        ts_ptl.append(("SPAN", (0, start), (0, end-1)))
+        if start > 2:  # 只對警力資料做合併
+            ts_ptl.append(("SPAN", (0, start), (0, end-1)))
 
-    t_ptl = Table(data_ptl, colWidths=[W*0.18, W*0.10, W*0.14, W*0.18, W*0.40], repeatRows=2)
+    t_ptl = Table(data_ptl, colWidths=[W*0.18, W*0.10, W*0.14, W*0.18, W*0.40], repeatRows=3)
     t_ptl.setStyle(TableStyle(ts_ptl))
     story.append(t_ptl)
     story.append(Spacer(1, 4*mm))
