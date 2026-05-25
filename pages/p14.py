@@ -44,7 +44,7 @@ WS_MAP = {
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年4月8日20至24時"
 DEFAULT_PROJ    = "全國同步擴大取締酒後駕車與防制危險駕車及噪音車輛專案勤務"
-DEFAULT_BRIEF   = "20時30分於分局二樓會議室召開" 
+DEFAULT_BRIEF   = "20時30分於分局二樓會議室召開"
 DEFAULT_P1_DESC = "第一階段：21時至22時30分，機動巡邏"
 DEFAULT_P2_DESC = "第二階段：22時30分至24時，定點路檢及機動攔檢"
 
@@ -97,75 +97,71 @@ def draw_page_number(canvas, doc):
     canvas.setFont(_get_font(), 10)
     canvas.drawCentredString(105 * mm, 10 * mm, text)
 
-# ★★★ 核心連線修正：完全參照二合一成功運作之邏輯 ★★★
+# --- Google 授權（修正 private_key 換行問題）---
 @st.cache_resource
 def get_client():
     try:
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=SCOPES,
-        )
+        info = dict(st.secrets["gcp_service_account"])
+        # 確保 private_key 的 \n 是真實換行而非字面字串
+        info["private_key"] = info["private_key"].replace("\\n", "\n")
+        creds = Credentials.from_service_account_info(info, scopes=SCOPES)
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"Google 授權失敗：{e}")
         return None
 
-# 快取調回與二合一相近之設定 (或依需求保留 60 秒)
 @st.cache_data(ttl=10)
 def load_data():
     try:
         client = get_client()
         if client is None: return None, None, None, None, "權限不足或未設定密鑰"
         sh = client.open_by_key(SHEET_ID)
-        
+
         try:
             df_set = pd.DataFrame(sh.worksheet(WS_MAP["set"]).get_all_records()).fillna("")
         except:
             df_set = None
-            
+
         try:
             df_cmd = pd.DataFrame(sh.worksheet(WS_MAP["cmd"]).get_all_records()).fillna("")
         except:
             df_cmd = pd.DataFrame()
-            
+
         try:
             df_ptl = pd.DataFrame(sh.worksheet(WS_MAP["ptl"]).get_all_records()).fillna("")
         except:
             df_ptl = pd.DataFrame()
-            
+
         try:
             df_cp = pd.DataFrame(sh.worksheet(WS_MAP["cp"]).get_all_records()).fillna("")
         except:
             df_cp = pd.DataFrame()
-            
+
         return df_set, df_cmd, df_ptl, df_cp, None
-    except Exception as e: 
+    except Exception as e:
         return None, None, None, None, str(e)
 
-# ★★★ 儲存邏輯翻修：參照二合一的動態自動建立工作表與 clear/update 機制 ★★★
 def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc):
     try:
         client = get_client()
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
-        
-        # 1. 設定工作表
+
         try:
             ws_set = sh.worksheet(WS_MAP["set"])
         except Exception:
             ws_set = sh.add_worksheet(title=WS_MAP["set"], rows="50", cols="5")
         ws_set.clear()
         ws_set.update(range_name='A1', values=[
-            ["Key", "Value"], 
-            ["unit_name", unit], 
-            ["plan_full_time", time_str], 
-            ["project_name", project], 
+            ["Key", "Value"],
+            ["unit_name", unit],
+            ["plan_full_time", time_str],
+            ["project_name", project],
             ["briefing_info", briefing],
             ["phase1_desc", p1_desc],
             ["phase2_desc", p2_desc]
         ])
-        
-        # 2. 指揮組工作表
+
         try:
             ws_cmd = sh.worksheet(WS_MAP["cmd"])
         except Exception:
@@ -174,8 +170,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
         clean_cmd = df_cmd.dropna(how="all").fillna("")
         if not clean_cmd.empty:
             ws_cmd.update(range_name='A1', values=[clean_cmd.columns.tolist()] + clean_df_to_list(clean_cmd))
-            
-        # 3. 巡邏組工作表
+
         try:
             ws_ptl = sh.worksheet(WS_MAP["ptl"])
         except Exception:
@@ -184,8 +179,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
         clean_ptl = df_ptl.dropna(how="all").fillna("")
         if not clean_ptl.empty:
             ws_ptl.update(range_name='A1', values=[clean_ptl.columns.tolist()] + clean_df_to_list(clean_ptl))
-            
-        # 4. 路檢組工作表
+
         try:
             ws_cp = sh.worksheet(WS_MAP["cp"])
         except Exception:
@@ -194,7 +188,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
         clean_cp = df_cp.dropna(how="all").fillna("")
         if not clean_cp.empty:
             ws_cp.update(range_name='A1', values=[clean_cp.columns.tolist()] + clean_df_to_list(clean_cp))
-            
+
         st.cache_data.clear()
         return True
     except Exception as e:
@@ -215,47 +209,80 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0, wordWrap='CJK')
     style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm, alignment=TA_LEFT, leftIndent=5*mm, wordWrap='CJK')
     style_table_title = ParagraphStyle('TTitle', fontName=font, fontSize=16, alignment=1, leading=22, wordWrap='CJK')
-    
+
     story.append(Paragraph(f"{unit}執行{project}勤務規劃表", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
-    
+
     def clean_p(t): return safe_str(t).replace("\n", "<br/>").replace("、", "<br/>")
     def clean_text_only(t): return safe_str(t).replace("\n", "<br/>")
-    
+
     df_cmd = clean_df(df_cmd)
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
-        data_cmd.append([Paragraph(f"<b>{clean_text_only(r.get('職稱'))}</b>", style_cell), Paragraph(clean_text_only(r.get('代號')), style_cell), Paragraph(clean_p(r.get('姓名')), style_cell), Paragraph(clean_text_only(r.get('任務')), style_cell_left)])
+        data_cmd.append([
+            Paragraph(f"<b>{clean_text_only(r.get('職稱'))}</b>", style_cell),
+            Paragraph(clean_text_only(r.get('代號')), style_cell),
+            Paragraph(clean_p(r.get('姓名')), style_cell),
+            Paragraph(clean_text_only(r.get('任務')), style_cell_left)
+        ])
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.12, page_width*0.28, page_width*0.45])
-    t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('SPAN',(0,0),(-1,0)),('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+    t1.setStyle(TableStyle([
+        ('FONTNAME',(0,0),(-1,-1),font),
+        ('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('SPAN',(0,0),(-1,0)),
+        ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE')
+    ]))
     story.append(t1)
-    
+
     story.append(Spacer(1, 6*mm))
     story.append(Paragraph("<b>📢 勤前教育：</b>", style_middle_block))
     story.append(Paragraph(f"{clean_text_only(briefing)}", style_middle_block))
     story.append(Spacer(1, 6*mm))
-    
+
     df_ptl = clean_df(df_ptl)
     story.append(Paragraph(f"<b>{p1_desc}</b>", style_middle_block))
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_ptl.iterrows():
-        data_ptl.append([Paragraph(clean_text_only(r.get('編組')), style_cell), Paragraph(clean_text_only(r.get('無線電')), style_cell), Paragraph(clean_p((r.get('單位'))), style_cell), Paragraph(clean_p(r.get('服勤人員')), style_cell), Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)])
+        data_ptl.append([
+            Paragraph(clean_text_only(r.get('編組')), style_cell),
+            Paragraph(clean_text_only(r.get('無線電')), style_cell),
+            Paragraph(clean_p(r.get('單位')), style_cell),
+            Paragraph(clean_p(r.get('服勤人員')), style_cell),
+            Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)
+        ])
     t2 = Table(data_ptl, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
-    t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+    t2.setStyle(TableStyle([
+        ('FONTNAME',(0,0),(-1,-1),font),
+        ('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE')
+    ]))
     story.append(t2)
-    
+
     story.append(Spacer(1, 8*mm))
-    
+
     df_cp = clean_df(df_cp)
     story.append(Paragraph(f"<b>{p2_desc}</b>", style_middle_block))
     data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
     for _, r in df_cp.iterrows():
-        data_cp.append([Paragraph(clean_text_only(r.get('編組')), style_cell), Paragraph(clean_text_only(r.get('無線電')), style_cell), Paragraph(clean_p(r.get('單位')), style_cell), Paragraph(clean_p(r.get('服勤人員')), style_cell), Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)])
+        data_cp.append([
+            Paragraph(clean_text_only(r.get('編組')), style_cell),
+            Paragraph(clean_text_only(r.get('無線電')), style_cell),
+            Paragraph(clean_p(r.get('單位')), style_cell),
+            Paragraph(clean_p(r.get('服勤人員')), style_cell),
+            Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)
+        ])
     t3 = Table(data_cp, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
-    t3.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+    t3.setStyle(TableStyle([
+        ('FONTNAME',(0,0),(-1,-1),font),
+        ('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE')
+    ]))
     story.append(t3)
-    
+
     doc.build(story, onFirstPage=draw_page_number, onLaterPages=draw_page_number)
     return buf.getvalue()
 
@@ -268,31 +295,42 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=8, wordWrap='CJK')
     style_top_info = ParagraphStyle('TopInfo', fontName=font, fontSize=12, leading=18, alignment=0, wordWrap='CJK')
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=24, alignment=1, wordWrap='CJK')
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0, wordWrap='CJK') 
-    
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=24, alignment=0, wordWrap='CJK')
+
     story.append(Paragraph(f"{unit}執行{project}勤務簽到表", style_title))
-    
+
     meeting_range = parse_meeting_time(time_str)
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
     story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
     loc = str(briefing).strip() if "於" not in str(briefing) else str(briefing).strip().split("於")[1]
     story.append(Paragraph(f"地點：{loc}", style_top_info))
     story.append(Spacer(1, 3*mm))
-    
-    table_data = [[Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""],
-                  [Paragraph("副分局長：", style_cell_left), "", "", ""],
-                  [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
-    
+
+    table_data = [
+        [Paragraph("分局長：", style_cell_left), "", Paragraph("上級督導：", style_cell_left), ""],
+        [Paragraph("副分局長：", style_cell_left), "", "", ""],
+        [Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]
+    ]
     rows = [
-        ("交通組", "中興派出所"), 
-        ("督察組", "石門派出所"), 
-        ("勤務指揮中心", "高平派出所"), 
-        ("聖亭派出所", "三和派出所"), 
+        ("交通組", "中興派出所"),
+        ("督察組", "石門派出所"),
+        ("勤務指揮中心", "高平派出所"),
+        ("聖亭派出所", "三和派出所"),
         ("龍潭派出所", "龍潭交通分隊")
     ]
-    for l, r in rows: table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[18*mm, 18*mm, 10*mm] + [26*mm]*len(rows))
-    t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('SPAN', (0,1), (3,1))]))
+    for l, r in rows:
+        table_data.append([Paragraph(l, style_cell), "", Paragraph(r, style_cell), ""])
+    t = Table(
+        table_data,
+        colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3],
+        rowHeights=[18*mm, 18*mm, 10*mm] + [26*mm]*len(rows)
+    )
+    t.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), font),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('SPAN', (0,1), (3,1))
+    ]))
     story.append(t)
     doc.build(story, onFirstPage=draw_page_number, onLaterPages=draw_page_number)
     return buf.getvalue()
@@ -304,22 +342,23 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
         msg["From"], msg["To"] = sender, sender
         msg["Subject"] = f"{unit}執行{project}規劃與簽到表_{datetime.now().strftime('%m%d')}"
         msg.attach(MIMEText("附件為最新 PDF 規劃文件。", "plain", "utf-8"))
-        
+
         plan_filename = f"{unit}執行{project}勤務規劃表.pdf"
         attendance_filename = f"{unit}執行{project}勤務簽到表.pdf"
-        
+
         p1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc)
         part1 = MIMEBase("application", "pdf"); part1.set_payload(p1); encoders.encode_base64(part1)
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(plan_filename)}"); msg.attach(part1)
-        
+
         p2 = generate_attendance_pdf(unit, project, time_str, briefing)
         part2 = MIMEBase("application", "pdf"); part2.set_payload(p2); encoders.encode_base64(part2)
         part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(attendance_filename)}"); msg.attach(part2)
-        
+
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd); server.sendmail(sender, sender, msg.as_string())
         return True, None
-    except Exception as e: return False, str(e)
+    except Exception as e:
+        return False, str(e)
 
 # --- 核心邏輯區 ---
 def auto_assign_radio_code(df):
@@ -388,7 +427,6 @@ if st.sidebar.button("🔄 強制從雲端更新資料"):
 
 st.title("🚓 二階段勤務規劃系統")
 
-# 讀取資料庫
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
 
 if err:
@@ -397,26 +435,24 @@ if err:
     else:
         st.warning(f"⚠️ 無法連線 Google Sheets ({err})，顯示預設或已載入資料。")
 
-# 確保基礎結構
 df_set = df_set if isinstance(df_set, pd.DataFrame) else pd.DataFrame()
 df_cmd = df_cmd if (isinstance(df_cmd, pd.DataFrame) and not df_cmd.empty) else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
 df_ptl = df_ptl if (isinstance(df_ptl, pd.DataFrame) and not df_ptl.empty) else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
-df_cp = df_cp if (isinstance(df_cp, pd.DataFrame) and not df_cp.empty) else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
+df_cp  = df_cp  if (isinstance(df_cp,  pd.DataFrame) and not df_cp.empty)  else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
 
-# 讀取設定檔對應值
 d = dict(zip(df_set.iloc[:, 0].astype(str), df_set.iloc[:, 1].astype(str))) if not df_set.empty else {}
 
-u = d.get("unit_name", DEFAULT_UNIT)
-t = d.get("plan_full_time", DEFAULT_TIME)
-p = d.get("project_name", DEFAULT_PROJ)
-b = d.get("briefing_info", DEFAULT_BRIEF)
-p1_d = d.get("phase1_desc", DEFAULT_P1_DESC)
-p2_d = d.get("phase2_desc", DEFAULT_P2_DESC)
+u    = d.get("unit_name",      DEFAULT_UNIT)
+t    = d.get("plan_full_time", DEFAULT_TIME)
+p    = d.get("project_name",   DEFAULT_PROJ)
+b    = d.get("briefing_info",  DEFAULT_BRIEF)
+p1_d = d.get("phase1_desc",    DEFAULT_P1_DESC)
+p2_d = d.get("phase2_desc",    DEFAULT_P2_DESC)
 
 clean_p_name = re.sub(r"^\d{4}", "", p)
 
 c1, c2 = st.columns(2)
-p_time = c2.text_input("勤務時間", t)
+p_time  = c2.text_input("勤務時間", t)
 p_input = c1.text_input("專案名稱", clean_p_name)
 
 date_code = extract_4_digit_date(p_time)
@@ -429,14 +465,16 @@ phase2_desc = cc2.text_input("第二階段標題說明", p2_d)
 
 st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(df_cmd, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
-b_info = st.text_area("📢 勤前教育", b, height=70)
+b_info  = st.text_area("📢 勤前教育", b, height=70)
 
 st.subheader("2. 勤務編組")
 tab1, tab2 = st.tabs(["📍 第一階段", "🚧 第二階段"])
 
 with tab1:
     st.info(f"當前標題：{phase1_desc}")
-    res_ptl = auto_assign_radio_code(st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")).dropna(how="all").fillna("")
+    res_ptl = auto_assign_radio_code(
+        st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
+    ).dropna(how="all").fillna("")
 
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
@@ -444,14 +482,16 @@ with tab2:
         st.session_state["synced_cp"] = sync_personnel_data(res_ptl, df_cp)
         st.rerun()
     current_cp = st.session_state.get("synced_cp", df_cp)
-    res_cp = auto_assign_radio_code(st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")).dropna(how="all").fillna("")
+    res_cp = auto_assign_radio_code(
+        st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
+    ).dropna(how="all").fillna("")
 
 st.markdown("---")
-pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
+pdf_plan       = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
 
 col_dl1, col_dl2 = st.columns(2)
-col_dl1.download_button("📝 下載規劃表", data=pdf_plan, file_name=f"{u}執行{p_name}勤務規劃表.pdf", use_container_width=True)
+col_dl1.download_button("📝 下載規劃表", data=pdf_plan,       file_name=f"{u}執行{p_name}勤務規劃表.pdf", use_container_width=True)
 col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_name=f"{u}執行{p_name}勤務簽到表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True):
@@ -459,7 +499,7 @@ if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True
         if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc):
             with st.spinner("同步成功，正在寄送郵件…"):
                 ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
-            if ok: 
+            if ok:
                 st.success(f"✅ 同步與發信成功！已在後台為專案自動補上「{date_code}」代碼。")
-            else: 
+            else:
                 st.error(f"❌ 發信失敗: {mail_err}")
