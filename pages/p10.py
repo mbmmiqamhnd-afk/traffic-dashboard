@@ -23,6 +23,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
+import numpy as np
 
 # =========================
 # 基本設定
@@ -315,21 +316,9 @@ if err:
 use_cmd = cmd_df if (cmd_df is not None and not cmd_df.empty) else DEFAULT_CMD.copy()
 use_ptl = ptl_df if (ptl_df is not None and not ptl_df.empty) else DEFAULT_PTL.copy()
 
-# 1. 先將所有字串中的空白字元處理為 NaN
-import numpy as np
-
-# 建立副本以避免影響原始資料
+# 強力清理空白列
 use_ptl = use_ptl.replace(r'^\s*$', np.nan, regex=True)
-
-# 2. 刪除所有欄位都是 NaN (即整列皆空) 的列
-use_ptl = use_ptl.dropna(how='all')
-
-# 3. 重新建立索引
-use_ptl = use_ptl.reset_index(drop=True)
-
-# 4. 如果資料被濾光了，保留至少一行空白以便輸入 (選用，視需求而定)
-if use_ptl.empty:
-    use_ptl = pd.DataFrame(columns=PTL_COLS)
+use_ptl = use_ptl.dropna(how='all').reset_index(drop=True)
 
 st.subheader("基本設定")
 col_a, col_b = st.columns(2)
@@ -341,8 +330,13 @@ st.subheader("1. 任務編組")
 res_cmd = st.data_editor(use_cmd, num_rows="dynamic", use_container_width=True)
 
 st.subheader("2. 警力佈署")
-st.caption("💡 相同勤務時段會自動合併 • 只顯示實際資料")
-res_ptl = st.data_editor(use_ptl, num_rows="fixed", use_container_width=True, height=480)
+st.caption("💡 相同勤務時段會自動合併 • 已移除所有空白列")
+res_ptl = st.data_editor(
+    use_ptl, 
+    num_rows="fixed",           # 徹底禁止自動新增空白行
+    use_container_width=True, 
+    height=420                  # 調整高度更精準
+)
 
 st.subheader("3. 巡簽地點與備註")
 col_c, col_d = st.columns(2)
