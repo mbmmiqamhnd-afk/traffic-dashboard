@@ -29,6 +29,8 @@ Pillow
 
 # --- 影像處理 (解決 OCR 雜訊與部署依賴) ---
 opencv-python-headless
+google-cloud-vision
+
 
 # --- AI API 連接 ---
 google-generativeai
