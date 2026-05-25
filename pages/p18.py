@@ -12,8 +12,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
-
-# 💡 升級：改用處理公文表格與 CID 字型更強大的 pdfplumber
 import pdfplumber
 
 # 嘗試載入 OCR 相關套件
@@ -87,25 +85,26 @@ def p18_page():
             pdf_bytes = file_alloc.read()
             pdf_text = ""
             
-            # 💡 第一階段：改用 pdfplumber 讀取 (能大幅解決公家機關字體亂碼問題)
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
                 for page in pdf.pages:
                     extracted = page.extract_text()
                     if extracted:
                         pdf_text += extracted + "\n"
                     
-            # 判斷是否為掃描檔或無法破解的亂碼 (連一個數字都沒有)
-            is_garbled = not bool(re.search(r'\d', pdf_text))
+            # 💡 終極防呆：只要內容沒有「分局」、「點數」或「獎金」，這絕對是外星亂碼！
+            is_garbled = not bool(re.search(r'(分局|點數|獎金|桃園|中壢|交整)', pdf_text))
                     
-            # 第二階段：若是掃描檔或亂碼，啟用高解析度 OCR
             if len(pdf_text.strip()) < 10 or is_garbled:
                 if HAS_OCR:
-                    with st.spinner("🕵️‍♂️ 偵測到 PDF 掃描圖或編碼異常，強制啟動高解析度 OCR 影像辨識引擎..."):
-                        pdf_text = ""  
-                        # dpi=300 是關鍵，能避免 OCR 把 1.375 辨識失敗
+                    with st.spinner("🕵️‍♂️ 偵測到 PDF 編碼異常，已過濾亂碼，強制啟動高解析度 OCR 引擎..."):
+                        pdf_text = ""  # 清空外星文
                         images = pdf2image.convert_from_bytes(pdf_bytes, first_page=1, last_page=1, dpi=300)
                         if images:
-                            ocr_text = pytesseract.image_to_string(images[0], lang='chi_tra')
+                            # 嘗試掛載英文與中文引擎，提升數字 (1.375) 的辨識精準度
+                            try:
+                                ocr_text = pytesseract.image_to_string(images[0], lang='chi_tra+eng', config='--psm 6')
+                            except:
+                                ocr_text = pytesseract.image_to_string(images[0], lang='chi_tra')
                             pdf_text += ocr_text
                 else:
                     st.warning("⚠️ 偵測到此 PDF 存在編碼問題，但伺服器尚缺乏 OCR 套件。")
@@ -113,17 +112,18 @@ def p18_page():
             with st.expander("🔍 點我看系統從 PDF 讀取到的原始文字 (除錯用)"):
                 st.text(pdf_text if pdf_text.strip() else "無文字內容")
             
-            # 全形轉半形
+            # 處理全形數字
             trans_table = str.maketrans('０１２３４５６７８９．，', '0123456789.,')
             pdf_text_half = pdf_text.translate(trans_table)
             
-            # 💡 尋找所有類似 1.375 或 1,375 的數字 (相容 OCR 的逗號誤判)
-            matches = re.findall(r'\b(\d+[\.\,]\d{2,4})\b', pdf_text_half)
+            # 💡 精準尋找：找 0~5 開頭，接著小數點(或誤判逗號)，加上 2~4 位小數的數字
+            # 這樣就能抓到 1.375，並完美避開 108,332 這種執法點數！
+            matches = re.findall(r'(?<!\d)([0-5][\.\,]\d{2,4})(?!\d)', pdf_text_half)
             
             if matches:
-                # 把可能誤判的逗號校正回小數點
+                # 將可能誤判的逗號替換為小數點
                 clean_matches = [m.replace(',', '.') for m in matches]
-                # 取得在表格中重複出現最多次的那個小數
+                # 找出分配表中重複出現最多次的那個小數點數字
                 most_common_val = Counter(clean_matches).most_common(1)[0][0]
                 auto_point_val = float(most_common_val)
                 st.success(f"✅ 系統已成功解析分配表，獲取每點金額為：**{auto_point_val}**")
