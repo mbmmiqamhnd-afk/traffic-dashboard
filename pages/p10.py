@@ -25,6 +25,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
 import numpy as np
 from datetime import datetime, timedelta
+import re
 
 # =========================
 # 基本設定
