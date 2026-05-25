@@ -7,11 +7,21 @@ import re
 import smtplib
 import numpy as np
 import urllib.parse as _ul
+from collections import Counter
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
-import pypdf  # 👈 已修正：配合您的 requirements.txt 改用 pypdf
+import pypdf
+
+# 嘗試載入 OCR 相關套件
+try:
+    import pdf2image
+    import pytesseract
+    from PIL import Image
+    HAS_OCR = True
+except ImportError:
+    HAS_OCR = False
 
 # 自動將上層目錄加入路徑
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -22,9 +32,6 @@ except ImportError:
         pass 
 
 def send_report_email_auto(files, year, month):
-    """
-    自動從 st.secrets 讀取設定，並支援夾帶多個附件寄信給自己
-    """
     try:
         if "email" not in st.secrets:
             return False, "找不到 st.secrets 中的 email 設定"
@@ -40,7 +47,6 @@ def send_report_email_auto(files, year, month):
         body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共兩份 Excel 檔案，請查收。"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
-        # 處理多個附件
         for file_data, filename in files:
             part = MIMEBase('application', 'octet-stream')
             part.set_payload(file_data)
@@ -63,46 +69,72 @@ def p18_page():
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
-    # 1. 檔案上傳區
     st.subheader("📂 1. 當月原始資料上傳")
     c1, c2 = st.columns(2)
     file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xlsx'])
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
     file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xlsx'], accept_multiple_files=True)
     
-    # 2. 印領清冊參數與名單設定
     st.subheader("📝 2. 印領清冊設定")
     
-    # 上傳 PDF 分配表自動抓取金額
     file_alloc = st.file_uploader("📥 (選用) 上傳【獎勵金分配表】(PDF) 自動抓取每點金額", type=['pdf'])
-    auto_point_val = 1.905  # 預設值
+    auto_point_val = 1.905
     
     if file_alloc is not None:
         try:
-            # 👈 已修正：改為 pypdf.PdfReader
-            reader = pypdf.PdfReader(file_alloc)
+            pdf_bytes = file_alloc.read()
             pdf_text = ""
+            
+            # 第一階段：常規讀取
+            reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
             for page in reader.pages:
                 extracted = page.extract_text()
                 if extracted:
                     pdf_text += extracted
+                    
+            # 第二階段：若是掃描檔則啟用 OCR
+            if len(pdf_text.strip()) < 10:
+                if HAS_OCR:
+                    with st.spinner("🕵️‍♂️ 偵測到掃描檔，正在啟動 OCR 影像辨識引擎，請稍候..."):
+                        images = pdf2image.convert_from_bytes(pdf_bytes, first_page=1, last_page=1)
+                        if images:
+                            ocr_text = pytesseract.image_to_string(images[0], lang='chi_tra')
+                            pdf_text += ocr_text
+                else:
+                    st.warning("⚠️ 偵測到此 PDF 為掃描圖片，但伺服器尚在安裝 OCR 套件中。")
             
-            # 使用正則表達式尋找公文常見的「每點 XXX 元」或「點值 XXX」
-            match = re.search(r'(?:每點|點值)[^\d]*(\d+\.\d+|\d+)', pdf_text)
-            if match:
-                auto_point_val = float(match.group(1))
-                st.success(f"✅ 系統已自動從分配表中讀取到每點金額：**{auto_point_val}**")
+            with st.expander("🔍 點我看系統從 PDF 讀取到的原始文字 (除錯用)"):
+                st.text(pdf_text if pdf_text.strip() else "無文字內容")
+            
+            # --- 💡 升級版演算法：找出表格中最常出現的 2~4 位小數數字 ---
+            trans_table = str.maketrans('０１２３４５６７８９．', '0123456789.')
+            pdf_text_half = pdf_text.translate(trans_table)
+            
+            # 尋找所有類似 1.375 的數字
+            matches = re.findall(r'\b(\d+\.\d{2,4})\b', pdf_text_half)
+            
+            if matches:
+                # 取得在各分局分配表中重複出現最多次的那個小數（最高機率就是全區統一的每點金額）
+                most_common_val = Counter(matches).most_common(1)[0][0]
+                auto_point_val = float(most_common_val)
+                st.success(f"✅ 系統已成功從表格中解析出每點金額為：**{auto_point_val}**")
             else:
-                st.warning("⚠️ 無法自動識別 PDF 中的金額格式，請在下方手動輸入。")
+                # 若找不到小數，退回嘗試尋找「每點 XX 元」的句型
+                fallback_match = re.search(r'(?:每點|點值|單價|發給)[^\d]{0,10}?(\d+\.\d+|\d+)', pdf_text_half)
+                if fallback_match:
+                    auto_point_val = float(fallback_match.group(1))
+                    st.success(f"✅ 系統已自動讀取到每點金額：**{auto_point_val}**")
+                else:
+                    st.warning("⚠️ 無法自動識別 PDF 中的金額格式，請在下方手動輸入。")
+                    
         except Exception as e:
-            st.error(f"❌ 讀取 PDF 失敗：{e}")
+            st.error(f"❌ 讀取或辨識 PDF 發生錯誤：{e}")
 
     point_value = st.number_input("💵 每點獎金金額", value=auto_point_val, format="%.3f", step=0.001)
 
     st.markdown("##### 👥 共同作業及配合人員名單 (內建完整預設值)")
     st.caption("💡 提示：本表已載入全分局預設名單。可直接在表格內修改異動金額，或在最下方點擊「+」新增人員，勾選左側核取方塊按 Delete 可刪除。")
     
-    # 完整預設底稿
     default_coworkers_data = [
         {"單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰", "金額": 301, "蓋章": ""},
         {"單位": "龍潭分局", "職別": "副分局長", "姓名": "何憶雯", "金額": 100, "蓋章": ""},
@@ -191,7 +223,6 @@ def p18_page():
 
         with st.spinner("正在計算數據、產出報表並將雙檔案發送至信箱..."):
             try:
-                # --- A. 點數數據預處理 ---
                 df_acc_raw = pd.read_excel(file_acc, header=4)
                 df_acc_raw['姓名'] = df_acc_raw['姓名'].astype(str).str.strip()
                 dict_acc = df_acc_raw.groupby('姓名')[['A2類', 'A3類']].sum().to_dict(orient='index')
@@ -200,7 +231,6 @@ def p18_page():
                 df_traf_all['姓名'] = df_traf_all['姓名'].astype(str).str.strip()
                 dict_traf = df_traf_all.groupby('姓名')['總計尖峰時數'].sum().to_dict()
 
-                # --- B. 讀取點數範本與日期偵測 ---
                 dfs_raw = pd.read_excel(file_template, sheet_name=None, header=None)
                 ext_year, ext_month = "115", "4"
                 found_date = False
@@ -215,7 +245,6 @@ def p18_page():
                         if found_date: break
                     if found_date: break
 
-                # --- C. 點數表裁剪與重新計算 ---
                 final_sheets = {}
                 summary_rows = []
                 g_cite, g_acc, g_traf, g_all = 0, 0, 0, 0
@@ -302,7 +331,6 @@ def p18_page():
                         summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
                         g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
 
-                # --- D. 產生印領清冊 DataFrame ---
                 df_direct_exec = pd.DataFrame(direct_exec_list)
                 df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
                 direct_total_money = df_direct_exec['實領獎金'].sum()
@@ -320,7 +348,6 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # --- E. 封裝成兩個 Excel 檔案 ---
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
@@ -350,7 +377,6 @@ def p18_page():
                 payroll_excel_data = payroll_output.getvalue()
                 payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
 
-                # --- F. 自動發送郵件 ---
                 files_to_attach = [
                     (pts_excel_data, pts_filename),
                     (payroll_excel_data, payroll_filename)
