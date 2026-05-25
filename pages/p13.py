@@ -3,21 +3,18 @@ import streamlit as st
 # --- 1. 頁面設定 (必須是全站第一個執行的 Streamlit 指令) ---
 st.set_page_config(page_title="取締砂石車專案勤務", layout="wide", page_icon="🚛")
 
-# 呼叫側邊欄 (確保在 config 之後)
+# 呼叫側邊欄
 try:
     from menu import show_sidebar
     show_sidebar()
 except ImportError:
-    st.sidebar.warning("找不到 menu.py，跳過側邊欄載入。")
+    pass
 
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import smtplib
-import io
-import os
-import traceback
+import smtplib, io, os
 import urllib.parse as _ul
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -38,106 +35,64 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
 
-# 💡 固定備註內容
 CORRECT_NOTES = (
     "一、執行前由各單位帶班人員在駐地實施勤前教育。<br/>"
-    "二、加強取締砂石（大型貨）車超載、車速、酒醉駕車、闖紅燈、無照駕車、争道行駛、"
+    "二、加強取締砂石（大型貨）車超載、車速、酒醉駕車、闖紅燈、無照駕車、爭道行駛、"
     "違反禁行路線、變更車斗、未使用專用車箱及未裝設行車紀錄器（行車視野輔助器）等違規，"
     "以共同消弭不法行為，保障用路人生命財產安全。"
 )
 
-# --- 2. Google Sheets 連線 (參考二合一穩定認證版) ---
+# --- 2. Google Sheets 連線 (完全對齊聯合稽查成功版) ---
 @st.cache_resource
 def get_client():
+    if "gcp_service_account" not in st.secrets: return None
     try:
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=SCOPES,
-        )
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         return gspread.authorize(creds)
-    except Exception as e:
-        st.error(f"Google 授權失敗：{e}")
+    except:
         return None
-
-def clean_df_to_list(df):
-    return df.astype(str).values.tolist()
 
 @st.cache_data(ttl=10)
 def load_data():
     try:
         client = get_client()
-        if client is None: return None, None, None, "", "權限不足或未設定 Secrets"
+        if client is None: return None, None, None, "", "權限不足"
         sh = client.open_by_key(SHEET_ID)
-        
-        try:
-            ws_set = sh.worksheet("砂石_設定")
-            df_set = pd.DataFrame(ws_set.get_all_records()).fillna("")
-        except Exception:
-            df_set = None
-
-        try:
-            ws_cmd = sh.worksheet("砂石_指揮組")
-            df_cmd = pd.DataFrame(ws_cmd.get_all_records()).fillna("")
-        except Exception:
-            df_cmd = pd.DataFrame()
-
-        try:
-            ws_sch = sh.worksheet("砂石_勤務表")
-            df_sch = pd.DataFrame(ws_sch.get_all_records()).fillna("")
-        except Exception:
-            df_sch = pd.DataFrame()
-
-        briefing = ""
-        if df_set is not None and not df_set.empty:
-            sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
-            briefing = str(sd.get("briefing", "")).strip()
-            if any(x in briefing for x in ["時間：", "地點：", "各單位執行前", "勤前教育："]):
-                briefing = ""
-                
+        ws_set = sh.worksheet("砂石_設定")
+        ws_cmd = sh.worksheet("砂石_指揮組")
+        ws_sch = sh.worksheet("砂石_勤務表")
+        df_set = pd.DataFrame(ws_set.get_all_records()).fillna("")
+        df_cmd = pd.DataFrame(ws_cmd.get_all_records()).fillna("")
+        df_sch = pd.DataFrame(ws_sch.get_all_records()).fillna("")
+        sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1])) if not df_set.empty else {}
+        briefing = str(sd.get("briefing", "")).strip()
+        if any(x in briefing for x in ["時間：", "地點：", "各單位執行前", "勤前教育："]):
+            briefing = ""
         return df_set, df_cmd, df_sch, briefing, None
     except Exception as e:
         return None, None, None, "", str(e)
 
-# --- 資料儲存 (參考二合一自動防禦補開分頁版) ---
 def save_data(month, briefing, df_cmd, df_schedule):
     try:
         client = get_client()
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
         
-        # 1. 砂石_設定
-        try:
-            ws_set = sh.worksheet("砂石_設定")
-        except Exception:
-            ws_set = sh.add_worksheet(title="砂石_設定", rows="50", cols="5")
+        ws_set = sh.worksheet("砂石_設定")
         ws_set.clear()
-        ws_set.update(range_name='A1', values=[["Key", "Value"], ["month", month], ["briefing", briefing]])
+        ws_set.update([["Key", "Value"], ["month", month], ["briefing", briefing]])
         
-        # 2. 砂石_指揮組
-        try:
-            ws_cmd = sh.worksheet("砂石_指揮組")
-        except Exception:
-            ws_cmd = sh.add_worksheet(title="砂石_指揮組", rows="100", cols="20")
-        ws_cmd.clear()
-        clean_cmd = df_cmd.dropna(how="all").fillna("")
-        if not clean_cmd.empty:
-            ws_cmd.update(range_name='A1', values=[clean_cmd.columns.tolist()] + clean_df_to_list(clean_cmd))
-            
-        # 3. 砂石_勤務表
-        try:
-            ws_sch = sh.worksheet("砂石_勤務表")
-        except Exception:
-            ws_sch = sh.add_worksheet(title="砂石_勤務表", rows="100", cols="20")
-        ws_sch.clear()
-        clean_sch = df_schedule.dropna(how="all").fillna("")
-        if not clean_sch.empty:
-            ws_sch.update(range_name='A1', values=[clean_sch.columns.tolist()] + clean_df_to_list(clean_sch))
-            
+        for ws_name, df in [("砂石_指揮組", df_cmd), ("砂石_勤務表", df_schedule)]:
+            ws = sh.worksheet(ws_name)
+            ws.clear()
+            df_cleaned = df.dropna(how='all').fillna("")
+            if not df_cleaned.empty:
+                ws.update([df_cleaned.columns.tolist()] + df_cleaned.values.tolist())
         load_data.clear()
         return True
-    except Exception as e:
-        st.error(f"❌ 雲端同步失敗原因：{e}")
-        st.code(traceback.format_exc())
+    except:
         return False
 
 # --- 3. PDF 產生 ---
@@ -168,7 +123,6 @@ def generate_pdf(month, briefing, df_cmd, df_schedule, title_full):
     
     story.append(Paragraph(f"<b>{title_full}</b>", s_title))
     
-    # 指揮組表格
     cw1 = [W*0.15, W*0.12, W*0.28, W*0.45]
     data1 = [[Paragraph("<b>任 務 編 組</b>", s_th), '', '', ''], 
              [Paragraph(f"<b>{h}</b>", s_th) for h in ["職稱", "代號", "姓名", "任務"]]]
@@ -182,7 +136,6 @@ def generate_pdf(month, briefing, df_cmd, df_schedule, title_full):
         story.append(Paragraph(f"<b>📢 勤前教育：</b><br/>{briefing.replace(chr(10), '<br/>')}", s_section))
         story.append(Spacer(1, 4*mm))
     
-    # 勤務表
     col_date = '勤務日期'
     cw2 = [W*0.28, W*0.16, W*0.12, W*0.44]
     data2 = [[Paragraph("<b>警 力 佈 署</b>", s_th), '', '', ''], 
@@ -224,11 +177,11 @@ st.title("🚛 取締砂石（大型貨）車重點違規專案勤務規劃表")
 
 df_set, df_cmd_raw, df_sch_raw, filtered_brief, err = load_data()
 
-if err and err != "離線模式":
+if err:
     st.warning(f"⚠️ 無法連線 Google Sheets ({err})，顯示預設資料。")
 
 if df_set is not None and not df_set.empty:
-    sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1])) if not df_set.empty else {}
+    sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     cur_month = sd.get("month", "115年3月份")
     df_c, df_s = df_cmd_raw, df_sch_raw
     if "日期" in df_s.columns: df_s.rename(columns={"日期": "勤務日期"}, inplace=True)
@@ -277,25 +230,15 @@ st.components.v1.html(get_html(), height=600, scrolling=True)
 
 colA, colB = st.columns(2)
 
-# --- 兩階段載入提示動畫按鈕區 ---
-if colA.button("💾 1. 同步雲端並發送電子郵件", type="primary", use_container_width=True):
-    with st.spinner("同步中，請稍候…"):
+if colA.button("💾 同步雲端並發送備份郵件", type="primary", use_container_width=True):
+    with st.spinner("處理中..."):
         if save_data(month_val, brief_info, ed_cmd, ed_sch):
-            with st.spinner("同步成功，正在寄送郵件…"):
-                pdf_bytes = generate_pdf(month_val, brief_info, ed_cmd, ed_sch, full_table_title)
-                ok, mail_err = send_report_email(f"勤務規劃表_{month_val}", pdf_bytes, full_table_title)
-            if ok: 
-                st.success(f"✅ 雲端已同步，PDF 報表已成功寄至信箱！")
-            else: 
-                st.error(f"❌ 雲端已更新，但寄信失敗原因: {mail_err}")
+            pdf_bytes = generate_pdf(month_val, brief_info, ed_cmd, ed_sch, full_table_title)
+            ok, mail_err = send_report_email(f"勤務規劃表_{month_val}", pdf_bytes, full_table_title)
+            if ok: st.success("✅ 同步與郵件發送成功！")
+            else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {mail_err}")
         else:
-            st.error("❌ 雲端同步失敗，請檢查網路、Secrets 金鑰或試算表權限。")
+            st.error("❌ 雲端同步失敗，請檢查權限設定。")
 
 pdf_data = generate_pdf(month_val, brief_info, ed_cmd, ed_sch, full_table_title)
-colB.download_button(
-    label="📥 2. 點此下載 PDF 報表",
-    data=pdf_data,
-    file_name=f"{full_table_title}.pdf",
-    mime="application/pdf",
-    use_container_width=True
-)
+colB.download_button(label="📥 下載 PDF 報表", data=pdf_data, file_name=f"{full_table_title}.pdf", mime="application/pdf", use_container_width=True)
