@@ -79,12 +79,98 @@ DEFAULT_SIGN_POINTS = "巡簽地點：\n1. 中油高原交流道站（龍源路2
 DEFAULT_NOTES = "一、各編組執行前由帶班人員在駐地實施勤前教育。\n二、攔檢、盤查車輛時，應隨時注意自身安全及執勤態度。\n三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。\n四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"
 
 # =========================
-# 字體、Google Sheets、save_data 等函數（省略，保持不變）
+# 字體
 # =========================
-# ... (請保留您之前的 _get_font, get_client, init_sheets, load_data, save_data) ...
+@st.cache_resource
+def _get_font():
+    fname = "kaiu"
+    if fname in pdfmetrics.getRegisteredFontNames():
+        return fname
+    for p in ["./kaiu.ttf", "kaiu.ttf", "/usr/share/fonts/truetype/kaiu.ttf", "/app/kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]:
+        if os.path.exists(p):
+            try:
+                pdfmetrics.registerFont(TTFont(fname, p))
+                return fname
+            except:
+                pass
+    return "Helvetica"
 
 # =========================
-# PDF 生成 - 已新增交通快打指揮官列
+# Google Sheets
+# =========================
+@st.cache_resource
+def get_client():
+    if "gcp_service_account" not in st.secrets:
+        st.error("❌ 找不到 gcp_service_account，請確認 Secrets 設定。")
+        return None
+    try:
+        info = dict(st.secrets["gcp_service_account"])
+        info["private_key"] = info["private_key"].replace("\\n", "\n")
+        creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+        return gspread.authorize(creds)
+    except Exception as e:
+        st.error(f"Google 授權失敗：{e}")
+        return None
+
+def init_sheets():
+    client = get_client()
+    if client is None: return
+    sh = client.open_by_key(SHEET_ID)
+    headers = {WS_MAP["set"]: [["Key", "Value"]], WS_MAP["cmd"]: [CMD_COLS], WS_MAP["ptl"]: [PTL_COLS]}
+    for name, header in headers.items():
+        try:
+            sh.worksheet(name)
+        except:
+            sh.add_worksheet(title=name, rows="200", cols="20").update(header)
+    st.success("初始化完成")
+    st.cache_data.clear()
+    st.rerun()
+
+@st.cache_data(ttl=5)
+def load_data():
+    try:
+        client = get_client()
+        if client is None:
+            return None, None, None, {}, "授權失敗"
+        sh = client.open_by_key(SHEET_ID)
+        set_df = pd.DataFrame(sh.worksheet(WS_MAP["set"]).get_all_records()).fillna("")
+        cmd_df = pd.DataFrame(sh.worksheet(WS_MAP["cmd"]).get_all_records()).fillna("")
+        ptl_df = pd.DataFrame(sh.worksheet(WS_MAP["ptl"]).get_all_records()).fillna("")
+        
+        if not ptl_df.empty:
+            ptl_df = ptl_df.reindex(columns=PTL_COLS, fill_value="")
+            ptl_df = ptl_df[ptl_df["勤務時段"].astype(str).str.strip() != ""].reset_index(drop=True)
+        
+        settings = {}
+        if not set_df.empty and set_df.shape[1] >= 2:
+            settings = dict(zip(set_df.iloc[:,0].astype(str), set_df.iloc[:,1].astype(str)))
+        return set_df, cmd_df, ptl_df, settings, None
+    except Exception as e:
+        return None, None, None, {}, str(e)
+
+def save_data(settings_dict, cmd, ptl):
+    try:
+        client = get_client()
+        if client is None: return False
+        sh = client.open_by_key(SHEET_ID)
+        ws_set = sh.worksheet(WS_MAP["set"])
+        ws_set.clear()
+        ws_set.update([["Key", "Value"]] + [[k, v] for k, v in settings_dict.items()])
+        
+        for ws_name, df, cols in [(WS_MAP["cmd"], cmd, CMD_COLS), (WS_MAP["ptl"], ptl, PTL_COLS)]:
+            ws = sh.worksheet(ws_name)
+            ws.clear()
+            df_clean = df[cols].fillna("")
+            if not df_clean.empty:
+                ws.update([df_clean.columns.tolist()] + df_clean.values.tolist())
+        load_data.clear()
+        return True
+    except Exception as e:
+        st.error(f"❌ 儲存失敗：{e}")
+        return False
+
+# =========================
+# PDF 生成（已新增交通快打指揮官列）
 # =========================
 def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, notes):
     font = _get_font()
@@ -107,7 +193,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     story.append(Paragraph(f"勤務時間：{time_str}", s_sub))
     story.append(Spacer(1, 3*mm))
 
-    # 任務編組表（不變）
+    # 任務編組
     cmd_clean = cmd_df.dropna(how="all").fillna("")
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", s_th), "", "", ""]]
     data_cmd.append([Paragraph(f"<b>{h}</b>", s_th) for h in CMD_COLS])
@@ -121,7 +207,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     story.append(t_cmd)
     story.append(Spacer(1, 4*mm))
 
-    # 警力佈署表格 - 新增交通快打指揮官列
+    # 警力佈署 - 新增交通快打指揮官列
     ptl_clean = ptl_df.copy()
     if len(ptl_clean) < 3:
         ptl_clean = DEFAULT_PTL.copy()
@@ -131,16 +217,16 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     data_ptl = [[Paragraph("<b>警 力 佈 署</b>", s_th), "", "", "", ""]]
     data_ptl.append([Paragraph(f"<b>{h}</b>", s_th) for h in PTL_COLS])
 
-    # 新增交通快打指揮官列（在標題下方）
+    # 新增交通快打指揮官列
     data_ptl.append([
         c("交通快打指揮官"),
         c(""),
         c(""),
-        c(fast_cmd),
+        c(fast_cmd if fast_cmd.strip() else " "),
         c("")
     ])
 
-    # 加入警力佈署資料
+    # 一般警力佈署資料
     for _, row in ptl_clean.iterrows():
         data_ptl.append([
             c(row.get("勤務時段", "")),
@@ -150,13 +236,13 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
             c(row.get("任務分工", ""), s_left)
         ])
 
-    # 合併邏輯
-    merge_groups = [(2, 3)]  # 合併交通快打指揮官那一列的第一欄
-    i = 3  # 從警力佈署資料開始
-    while i < len(data_ptl) - 1:   # -1 是因為已經加了快打那一列
+    # 合併
+    merge_groups = [(2, 3)]  # 合併快打指揮官的第一欄
+    i = 3
+    while i < len(data_ptl):
         j = i + 1
         curr = str(ptl_clean.iloc[i-3]["勤務時段"]).strip() if i-3 < len(ptl_clean) else ""
-        while j < len(data_ptl) and str(ptl_clean.iloc[j-3]["勤務時段"]).strip() == curr if j-3 < len(ptl_clean) else False:
+        while j < len(data_ptl) and (j-3 < len(ptl_clean)) and str(ptl_clean.iloc[j-3]["勤務時段"]).strip() == curr:
             j += 1
         if j - i > 1:
             merge_groups.append((i, j))
@@ -199,7 +285,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     buf.seek(0)
     return buf
 
-# Email 函數（不變）
+# Email
 def send_email(subject, pdf_buf, filename):
     try:
         sender = st.secrets["email"]["user"]
@@ -222,7 +308,7 @@ def send_email(subject, pdf_buf, filename):
         return False, str(e)
 
 # =========================
-# 主畫面（保持不變）
+# 主畫面
 # =========================
 st.title("🚔 防制危險駕車勤務規劃")
 
