@@ -40,7 +40,6 @@ WS_MAP = {
 
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年4月8日20至24時"
-# 網頁預設專案名稱不含4碼數字
 DEFAULT_PROJ    = "全國同步擴大取締酒後駕車與防制危險駕車及噪音車輛專案勤務"
 DEFAULT_BRIEF   = "20時30分於分局二樓會議室召開" 
 DEFAULT_P1_DESC = "第一階段：21時至22時30分，機動巡邏"
@@ -73,14 +72,11 @@ def parse_meeting_time(time_str):
     return "19時30分至20時00分"
 
 def extract_4_digit_date(time_str):
-    """
-    從勤務時間字串中擷取「月」與「日」，自動轉為 4 碼數字 (例如：4月8日 -> 0408)
-    """
     try:
         match = re.search(r"(\d+)月(\d+)日", time_str)
         if match:
-            month = match.group(1).zfill(2) # 補零成2位數
-            day = match.group(2).zfill(2)   # 補零成2位數
+            month = match.group(1).zfill(2)
+            day = match.group(2).zfill(2)
             return f"{month}{day}"
     except: pass
     return ""
@@ -110,7 +106,7 @@ def get_client():
 def load_data():
     try:
         client = get_client()
-        if client is None: return None, None, None, None, "權限不足"
+        if client is None: return None, None, None, None, "權限不足或未設定密鑰"
         sh = client.open_by_key(SHEET_ID)
         return (pd.DataFrame(sh.worksheet(WS_MAP["set"]).get_all_records()).fillna(""), 
                 pd.DataFrame(sh.worksheet(WS_MAP["cmd"]).get_all_records()).fillna(""), 
@@ -128,7 +124,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
             ["Key", "Value"], 
             ["unit_name", unit], 
             ["plan_full_time", time_str], 
-            ["project_name", project], # 這裡存入的會是含有 4 碼數字的完整名稱
+            ["project_name", project], 
             ["briefing_info", briefing],
             ["phase1_desc", p1_desc],
             ["phase2_desc", p2_desc]
@@ -163,7 +159,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     def clean_p(t): return safe_str(t).replace("\n", "<br/>").replace("、", "<br/>")
     def clean_text_only(t): return safe_str(t).replace("\n", "<br/>")
     
-    # 指揮組
     df_cmd = clean_df(df_cmd)
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
@@ -178,7 +173,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph(f"{clean_text_only(briefing)}", style_middle_block))
     story.append(Spacer(1, 6*mm))
     
-    # 第一階段
     df_ptl = clean_df(df_ptl)
     story.append(Paragraph(f"<b>{p1_desc}</b>", style_middle_block))
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
@@ -190,7 +184,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     
     story.append(Spacer(1, 8*mm))
     
-    # 第二階段
     df_cp = clean_df(df_cp)
     story.append(Paragraph(f"<b>{p2_desc}</b>", style_middle_block))
     data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
@@ -325,8 +318,22 @@ def sync_personnel_data(df_ptl, df_cp):
     return df_cp_new
 
 # --- 3. 主程式介面 ---
+st.title("🚓 二階段勤務規劃系統")
+
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
-d = dict(zip(df_set.iloc[:, 0].astype(str), df_set.iloc[:, 1].astype(str))) if df_set is not None else {}
+
+# 🛡️ 核心安全性修復：檢查資料庫載入是否出錯
+if err:
+    st.error(f"❌ 雲端資料庫連線失敗，請檢查網路或密鑰設定。錯誤訊息: {err}")
+    st.stop()  # 阻斷後續程式碼執行，防止噴出 AttributeError
+
+# 🛡️ 確保變數即便為空值也是正確的 DataFrame 結構，並防止 .empty 報錯
+df_set = df_set if isinstance(df_set, pd.DataFrame) else pd.DataFrame()
+df_cmd = df_cmd if isinstance(df_cmd, pd.DataFrame) else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
+df_ptl = df_ptl if isinstance(df_ptl, pd.DataFrame) else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
+df_cp = df_cp if isinstance(df_cp, pd.DataFrame) else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
+
+d = dict(zip(df_set.iloc[:, 0].astype(str), df_set.iloc[:, 1].astype(str))) if not df_set.empty else {}
 
 u = d.get("unit_name", DEFAULT_UNIT)
 t = d.get("plan_full_time", DEFAULT_TIME)
@@ -335,24 +342,14 @@ b = d.get("briefing_info", DEFAULT_BRIEF)
 p1_d = d.get("phase1_desc", DEFAULT_P1_DESC)
 p2_d = d.get("phase2_desc", DEFAULT_P2_DESC)
 
-# 如果從資料庫讀出來的舊資料最前方帶有4碼數字(例如0408)，網頁顯示前先將其拿掉，保持畫面乾淨
 clean_p_name = re.sub(r"^\d{4}", "", p)
-
-st.title("🚓 二階段勤務規劃系統")
 
 c1, c2 = st.columns(2)
 p_time = c2.text_input("勤務時間", t)
-# 使用者只需在網頁輸入乾淨的專案名稱 (不包含日期4碼)
 p_input = c1.text_input("專案名稱", clean_p_name)
 
-# --- 後台關鍵整合處理 ---
-# 1. 自動從「勤務時間」解析出 4 碼數字 (例如：0408)
 date_code = extract_4_digit_date(p_time)
-
-# 2. 自動在後台組合成完整的專案名稱 (例如：0408全國同步...)
-# 如果成功擷取到時間代碼，就主動拼接；如果時間格式未填對，則保留原本輸入內容
 p_name = f"{date_code}{p_input}" if date_code else p_input
-# ----------------------------------------
 
 st.subheader("⚙️ 階段標題與說明")
 cc1, cc2 = st.columns(2)
@@ -360,7 +357,8 @@ phase1_desc = cc1.text_input("第一階段標題說明", p1_d)
 phase2_desc = cc2.text_input("第二階段標題說明", p2_d)
 
 st.subheader("1. 指揮編組")
-res_cmd = st.data_editor(df_cmd if not df_cmd.empty else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"]), num_rows="dynamic", use_container_width=True)
+# 🛡️ 此處已安全，df_cmd 保證是 DataFrame 結構
+res_cmd = st.data_editor(df_cmd, num_rows="dynamic", use_container_width=True)
 b_info = st.text_area("📢 勤前教育", b, height=70)
 
 st.subheader("2. 勤務編組")
@@ -379,7 +377,6 @@ with tab2:
     res_cp = auto_assign_radio_code(st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor"))
 
 st.markdown("---")
-# 傳入後台拼接好 4 碼日期的 p_name 來產出 PDF
 pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, clean_df(res_cmd), clean_df(res_ptl), clean_df(res_cp), phase1_desc, phase2_desc)
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
 
