@@ -78,7 +78,7 @@ DEFAULT_SIGN_POINTS = "巡簽地點：\n1. 中油高原交流道站（龍源路2
 DEFAULT_NOTES = "一、各編組執行前由帶班人員在駐地實施勤前教育。\n二、攔檢、盤查車輛時，應隨時注意自身安全及執勤態度。\n三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。\n四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"
 
 # =========================
-# 字體
+# 字體與 Google Sheets（保持不變）
 # =========================
 @st.cache_resource
 def _get_font():
@@ -94,9 +94,6 @@ def _get_font():
                 pass
     return "Helvetica"
 
-# =========================
-# Google Sheets 函數（保持不變）
-# =========================
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets:
@@ -138,7 +135,6 @@ def load_data():
         
         if not ptl_df.empty:
             ptl_df = ptl_df.reindex(columns=PTL_COLS, fill_value="")
-            # 強力移除空白列
             ptl_df = ptl_df[ptl_df["勤務時段"].astype(str).str.strip() != ""].reset_index(drop=True)
         
         settings = {}
@@ -169,7 +165,7 @@ def save_data(settings_dict, cmd, ptl):
         return False
 
 # =========================
-# PDF 生成（穩定版）
+# PDF 生成
 # =========================
 def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, notes):
     font = _get_font()
@@ -192,7 +188,6 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     story.append(Paragraph(f"勤務時間：{time_str}", s_sub))
     story.append(Spacer(1, 3*mm))
 
-    # 任務編組
     cmd_clean = cmd_df.dropna(how="all").fillna("")
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", s_th), "", "", ""]]
     data_cmd.append([Paragraph(f"<b>{h}</b>", s_th) for h in CMD_COLS])
@@ -210,7 +205,6 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
         story.append(Paragraph(f"交通快打指揮官：{fast_cmd}", s_sub))
         story.append(Spacer(1, 2*mm))
 
-    # 警力佈署
     ptl_clean = ptl_df.copy()
     if len(ptl_clean) < 3:
         ptl_clean = DEFAULT_PTL.copy()
@@ -229,7 +223,6 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
             c(row.get("任務分工", ""), s_left)
         ])
 
-    # 合併邏輯
     merge_groups = []
     if len(ptl_clean) > 0:
         i = 0
@@ -331,8 +324,9 @@ st.subheader("1. 任務編組")
 res_cmd = st.data_editor(use_cmd, num_rows="dynamic", use_container_width=True)
 
 st.subheader("2. 警力佈署")
-st.caption("💡 相同勤務時段會自動合併 • 已移除空白列")
-res_ptl = st.data_editor(use_ptl, num_rows="dynamic", use_container_width=True, height=500)   # 降低高度，避免多餘空白
+st.caption("💡 相同勤務時段會自動合併 • 只顯示實際資料")
+# 關鍵修改：使用 num_rows="fixed" 避免出現多餘空白行
+res_ptl = st.data_editor(use_ptl, num_rows="fixed", use_container_width=True, height=500)
 
 st.subheader("3. 巡簽地點與備註")
 col_c, col_d = st.columns(2)
