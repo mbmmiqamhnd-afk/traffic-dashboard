@@ -35,7 +35,7 @@ CMD_COLS = ["職稱", "代號", "姓名", "任務"]
 PTL_COLS = ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]
 
 # =========================
-# 預設底稿（最新版本）
+# 預設底稿（最新調整版）
 # =========================
 DEFAULT_PROJECT = "防制危險駕車專案勤務"
 DEFAULT_TIME = "115年5月22日22時至翌日6時"
@@ -148,6 +148,7 @@ def load_data():
         settings = {}
         if not set_df.empty and set_df.shape[1] >= 2:
             settings = dict(zip(set_df.iloc[:,0].astype(str), set_df.iloc[:,1].astype(str)))
+            
         return set_df, cmd_df, ptl_df, settings, None
     except Exception as e:
         return None, None, None, {}, str(e)
@@ -164,9 +165,8 @@ def save_data(settings_dict, cmd, ptl):
         for ws_name, df, cols in [(WS_MAP["cmd"], cmd, CMD_COLS), (WS_MAP["ptl"], ptl, PTL_COLS)]:
             ws = sh.worksheet(ws_name)
             ws.clear()
-            df_clean = df[cols].dropna(how="all").fillna("")
-            if not df_clean.empty:
-                ws.update([df_clean.columns.tolist()] + df_clean.values.tolist())
+            df_clean = df[cols].fillna("")
+            ws.update([df_clean.columns.tolist()] + df_clean.values.tolist())
         load_data.clear()
         return True
     except Exception as e:
@@ -193,7 +193,6 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     def c(txt, style=s_cell):
         return Paragraph(str(txt).replace("\n", "<br/>"), style)
 
-    # 標題
     story.append(Paragraph(f"<b>{UNIT_TITLE}執行「{project_name}」規劃表</b>", s_title))
     story.append(Paragraph(f"勤務時間：{time_str}", s_sub))
     story.append(Spacer(1, 3*mm))
@@ -216,11 +215,12 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
         story.append(Paragraph(f"交通快打指揮官：{fast_cmd}", s_sub))
         story.append(Spacer(1, 2*mm))
 
-    # 警力佈署
+    # 警力佈署 - 強化保護
     ptl_clean = ptl_df.copy()
-    ptl_clean = ptl_clean[ptl_clean["勤務時段"].astype(str).str.strip() != ""].fillna("")
-    if len(ptl_clean) == 0:
+    if ptl_clean.empty or len(ptl_clean) < 3:   # 如果載入太少，就用預設
         ptl_clean = DEFAULT_PTL.copy()
+    else:
+        ptl_clean = ptl_clean[ptl_clean["勤務時段"].astype(str).str.strip() != ""].fillna("")
 
     data_ptl = [[Paragraph("<b>警 力 佈 署</b>", s_th), "", "", "", ""]]
     data_ptl.append([Paragraph(f"<b>{h}</b>", s_th) for h in PTL_COLS])
@@ -234,7 +234,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
             c(row.get("任務分工", ""), s_left)
         ])
 
-    # 合併邏輯
+    # 合併
     merge_groups = []
     if len(ptl_clean) > 0:
         i = 0
@@ -254,7 +254,6 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
         ("SPAN", (0,0), (-1,0)),
         ("BACKGROUND", (0,0), (-1,1), colors.HexColor("#e6e6e6")),
     ]
-
     for start, end in merge_groups:
         ts_ptl.append(("SPAN", (0, start), (0, end-1)))
 
@@ -263,7 +262,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     story.append(t_ptl)
     story.append(Spacer(1, 4*mm))
 
-    # 巡簽地點與備註
+    # 巡簽與備註
     if sign_points.strip():
         for line in sign_points.strip().split("\n"):
             if line.strip():
@@ -285,7 +284,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     buf.seek(0)
     return buf
 
-# Email
+# Email 函數（保持不變）
 def send_email(subject, pdf_buf, filename):
     try:
         sender = st.secrets["email"]["user"]
@@ -308,7 +307,7 @@ def send_email(subject, pdf_buf, filename):
         return False, str(e)
 
 # =========================
-# UI
+# 主畫面
 # =========================
 st.title("🚔 防制危險駕車勤務規劃")
 
@@ -323,7 +322,7 @@ if err:
     st.warning(f"⚠️ 無法連線 Google Sheets（{err}），顯示預設底稿。")
 
 use_cmd = cmd_df if (cmd_df is not None and not cmd_df.empty) else DEFAULT_CMD.copy()
-use_ptl = ptl_df if (ptl_df is not None and not ptl_df.empty) else DEFAULT_PTL.copy()
+use_ptl = ptl_df if (ptl_df is not None and len(ptl_df) >= 3) else DEFAULT_PTL.copy()
 
 st.subheader("基本設定")
 col_a, col_b = st.columns(2)
