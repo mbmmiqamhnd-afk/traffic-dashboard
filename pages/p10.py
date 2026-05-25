@@ -79,7 +79,7 @@ DEFAULT_SIGN_POINTS = "巡簽地點：\n1. 中油高原交流道站（龍源路2
 DEFAULT_NOTES = "一、各編組執行前由帶班人員在駐地實施勤前教育。\n二、攔檢、盤查車輛時，應隨時注意自身安全及執勤態度。\n三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。\n四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"
 
 # =========================
-# 字體
+# 字體與 Google Sheets
 # =========================
 @st.cache_resource
 def _get_font():
@@ -95,9 +95,6 @@ def _get_font():
                 pass
     return "Helvetica"
 
-# =========================
-# Google Sheets
-# =========================
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets:
@@ -170,7 +167,7 @@ def save_data(settings_dict, cmd, ptl):
         return False
 
 # =========================
-# PDF 生成
+# PDF 生成 (保持不變)
 # =========================
 def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, notes):
     font = _get_font()
@@ -316,7 +313,7 @@ if err:
 use_cmd = cmd_df if (cmd_df is not None and not cmd_df.empty) else DEFAULT_CMD.copy()
 use_ptl = ptl_df if (ptl_df is not None and not ptl_df.empty) else DEFAULT_PTL.copy()
 
-# 強力清理
+# 強力清理空白列
 use_ptl = use_ptl.replace(r'^\s*$', np.nan, regex=True)
 use_ptl = use_ptl.dropna(how='all').reset_index(drop=True)
 
@@ -330,7 +327,7 @@ st.subheader("1. 任務編組")
 res_cmd = st.data_editor(use_cmd, num_rows="dynamic", use_container_width=True)
 
 st.subheader("2. 警力佈署")
-st.caption("💡 相同勤務時段會自動合併 • 已移除所有空白列")
+st.caption("💡 相同勤務時段會自動合併 • 已嚴格限制只顯示實際資料")
 res_ptl = st.data_editor(
     use_ptl, 
     num_rows="fixed", 
