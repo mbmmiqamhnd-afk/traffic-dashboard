@@ -316,7 +316,7 @@ if err:
 use_cmd = cmd_df if (cmd_df is not None and not cmd_df.empty) else DEFAULT_CMD.copy()
 use_ptl = ptl_df if (ptl_df is not None and not ptl_df.empty) else DEFAULT_PTL.copy()
 
-# 強力清理空白列
+# 強力清理
 use_ptl = use_ptl.replace(r'^\s*$', np.nan, regex=True)
 use_ptl = use_ptl.dropna(how='all').reset_index(drop=True)
 
@@ -330,8 +330,13 @@ st.subheader("1. 任務編組")
 res_cmd = st.data_editor(use_cmd, num_rows="dynamic", use_container_width=True)
 
 st.subheader("2. 警力佈署")
-st.caption("💡 相同勤務時段會自動合併 • 已移除空白列")
-res_ptl = st.data_editor(use_ptl, num_rows="fixed", use_container_width=True, height=380)
+st.caption("💡 相同勤務時段會自動合併 • 已移除所有空白列")
+res_ptl = st.data_editor(
+    use_ptl, 
+    num_rows="fixed", 
+    use_container_width=True, 
+    height=420
+)
 
 st.subheader("3. 巡簽地點與備註")
 col_c, col_d = st.columns(2)
