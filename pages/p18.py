@@ -11,7 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
-import PyPDF2  # 👈 新增：用於解析 PDF 分配表
+import pypdf  # 👈 已修正：配合您的 requirements.txt 改用 pypdf
 
 # 自動將上層目錄加入路徑
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -73,13 +73,14 @@ def p18_page():
     # 2. 印領清冊參數與名單設定
     st.subheader("📝 2. 印領清冊設定")
     
-    # 👈 新增：上傳 PDF 分配表自動抓取金額
+    # 上傳 PDF 分配表自動抓取金額
     file_alloc = st.file_uploader("📥 (選用) 上傳【獎勵金分配表】(PDF) 自動抓取每點金額", type=['pdf'])
     auto_point_val = 1.905  # 預設值
     
     if file_alloc is not None:
         try:
-            reader = PyPDF2.PdfReader(file_alloc)
+            # 👈 已修正：改為 pypdf.PdfReader
+            reader = pypdf.PdfReader(file_alloc)
             pdf_text = ""
             for page in reader.pages:
                 extracted = page.extract_text()
