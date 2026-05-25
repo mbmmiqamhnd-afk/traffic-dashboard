@@ -10,8 +10,7 @@ except ImportError:
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
-import io, os, re, smtplib
+import io, os, smtplib
 import urllib.parse as _ul
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -21,7 +20,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.lib.enums import TA_LEFT
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
@@ -40,12 +39,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 UNIT_TITLE = "桃園市政府警察局龍潭分局"
-
 CMD_COLS = ["職稱", "代號", "姓名", "任務"]
 PTL_COLS = ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]
 
 # =========================
-# 預設底稿（已更新為最新版本 - 115年5月22日）
+# 預設底稿（最新版本）
 # =========================
 DEFAULT_PROJECT = "防制危險駕車專案勤務"
 DEFAULT_TIME = "115年5月22日22時至翌日6時"
@@ -65,28 +63,22 @@ DEFAULT_PTL = pd.DataFrame([
      "服勤人員": "00-02時段：\n警員廖怡惠\n警員劉柏延\n02-04時段：\n警員林軒宇\n警員廖怡惠", 
      "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝（噪音）車輛（每2小時至責任區域內指定巡簽地點巡簽1次並守望10分鐘，將守望情形拍照上傳LINE「龍潭分局聯絡平臺」群組）"},
     
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安80", "編組": "石門所線上巡邏組合警力兼任", 
-     "服勤人員": "", 
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安80", "編組": "石門所線上巡邏組合警力兼任", "服勤人員": "", 
      "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路及旭日路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
     
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安90", "編組": "高平所線上巡邏組合警力兼任", 
-     "服勤人員": "", 
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安90", "編組": "高平所線上巡邏組合警力兼任", "服勤人員": "", 
      "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
     
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安990", "編組": "龍潭交通分隊線上巡邏組合警力兼任", 
-     "服勤人員": "", 
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安990", "編組": "龍潭交通分隊線上巡邏組合警力兼任", "服勤人員": "", 
      "任務分工": "「區域聯防」勤務，於龍源路及旭日路巡邏（每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次）"},
     
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安50", "編組": "聖亭所線上巡邏組合警力兼任", 
-     "服勤人員": "", 
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安50", "編組": "聖亭所線上巡邏組合警力兼任", "服勤人員": "", 
      "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
     
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安60", "編組": "龍潭所線上巡邏組合警力兼任", 
-     "服勤人員": "", 
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安60", "編組": "龍潭所線上巡邏組合警力兼任", "服勤人員": "", 
      "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
     
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安70", "編組": "中興所線上巡邏組合警力兼任", 
-     "服勤人員": "", 
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安70", "編組": "中興所線上巡邏組合警力兼任", "服勤人員": "", 
      "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
 ])
 
@@ -114,13 +106,7 @@ def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames():
         return fname
-    font_paths = [
-        "./kaiu.ttf", "kaiu.ttf",
-        "/usr/share/fonts/truetype/custom/kaiu.ttf",
-        "/usr/share/fonts/truetype/kaiu.ttf",
-        "/app/kaiu.ttf",
-        "C:/Windows/Fonts/kaiu.ttf",
-    ]
+    font_paths = ["./kaiu.ttf", "kaiu.ttf", "/usr/share/fonts/truetype/kaiu.ttf", "/app/kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]
     for p in font_paths:
         if os.path.exists(p):
             try:
@@ -131,7 +117,7 @@ def _get_font():
     return "Helvetica"
 
 # =========================
-# Google Sheets 連線
+# Google Sheets 相關函數（保持不變）
 # =========================
 @st.cache_resource
 def get_client():
@@ -147,70 +133,50 @@ def get_client():
         st.error(f"Google 授權失敗：{e}")
         return None
 
-# =========================
-# Sheets 初始化
-# =========================
 def init_sheets():
     client = get_client()
-    if client is None:
-        return
+    if client is None: return
     sh = client.open_by_key(SHEET_ID)
-    headers = {
-        WS_MAP["set"]: [["Key", "Value"]],
-        WS_MAP["cmd"]: [CMD_COLS],
-        WS_MAP["ptl"]: [PTL_COLS],
-    }
+    headers = {WS_MAP["set"]: [["Key", "Value"]], WS_MAP["cmd"]: [CMD_COLS], WS_MAP["ptl"]: [PTL_COLS]}
     for name, header in headers.items():
         try:
             sh.worksheet(name)
-        except Exception:
+        except:
             sh.add_worksheet(title=name, rows="100", cols="20").update(header)
     st.success("初始化完成")
     st.cache_data.clear()
     st.rerun()
 
-# =========================
-# 讀取資料
-# =========================
 @st.cache_data(ttl=10)
 def load_data():
     try:
         client = get_client()
-        if client is None:
-            return None, None, None, {}, "授權失敗"
+        if client is None: return None, None, None, {}, "授權失敗"
         sh = client.open_by_key(SHEET_ID)
         set_df = pd.DataFrame(sh.worksheet(WS_MAP["set"]).get_all_records()).fillna("")
         cmd_df = pd.DataFrame(sh.worksheet(WS_MAP["cmd"]).get_all_records()).fillna("")
         ptl_df = pd.DataFrame(sh.worksheet(WS_MAP["ptl"]).get_all_records()).fillna("")
-        
-        settings = {}
-        if not set_df.empty and set_df.shape[1] >= 2:
-            settings = dict(zip(set_df.iloc[:, 0].astype(str), set_df.iloc[:, 1].astype(str)))
+        settings = dict(zip(set_df.iloc[:,0].astype(str), set_df.iloc[:,1].astype(str))) if not set_df.empty else {}
         return set_df, cmd_df, ptl_df, settings, None
     except Exception as e:
         return None, None, None, {}, str(e)
 
-# =========================
-# 儲存資料
-# =========================
 def save_data(settings_dict, cmd, ptl):
     try:
         client = get_client()
-        if client is None:
-            return False
+        if client is None: return False
         sh = client.open_by_key(SHEET_ID)
+        # 設定
         ws_set = sh.worksheet(WS_MAP["set"])
         ws_set.clear()
-        rows = [["Key", "Value"]] + [[k, v] for k, v in settings_dict.items()]
-        ws_set.update(rows)
-        
+        ws_set.update([["Key", "Value"]] + [[k, v] for k, v in settings_dict.items()])
+        # 指揮組 & 警力佈署
         for ws_name, df in [(WS_MAP["cmd"], cmd), (WS_MAP["ptl"], ptl)]:
             ws = sh.worksheet(ws_name)
             ws.clear()
             df_clean = df.dropna(how="all").fillna("")
             if not df_clean.empty:
                 ws.update([df_clean.columns.tolist()] + df_clean.values.tolist())
-        
         load_data.clear()
         return True
     except Exception as e:
@@ -218,25 +184,23 @@ def save_data(settings_dict, cmd, ptl):
         return False
 
 # =========================
-# PDF 產生
+# PDF 產生（已修正合併邏輯）
 # =========================
 def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, notes):
     font = _get_font()
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf, pagesize=A4,
-        leftMargin=12*mm, rightMargin=12*mm,
-        topMargin=12*mm, bottomMargin=15*mm,
-    )
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm,
+                            topMargin=12*mm, bottomMargin=15*mm)
     W = A4[0] - 24*mm
     story = []
+
     s_title = ParagraphStyle("title", fontName=font, fontSize=15, alignment=1, leading=22, spaceAfter=4, wordWrap="CJK")
     s_sub = ParagraphStyle("sub", fontName=font, fontSize=13, alignment=1, leading=20, spaceAfter=4, wordWrap="CJK")
     s_th = ParagraphStyle("th", fontName=font, fontSize=13, alignment=1, leading=18, wordWrap="CJK")
     s_cell = ParagraphStyle("cell", fontName=font, fontSize=12, alignment=1, leading=17, wordWrap="CJK")
     s_left = ParagraphStyle("left", fontName=font, fontSize=12, alignment=0, leading=17, wordWrap="CJK")
     s_note = ParagraphStyle("note", fontName=font, fontSize=11, alignment=0, leading=16, spaceBefore=2, wordWrap="CJK",
-                              leftIndent=10, firstLineIndent=-10)
+                            leftIndent=10, firstLineIndent=-10)
 
     def c(txt, style=s_cell):
         return Paragraph(str(txt).replace("\n", "<br/>"), style)
@@ -248,10 +212,8 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
 
     # 任務編組表
     cmd_clean = cmd_df.dropna(how="all").fillna("")
-    data_cmd = [
-        [Paragraph("<b>任 務 編 組</b>", s_th), "", "", ""],
-        [Paragraph(f"<b>{h}</b>", s_th) for h in ["職稱", "代號", "姓名", "任務"]],
-    ]
+    data_cmd = [[Paragraph("<b>任 務 編 組</b>", s_th), "", "", ""]]
+    data_cmd.append([Paragraph(f"<b>{h}</b>", s_th) for h in ["職稱", "代號", "姓名", "任務"]])
     for _, row in cmd_clean.iterrows():
         data_cmd.append([
             c(f"<b>{row.get('職稱', '')}</b>"),
@@ -272,28 +234,16 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     story.append(t_cmd)
     story.append(Spacer(1, 4*mm))
 
-    # 快打指揮官
     if fast_cmd.strip():
         story.append(Paragraph(f"交通快打指揮官：{fast_cmd}", s_sub))
         story.append(Spacer(1, 2*mm))
 
-    # 警力佈署表
+    # === 警力佈署表 - 已優化合併邏輯 ===
     ptl_clean = ptl_df.dropna(how="all").fillna("")
-    data_ptl = [
-        [Paragraph("<b>警 力 佈 署</b>", s_th), "", "", "", ""],
-        [Paragraph(f"<b>{h}</b>", s_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]],
-    ]
-    ptl_rows = ptl_clean.reset_index(drop=True)
-    merge_groups = []
-    prev_val, grp_start = None, 2
-    for i, row in ptl_rows.iterrows():
-        val = str(row.get("勤務時段", "")).strip()
-        tbl_row = i + 2
-        if val != prev_val:
-            if prev_val is not None:
-                merge_groups.append((grp_start, tbl_row - 1))
-            prev_val = val
-            grp_start = tbl_row
+    data_ptl = [[Paragraph("<b>警 力 佈 署</b>", s_th), "", "", "", ""]]
+    data_ptl.append([Paragraph(f"<b>{h}</b>", s_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]])
+
+    for _, row in ptl_clean.iterrows():
         data_ptl.append([
             c(row.get("勤務時段", "")),
             c(row.get("代號", "")),
@@ -301,8 +251,22 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
             c(str(row.get("服勤人員", "")).replace("、", "<br/>")),
             c(row.get("任務分工", ""), s_left),
         ])
-    if prev_val is not None:
-        merge_groups.append((grp_start, len(ptl_rows) + 2))
+
+    # 修正後的跨行合併邏輯
+    merge_groups = []
+    if len(ptl_clean) > 0:
+        prev_val = str(ptl_clean.iloc[0]["勤務時段"]).strip()
+        start = 2  # header 2 rows
+        for i in range(1, len(ptl_clean)):
+            current_val = str(ptl_clean.iloc[i]["勤務時段"]).strip()
+            if current_val != prev_val:
+                if i - 1 + 2 > start:
+                    merge_groups.append((start, i + 1))  # end is exclusive in loop
+                start = i + 2
+                prev_val = current_val
+        # 最後一個群組
+        if len(ptl_clean) + 1 > start:
+            merge_groups.append((start, len(ptl_clean) + 2))
 
     ts_ptl = [
         ("FONTNAME", (0,0), (-1,-1), font),
@@ -313,7 +277,8 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
         ("TOPPADDING", (0,0), (-1,-1), 3),
         ("BOTTOMPADDING", (0,0), (-1,-1), 3),
     ]
-    for (rs, re) in merge_groups:
+
+    for rs, re in merge_groups:
         if re > rs:
             ts_ptl.append(("SPAN", (0, rs), (0, re)))
 
@@ -322,14 +287,13 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     story.append(t_ptl)
     story.append(Spacer(1, 4*mm))
 
-    # 巡簽地點
+    # 巡簽地點與備註
     if sign_points.strip():
         for line in sign_points.strip().split("\n"):
             if line.strip():
                 story.append(Paragraph(line.strip(), s_note))
         story.append(Spacer(1, 3*mm))
 
-    # 備註
     story.append(Paragraph("<b>備註：</b>", s_sub))
     for line in notes.strip().split("\n"):
         if line.strip():
@@ -346,9 +310,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     buf.seek(0)
     return buf
 
-# =========================
-# Email
-# =========================
+# Email 函數保持不變
 def send_email(subject, pdf_buf, filename):
     try:
         sender = st.secrets["email"]["user"]
@@ -371,7 +333,7 @@ def send_email(subject, pdf_buf, filename):
         return False, str(e)
 
 # =========================
-# UI
+# UI 主程式
 # =========================
 st.title("🚔 防制危險駕車勤務規劃")
 
@@ -381,7 +343,6 @@ if st.sidebar.button("🔄 強制更新資料"):
     st.cache_data.clear()
     st.rerun()
 
-# 讀取資料
 set_df, cmd_df, ptl_df, settings, err = load_data()
 if err:
     st.warning(f"⚠️ 無法連線 Google Sheets（{err}），顯示預設底稿。")
@@ -389,22 +350,19 @@ if err:
 use_cmd = cmd_df if (cmd_df is not None and not cmd_df.empty and all(c in cmd_df.columns for c in CMD_COLS)) else DEFAULT_CMD.copy()
 use_ptl = ptl_df if (ptl_df is not None and not ptl_df.empty and all(c in ptl_df.columns for c in PTL_COLS)) else DEFAULT_PTL.copy()
 
-# 基本設定
 st.subheader("基本設定")
 col_a, col_b = st.columns(2)
 project_name = col_a.text_input("專案名稱", value=settings.get("project_name", DEFAULT_PROJECT))
 time_val = col_b.text_input("勤務時間", value=settings.get("time", DEFAULT_TIME))
 fast_cmd = st.text_input("交通快打指揮官", value=settings.get("fast_cmd", DEFAULT_FAST_CMD))
 
-# 編組資料
 st.subheader("1. 任務編組")
 res_cmd = st.data_editor(use_cmd, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
 
 st.subheader("2. 警力佈署")
-st.caption("💡 相同勤務時段填相同文字，PDF 輸出時第一欄會自動合併。")
+st.caption("💡 相同勤務時段請填入完全相同的文字，系統會自動合併。")
 res_ptl = st.data_editor(use_ptl, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
 
-# 巡簽地點與備註
 st.subheader("3. 巡簽地點與備註")
 col_c, col_d = st.columns(2)
 sign_points = col_c.text_area("巡簽地點", value=settings.get("sign_points", DEFAULT_SIGN_POINTS), height=160)
@@ -415,26 +373,16 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     if st.button("💾 儲存至雲端", use_container_width=True):
-        s = {
-            "project_name": project_name,
-            "time": time_val,
-            "fast_cmd": fast_cmd,
-            "sign_points": sign_points,
-            "notes": notes,
-        }
+        s = {"project_name": project_name, "time": time_val, "fast_cmd": fast_cmd,
+             "sign_points": sign_points, "notes": notes}
         if save_data(s, res_cmd, res_ptl):
             st.success("✅ 已儲存")
 
 with col2:
     pdf_buf = generate_pdf(time_val, project_name, fast_cmd, res_cmd, res_ptl, sign_points, notes)
     filename = f"{UNIT_TITLE}執行「{project_name}」規劃表"
-    st.download_button(
-        "📄 下載 PDF",
-        data=pdf_buf,
-        file_name=f"{filename}.pdf",
-        mime="application/pdf",
-        use_container_width=True,
-    )
+    st.download_button("📄 下載 PDF", data=pdf_buf, file_name=f"{filename}.pdf",
+                       mime="application/pdf", use_container_width=True)
 
 with col3:
     if st.button("📧 發送 Email", use_container_width=True):
