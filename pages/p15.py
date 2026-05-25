@@ -8,7 +8,7 @@ try:
     from menu import show_sidebar
     show_sidebar()
 except ImportError:
-    st.sidebar.warning("找不到 menu.py，跳過側邊欄載入。")
+    pass
 
 import pandas as pd
 import gspread
@@ -32,7 +32,8 @@ import re
 
 # --- 常數與設定 ---
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
-SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+# 【修正】更新為最新標準的 Google API Scopes
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年4月11日 19時至23時"
@@ -77,49 +78,61 @@ def safe_str(val):
 
 @st.cache_resource
 def get_client():
-    if "gcp_service_account" not in st.secrets: return None
+    if "gcp_service_account" not in st.secrets: 
+        st.error("❌ 找不到 Secrets 中的 GCP 金鑰！")
+        return None
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         return gspread.authorize(creds)
-    except: return None
+    except Exception as e: 
+        st.error(f"❌ Google 授權失敗：{e}")
+        return None
 
 @st.cache_data(ttl=10)
 def load_data():
     try:
         client = get_client()
-        if client is None: return None, None, None, None, "權限不足或未設定 Secrets"
+        if client is None: return None, None, None, None, "無法取得 Google 授權"
         sh = client.open_by_key(SHEET_ID)
+        
         try:
             ws_set = sh.worksheet("三合一_設定")
             df_set = pd.DataFrame(ws_set.get_all_records()).fillna("")
-        except: df_set = None
+        except: df_set = pd.DataFrame()
+        
         try:
             ws_cmd = sh.worksheet("三合一_指揮組")
             df_cmd = pd.DataFrame(ws_cmd.get_all_records()).fillna("")
         except: df_cmd = pd.DataFrame()
+        
         try:
             ws_ptl = sh.worksheet("三合一_巡邏組")
             df_ptl = pd.DataFrame(ws_ptl.get_all_records()).fillna("")
         except: df_ptl = pd.DataFrame()
+        
         try:
             ws_cp = sh.worksheet("三合一_擴大臨檢組")
             df_cp = pd.DataFrame(ws_cp.get_all_records()).fillna("")
-        except: df_cp = None
+        except: df_cp = pd.DataFrame()
+        
         return df_set, df_cmd, df_ptl, df_cp, None
-    except Exception as e: return None, None, None, None, str(e)
+    except Exception as e: 
+        return None, None, None, None, str(e)
 
 def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     try:
         client = get_client()
+        if client is None: return False
         sh = client.open_by_key(SHEET_ID)
         
         # 設定頁
         try: ws_set = sh.worksheet("三合一_設定")
         except: ws_set = sh.add_worksheet(title="三合一_設定", rows="50", cols="5")
         ws_set.clear()
-        ws_set.update(range_name='A1', values=[
+        # 【修正】移除 range_name，改用最相容的直接傳入陣列寫法
+        ws_set.update([
             ["Key", "Value"], ["unit_name", unit], ["plan_full_time", time_str], ["project_name", project],
             ["briefing_info", briefing], ["stats_cmd", str(stats['cmd'])], ["stats_ptl", str(stats['ptl'])],
             ["stats_inv", str(stats['inv'])], ["stats_civ", str(stats['civ'])], ["briefing_time", str(stats['b_time'])],
@@ -135,11 +148,14 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
             ws.clear()
             clean_df = df.dropna(how='all').fillna("")
             if not clean_df.empty:
-                ws.update(range_name='A1', values=[clean_df.columns.tolist()] + clean_df.astype(str).values.tolist())
+                # 【修正】直接傳入陣列，解決套件版本衝突
+                ws.update([clean_df.columns.tolist()] + clean_df.astype(str).values.tolist())
         
         load_data.clear()
         return True
-    except: return False
+    except Exception as e:
+        st.error(f"❌ 儲存至雲端時發生錯誤：{e}")
+        return False
 
 # --- 3. PDF 生成功能 ---
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
@@ -230,7 +246,6 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     
     style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=12, wordWrap='CJK')
     style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=22, spaceAfter=1*mm, wordWrap='CJK')
-    style_sig = ParagraphStyle('Sig', fontName=font, fontSize=14, leading=22, wordWrap='CJK')
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
     
     story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
@@ -275,13 +290,18 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
             server.login(sender, pwd)
             server.sendmail(sender, sender, msg.as_string())
         return True, None
-    except Exception as e: return False, str(e)
+    except Exception as e:
+        return False, str(e)
 
 # --- Streamlit 介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
 default_stats = {'cmd': 6, 'ptl': 31, 'inv': 2, 'civ': 0, 'b_time': '18時30分至19時00分', 'b_loc': '分局二樓會議室', 'loc_1': 8, 'loc_2': 6, 'loc_3': 0}
 
-if err or df_set is None:
+if err:
+    st.error(f"⚠️ 雲端資料載入異常：{err}")
+
+# 【修正】強化空值驗證，確保首次使用時也能正確載入預設底稿
+if df_set is None or df_set.empty:
     u, t, p, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF
     ed_cmd, ed_ptl, ed_cp = DEFAULT_CMD.copy(), DEFAULT_PTL.copy(), DEFAULT_CHECKPOINT.copy()
     p_ptl_focus, p_cp_focus = DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS
@@ -289,7 +309,7 @@ else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p, b = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ), d.get("briefing_info", DEFAULT_BRIEF)
     p_ptl_focus, p_cp_focus = d.get("ptl_focus", DEFAULT_PTL_FOCUS), d.get("cp_focus", DEFAULT_CP_FOCUS)
-    default_stats.update({'cmd': int(d.get("stats_cmd", 6)), 'ptl': int(d.get("stats_ptl", 31)), 'inv': int(d.get("stats_inv", 2)), 'civ': int(d.get("stats_civ", 0)), 'b_time': d.get("briefing_time", "18時30分至19時00分"), 'b_loc': d.get("briefing_loc", "分局二樓會議室"), 'loc_1': int(d.get("loc_1", 8)), 'loc_2': int(d.get("loc_2", 6)), 'loc_3': int(d.get("loc_3", 0))})
+    default_stats.update({'cmd': int(d.get("stats_cmd", 6) or 6), 'ptl': int(d.get("stats_ptl", 31) or 31), 'inv': int(d.get("stats_inv", 2) or 2), 'civ': int(d.get("stats_civ", 0) or 0), 'b_time': d.get("briefing_time", "18時30分至19時00分"), 'b_loc': d.get("briefing_loc", "分局二樓會議室"), 'loc_1': int(d.get("loc_1", 8) or 8), 'loc_2': int(d.get("loc_2", 6) or 6), 'loc_3': int(d.get("loc_3", 0) or 0)})
     ed_cmd = df_cmd if not df_cmd.empty else DEFAULT_CMD.copy()
     ed_ptl = df_ptl.drop(columns=["組別"]) if not df_ptl.empty and "組別" in df_ptl.columns else (df_ptl if not df_ptl.empty else DEFAULT_PTL.copy())
     ed_cp = df_cp.drop(columns=["組別"]) if df_cp is not None and not df_cp.empty and "組別" in df_cp.columns else (df_cp if df_cp is not None and not df_cp.empty else DEFAULT_CHECKPOINT.copy())
@@ -321,7 +341,10 @@ pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, r
 st.download_button("📝 下載規劃表", data=pdf_plan, file_name=f"{u}規劃表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
-    if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats, p_ptl_focus, p_cp_focus):
-        ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats, p_ptl_focus, p_cp_focus)
-        if ok: st.success("✅ 已同步並寄出！")
-        else: st.warning(f"⚠️ 同步成功但郵件失敗: {mail_err}")
+    with st.spinner("⏳ 正在寫入雲端並寄送郵件，請稍候..."):
+        if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats, p_ptl_focus, p_cp_focus):
+            ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats, p_ptl_focus, p_cp_focus)
+            if ok: 
+                st.success("✅ 資料已同步，且郵件已成功寄出！")
+            else: 
+                st.error(f"❌ 雲端同步成功，但寄送郵件失敗！錯誤細節：{mail_err}\n（請檢查 email 應用程式密碼設定是否過期或有誤）")
