@@ -14,7 +14,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import smtplib, io, os
+import smtplib, io, os, traceback
 import urllib.parse as _ul
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -88,45 +88,72 @@ def safe_str(val):
     if pd.isna(val) or val is None or str(val).strip().lower() == "nan": return ""
     return str(val)
 
+def clean_df_to_list(df):
+    return df.astype(str).values.tolist()
+
 def draw_page_number(canvas, doc):
     page_num = canvas.getPageNumber()
     text = f"- 第 {page_num} 頁 -"
     canvas.setFont(_get_font(), 10)
     canvas.drawCentredString(105 * mm, 10 * mm, text)
 
-# ★★★ 核心連線修正區塊 ★★★
+# ★★★ 核心連線修正：完全參照二合一成功運作之邏輯 ★★★
 @st.cache_resource
 def get_client():
-    if "gcp_service_account" not in st.secrets: return None
     try:
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        # 同步能運作程式碼的關鍵修正：處理私鑰的字串換行符號
-        if "private_key" in creds_dict and isinstance(creds_dict["private_key"], str):
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=SCOPES,
+        )
         return gspread.authorize(creds)
-    except:
+    except Exception as e:
+        st.error(f"Google 授權失敗：{e}")
         return None
 
-# 優化點 A：將快取 TTL 從 5 秒拉長至 60 秒，大幅降低短時間內重複讀取雲端的次數
-@st.cache_data(ttl=60)
+# 快取調回與二合一相近之設定 (或依需求保留 60 秒)
+@st.cache_data(ttl=10)
 def load_data():
     try:
         client = get_client()
         if client is None: return None, None, None, None, "權限不足或未設定密鑰"
         sh = client.open_by_key(SHEET_ID)
-        return (pd.DataFrame(sh.worksheet(WS_MAP["set"]).get_all_records()).fillna(""), 
-                pd.DataFrame(sh.worksheet(WS_MAP["cmd"]).get_all_records()).fillna(""), 
-                pd.DataFrame(sh.worksheet(WS_MAP["ptl"]).get_all_records()).fillna(""), 
-                pd.DataFrame(sh.worksheet(WS_MAP["cp"]).get_all_records()).fillna(""), None)
-    except Exception as e: return None, None, None, None, str(e)
+        
+        try:
+            df_set = pd.DataFrame(sh.worksheet(WS_MAP["set"]).get_all_records()).fillna("")
+        except:
+            df_set = None
+            
+        try:
+            df_cmd = pd.DataFrame(sh.worksheet(WS_MAP["cmd"]).get_all_records()).fillna("")
+        except:
+            df_cmd = pd.DataFrame()
+            
+        try:
+            df_ptl = pd.DataFrame(sh.worksheet(WS_MAP["ptl"]).get_all_records()).fillna("")
+        except:
+            df_ptl = pd.DataFrame()
+            
+        try:
+            df_cp = pd.DataFrame(sh.worksheet(WS_MAP["cp"]).get_all_records()).fillna("")
+        except:
+            df_cp = pd.DataFrame()
+            
+        return df_set, df_cmd, df_ptl, df_cp, None
+    except Exception as e: 
+        return None, None, None, None, str(e)
 
+# ★★★ 儲存邏輯翻修：參照二合一的動態自動建立工作表與 clear/update 機制 ★★★
 def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc):
     try:
         client = get_client()
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
-        ws_set = sh.worksheet(WS_MAP["set"])
+        
+        # 1. 設定工作表
+        try:
+            ws_set = sh.worksheet(WS_MAP["set"])
+        except Exception:
+            ws_set = sh.add_worksheet(title=WS_MAP["set"], rows="50", cols="5")
         ws_set.clear()
         ws_set.update(range_name='A1', values=[
             ["Key", "Value"], 
@@ -137,15 +164,43 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
             ["phase1_desc", p1_desc],
             ["phase2_desc", p2_desc]
         ])
-        for ws_name, df in [(WS_MAP["cmd"], df_cmd), (WS_MAP["ptl"], df_ptl), (WS_MAP["cp"], df_cp)]:
-            ws = sh.worksheet(ws_name)
-            ws.clear()
-            df_cleaned = clean_df(df)
-            if not df_cleaned.empty:
-                ws.update(range_name='A1', values=[df_cleaned.columns.tolist()] + df_cleaned.astype(str).values.tolist())
+        
+        # 2. 指揮組工作表
+        try:
+            ws_cmd = sh.worksheet(WS_MAP["cmd"])
+        except Exception:
+            ws_cmd = sh.add_worksheet(title=WS_MAP["cmd"], rows="100", cols="20")
+        ws_cmd.clear()
+        clean_cmd = df_cmd.dropna(how="all").fillna("")
+        if not clean_cmd.empty:
+            ws_cmd.update(range_name='A1', values=[clean_cmd.columns.tolist()] + clean_df_to_list(clean_cmd))
+            
+        # 3. 巡邏組工作表
+        try:
+            ws_ptl = sh.worksheet(WS_MAP["ptl"])
+        except Exception:
+            ws_ptl = sh.add_worksheet(title=WS_MAP["ptl"], rows="100", cols="20")
+        ws_ptl.clear()
+        clean_ptl = df_ptl.dropna(how="all").fillna("")
+        if not clean_ptl.empty:
+            ws_ptl.update(range_name='A1', values=[clean_ptl.columns.tolist()] + clean_df_to_list(clean_ptl))
+            
+        # 4. 路檢組工作表
+        try:
+            ws_cp = sh.worksheet(WS_MAP["cp"])
+        except Exception:
+            ws_cp = sh.add_worksheet(title=WS_MAP["cp"], rows="100", cols="20")
+        ws_cp.clear()
+        clean_cp = df_cp.dropna(how="all").fillna("")
+        if not clean_cp.empty:
+            ws_cp.update(range_name='A1', values=[clean_cp.columns.tolist()] + clean_df_to_list(clean_cp))
+            
         st.cache_data.clear()
         return True
-    except: return False
+    except Exception as e:
+        st.error(f"❌ 同步失敗原因：{e}")
+        st.code(traceback.format_exc())
+        return False
 
 # --- PDF 相關函數 ---
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc):
@@ -327,7 +382,6 @@ def sync_personnel_data(df_ptl, df_cp):
 
 # --- 3. 主程式介面 ---
 
-# 優化點 B：在側邊欄最上方新增一個強制重新整理按鈕，方便您在外部修改試算表後手動同步
 if st.sidebar.button("🔄 強制從雲端更新資料"):
     st.cache_data.clear()
     st.rerun()
@@ -337,20 +391,19 @@ st.title("🚓 二階段勤務規劃系統")
 # 讀取資料庫
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
 
-# 核心安全性修復：攔檢 429 流量爆載錯誤，提示使用者並優雅阻斷
 if err:
     if "429" in str(err) or "Quota exceeded" in str(err):
-        st.error("⚠️ Google 雲端連線過於頻繁（API 額度暫時用光），系統已啟動保護。請等待 1 分鐘後再重新整理網頁即可恢復。")
+        st.error("⚠️ Google 雲端連線過於頻繁（API 額度暫時用光），請等待 1 分鐘後再重新整理網頁。")
     else:
-        st.error(f"❌ 雲端資料庫連線失敗，請檢查網路或密鑰設定。錯誤訊息: {err}")
-    st.stop() 
+        st.warning(f"⚠️ 無法連線 Google Sheets ({err})，顯示預設或已載入資料。")
 
-# 確保變數即便為空值也是正確的 DataFrame 結構，並防止後續元件 .empty 報錯
+# 確保基礎結構
 df_set = df_set if isinstance(df_set, pd.DataFrame) else pd.DataFrame()
-df_cmd = df_cmd if isinstance(df_cmd, pd.DataFrame) else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
-df_ptl = df_ptl if isinstance(df_ptl, pd.DataFrame) else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
-df_cp = df_cp if isinstance(df_cp, pd.DataFrame) else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
+df_cmd = df_cmd if (isinstance(df_cmd, pd.DataFrame) and not df_cmd.empty) else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
+df_ptl = df_ptl if (isinstance(df_ptl, pd.DataFrame) and not df_ptl.empty) else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
+df_cp = df_cp if (isinstance(df_cp, pd.DataFrame) and not df_cp.empty) else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
 
+# 讀取設定檔對應值
 d = dict(zip(df_set.iloc[:, 0].astype(str), df_set.iloc[:, 1].astype(str))) if not df_set.empty else {}
 
 u = d.get("unit_name", DEFAULT_UNIT)
@@ -375,7 +428,7 @@ phase1_desc = cc1.text_input("第一階段標題說明", p1_d)
 phase2_desc = cc2.text_input("第二階段標題說明", p2_d)
 
 st.subheader("1. 指揮編組")
-res_cmd = st.data_editor(df_cmd, num_rows="dynamic", use_container_width=True)
+res_cmd = st.data_editor(df_cmd, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
 b_info = st.text_area("📢 勤前教育", b, height=70)
 
 st.subheader("2. 勤務編組")
@@ -383,7 +436,7 @@ tab1, tab2 = st.tabs(["📍 第一階段", "🚧 第二階段"])
 
 with tab1:
     st.info(f"當前標題：{phase1_desc}")
-    res_ptl = auto_assign_radio_code(st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor"))
+    res_ptl = auto_assign_radio_code(st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")).dropna(how="all").fillna("")
 
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
@@ -391,10 +444,10 @@ with tab2:
         st.session_state["synced_cp"] = sync_personnel_data(res_ptl, df_cp)
         st.rerun()
     current_cp = st.session_state.get("synced_cp", df_cp)
-    res_cp = auto_assign_radio_code(st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor"))
+    res_cp = auto_assign_radio_code(st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")).dropna(how="all").fillna("")
 
 st.markdown("---")
-pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, clean_df(res_cmd), clean_df(res_ptl), clean_df(res_cp), phase1_desc, phase2_desc)
+pdf_plan = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
 
 col_dl1, col_dl2 = st.columns(2)
@@ -402,8 +455,11 @@ col_dl1.download_button("📝 下載規劃表", data=pdf_plan, file_name=f"{u}�
 col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_name=f"{u}執行{p_name}勤務簽到表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True):
-    with st.spinner("處理中..."):
+    with st.spinner("同步中，請稍候…"):
         if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc):
-            ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
-            if ok: st.success(f"✅ 同步與發信成功！已在後台為專案自動補上「{date_code}」代碼。")
-            else: st.error(f"❌ 發信失敗: {mail_err}")
+            with st.spinner("同步成功，正在寄送郵件…"):
+                ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
+            if ok: 
+                st.success(f"✅ 同步與發信成功！已在後台為專案自動補上「{date_code}」代碼。")
+            else: 
+                st.error(f"❌ 發信失敗: {mail_err}")
