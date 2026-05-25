@@ -12,6 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
+import pdfplumber
 from pdf2image import convert_from_bytes
 
 # --- 導入 Gemini API ---
@@ -88,7 +89,7 @@ def p18_page():
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統將自動裁剪格式、透過 AI 解析分配表、產出雙報表並一起發送郵件附件。")
+    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統支援智慧解析分配表、自動裁剪格式、計算獎金，並一起發送郵件附件。")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -100,46 +101,66 @@ def p18_page():
     
     st.subheader("📝 2. 印領清冊設定")
     
-    file_alloc = st.file_uploader("📥 (選用) 上傳【獎勵金分配表】(PDF) AI 自動抓取每點金額", type=['pdf'])
+    file_alloc = st.file_uploader("📥 (選用) 上傳【獎勵金分配表】(PDF) 自動抓取每點金額", type=['pdf'])
     auto_point_val = 1.905
     
     if file_alloc is not None:
-        if model is None:
-            st.error("Gemini 模型未初始化，無法自動辨識 PDF。")
-        else:
-            try:
-                pdf_bytes = file_alloc.read()
-                
-                with st.spinner("🕵️‍♂️ 正在呼叫 Gemini 視覺引擎解析分配表..."):
-                    # 將 PDF 第一頁轉為圖片
-                    images = convert_from_bytes(pdf_bytes, first_page=1, last_page=1, dpi=200)
-                    
-                    if images:
-                        # 給 Gemini 的精準 Prompt
-                        prompt = (
-                            "這是一張警察局的獎勵金分配表或公文影像。請幫我從中找出「每點獎金」（或是「點值」、「每點發給多少元」）。\n"
-                            "請『只』回傳阿拉伯數字本身（例如：1.375 或 1.905），絕對不要加入任何其他文字、符號或解釋。\n"
-                            "如果真的完全找不到，請回傳字串 None。"
-                        )
-                        
-                        response = model.generate_content([prompt, images[0]], safety_settings=safety_settings)
-                        raw_text = response.text.strip()
-                        
-                        with st.expander("🔍 點我看 AI 原始回傳結果 (除錯用)"):
-                            st.text(raw_text)
-                        
-                        # 從回傳結果中精準提取小數
-                        match = re.search(r'(\d+\.\d{2,4})', raw_text)
-                        if match:
-                            auto_point_val = float(match.group(1))
-                            st.success(f"✅ 系統已透過 Gemini AI 成功解析分配表，獲取每點金額為：**{auto_point_val}**")
+        try:
+            pdf_bytes = file_alloc.read()
+            pdf_text = ""
+            
+            # --- 第一階段：免費、快速的正則萃取法 ---
+            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                for page in pdf.pages:
+                    extracted = page.extract_text()
+                    if extracted:
+                        pdf_text += extracted + "\n"
+            
+            # 將常見的全形數字、引號轉換為半形，方便匹配
+            trans_table = str.maketrans('０１２３４５６７８９．，”“"', '0123456789.,   ')
+            pdf_text_half = pdf_text.translate(trans_table)
+            
+            # 尋找所有 0~5 開頭，加上小數點，且有 2~4 位小數的數字 (完美對應 1.375)
+            matches = re.findall(r'(?<!\d)([0-5]\.\d{2,4})(?!\d)', pdf_text_half)
+            
+            if matches:
+                most_common_val = Counter(matches).most_common(1)[0][0]
+                auto_point_val = float(most_common_val)
+                st.success(f"✅ 系統已成功解析分配表，獲取每點金額為：**{auto_point_val}**")
+            
+            # --- 第二階段：若是掃描檔或找不到，呼叫 Gemini AI 備援 ---
+            else:
+                if model is None:
+                    st.warning("⚠️ 此份 PDF 無法直接提取文字，且 AI 模型未啟用，請手動輸入每點金額。")
+                else:
+                    with st.spinner("🕵️‍♂️ 系統自動切換為 Gemini AI 視覺引擎解析分配表..."):
+                        images = convert_from_bytes(pdf_bytes, first_page=1, last_page=1, dpi=200)
+                        if images:
+                            prompt = (
+                                "這是一張警察局的獎勵金分配表或公文影像。請幫我從中找出「每點獎金」（或是「點值」、「每點發給多少元」）。\n"
+                                "請『只』回傳阿拉伯數字本身（例如：1.375 或 1.905），絕對不要加入任何其他文字、符號或解釋。\n"
+                                "如果找不到，請回傳字串 None。"
+                            )
+                            try:
+                                response = model.generate_content([prompt, images[0]], safety_settings=safety_settings)
+                                raw_text = response.text.strip()
+                                
+                                match = re.search(r'(\d+\.\d{2,4})', raw_text)
+                                if match:
+                                    auto_point_val = float(match.group(1))
+                                    st.success(f"✅ 系統已透過 Gemini AI 成功解析分配表，獲取每點金額為：**{auto_point_val}**")
+                                else:
+                                    st.warning(f"⚠️ AI 無法辨識出有效的數字格式，請在下方手動輸入。")
+                            except Exception as ai_e:
+                                if "429" in str(ai_e) or "depleted" in str(ai_e):
+                                    st.warning("⚠️ Google Gemini API 額度已耗盡，請在下方手動輸入每點金額。")
+                                else:
+                                    st.warning(f"⚠️ AI 辨識失敗 ({ai_e})，請手動輸入。")
                         else:
-                            st.warning(f"⚠️ AI 無法辨識出有效的數字格式，回傳內容為：{raw_text}，請在下方手動輸入。")
-                    else:
-                        st.error("❌ PDF 轉換圖片失敗。")
-                        
-            except Exception as e:
-                st.error(f"❌ 解析 PDF 發生錯誤：{e}")
+                            st.warning("⚠️ PDF 轉換圖片失敗，請手動輸入。")
+                            
+        except Exception as e:
+            st.error(f"❌ 讀取分配表發生錯誤：{e}")
 
     point_value = st.number_input("💵 每點獎金金額", value=auto_point_val, format="%.3f", step=0.001)
 
