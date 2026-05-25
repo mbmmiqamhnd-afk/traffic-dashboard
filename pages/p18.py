@@ -5,6 +5,7 @@ import sys
 import os
 import re
 import smtplib
+import json
 import numpy as np
 import urllib.parse as _ul
 from collections import Counter
@@ -89,7 +90,7 @@ def p18_page():
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統支援智慧解析分配表、自動裁剪格式、計算獎金，並一起發送郵件附件。")
+    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統支援智慧解析分配表、自動裁剪、對帳防呆，並發送雙報表郵件。")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -99,70 +100,94 @@ def p18_page():
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
     file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xlsx'], accept_multiple_files=True)
     
-    st.subheader("📝 2. 印領清冊設定")
+    st.subheader("📝 2. 印領清冊設定與官方分配額度")
     
-    file_alloc = st.file_uploader("📥 (選用) 上傳【獎勵金分配表】(PDF) 自動抓取每點金額", type=['pdf'])
+    file_alloc = st.file_uploader("📥 (選用) 上傳【獎勵金分配表】(PDF) 自動抓取點值與預算", type=['pdf'])
+    
+    # 預設變數
     auto_point_val = 1.905
+    official_direct = 0
+    official_coworker = 0
     
     if file_alloc is not None:
         try:
             pdf_bytes = file_alloc.read()
             pdf_text = ""
+            found_by_pdfplumber = False
             
-            # --- 第一階段：免費、快速的正則萃取法 ---
+            # --- 第一階段：免費、快速的正則萃取法 (尋找龍潭分局) ---
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
                 for page in pdf.pages:
                     extracted = page.extract_text()
                     if extracted:
                         pdf_text += extracted + "\n"
             
-            # 將常見的全形數字、引號轉換為半形，方便匹配
-            trans_table = str.maketrans('０１２３４５６７８９．，”“"', '0123456789.,   ')
-            pdf_text_half = pdf_text.translate(trans_table)
+            for line in pdf_text.split('\n'):
+                if '龍潭' in line:
+                    clean_line = line.replace(',', '').replace('"', '')
+                    nums = re.findall(r'\d+\.\d+|\d+', clean_line)
+                    # 尋找帶有小數點的「每點獎金」
+                    for i, num in enumerate(nums):
+                        if '.' in num:
+                            auto_point_val = float(num)
+                            if i + 1 < len(nums):
+                                official_direct = int(nums[i+1])
+                            if i + 2 < len(nums):
+                                official_coworker = int(nums[i+2])
+                            found_by_pdfplumber = True
+                            break
+                    if found_by_pdfplumber:
+                        break
             
-            # 尋找所有 0~5 開頭，加上小數點，且有 2~4 位小數的數字 (完美對應 1.375)
-            matches = re.findall(r'(?<!\d)([0-5]\.\d{2,4})(?!\d)', pdf_text_half)
-            
-            if matches:
-                most_common_val = Counter(matches).most_common(1)[0][0]
-                auto_point_val = float(most_common_val)
-                st.success(f"✅ 系統已成功解析分配表，獲取每點金額為：**{auto_point_val}**")
-            
-            # --- 第二階段：若是掃描檔或找不到，呼叫 Gemini AI 備援 ---
-            else:
+            # --- 第二階段：若是掃描檔或找不到龍潭分局，呼叫 Gemini AI 備援 ---
+            if not found_by_pdfplumber:
                 if model is None:
-                    st.warning("⚠️ 此份 PDF 無法直接提取文字，且 AI 模型未啟用，請手動輸入每點金額。")
+                    st.warning("⚠️ 此份 PDF 無法直接提取文字，且 AI 模型未啟用，請手動確認金額。")
                 else:
-                    with st.spinner("🕵️‍♂️ 系統自動切換為 Gemini AI 視覺引擎解析分配表..."):
+                    with st.spinner("🕵️‍♂️ 系統自動切換為 Gemini AI 視覺引擎深度解析分配表..."):
                         images = convert_from_bytes(pdf_bytes, first_page=1, last_page=1, dpi=200)
                         if images:
                             prompt = (
-                                "這是一張警察局的獎勵金分配表或公文影像。請幫我從中找出「每點獎金」（或是「點值」、「每點發給多少元」）。\n"
-                                "請『只』回傳阿拉伯數字本身（例如：1.375 或 1.905），絕對不要加入任何其他文字、符號或解釋。\n"
-                                "如果找不到，請回傳字串 None。"
+                                "這是一張警察局的獎勵金分配表。請幫我找出針對『龍潭分局』的以下三個數值：\n"
+                                "1. 每點獎金（或點值，通常為帶小數的數字）\n"
+                                "2. 直接執行人員獎金\n"
+                                "3. 共同作業及配合人員獎金\n\n"
+                                "請務必嚴格回傳 JSON 格式，不要加入任何對話、說明文字或 Markdown 標記，金額請去除逗號轉為純數字，格式如下：\n"
+                                "{\n"
+                                '  "每點獎金": 1.375,\n'
+                                '  "直接執行人員獎金": 169272,\n'
+                                '  "共同作業及配合人員獎金": 51360\n'
+                                "}"
                             )
                             try:
                                 response = model.generate_content([prompt, images[0]], safety_settings=safety_settings)
-                                raw_text = response.text.strip()
+                                raw_text = response.text.strip().replace('```json', '').replace('```', '').strip()
                                 
-                                match = re.search(r'(\d+\.\d{2,4})', raw_text)
-                                if match:
-                                    auto_point_val = float(match.group(1))
-                                    st.success(f"✅ 系統已透過 Gemini AI 成功解析分配表，獲取每點金額為：**{auto_point_val}**")
-                                else:
-                                    st.warning(f"⚠️ AI 無法辨識出有效的數字格式，請在下方手動輸入。")
+                                data = json.loads(raw_text)
+                                auto_point_val = float(data.get("每點獎金", auto_point_val))
+                                official_direct = int(data.get("直接執行人員獎金", 0))
+                                official_coworker = int(data.get("共同作業及配合人員獎金", 0))
                             except Exception as ai_e:
                                 if "429" in str(ai_e) or "depleted" in str(ai_e):
-                                    st.warning("⚠️ Google Gemini API 額度已耗盡，請在下方手動輸入每點金額。")
+                                    st.warning("⚠️ Google Gemini API 額度已耗盡，請手動輸入。")
                                 else:
-                                    st.warning(f"⚠️ AI 辨識失敗 ({ai_e})，請手動輸入。")
+                                    st.warning(f"⚠️ AI 辨識失敗或找不到龍潭分局，請手動確認。")
                         else:
                             st.warning("⚠️ PDF 轉換圖片失敗，請手動輸入。")
-                            
+
+            # 顯示解析出來的官方額度面板
+            if auto_point_val or official_direct > 0:
+                st.success("✅ 系統已成功解析分配表！")
+                st.markdown("###### 📊 官方核定額度 (龍潭分局)")
+                cc1, cc2, cc3 = st.columns(3)
+                cc1.info(f"💵 **每點獎金:**\n### {auto_point_val}")
+                cc2.info(f"👮‍♂️ **直接執行人員獎金:**\n### $ {official_direct:,}")
+                cc3.info(f"🤝 **共同作業人員獎金:**\n### $ {official_coworker:,}")
+
         except Exception as e:
             st.error(f"❌ 讀取分配表發生錯誤：{e}")
 
-    point_value = st.number_input("💵 每點獎金金額", value=auto_point_val, format="%.3f", step=0.001)
+    point_value = st.number_input("💵 本月計算使用之「每點獎金」", value=auto_point_val, format="%.3f", step=0.001)
 
     st.markdown("##### 👥 共同作業及配合人員名單 (內建完整預設值)")
     st.caption("💡 提示：本表已載入全分局預設名單。可直接在表格內修改異動金額，或在最下方點擊「+」新增人員，勾選左側核取方塊按 Delete 可刪除。")
@@ -371,6 +396,13 @@ def p18_page():
                 df_coworkers_final.dropna(how='all', inplace=True)
                 df_coworkers_final.insert(0, '序號', range(1, len(df_coworkers_final) + 1))
                 coworkers_total_money = pd.to_numeric(df_coworkers_final['金額'], errors='coerce').fillna(0).sum()
+
+                # --- 🚨 智慧對帳警告系統 🚨 ---
+                if official_coworker > 0 and coworkers_total_money != official_coworker:
+                    st.warning(f"⚠️ **對帳異常 (共同作業)：** 您網頁上設定的獎金總和為 ${coworkers_total_money:,}，但官方分配表為 ${official_coworker:,}，相差 {abs(coworkers_total_money - official_coworker)} 元！請確認名單是否有增刪。")
+                
+                if official_direct > 0 and direct_total_money != official_direct:
+                    st.warning(f"⚠️ **對帳異常 (直接執行)：** 系統計算各員警獎金四捨五入總和為 ${direct_total_money:,}，與官方分配表 ${official_direct:,} 相差 {abs(direct_total_money - official_direct)} 元。(通常為進位誤差，必要時請手動微調報表)")
 
                 summary_data = [
                     {"項目": "直接執行人員", "金額": direct_total_money},
