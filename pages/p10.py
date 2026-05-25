@@ -79,7 +79,7 @@ DEFAULT_SIGN_POINTS = "巡簽地點：\n1. 中油高原交流道站（龍源路2
 DEFAULT_NOTES = "一、各編組執行前由帶班人員在駐地實施勤前教育。\n二、攔檢、盤查車輛時，應隨時注意自身安全及執勤態度。\n三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。\n四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"
 
 # =========================
-# 字體、Google Sheets、PDF、Email 函數（與之前相同）
+# 字體
 # =========================
 @st.cache_resource
 def _get_font():
@@ -95,6 +95,9 @@ def _get_font():
                 pass
     return "Helvetica"
 
+# =========================
+# Google Sheets
+# =========================
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets:
@@ -166,8 +169,134 @@ def save_data(settings_dict, cmd, ptl):
         st.error(f"❌ 儲存失敗：{e}")
         return False
 
-# PDF 生成與 Email 函數（與之前相同，省略以節省空間，請保留您之前的版本）
-# ... (generate_pdf 和 send_email 保持不變) ...
+# =========================
+# PDF 生成
+# =========================
+def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, notes):
+    font = _get_font()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=12*mm, bottomMargin=15*mm)
+    W = A4[0] - 24*mm
+    story = []
+
+    s_title = ParagraphStyle("title", fontName=font, fontSize=15, alignment=1, leading=22, spaceAfter=4, wordWrap="CJK")
+    s_sub = ParagraphStyle("sub", fontName=font, fontSize=13, alignment=1, leading=20, spaceAfter=4, wordWrap="CJK")
+    s_th = ParagraphStyle("th", fontName=font, fontSize=13, alignment=1, leading=18, wordWrap="CJK")
+    s_cell = ParagraphStyle("cell", fontName=font, fontSize=12, alignment=1, leading=17, wordWrap="CJK")
+    s_left = ParagraphStyle("left", fontName=font, fontSize=12, alignment=0, leading=17, wordWrap="CJK")
+    s_note = ParagraphStyle("note", fontName=font, fontSize=11, alignment=0, leading=16, spaceBefore=2, wordWrap="CJK", leftIndent=10, firstLineIndent=-10)
+
+    def c(txt, style=s_cell):
+        return Paragraph(str(txt).replace("\n", "<br/>"), style)
+
+    story.append(Paragraph(f"<b>{UNIT_TITLE}執行「{project_name}」規劃表</b>", s_title))
+    story.append(Paragraph(f"勤務時間：{time_str}", s_sub))
+    story.append(Spacer(1, 3*mm))
+
+    cmd_clean = cmd_df.dropna(how="all").fillna("")
+    data_cmd = [[Paragraph("<b>任 務 編 組</b>", s_th), "", "", ""]]
+    data_cmd.append([Paragraph(f"<b>{h}</b>", s_th) for h in CMD_COLS])
+    for _, row in cmd_clean.iterrows():
+        data_cmd.append([c(f"<b>{row.get('職稱','')}</b>"), c(row.get("代號","")), 
+                        c(str(row.get("姓名","")).replace("、","<br/>")), c(row.get("任務",""), s_left)])
+    t_cmd = Table(data_cmd, colWidths=[W*0.13, W*0.11, W*0.25, W*0.51], repeatRows=2)
+    t_cmd.setStyle(TableStyle([("FONTNAME",(0,0),(-1,-1),font), ("GRID",(0,0),(-1,-1),0.5,colors.black),
+                               ("VALIGN",(0,0),(-1,-1),"MIDDLE"), ("SPAN",(0,0),(-1,0)), 
+                               ("BACKGROUND",(0,0),(-1,1),colors.HexColor("#f2f2f2"))]))
+    story.append(t_cmd)
+    story.append(Spacer(1, 4*mm))
+
+    if fast_cmd.strip():
+        story.append(Paragraph(f"交通快打指揮官：{fast_cmd}", s_sub))
+        story.append(Spacer(1, 2*mm))
+
+    ptl_clean = ptl_df.copy()
+    if len(ptl_clean) < 3:
+        ptl_clean = DEFAULT_PTL.copy()
+    else:
+        ptl_clean = ptl_clean[ptl_clean["勤務時段"].astype(str).str.strip() != ""].reset_index(drop=True)
+
+    data_ptl = [[Paragraph("<b>警 力 佈 署</b>", s_th), "", "", "", ""]]
+    data_ptl.append([Paragraph(f"<b>{h}</b>", s_th) for h in PTL_COLS])
+
+    for _, row in ptl_clean.iterrows():
+        data_ptl.append([
+            c(row.get("勤務時段", "")),
+            c(row.get("代號", "")),
+            c(row.get("編組", "")),
+            c(str(row.get("服勤人員", "")).replace("、", "<br/>")),
+            c(row.get("任務分工", ""), s_left)
+        ])
+
+    merge_groups = []
+    if len(ptl_clean) > 0:
+        i = 0
+        while i < len(ptl_clean):
+            j = i + 1
+            curr = str(ptl_clean.iloc[i]["勤務時段"]).strip()
+            while j < len(ptl_clean) and str(ptl_clean.iloc[j]["勤務時段"]).strip() == curr:
+                j += 1
+            if j - i > 1:
+                merge_groups.append((i + 2, i + j + 1))
+            i = j
+
+    ts_ptl = [
+        ("FONTNAME", (0,0), (-1,-1), font),
+        ("GRID", (0,0), (-1,-1), 0.5, colors.black),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("SPAN", (0,0), (-1,0)),
+        ("BACKGROUND", (0,0), (-1,1), colors.HexColor("#e6e6e6")),
+    ]
+    for start, end in merge_groups:
+        ts_ptl.append(("SPAN", (0, start), (0, end-1)))
+
+    t_ptl = Table(data_ptl, colWidths=[W*0.18, W*0.10, W*0.14, W*0.18, W*0.40], repeatRows=2)
+    t_ptl.setStyle(TableStyle(ts_ptl))
+    story.append(t_ptl)
+    story.append(Spacer(1, 4*mm))
+
+    if sign_points.strip():
+        for line in sign_points.strip().split("\n"):
+            if line.strip():
+                story.append(Paragraph(line.strip(), s_note))
+        story.append(Spacer(1, 3*mm))
+
+    story.append(Paragraph("<b>備註：</b>", s_sub))
+    for line in notes.strip().split("\n"):
+        if line.strip():
+            story.append(Paragraph(line.strip(), s_note))
+
+    def add_page_number(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 10)
+        canvas.drawCentredString(A4[0] / 2, 8*mm, f"- {canvas.getPageNumber()} -")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
+    buf.seek(0)
+    return buf
+
+# Email
+def send_email(subject, pdf_buf, filename):
+    try:
+        sender = st.secrets["email"]["user"]
+        pwd = st.secrets["email"]["password"]
+        msg = MIMEMultipart()
+        msg["From"] = sender
+        msg["To"] = sender
+        msg["Subject"] = subject
+        msg.attach(MIMEText("附件為最新勤務規劃表。", "plain", "utf-8"))
+        part = MIMEBase("application", "pdf")
+        part.set_payload(pdf_buf.read())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(filename)}.pdf")
+        msg.attach(part)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+            s.login(sender, pwd)
+            s.send_message(msg)
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 # =========================
 # 主畫面
@@ -201,13 +330,8 @@ st.subheader("1. 任務編組")
 res_cmd = st.data_editor(use_cmd, num_rows="dynamic", use_container_width=True)
 
 st.subheader("2. 警力佈署")
-st.caption("💡 相同勤務時段會自動合併 • 已嚴格移除空白列")
-res_ptl = st.data_editor(
-    use_ptl, 
-    num_rows="fixed",      # 固定模式，不顯示額外空白行
-    use_container_width=True, 
-    height=380             # 更精準的高度
-)
+st.caption("💡 相同勤務時段會自動合併 • 已移除空白列")
+res_ptl = st.data_editor(use_ptl, num_rows="fixed", use_container_width=True, height=380)
 
 st.subheader("3. 巡簽地點與備註")
 col_c, col_d = st.columns(2)
