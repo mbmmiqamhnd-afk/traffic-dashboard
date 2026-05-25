@@ -24,6 +24,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
 import numpy as np
+from datetime import datetime, timedelta
 
 # =========================
 # 基本設定
@@ -327,6 +328,54 @@ col_a, col_b = st.columns(2)
 project_name = col_a.text_input("專案名稱", value=settings.get("project_name", DEFAULT_PROJECT))
 time_val = col_b.text_input("勤務時間", value=settings.get("time", DEFAULT_TIME))
 fast_cmd = st.text_input("交通快打指揮官", value=settings.get("fast_cmd", DEFAULT_FAST_CMD))
+
+# ========================================================
+# 核心新增：根據「勤務時間」自動連動更新「警力部署」的日期
+# ========================================================
+date_updated = False
+# 嘗試解析完整的民國年月日格式 (例如: 115年5月25日)
+date_match = re.search(r"(\d+)年(\d+)月(\d+)日", time_val)
+if date_match:
+    try:
+        roc_year = int(date_match.group(1))
+        m = int(date_match.group(2))
+        d = int(date_match.group(3))
+        
+        # 換算為西元年以準確處理跨月與閏年
+        ce_year = roc_year + 1911
+        current_date = datetime(ce_year, m, d)
+        next_date = current_date + timedelta(days=1)
+        
+        m_str = str(m)
+        d_str = str(d)
+        next_m_str = str(next_date.month)
+        next_d_str = str(next_date.day)
+        
+        for idx in range(len(use_ptl)):
+            group_name = str(use_ptl.loc[idx, "編組"])
+            if "專責警力" in group_name:
+                use_ptl.loc[idx, "勤務時段"] = f"{next_m_str}月{next_d_str}日\n零時至4時"
+            else:
+                use_ptl.loc[idx, "勤務時段"] = f"{m_str}月{d_str}日\n22時至翌日6時"
+        date_updated = True
+    except ValueError:
+        pass
+
+# 備用方案：若使用者未輸入年份，僅輸入「X月X日」
+if not date_updated:
+    date_match_simple = re.search(r"(\d+)月(\d+)日", time_val)
+    if date_match_simple:
+        m_str = date_match_simple.group(1)
+        d = int(date_match_simple.group(2))
+        next_d = d + 1
+        
+        for idx in range(len(use_ptl)):
+            group_name = str(use_ptl.loc[idx, "編組"])
+            if "專責警力" in group_name:
+                use_ptl.loc[idx, "勤務時段"] = f"{m_str}月{next_d}日\n零時至4時"
+            else:
+                use_ptl.loc[idx, "勤務時段"] = f"{m_str}月{d}日\n22時至翌日6時"
+# ========================================================
 
 st.subheader("1. 任務編組")
 res_cmd = st.data_editor(use_cmd, num_rows="dynamic", use_container_width=True)
