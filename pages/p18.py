@@ -11,6 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
+import PyPDF2  # 👈 新增：用於解析 PDF 分配表
 
 # 自動將上層目錄加入路徑
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -71,7 +72,31 @@ def p18_page():
     
     # 2. 印領清冊參數與名單設定
     st.subheader("📝 2. 印領清冊設定")
-    point_value = st.number_input("💵 每點獎金金額", value=1.905, format="%.3f", step=0.001)
+    
+    # 👈 新增：上傳 PDF 分配表自動抓取金額
+    file_alloc = st.file_uploader("📥 (選用) 上傳【獎勵金分配表】(PDF) 自動抓取每點金額", type=['pdf'])
+    auto_point_val = 1.905  # 預設值
+    
+    if file_alloc is not None:
+        try:
+            reader = PyPDF2.PdfReader(file_alloc)
+            pdf_text = ""
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    pdf_text += extracted
+            
+            # 使用正則表達式尋找公文常見的「每點 XXX 元」或「點值 XXX」
+            match = re.search(r'(?:每點|點值)[^\d]*(\d+\.\d+|\d+)', pdf_text)
+            if match:
+                auto_point_val = float(match.group(1))
+                st.success(f"✅ 系統已自動從分配表中讀取到每點金額：**{auto_point_val}**")
+            else:
+                st.warning("⚠️ 無法自動識別 PDF 中的金額格式，請在下方手動輸入。")
+        except Exception as e:
+            st.error(f"❌ 讀取 PDF 失敗：{e}")
+
+    point_value = st.number_input("💵 每點獎金金額", value=auto_point_val, format="%.3f", step=0.001)
 
     st.markdown("##### 👥 共同作業及配合人員名單 (內建完整預設值)")
     st.caption("💡 提示：本表已載入全分局預設名單。可直接在表格內修改異動金額，或在最下方點擊「+」新增人員，勾選左側核取方塊按 Delete 可刪除。")
