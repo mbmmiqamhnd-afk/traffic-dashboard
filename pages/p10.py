@@ -10,10 +10,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
-import io
-import os
-import re
-import smtplib
+import io, os, re, smtplib
 import urllib.parse as _ul
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -32,6 +29,12 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 UNIT_TITLE = "桃園市政府警察局龍潭分局"
 
+WS_MAP = {
+    "set": "危駕_設定",
+    "cmd": "危駕_指揮組",
+    "ptl": "危駕_警力佈署"
+}
+
 CHECKIN_POINTS = """1. 中油高原交流道站（龍源路2-20號）
 2. 萊爾富超商-龍潭石門山店（龍源路大平段262號）
 3. 7-11龍潭佳園門市（中正路三坑段776號）
@@ -43,7 +46,6 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
-# ★★★ 5月22日 專案專屬精準底稿資料庫 (解決 NameError 漏寫殘留) ★★★
 DEFAULT_TIME_VAL = "115年5月22日22時至翌日6時"
 DEFAULT_CMDR_VAL = "龍潭所副所長全楚文"
 
@@ -53,7 +55,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "副指揮官", "代號": "隆安3", "姓名": "副分局長蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
     {"職稱": "業務組", "代號": "隆安13", "姓名": "交通組巡官郭勝隆", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報群聚飆車狀況。"},
     {"職稱": "督導組", "代號": "隆安6", "姓名": "督察組組長 黃長旗", "任務": "督導各編組服儀裝備及勤務紀律"},
-    {"職稱": "通訊組", "代號": "隆安", "姓名": "主任蔡奇青\n執勤官李文章\n執勤員黃文興", "任務": "指揮、調度及通報本勤務事宜"}
+    {"職稱": "通訊組", "代號": "隆安", "姓名": "主任蔡奇青\n執勤官李文章\n執勤員黃文興", "任務": "監看群聚告警訊息、指揮、調度及通報本勤務事宜"}
 ])
 
 DEFAULT_SCHEDULE = pd.DataFrame([
@@ -72,14 +74,10 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安70", "編組": "中興所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"}
 ])
 
-# --- 工具函式 ---
-def normalize(s):
-    return str(s).replace('\n', '').replace('\r', '').replace(' ', '').strip()
+def normalize(s): return str(s).replace('\n', '').replace('\r', '').replace(' ', '').strip()
+def is_blank(val): return normalize(val) in ["", "None", "nan"]
 
-def is_blank(val):
-    return normalize(val) in ["", "None", "nan"]
-
-# --- 2. Google Sheets 連線 (完全對齊聯合稽查高穩定成功版) ---
+# --- 2. Google Sheets 連線 (完全對齊聯合稽查版) ---
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets: return None
@@ -88,92 +86,82 @@ def get_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=10)
-def load_from_cloud():
+# ★★★ 移植聯合稽查的初始化函數 ★★★
+def init_sheets():
     try:
         client = get_client()
-        if not client: return None, None, None
         sh = client.open_by_key(SHEET_ID)
-        
-        # 增加容錯抓取
-        try: ws_set = sh.worksheet("危駕_設定")
-        except: ws_set = None
-        try: ws_cmd = sh.worksheet("危駕_指揮組")
-        except: ws_cmd = None
-        try: ws_ptl = sh.worksheet("危駕_警力佈署")
-        except: ws_ptl = None
-        
-        s = pd.DataFrame(ws_set.get_all_records()).fillna("") if ws_set else None
-        c = pd.DataFrame(ws_cmd.get_all_records()).fillna("") if ws_cmd else pd.DataFrame()
-        p = pd.DataFrame(ws_ptl.get_all_records()).fillna("") if ws_ptl else pd.DataFrame()
-        return s, c, p
-    except: 
-        return None, None, None
+        headers = {
+            WS_MAP["set"]: [["Key", "Value"]],
+            WS_MAP["cmd"]: [["職稱", "代號", "姓名", "任務"]],
+            WS_MAP["ptl"]: [["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]
+        }
+        for ws_name, head in headers.items():
+            try:
+                sh.worksheet(ws_name)
+                st.sidebar.info(f"✔ {ws_name} 已存在")
+            except:
+                sh.add_worksheet(title=ws_name, rows="100", cols="20").update(head)
+                st.sidebar.success(f"➕ 已建立 {ws_name}")
+        load_data.clear()
+        st.rerun()
+    except Exception as e:
+        st.error(f"初始化失敗：{e}")
 
-def save_to_cloud(p_time, cmdr, df_c, df_p):
+@st.cache_data(ttl=10)
+def load_data():
     try:
         client = get_client()
-        if not client: return False
+        if client is None: return None, None, None, "權限不足"
         sh = client.open_by_key(SHEET_ID)
-        
-        # 1. 危駕_設定 (導入自動補開防禦)
-        try:
-            ws_set = sh.worksheet("危駕_設定")
-        except Exception:
-            ws_set = sh.add_worksheet(title="危駕_設定", rows="50", cols="5")
+        ws_set = sh.worksheet(WS_MAP["set"])
+        ws_cmd = sh.worksheet(WS_MAP["cmd"])
+        ws_ptl = sh.worksheet(WS_MAP["ptl"])
+        return pd.DataFrame(ws_set.get_all_records()).fillna(""), pd.DataFrame(ws_cmd.get_all_records()).fillna(""), pd.DataFrame(ws_ptl.get_all_records()).fillna(""), None
+    except Exception as e: 
+        return None, None, None, str(e)
+
+def save_data(p_time, cmdr, df_c, df_p):
+    try:
+        client = get_client()
+        sh = client.open_by_key(SHEET_ID)
+        ws_set = sh.worksheet(WS_MAP["set"])
         ws_set.clear()
         ws_set.update([["Key", "Value"], ["plan_time", p_time], ["commander", cmdr]])
-        
-        # 2. 危駕_指揮組 (完全對齊聯合稽查成功版更新語法)
-        try:
-            ws_cmd = sh.worksheet("危駕_指揮組")
-        except Exception:
-            ws_cmd = sh.add_worksheet(title="危駕_指揮組", rows="100", cols="20")
-        ws_cmd.clear()
-        clean_cmd = df_c.dropna(how="all").fillna("")
-        if not clean_cmd.empty:
-            ws_cmd.update([clean_cmd.columns.tolist()] + clean_cmd.values.tolist())
-            
-        # 3. 危駕_警力佈署
-        try:
-            ws_ptl = sh.worksheet("危駕_警力佈署")
-        except Exception:
-            ws_ptl = sh.add_worksheet(title="危駕_警力佈署", rows="100", cols="20")
-        ws_ptl.clear()
-        clean_ptl = df_p.dropna(how="all").fillna("")
-        if not clean_ptl.empty:
-            ws_ptl.update([clean_ptl.columns.tolist()] + clean_ptl.values.tolist())
-            
-        load_from_cloud.clear()
+        for ws_name, df in [(WS_MAP["cmd"], df_c), (WS_MAP["ptl"], df_p)]:
+            ws = sh.worksheet(ws_name)
+            ws.clear()
+            df_cleaned = df.dropna(how='all').fillna("")
+            if not df_cleaned.empty:
+                ws.update([df_cleaned.columns.tolist()] + df_cleaned.values.tolist())
+        load_data.clear()
         return True
-    except: 
+    except Exception as e: 
+        st.error(f"儲存失敗：{e}")
         return False
 
-# --- 寄信功能 ---
+# --- 3. 寄信功能 ---
 def send_report_email(time_str, commander, df_cmd, df_patrol, custom_filename):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
-        pdf_buf = generate_pdf(time_str, commander, df_cmd, df_patrol)
-        pdf_bytes = pdf_buf.getvalue()
-        
         msg = MIMEMultipart()
-        msg["From"] = sender; msg["To"] = sender; msg["Subject"] = custom_filename
+        msg["From"], msg["To"], msg["Subject"] = sender, sender, custom_filename
         msg.attach(MIMEText(f"附件為「{custom_filename}」PDF 規劃表。", "plain", "utf-8"))
         
+        pdf_buf = generate_pdf(time_str, commander, df_cmd, df_patrol)
         part = MIMEBase("application", "pdf")
-        part.set_payload(pdf_bytes); encoders.encode_base64(part)
-        filename_encoded = _ul.quote(f"{custom_filename}.pdf")
-        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{filename_encoded}")
+        part.set_payload(pdf_buf.getvalue())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(custom_filename+'.pdf')}")
         msg.attach(part)
         
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
             server.sendmail(sender, sender, msg.as_string())
         return True, None
-    except Exception as e:
-        return False, str(e)
+    except Exception as e: return False, str(e)
 
-# --- 邏輯運算函式 ---
+# --- 4. 邏輯運算與 PDF ---
 def calc_time_strings(p_time):
     date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日(.*)', p_time)
     if not date_match: return "", ""
@@ -182,33 +170,20 @@ def calc_time_strings(p_time):
     y_tw = int(y) if y else (datetime.now().year - 1911)
     base_dt = datetime(y_tw + 1911, m, d)
     next_dt = base_dt + timedelta(days=1)
-    dedicated_time = f"{next_dt.month}月{next_dt.day}日\n零時至4時"
-    normal_time = f"{m}月{d}日\n{time_part}"
-    return dedicated_time, normal_time
+    return f"{next_dt.month}月{next_dt.day}日\n零時至4時", f"{m}月{d}日\n{time_part}"
 
 def get_unit_details(cmdr_input):
-    if "分隊" in cmdr_input: unit_base = "隆安99"
-    elif "石門" in cmdr_input: unit_base = "隆安8"
-    elif "高平" in cmdr_input: unit_base = "隆安9"
-    elif "聖亭" in cmdr_input: unit_base = "隆安5"
-    elif "龍潭" in cmdr_input: unit_base = "隆安6"
-    elif "中興" in cmdr_input: unit_base = "隆安7"
-    else: unit_base = "隆安"
-    
+    unit_base = "隆安99" if "分隊" in cmdr_input else "隆安8" if "石門" in cmdr_input else "隆安9" if "高平" in cmdr_input else "隆安5" if "聖亭" in cmdr_input else "隆安6" if "龍潭" in cmdr_input else "隆安7" if "中興" in cmdr_input else "隆安"
     suffix = "1" if ("所長" in cmdr_input and "副" not in cmdr_input) else "2"
     unit_match = re.search(r'([\u4e00-\u9fa5]+?(?:派出所|所|分隊|警備隊))', cmdr_input)
     unit_name = re.sub(r'派出所$', '所', unit_match.group(1)) if unit_match else cmdr_input[:3]
-    
     return unit_base + suffix, f"專責警力\n（{unit_name}輪值）"
 
-# --- PDF 字型與產生 ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
-    for p in ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf", "/usr/share/fonts/truetype/custom/kaiu.ttf"]:
-        if os.path.exists(p):
-            pdfmetrics.registerFont(TTFont(fname, p))
-            return fname
+    for p in ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]:
+        if os.path.exists(p): pdfmetrics.registerFont(TTFont(fname, p)); return fname
     return "Helvetica"
 
 def generate_pdf(time_str, commander, df_cmd, df_patrol):
@@ -217,12 +192,6 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
     page_width = A4[0] - 24*mm
     story = []
-    
-    def draw_footer(canvas, doc):
-        canvas.saveState()
-        canvas.setFont(font, 10)
-        canvas.drawCentredString(A4[0] / 2, 10 * mm, f"- {doc.page} -")
-        canvas.restoreState()
     
     style_title = ParagraphStyle('T', fontName=font, fontSize=16, alignment=1, spaceAfter=8)
     style_info = ParagraphStyle('I', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
@@ -239,12 +208,10 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
         s = str(txt).replace('\n', '<br/>').replace('\xa0', ' ')
         return re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
 
-    data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_th), '', '', ''], 
-                [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
+    data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_th), '', '', ''], [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
         if all(str(v).strip() == "" for v in r.values): continue
         data_cmd.append([Paragraph(br(r.get('職稱','')), style_cell), Paragraph(br(r.get('代號', '')), style_cell), Paragraph(br(r.get('姓名','')), style_cell), Paragraph(br(r.get('任務','')), style_cell_l)])
-    
     t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.15, page_width*0.25, page_width*0.45])
     t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]))
     story.append(t1); story.append(Spacer(1, 6*mm))
@@ -253,7 +220,6 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     for _, r in df_patrol.iterrows():
         if all(str(v).strip() == "" for v in r.values): continue
         data_ptl.append([Paragraph(br(r.get('勤務時段','')), style_cell), Paragraph(br(r.get('代號', '')), style_cell), Paragraph(br(r.get('編組','')), style_cell), Paragraph(br(r.get('服勤人員','')), style_cell), Paragraph(br(r.get('任務分工','')), style_cell_l)])
-
     t2 = Table(data_ptl, colWidths=[page_width*0.22, page_width*0.13, page_width*0.15, page_width*0.23, page_width*0.27])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
     story.append(t2); story.append(Spacer(1, 6*mm))
@@ -261,15 +227,13 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     story.append(Paragraph("<b>📍 巡簽地點：</b>", style_cell_l))
     for l in CHECKIN_POINTS.split('\n'):
         if l.strip(): story.append(Paragraph(l.strip(), style_note_hanging))
-        
     story.append(Spacer(1, 4*mm)); story.append(Paragraph("<b>📝 備註：</b>", style_cell_l))
     for l in NOTES.split('\n'):
         if l.strip(): story.append(Paragraph(l.strip(), style_note_hanging))
 
-    doc.build(story, onFirstPage=draw_footer, onLaterPages=draw_footer)
+    doc.build(story, onFirstPage=lambda c, d: c.drawCentredString(A4[0]/2, 10*mm, f"- {d.page} -"), onLaterPages=lambda c, d: c.drawCentredString(A4[0]/2, 10*mm, f"- {d.page} -"))
     buf.seek(0); return buf
 
-# --- HTML 預覽 ---
 def get_preview_html(df_c, df_p, cmdr_n, time_s):
     cmd_rows = ""
     for _, r in df_c.iterrows():
@@ -285,15 +249,30 @@ def get_preview_html(df_c, df_p, cmdr_n, time_s):
     <table><tr><th colspan="5">警 力 佈 署</th></tr><tr><th colspan="5" style="text-align:left;">交通快打指揮官：{cmdr_n}</th></tr><tr><th>勤務時段</th><th>代號</th><th>編組</th><th>服勤人員</th><th>任務分工</th></tr>{ptl_rows}</table>"""
 
 # ============================================================
-# 主介面
+# 5. 主介面與側邊欄設定
 # ============================================================
+st.sidebar.title("🛠️ 雲端設定")
+if st.sidebar.button("初始化/檢查雲端分頁"): init_sheets()
+if st.sidebar.button("⚠️ 強制重置為最新專案資料 (覆蓋雲端)"):
+    with st.spinner("重置中..."):
+        save_data(DEFAULT_TIME_VAL, DEFAULT_CMDR_VAL, DEFAULT_CMD, DEFAULT_SCHEDULE)
+        st.cache_data.clear()
+        st.rerun()
+
+st.title("🚔 防制危險駕車專案勤務規劃表")
+
+df_set, df_cmd_raw, df_ptl_raw, err = load_data()
+
 if 'data_ptl' not in st.session_state:
-    s, c, p = load_from_cloud()
-    if s is not None and not s.empty:
-        sd = dict(zip(s.iloc[:, 0].astype(str), s.iloc[:, 1].astype(str)))
+    if err and err != "權限不足":
+        st.warning(f"⚠️ 尚未初始化雲端資料，目前顯示預設底稿。請點擊左側「初始化/檢查雲端分頁」。")
+        
+    if df_set is not None and not df_set.empty:
+        sd = dict(zip(df_set.iloc[:, 0].astype(str), df_set.iloc[:, 1].astype(str)))
         st.session_state.p_time = sd.get("plan_time", DEFAULT_TIME_VAL)
         st.session_state.cmdr = sd.get("commander", DEFAULT_CMDR_VAL)
-        st.session_state.data_cmd, st.session_state.data_ptl = c, p
+        st.session_state.data_cmd = df_cmd_raw
+        st.session_state.data_ptl = df_ptl_raw
     else:
         st.session_state.p_time = DEFAULT_TIME_VAL
         st.session_state.cmdr = DEFAULT_CMDR_VAL
@@ -354,14 +333,20 @@ date_match = re.search(r'(?:(\d+)年)?(\d+)月(\d+)日', p_time)
 date_fn = f"{date_match.group(1) if date_match.group(1) else str(datetime.now().year - 1911)}{str(date_match.group(2)).zfill(2)}{str(date_match.group(3)).zfill(2)}" if date_match else datetime.now().strftime('%m%d')
 final_filename = f"防制危險駕車勤務規劃表_{date_fn}"
 
+st.markdown("---")
+with st.expander("📄 預覽勤務規劃表"):
+    html_preview = get_preview_html(res_cmd, st.session_state.data_ptl, cmdr_input, p_time)
+    st.components.v1.html(html_preview, height=600, scrolling=True)
+
 col_sync, col_pdf = st.columns(2)
+
 if col_sync.button("💾 同步雲端並發送備份郵件", type="primary", use_container_width=True):
     with st.spinner("處理中..."):
-        if save_to_cloud(p_time, cmdr_input, res_cmd, st.session_state.data_ptl):
+        if save_data(p_time, cmdr_input, res_cmd, st.session_state.data_ptl):
             mail_ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, st.session_state.data_ptl, final_filename)
             if mail_ok: st.success("✅ 同步與郵件發送成功！")
             else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {mail_err}")
-        else: st.error("❌ 雲端同步失敗，請檢查權限設定或工作表名稱。")
+        else: st.error("❌ 雲端同步失敗，請先點擊左側「初始化/檢查雲端分頁」。")
 
 pdf_buf = generate_pdf(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
 col_pdf.download_button(label="📝 下載規劃表 PDF", data=pdf_buf.getvalue(), file_name=f"{final_filename}.pdf", mime="application/pdf", use_container_width=True)
