@@ -138,7 +138,8 @@ def load_data():
         
         if not ptl_df.empty:
             ptl_df = ptl_df.reindex(columns=PTL_COLS, fill_value="")
-            ptl_df = ptl_df[ptl_df["勤務時段"].astype(str).str.strip() != ""]
+            # 強力移除空白列
+            ptl_df = ptl_df[ptl_df["勤務時段"].astype(str).str.strip() != ""].reset_index(drop=True)
         
         settings = {}
         if not set_df.empty and set_df.shape[1] >= 2:
@@ -160,8 +161,7 @@ def save_data(settings_dict, cmd, ptl):
             ws = sh.worksheet(ws_name)
             ws.clear()
             df_clean = df[cols].fillna("")
-            if not df_clean.empty:
-                ws.update([df_clean.columns.tolist()] + df_clean.values.tolist())
+            ws.update([df_clean.columns.tolist()] + df_clean.values.tolist())
         load_data.clear()
         return True
     except Exception as e:
@@ -188,11 +188,11 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     def c(txt, style=s_cell):
         return Paragraph(str(txt).replace("\n", "<br/>"), style)
 
+    # 標題與任務編組（略，與之前相同）
     story.append(Paragraph(f"<b>{UNIT_TITLE}執行「{project_name}」規劃表</b>", s_title))
     story.append(Paragraph(f"勤務時間：{time_str}", s_sub))
     story.append(Spacer(1, 3*mm))
 
-    # 任務編組
     cmd_clean = cmd_df.dropna(how="all").fillna("")
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", s_th), "", "", ""]]
     data_cmd.append([Paragraph(f"<b>{h}</b>", s_th) for h in CMD_COLS])
@@ -210,12 +210,12 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
         story.append(Paragraph(f"交通快打指揮官：{fast_cmd}", s_sub))
         story.append(Spacer(1, 2*mm))
 
-    # 警力佈署
+    # 警力佈署 - 加強清理
     ptl_clean = ptl_df.copy()
     if len(ptl_clean) < 3:
         ptl_clean = DEFAULT_PTL.copy()
     else:
-        ptl_clean = ptl_clean[ptl_clean["勤務時段"].astype(str).str.strip() != ""].fillna("")
+        ptl_clean = ptl_clean[ptl_clean["勤務時段"].astype(str).str.strip() != ""].reset_index(drop=True)
 
     data_ptl = [[Paragraph("<b>警 力 佈 署</b>", s_th), "", "", "", ""]]
     data_ptl.append([Paragraph(f"<b>{h}</b>", s_th) for h in PTL_COLS])
@@ -229,6 +229,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
             c(row.get("任務分工", ""), s_left)
         ])
 
+    # 合併邏輯
     merge_groups = []
     if len(ptl_clean) > 0:
         i = 0
@@ -256,6 +257,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     story.append(t_ptl)
     story.append(Spacer(1, 4*mm))
 
+    # 巡簽與備註
     if sign_points.strip():
         for line in sign_points.strip().split("\n"):
             if line.strip():
@@ -277,7 +279,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     buf.seek(0)
     return buf
 
-# Email
+# Email 函數
 def send_email(subject, pdf_buf, filename):
     try:
         sender = st.secrets["email"]["user"]
@@ -317,6 +319,9 @@ if err:
 use_cmd = cmd_df if (cmd_df is not None and not cmd_df.empty) else DEFAULT_CMD.copy()
 use_ptl = ptl_df if (ptl_df is not None and not ptl_df.empty) else DEFAULT_PTL.copy()
 
+# 再次確保沒有空白列
+use_ptl = use_ptl[use_ptl["勤務時段"].astype(str).str.strip() != ""].reset_index(drop=True)
+
 st.subheader("基本設定")
 col_a, col_b = st.columns(2)
 project_name = col_a.text_input("專案名稱", value=settings.get("project_name", DEFAULT_PROJECT))
@@ -328,7 +333,7 @@ res_cmd = st.data_editor(use_cmd, num_rows="dynamic", use_container_width=True)
 
 st.subheader("2. 警力佈署")
 st.caption("💡 相同勤務時段會自動合併 • 已移除空白列")
-res_ptl = st.data_editor(use_ptl, num_rows="dynamic", use_container_width=True, height=680)
+res_ptl = st.data_editor(use_ptl, num_rows="dynamic", use_container_width=True, height=650)
 
 st.subheader("3. 巡簽地點與備註")
 col_c, col_d = st.columns(2)
