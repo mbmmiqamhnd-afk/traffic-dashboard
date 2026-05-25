@@ -92,21 +92,24 @@ def p18_page():
                 if extracted:
                     pdf_text += extracted
                     
-            # 第二階段：若是掃描檔則啟用 OCR
-            if len(pdf_text.strip()) < 10:
+            # 💡 判斷是否為亂碼：一份獎勵金分配表不可能沒有「半個數字」
+            is_garbled = not bool(re.search(r'\d', pdf_text))
+                    
+            # 第二階段：若是掃描檔或是「編碼異常的亂碼」則啟用 OCR
+            if len(pdf_text.strip()) < 10 or is_garbled:
                 if HAS_OCR:
-                    with st.spinner("🕵️‍♂️ 偵測到掃描檔，正在啟動 OCR 影像辨識引擎，請稍候..."):
+                    with st.spinner("🕵️‍♂️ 偵測到 PDF 亂碼或掃描圖，強制啟動 OCR 影像辨識引擎，請稍候..."):
+                        pdf_text = ""  # 👈 將剛剛讀到的外星文亂碼清空
                         images = pdf2image.convert_from_bytes(pdf_bytes, first_page=1, last_page=1)
                         if images:
                             ocr_text = pytesseract.image_to_string(images[0], lang='chi_tra')
                             pdf_text += ocr_text
                 else:
-                    st.warning("⚠️ 偵測到此 PDF 為掃描圖片，但伺服器尚在安裝 OCR 套件中。")
+                    st.warning("⚠️ 偵測到此 PDF 存在編碼問題，但伺服器尚缺乏 OCR 套件。")
             
             with st.expander("🔍 點我看系統從 PDF 讀取到的原始文字 (除錯用)"):
                 st.text(pdf_text if pdf_text.strip() else "無文字內容")
             
-            # --- 💡 升級版演算法：找出表格中最常出現的 2~4 位小數數字 ---
             trans_table = str.maketrans('０１２３４５６７８９．', '0123456789.')
             pdf_text_half = pdf_text.translate(trans_table)
             
@@ -114,12 +117,11 @@ def p18_page():
             matches = re.findall(r'\b(\d+\.\d{2,4})\b', pdf_text_half)
             
             if matches:
-                # 取得在各分局分配表中重複出現最多次的那個小數（最高機率就是全區統一的每點金額）
+                # 取得在各分局分配表中重複出現最多次的那個小數
                 most_common_val = Counter(matches).most_common(1)[0][0]
                 auto_point_val = float(most_common_val)
-                st.success(f"✅ 系統已成功從表格中解析出每點金額為：**{auto_point_val}**")
+                st.success(f"✅ 系統已成功透過 OCR/解析 表格，獲取每點金額為：**{auto_point_val}**")
             else:
-                # 若找不到小數，退回嘗試尋找「每點 XX 元」的句型
                 fallback_match = re.search(r'(?:每點|點值|單價|發給)[^\d]{0,10}?(\d+\.\d+|\d+)', pdf_text_half)
                 if fallback_match:
                     auto_point_val = float(fallback_match.group(1))
