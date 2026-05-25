@@ -3,19 +3,20 @@ import streamlit as st
 # 【修正 1】st.set_page_config 必須是全站第一個執行的 Streamlit 指令
 st.set_page_config(page_title="防制危險駕車月份版", layout="wide", page_icon="🗓️")
 
-# 引入自訂選單
-from menu import show_sidebar
-show_sidebar()
+try:
+    from menu import show_sidebar
+    show_sidebar()
+except ImportError:
+    pass
 
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
 import smtplib
 import io
 import os
 import urllib.parse as _ul
-import re  # 👈 【補上關鍵引入】避免產生 NameError
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -28,12 +29,19 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
 
-# --- 常數與設定 ---
+# =========================
+# 常數與設定 (套用每日版邏輯)
+# =========================
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
-SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+WS_MAP = {"set": "危駕月_設定", "cmd": "危駕月_指揮組", "sch": "危駕月_勤務表"}
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 UNIT = "桃園市政府警察局龍潭分局"
+CMD_COLS = ["職稱", "代號", "姓名", "任務"]
+SCH_COLS = ["日期（22時至翌日6時）", "單位", "分工"]
 
-# --- 預設範本資料 ---
+# =========================
+# 預設範本資料
+# =========================
 DEFAULT_MONTH = "115年5月份"
 
 DEFAULT_CMD = pd.DataFrame([
@@ -58,24 +66,6 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"欄位名稱": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "115年5月15日～\n5月16日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "115年5月22日～\n5月23日", "單位": "石門派出所", "分工": "於中正路、文化路、慢車道、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "115年5月29日～\n5月30日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、格致路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"}
 ])
@@ -94,52 +84,85 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 （二）違反刑法185條妨害公眾往來安全罪。
 （三）違反社會秩序維護法第72條妨害安寧者，同法第64條聚眾不解散。"""
 
-# --- 2. 建立連線與讀取 ---
+# =========================
+# 連線與讀寫機制 (完全套用每日版)
+# =========================
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets:
+        st.error("❌ 找不到 gcp_service_account，請確認 Secrets 設定。")
         return None
     try:
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        info = dict(st.secrets["gcp_service_account"])
+        info["private_key"] = info["private_key"].replace("\\n", "\n")
+        creds = Credentials.from_service_account_info(info, scopes=SCOPES)
         return gspread.authorize(creds)
-    except:
+    except Exception as e:
+        st.error(f"Google 授權失敗：{e}")
         return None
 
-@st.cache_data(ttl=60)
+def init_sheets():
+    client = get_client()
+    if client is None: return
+    sh = client.open_by_key(SHEET_ID)
+    headers = {WS_MAP["set"]: [["Key", "Value"]], WS_MAP["cmd"]: [CMD_COLS], WS_MAP["sch"]: [SCH_COLS]}
+    for name, header in headers.items():
+        try:
+            sh.worksheet(name)
+        except:
+            sh.add_worksheet(title=name, rows="200", cols="20").update(header)
+    st.success("✅ 初始化完成")
+    st.cache_data.clear()
+    st.rerun()
+
+@st.cache_data(ttl=5)
 def load_data():
     try:
         client = get_client()
-        if client is None: return None, None, None, "離線模式"
+        if client is None:
+            return None, None, None, {}, "授權失敗"
         sh = client.open_by_key(SHEET_ID)
-        ws_set = sh.worksheet("危駕月_設定")
-        ws_cmd = sh.worksheet("危駕月_指揮組")
-        ws_sch = sh.worksheet("危駕月_勤務表")
-        return pd.DataFrame(ws_set.get_all_records()), pd.DataFrame(ws_cmd.get_all_records()), pd.DataFrame(ws_sch.get_all_records()), None
-    except Exception as e: return None, None, None, str(e)
+        set_df = pd.DataFrame(sh.worksheet(WS_MAP["set"]).get_all_records()).fillna("")
+        cmd_df = pd.DataFrame(sh.worksheet(WS_MAP["cmd"]).get_all_records()).fillna("")
+        sch_df = pd.DataFrame(sh.worksheet(WS_MAP["sch"]).get_all_records()).fillna("")
+        
+        if not sch_df.empty:
+            sch_df = sch_df.reindex(columns=SCH_COLS, fill_value="")
+            # 月份版可能有空白的日期列(需要合併儲存格用)，所以不能像每日版直接把空日期 drop 掉
+            
+        settings = {}
+        if not set_df.empty and set_df.shape[1] >= 2:
+            settings = dict(zip(set_df.iloc[:,0].astype(str), set_df.iloc[:,1].astype(str)))
+        return set_df, cmd_df, sch_df, settings, None
+    except Exception as e:
+        return None, None, None, {}, str(e)
 
-def save_data(month, df_cmd, df_schedule):
+def save_data(settings_dict, cmd, sch):
     try:
         client = get_client()
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
         
-        ws_set = sh.worksheet("危駕月_設定")
+        ws_set = sh.worksheet(WS_MAP["set"])
         ws_set.clear()
-        ws_set.update(range_name='A1', values=[["Key", "Value"], ["month", month]])
+        ws_set.update([["Key", "Value"]] + [[k, v] for k, v in settings_dict.items()])
         
-        for ws_name, df in [("危駕月_指揮組", df_cmd), ("危駕月_勤務表", df_schedule)]:
+        for ws_name, df, cols in [(WS_MAP["cmd"], cmd, CMD_COLS), (WS_MAP["sch"], sch, SCH_COLS)]:
             ws = sh.worksheet(ws_name)
             ws.clear()
-            clean_df = df.fillna("").astype(str)
-            ws.update(range_name='A1', values=[clean_df.columns.tolist()] + clean_df.values.tolist())
-            
+            df_clean = df[cols].fillna("")
+            if not df_clean.empty:
+                ws.update([df_clean.columns.tolist()] + df_clean.values.tolist())
         load_data.clear()
         return True
-    except: return False
+    except Exception as e:
+        st.error(f"❌ 儲存失敗詳細錯誤：{e}")
+        return False
 
-# --- 3. PDF 生成 ---
+# =========================
+# PDF 生成 (加入 buf.seek(0) 以配合每日版信件邏輯)
+# =========================
+@st.cache_resource
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
@@ -150,10 +173,9 @@ def _get_font():
             return fname
     return "Helvetica"
 
-def generate_pdf_from_data(full_title, df_cmd, df_schedule):
+def generate_pdf(full_title, df_cmd, df_schedule):
     font = _get_font()
     buf = io.BytesIO()
-    # 調整邊距，給予表格完美伸展空間
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
     page_width = A4[0] - 24*mm
     story = []
@@ -176,9 +198,9 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
     story.append(Paragraph(f"<b>{full_title}</b>", style_title))
     def clean(txt): return str(txt).replace("\n", "<br/>").replace("、", "<br/>")
 
-    # 任務編組表格 (微調寬度比例，預留內距空隙防止右框線裁切)
+    # 任務編組表格
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_th), '', '', ''],
-                [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
+                [Paragraph(f"<b>{h}</b>", style_col_header) for h in CMD_COLS]]
     for _, r in df_cmd.iterrows():
         data_cmd.append([
             Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell), 
@@ -192,13 +214,12 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
 
     # 警力佈署表格
     data_sch = [[Paragraph("<b>警 力 佈 署</b>", style_th), '', ''],
-                [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["日期（22時至翌日6時）", "單位", "分工"]]]
+                [Paragraph(f"<b>{h}</b>", style_col_header) for h in SCH_COLS]]
     for _, r in df_schedule.iterrows():
         data_sch.append([Paragraph(clean(r.get('日期（22時至翌日6時）','')), style_cell), Paragraph(clean(r.get('單位','')), style_cell), Paragraph(str(r.get('分工','')), style_cell_left)])
     t2 = Table(data_sch, colWidths=[page_width*0.22, page_width*0.22, page_width*0.55], repeatRows=2)
     t2_styles = [('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5)]
     
-    # 合併日期單元格邏輯
     date_col = '日期（22時至翌日6時）'
     if not df_schedule.empty:
         non_empty = [i for i, val in enumerate(df_schedule[date_col]) if str(val).strip() != ""]
@@ -222,41 +243,53 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
         if line.strip(): story.append(Paragraph(line, style_hanging))
 
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
-    return buf.getvalue()
+    buf.seek(0)  # 重要：歸零指針，配合寄信
+    return buf
 
-# --- 4. 寄信功能 ---
-def send_report_email(full_title, df_cmd, df_schedule):
+# =========================
+# Email 發送機制 (完全套用每日版)
+# =========================
+def send_email(subject, pdf_buf, filename):
     try:
         sender = st.secrets["email"]["user"]
         pwd = st.secrets["email"]["password"]
-        pdf_bytes = generate_pdf_from_data(full_title, df_cmd, df_schedule)
         msg = MIMEMultipart()
         msg["From"] = sender
         msg["To"] = sender
-        msg["Subject"] = full_title
-        msg.attach(MIMEText(f"附件為最新的「{full_title}」報表 PDF。", "plain", "utf-8"))
+        msg["Subject"] = subject
+        msg.attach(MIMEText("附件為最新勤務規劃表（月份版）。", "plain", "utf-8"))
         part = MIMEBase("application", "pdf")
-        part.set_payload(pdf_bytes)
+        part.set_payload(pdf_buf.read())
         encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(full_title)}.pdf")
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(filename)}.pdf")
         msg.attach(part)
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender, pwd)
-            server.sendmail(sender, sender, msg.as_string())
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+            s.login(sender, pwd)
+            s.send_message(msg)
         return True, None
-    except Exception as e: return False, str(e)
+    except Exception as e:
+        return False, str(e)
 
-# --- 5. 主介面邏輯 ---
-df_set, df_cmd_raw, df_sch_raw, err = load_data()
-if not (err or df_set is None or df_set.empty):
-    sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
-    c_month = sd.get("month", DEFAULT_MONTH)
-    ed_cmd, ed_sch = df_cmd_raw, df_sch_raw
-else:
-    c_month = DEFAULT_MONTH
-    ed_cmd, ed_sch = DEFAULT_CMD.copy(), DEFAULT_SCHEDULE.copy()
-
+# =========================
+# 主畫面與佈局
+# =========================
 st.title("🚔 防制危險駕車專案勤務規劃表（月份版）")
+
+# 側邊欄工具 (套用每日版)
+if st.sidebar.button("🔧 初始化工作表"):
+    init_sheets()
+if st.sidebar.button("🔄 強制重新載入"):
+    st.cache_data.clear()
+    st.rerun()
+
+df_set, df_cmd_raw, df_sch_raw, settings, err = load_data()
+if err:
+    st.warning(f"⚠️ 無法連線 Google Sheets（{err}），顯示預設底稿。請嘗試點擊左側「初始化工作表」。")
+
+c_month = settings.get("month", DEFAULT_MONTH)
+ed_cmd = df_cmd_raw if (df_cmd_raw is not None and not df_cmd_raw.empty) else DEFAULT_CMD.copy()
+ed_sch = df_sch_raw if (df_sch_raw is not None and not df_sch_raw.empty) else DEFAULT_SCHEDULE.copy()
+
 c_month = st.text_input("1. 月份資訊", c_month)
 full_title = f"{UNIT}{c_month}執行「防制危險駕車」專案勤務規劃表"
 
@@ -270,18 +303,13 @@ def get_html():
     parts = ["<style>body{font-family:'標楷體';padding:20px;} table{border-collapse:collapse;width:100%;} th,td{border:1px solid black;padding:8px;font-size:14pt;text-align:center;line-height:1.5;} th{font-size:16pt;background-color:#f2f2f2;} .note-section{font-size:14pt;font-weight:bold;margin-top:15px;} .hanging-note{font-size:14pt;padding-left:2.2em;text-indent:-2.2em;margin-bottom:5px;line-height:1.6;}</style>"]
     parts.append(f"<html><body><h2 style='text-align:center;font-size:16pt;'><b>{full_title}</b></h2><br>")
     
-    # 任務編組表格
     parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>")
     for _, r in res_cmd.iterrows():
         parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
     
-    # 警力佈署表格
     parts.append("</table><br><table><tr><th colspan='3'>警 力 佈 署</th></tr><tr><th>日期</th><th>單位</th><th>分工</th></tr>")
     col_date = '日期（22時至翌日6時）'
-    
-    # 防止使用者在編輯器中誤改或刪除欄位名稱造成 Key表錯誤
     if col_date not in res_sch.columns:
-        # 自動尋找可能相符的舊日期欄位，若找不到則抓取第一欄
         potential_cols = [c for c in res_sch.columns if "日期" in c]
         col_date = potential_cols[0] if potential_cols else res_sch.columns[0]
 
@@ -313,12 +341,25 @@ def get_html():
 st.markdown("---")
 st.components.v1.html(get_html(), height=600, scrolling=True)
 
-if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
-    if save_data(c_month, res_cmd, res_sch):
-        ok, mail_err = send_report_email(full_title, res_cmd, res_sch)
-        if ok: st.success(f"📧 雲端同步成功，報表「{full_title}」已寄至信箱！")
-        else: st.error(f"❌ 同步成功但寄信失敗：{mail_err}")
-        pdf_out = generate_pdf_from_data(full_title, res_cmd, res_sch)
-        st.download_button(label="下載 PDF", data=pdf_out, file_name=f"{full_title}.pdf", mime="application/pdf")
-    else:
-        st.error("❌ 雲端同步失敗，請檢查 GCP 權限。")
+# 底部操作按鈕 (套用每日版三欄配置)
+st.markdown("---")
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    if st.button("💾 儲存至雲端", use_container_width=True):
+        s = {"month": c_month}
+        if save_data(s, res_cmd, res_sch):
+            st.success("✅ 已儲存")
+
+with col2:
+    pdf_buf = generate_pdf(full_title, res_cmd, res_sch)
+    st.download_button("📄 下載 PDF", data=pdf_buf, file_name=f"{full_title}.pdf", mime="application/pdf", use_container_width=True)
+
+with col3:
+    if st.button("📧 發送 Email", use_container_width=True):
+        pdf_buf2 = generate_pdf(full_title, res_cmd, res_sch)
+        ok, mail_err = send_email(full_title, pdf_buf2, full_title)
+        if ok:
+            st.success("✅ 已寄出")
+        else:
+            st.error(f"❌ 發送失敗：{mail_err}")
