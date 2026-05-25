@@ -315,8 +315,21 @@ if err:
 use_cmd = cmd_df if (cmd_df is not None and not cmd_df.empty) else DEFAULT_CMD.copy()
 use_ptl = ptl_df if (ptl_df is not None and not ptl_df.empty) else DEFAULT_PTL.copy()
 
-# 強力移除空白列
-use_ptl = use_ptl[use_ptl["勤務時段"].astype(str).str.strip() != ""].reset_index(drop=True)
+# 1. 先將所有字串中的空白字元處理為 NaN
+import numpy as np
+
+# 建立副本以避免影響原始資料
+use_ptl = use_ptl.replace(r'^\s*$', np.nan, regex=True)
+
+# 2. 刪除所有欄位都是 NaN (即整列皆空) 的列
+use_ptl = use_ptl.dropna(how='all')
+
+# 3. 重新建立索引
+use_ptl = use_ptl.reset_index(drop=True)
+
+# 4. 如果資料被濾光了，保留至少一行空白以便輸入 (選用，視需求而定)
+if use_ptl.empty:
+    use_ptl = pd.DataFrame(columns=PTL_COLS)
 
 st.subheader("基本設定")
 col_a, col_b = st.columns(2)
