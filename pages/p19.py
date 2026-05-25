@@ -146,10 +146,10 @@ def clean_df_to_list(df):
 @st.cache_resource
 def get_client():
     try:
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=SCOPES,
-        )
+        info = dict(st.secrets["gcp_service_account"])
+        # 確保 private_key 的 \n 是真實換行而非字面字串
+        info["private_key"] = info["private_key"].replace("\\n", "\n")
+        creds = Credentials.from_service_account_info(info, scopes=SCOPES)
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"Google 授權失敗：{e}")
