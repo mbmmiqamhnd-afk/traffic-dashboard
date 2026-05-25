@@ -12,7 +12,9 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
-import pypdf
+
+# 💡 升級：改用處理公文表格與 CID 字型更強大的 pdfplumber
+import pdfplumber
 
 # 嘗試載入 OCR 相關套件
 try:
@@ -85,22 +87,23 @@ def p18_page():
             pdf_bytes = file_alloc.read()
             pdf_text = ""
             
-            # 第一階段：常規讀取
-            reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
-            for page in reader.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    pdf_text += extracted
+            # 💡 第一階段：改用 pdfplumber 讀取 (能大幅解決公家機關字體亂碼問題)
+            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                for page in pdf.pages:
+                    extracted = page.extract_text()
+                    if extracted:
+                        pdf_text += extracted + "\n"
                     
-            # 💡 判斷是否為亂碼：一份獎勵金分配表不可能沒有「半個數字」
+            # 判斷是否為掃描檔或無法破解的亂碼 (連一個數字都沒有)
             is_garbled = not bool(re.search(r'\d', pdf_text))
                     
-            # 第二階段：若是掃描檔或是「編碼異常的亂碼」則啟用 OCR
+            # 第二階段：若是掃描檔或亂碼，啟用高解析度 OCR
             if len(pdf_text.strip()) < 10 or is_garbled:
                 if HAS_OCR:
-                    with st.spinner("🕵️‍♂️ 偵測到 PDF 亂碼或掃描圖，強制啟動 OCR 影像辨識引擎，請稍候..."):
-                        pdf_text = ""  # 👈 將剛剛讀到的外星文亂碼清空
-                        images = pdf2image.convert_from_bytes(pdf_bytes, first_page=1, last_page=1)
+                    with st.spinner("🕵️‍♂️ 偵測到 PDF 掃描圖或編碼異常，強制啟動高解析度 OCR 影像辨識引擎..."):
+                        pdf_text = ""  
+                        # dpi=300 是關鍵，能避免 OCR 把 1.375 辨識失敗
+                        images = pdf2image.convert_from_bytes(pdf_bytes, first_page=1, last_page=1, dpi=300)
                         if images:
                             ocr_text = pytesseract.image_to_string(images[0], lang='chi_tra')
                             pdf_text += ocr_text
@@ -110,17 +113,20 @@ def p18_page():
             with st.expander("🔍 點我看系統從 PDF 讀取到的原始文字 (除錯用)"):
                 st.text(pdf_text if pdf_text.strip() else "無文字內容")
             
-            trans_table = str.maketrans('０１２３４５６７８９．', '0123456789.')
+            # 全形轉半形
+            trans_table = str.maketrans('０１２３４５６７８９．，', '0123456789.,')
             pdf_text_half = pdf_text.translate(trans_table)
             
-            # 尋找所有類似 1.375 的數字
-            matches = re.findall(r'\b(\d+\.\d{2,4})\b', pdf_text_half)
+            # 💡 尋找所有類似 1.375 或 1,375 的數字 (相容 OCR 的逗號誤判)
+            matches = re.findall(r'\b(\d+[\.\,]\d{2,4})\b', pdf_text_half)
             
             if matches:
-                # 取得在各分局分配表中重複出現最多次的那個小數
-                most_common_val = Counter(matches).most_common(1)[0][0]
+                # 把可能誤判的逗號校正回小數點
+                clean_matches = [m.replace(',', '.') for m in matches]
+                # 取得在表格中重複出現最多次的那個小數
+                most_common_val = Counter(clean_matches).most_common(1)[0][0]
                 auto_point_val = float(most_common_val)
-                st.success(f"✅ 系統已成功透過 OCR/解析 表格，獲取每點金額為：**{auto_point_val}**")
+                st.success(f"✅ 系統已成功解析分配表，獲取每點金額為：**{auto_point_val}**")
             else:
                 fallback_match = re.search(r'(?:每點|點值|單價|發給)[^\d]{0,10}?(\d+\.\d+|\d+)', pdf_text_half)
                 if fallback_match:
