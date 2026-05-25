@@ -1,5 +1,6 @@
 import streamlit as st
-# 1. 頁面設定必須在最前面
+
+# --- 1. 頁面設定 (必須是全站第一個執行的 Streamlit 指令) ---
 st.set_page_config(page_title="防制危險駕車勤務", layout="wide", page_icon="🚔")
 
 from menu import show_sidebar
@@ -42,7 +43,7 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
-# ★★★ 5月22日 專案專屬精準底稿資料庫 (全楚文副所長版) ★★★
+# ★★★ 5月22日 專案專屬精準底稿資料庫 (解決 NameError 漏寫殘留) ★★★
 DEFAULT_TIME_VAL = "115年5月22日22時至翌日6時"
 DEFAULT_CMDR_VAL = "龍潭所副所長全楚文"
 
@@ -52,7 +53,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "副指揮官", "代號": "隆安3", "姓名": "副分局長蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
     {"職稱": "業務組", "代號": "隆安13", "姓名": "交通組巡官郭勝隆", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報群聚飆車狀況。"},
     {"職稱": "督導組", "代號": "隆安6", "姓名": "督察組組長 黃長旗", "任務": "督導各編組服儀裝備及勤務紀律"},
-    {"職稱": "通訊組", "代號": "隆安", "姓名": "主任蔡奇青\n執勤官李文章\n執勤員黃文興", "任務": "監看群聚告警訊息、指揮、調度及通報本勤務事宜"}
+    {"職稱": "通訊組", "代號": "隆安", "姓名": "主任蔡奇青\n執勤官李文章\n執勤員黃文興", "任務": "指揮、調度及通報本勤務事宜"}
 ])
 
 DEFAULT_SCHEDULE = pd.DataFrame([
@@ -78,7 +79,7 @@ def normalize(s):
 def is_blank(val):
     return normalize(val) in ["", "None", "nan"]
 
-# --- 2. Google Sheets 連線 (完全複製聯合稽查成功之解密管線) ---
+# --- 2. Google Sheets 連線 (完全對齊聯合稽查高穩定成功版) ---
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets: return None
@@ -93,9 +94,18 @@ def load_from_cloud():
         client = get_client()
         if not client: return None, None, None
         sh = client.open_by_key(SHEET_ID)
-        s = pd.DataFrame(sh.worksheet("危駕_設定").get_all_records()).fillna("")
-        c = pd.DataFrame(sh.worksheet("危駕_指揮組").get_all_records()).fillna("")
-        p = pd.DataFrame(sh.worksheet("危駕_警力佈署").get_all_records()).fillna("")
+        
+        # 增加容錯抓取
+        try: ws_set = sh.worksheet("危駕_設定")
+        except: ws_set = None
+        try: ws_cmd = sh.worksheet("危駕_指揮組")
+        except: ws_cmd = None
+        try: ws_ptl = sh.worksheet("危駕_警力佈署")
+        except: ws_ptl = None
+        
+        s = pd.DataFrame(ws_set.get_all_records()).fillna("") if ws_set else None
+        c = pd.DataFrame(ws_cmd.get_all_records()).fillna("") if ws_cmd else pd.DataFrame()
+        p = pd.DataFrame(ws_ptl.get_all_records()).fillna("") if ws_ptl else pd.DataFrame()
         return s, c, p
     except: 
         return None, None, None
@@ -106,18 +116,34 @@ def save_to_cloud(p_time, cmdr, df_c, df_p):
         if not client: return False
         sh = client.open_by_key(SHEET_ID)
         
-        # 1. 危駕_設定
-        ws_set = sh.worksheet("危駕_設定")
+        # 1. 危駕_設定 (導入自動補開防禦)
+        try:
+            ws_set = sh.worksheet("危駕_設定")
+        except Exception:
+            ws_set = sh.add_worksheet(title="危駕_設定", rows="50", cols="5")
         ws_set.clear()
         ws_set.update([["Key", "Value"], ["plan_time", p_time], ["commander", cmdr]])
         
-        # 2. 危駕_指揮組與警力佈署 (完全對齊聯合稽查 update 語法機制)
-        for name, df in [("危駕_指揮組", df_c), ("危駕_警力佈署", df_p)]:
-            ws = sh.worksheet(name)
-            ws.clear()
-            df_cleaned = df.dropna(how="all").fillna("")
-            if not df_cleaned.empty:
-                ws.update([df_cleaned.columns.tolist()] + df_cleaned.values.tolist())
+        # 2. 危駕_指揮組 (完全對齊聯合稽查成功版更新語法)
+        try:
+            ws_cmd = sh.worksheet("危駕_指揮組")
+        except Exception:
+            ws_cmd = sh.add_worksheet(title="危駕_指揮組", rows="100", cols="20")
+        ws_cmd.clear()
+        clean_cmd = df_c.dropna(how="all").fillna("")
+        if not clean_cmd.empty:
+            ws_cmd.update([clean_cmd.columns.tolist()] + clean_cmd.values.tolist())
+            
+        # 3. 危駕_警力佈署
+        try:
+            ws_ptl = sh.worksheet("危駕_警力佈署")
+        except Exception:
+            ws_ptl = sh.add_worksheet(title="危駕_警力佈署", rows="100", cols="20")
+        ws_ptl.clear()
+        clean_ptl = df_p.dropna(how="all").fillna("")
+        if not clean_ptl.empty:
+            ws_ptl.update([clean_ptl.columns.tolist()] + clean_ptl.values.tolist())
+            
         load_from_cloud.clear()
         return True
     except: 
@@ -131,14 +157,11 @@ def send_report_email(time_str, commander, df_cmd, df_patrol, custom_filename):
         pdf_bytes = pdf_buf.getvalue()
         
         msg = MIMEMultipart()
-        msg["From"] = sender
-        msg["To"] = sender
-        msg["Subject"] = custom_filename
+        msg["From"] = sender; msg["To"] = sender; msg["Subject"] = custom_filename
         msg.attach(MIMEText(f"附件為「{custom_filename}」PDF 規劃表。", "plain", "utf-8"))
         
         part = MIMEBase("application", "pdf")
-        part.set_payload(pdf_bytes)
-        encoders.encode_base64(part)
+        part.set_payload(pdf_bytes); encoders.encode_base64(part)
         filename_encoded = _ul.quote(f"{custom_filename}.pdf")
         part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{filename_encoded}")
         msg.attach(part)
@@ -338,7 +361,7 @@ if col_sync.button("💾 同步雲端並發送備份郵件", type="primary", use
             mail_ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, st.session_state.data_ptl, final_filename)
             if mail_ok: st.success("✅ 同步與郵件發送成功！")
             else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {mail_err}")
-        else: st.error("❌ 雲端同步失敗，請檢查權限設定。")
+        else: st.error("❌ 雲端同步失敗，請檢查權限設定或工作表名稱。")
 
 pdf_buf = generate_pdf(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
 col_pdf.download_button(label="📝 下載規劃表 PDF", data=pdf_buf.getvalue(), file_name=f"{final_filename}.pdf", mime="application/pdf", use_container_width=True)
