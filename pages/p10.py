@@ -67,7 +67,7 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     },
     {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安80", "編組": "石門所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路及旭日路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
     {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安90", "編組": "高平所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安990", "編組": "龍潭交通分隊", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於龍源路及及旭日路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安990", "編組": "龍潭交通分隊", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防\"勤務，於龍源路及及旭日路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
     {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安50", "編組": "聖亭所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
     {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安60", "編組": "龍潭所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
     {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安70", "編組": "中興所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"}
@@ -80,16 +80,35 @@ def normalize(s):
 def is_blank(val):
     return normalize(val) in ["", "None", "nan"]
 
-# ─────────────── ★ 核心連線：完全依照二合一正常功能程式碼修改 ───────────────
+# ─────────────── ★ 關鍵連線修正：高相容 PEM 金鑰自動重組機制 ★ ───────────────
 
 @st.cache_resource
 def get_client():
+    if "gcp_service_account" not in st.secrets: return None
     try:
-        # 完全移除舊版 .replace("\\n", "\n")，對齊二合一高穩定度寫法
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=SCOPES,
-        )
+        # 1. 把 Secrets 轉為可修改的獨立字典，保護後台不被污染
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        
+        # 2. 自動修正 PEM 多行與雙斜線金鑰地雷：
+        #    不論後台是含有真實鍵盤換行、帶有文字 \n、或是多餘的空格與隱形字符，
+        #    此段邏輯會強制進行「乾淨清洗與標準重組」，確保封包完全符合 cryptography 模組之 PEM 規範。
+        if "private_key" in creds_dict and isinstance(creds_dict["private_key"], str):
+            pk = creds_dict["private_key"].strip()
+            # 移除所有可能的雙斜線 \n 文字，並用真正的換行符號還原
+            pk = pk.replace("\\n", "\n")
+            
+            # 如果發現頭尾標籤以外的內文換行被破壞，進行正規化安全補強
+            if "-----BEGIN PRIVATE KEY-----" in pk and "-----END PRIVATE KEY-----" in pk:
+                header = "-----BEGIN PRIVATE KEY-----"
+                footer = "-----END PRIVATE KEY-----"
+                # 抽出內文，把內文所有的換行、回車與空格全部濾乾淨
+                body = pk.replace(header, "").replace(footer, "").replace("\n", "").replace("\r", "").replace(" ", "")
+                # 每 64 個字元強制補上一個標準 PEM 斷行（完美契合 PEM 檔案標準規範）
+                clean_body = "\n".join([body[i:i+64] for i in range(0, len(body), 64)])
+                # 重新拼回最標準、絕不噴錯的 PEM 結構
+                creds_dict["private_key"] = f"{header}\n{clean_body}\n{footer}\n"
+        
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"Google 授權失敗：{e}")
@@ -114,10 +133,8 @@ def load_from_cloud():
         c = pd.DataFrame(ws_cmd.get_all_records()).fillna("") if ws_cmd else pd.DataFrame()
         p = pd.DataFrame(ws_ptl.get_all_records()).fillna("") if ws_ptl else pd.DataFrame()
         return s, c, p
-    except Exception as e:
+    except: 
         return None, None, None
-
-# ─────────────── ★ 核心儲存：導入二合一自動健全防禦（自動防護補開分頁機制） ───────────────
 
 def save_to_cloud(p_time, cmdr, df_c, df_p):
     try:
@@ -258,7 +275,7 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
         s = re.sub(r'(\d{2}[:：]?\d{0,2}-\d{2}[:：]?\d{0,2}[時]?[:：]?)', r'<b>\1</b>', s)
         return s
 
-    data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_th), '', '', ''], 
+    data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
         if all(str(v).strip() == "" for v in r.values): continue
@@ -278,7 +295,7 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     story.append(t1)
     story.append(Spacer(1, 6*mm))
 
-    data_ptl = [[Paragraph("<b>警 力 佈 署</b>", style_th), '', '', '', ''], 
+    data_ptl = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', '', '', ''], 
                 [Paragraph(f"<b>交通快打指揮官：</b>{commander}", style_cell_l), '', '', '', ''], 
                 [Paragraph(f"<b>{h}</b>", style_th) for h in ["勤務時段", "代號", "編組", "服勤人員", "任務分工"]]]
     for _, r in df_patrol.iterrows():
@@ -333,7 +350,7 @@ def get_preview_html(df_c, df_p, cmdr_n, time_s):
 # ============================================================
 st.title("🚔 防制危險駕車專案勤務規劃表")
 
-# 1. 狀態初始化 (對齊二合一判定規格：若雲端為空，自動導入預設 5/22 底稿)
+# 1. 狀態初始化 (對齊二合一規格：若雲端為空，自動導入預設 5/22 底稿)
 if 'data_ptl' not in st.session_state:
     s, c, p = load_from_cloud()
     if s is not None and not s.empty:
@@ -432,7 +449,7 @@ with st.expander("📄 預覽勤務規劃表"):
 
 col_pdf, col_sync = st.columns(2)
 
-# ── ★ 兩階段載入提示按鈕區：完全依照二合一正常功能程式碼規格修改 ──
+# --- 兩階段載入提示按鈕區 ---
 if col_sync.button("💾 同步雲端並寄信", use_container_width=True):
     with st.spinner("同步中，請稍候…"):
         sync_ok = save_to_cloud(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
@@ -446,7 +463,7 @@ if col_sync.button("💾 同步雲端並寄信", use_container_width=True):
     else: 
         st.error("❌ 雲端同步失敗，請檢查網路或密鑰設定。")
 
-# 產生 PDF 資料流並單獨提供下載按鈕 (不再進行按鈕嵌套衝突)
+# 下載按鈕單獨抽出
 pdf_buf = generate_pdf(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
 col_pdf.download_button(
     label="📝 下載規劃表 PDF", 
