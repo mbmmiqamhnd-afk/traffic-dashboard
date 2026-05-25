@@ -4,8 +4,11 @@ import streamlit as st
 st.set_page_config(page_title="行人及護老交通安全", layout="wide", page_icon="🚶")
 
 # 呼叫側邊欄
-from menu import show_sidebar
-show_sidebar()
+try:
+    from menu import show_sidebar
+    show_sidebar()
+except ImportError:
+    st.sidebar.warning("找不到 menu.py，跳過側邊欄載入。")
 
 import pandas as pd
 import gspread
@@ -14,6 +17,7 @@ from datetime import datetime
 import smtplib
 import io
 import os
+import traceback
 import urllib.parse as _ul
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -48,11 +52,11 @@ DEFAULT_CMD = pd.DataFrame([
 
 DEFAULT_SCHEDULE = pd.DataFrame([
     {"日期（6時至10時、16時至20時）": "3月2～6、9～13、16～20日、23～27及30～31日（3月之上班日）", "單位": "聖亭派出所", "路段": "中豐路、聖亭路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "龍潭派出所", "路段": "中豐路、中正路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "中興派出所", "路段": "中興路、福龍路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "石門派出所", "路段": "中正、文化路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "高平派出所", "路段": "中豐、中原路段\n校園周邊道路或轄區行人易肇事路口"},
-    {"日期（6時至10時、16時至20時）": "", "單位": "三和派出所", "路段": "龍新路、楊銅路段\n校園周邊道路或轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "龍潭派出所", "路段": "中豐路、中正路段\n校園周邊道路 or 轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "中興派出所", "路段": "中興路、福龍路段\n校園周邊道路 or 轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "石門派出所", "路段": "中正、文化路段\n校園周邊道路 or 轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "高平派出所", "路段": "中豐、中原路段\n校園周邊道路 or 轄區行人易肇事路口"},
+    {"日期（6時至10時、16時至20時）": "", "單位": "三和派出所", "路段": "龍新路、楊銅路段\n校園周邊道路 or 轄區行人易肇事路口"},
     {"日期（6時至10時、16時至20時）": "", "單位": "警備隊", "路段": "校園周邊道路 or 轄區行人易肇事路口"},
     {"日期（6時至10時、16時至20時）": "", "單位": "龍潭交通分隊", "路段": "校園周邊道路 or 轄區行人易肇事路口"}
 ])
@@ -64,68 +68,95 @@ DEFAULT_NOTES = """壹、警察局規劃3月份「行人及護老交通安全專
 四、3月30日（星期一）6至10時、16至20時。
 貳、執行本專案勤務視轄區狀況及執勤警力，擇定轄區易肇事路口（段）及校園周邊道路，依上揭日期妥適編排勤務協助維護行人、學童及高齡者通行安全，並加強取締「車不讓人」、「未依規定停讓」、「違規停車」等。"""
 
-# --- 2. gspread 連線 ---
+# --- 2. Google Sheets 連線 (對齊二合一穩定版) ---
 @st.cache_resource
 def get_client():
-    if "gcp_service_account" not in st.secrets: return None
     try:
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=SCOPES,
+        )
         return gspread.authorize(creds)
-    except:
+    except Exception as e:
+        st.error(f"Google 授權失敗：{e}")
         return None
 
+def clean_df_to_list(df):
+    return df.astype(str).values.tolist()
+
 # --- 3. 讀取 ---
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10)
 def load_data():
     try:
         client = get_client()
-        if client is None: return None, None, None, None, "離線模式"
+        if client is None: return None, None, None, None, "權限不足或未設定 Secrets"
         sh = client.open_by_key(SHEET_ID)
         ws_list = sh.worksheets()
+        
         ws_set = next((w for w in ws_list if w.title == "護老_設定"), None)
         ws_cmd = next((w for w in ws_list if w.title == "護老_指揮組"), None)
         ws_sch = next((w for w in ws_list if w.title == "護老_勤務表"), None)
-        if not all([ws_set, ws_cmd, ws_sch]): return None, None, None, None, "缺工作表"
         
-        df_settings = pd.DataFrame(ws_set.get_all_records())
-        df_cmd      = pd.DataFrame(ws_cmd.get_all_records())
-        df_schedule = pd.DataFrame(ws_sch.get_all_records())
+        df_settings = pd.DataFrame(ws_set.get_all_records()).fillna("") if ws_set else None
+        df_cmd      = pd.DataFrame(ws_cmd.get_all_records()).fillna("") if ws_cmd else pd.DataFrame()
+        df_schedule = pd.DataFrame(ws_sch.get_all_records()).fillna("") if ws_sch else pd.DataFrame()
         
-        sd = dict(zip(df_settings.iloc[:,0], df_settings.iloc[:,1])) if not df_settings.empty else {}
-        notes = sd.get("notes", DEFAULT_NOTES)
+        notes = DEFAULT_NOTES
+        if df_settings is not None and not df_settings.empty:
+            sd = dict(zip(df_settings.iloc[:,0], df_settings.iloc[:,1]))
+            notes = sd.get("notes", DEFAULT_NOTES)
+            
         return df_settings, df_cmd, df_schedule, notes, None
-    except Exception as e: return None, None, None, None, str(e)
+    except Exception as e: 
+        return None, None, None, None, str(e)
 
-# --- 4. 寫入 ---
+# --- 4. 寫入 (對齊二合一自動防禦補開分頁版) ---
 def save_data(month, df_cmd, df_schedule, notes):
     try:
         client = get_client()
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
         
-        ws_set = sh.worksheet("護老_設定")
+        # 1. 護老_設定
+        try:
+            ws_set = sh.worksheet("護老_設定")
+        except Exception:
+            ws_set = sh.add_worksheet(title="護老_設定", rows="50", cols="5")
         ws_set.clear()
         ws_set.update(range_name='A1', values=[["Key", "Value"], ["month", month], ["notes", notes]])
         
-        ws_cmd = sh.worksheet("護老_指揮組")
+        # 2. 護老_指揮組
+        try:
+            ws_cmd = sh.worksheet("護老_指揮組")
+        except Exception:
+            ws_cmd = sh.add_worksheet(title="護老_指揮組", rows="100", cols="20")
         ws_cmd.clear()
-        ws_cmd.update(range_name='A1', values=[df_cmd.columns.tolist()] + df_cmd.fillna("").astype(str).values.tolist())
+        clean_cmd = df_cmd.dropna(how="all").fillna("")
+        if not clean_cmd.empty:
+            ws_cmd.update(range_name='A1', values=[clean_cmd.columns.tolist()] + clean_df_to_list(clean_cmd))
         
-        ws_sch = sh.worksheet("護老_勤務表")
+        # 3. 護老_勤務表
+        try:
+            ws_sch = sh.worksheet("護老_勤務表")
+        except Exception:
+            ws_sch = sh.add_worksheet(title="護老_勤務表", rows="100", cols="20")
         ws_sch.clear()
-        ws_sch.update(range_name='A1', values=[df_schedule.columns.tolist()] + df_schedule.fillna("").astype(str).values.tolist())
+        clean_sch = df_schedule.dropna(how="all").fillna("")
+        if not clean_sch.empty:
+            ws_sch.update(range_name='A1', values=[clean_sch.columns.tolist()] + clean_df_to_list(clean_sch))
         
         load_data.clear()
         return True
-    except: return False
+    except Exception as e:
+        st.error(f"❌ 雲端同步失敗原因：{e}")
+        st.code(traceback.format_exc())
+        return False
 
 # --- 5. 字型與 PDF 產生 ---
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
-    font_paths = ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]
+    font_paths = ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf", "/usr/share/fonts/truetype/custom/kaiu.ttf"]
     for p in font_paths:
         if os.path.exists(p):
             pdfmetrics.registerFont(TTFont(fname, p))
@@ -159,7 +190,7 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
     story.append(Paragraph(header_text, s_title))
 
     cw1 = [W*0.15, W*0.12, W*0.28, W*0.45]
-    data1 = [[Paragraph("<b>任　務　編　組</b>", s_th), '', '', ''],
+    data1 = [[Paragraph("<b>任 務 編 組</b>", s_th), '', '', ''],
              [Paragraph(f"<b>{h}</b>", s_th) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, row in df_cmd.iterrows():
         data1.append([c(f"<b>{row.get('職稱','')}</b>"), c(row.get('代號','')), c(str(row.get('姓名','')).replace("、","<br/>")), c(row.get('任務',''), s_left)])
@@ -170,14 +201,14 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
 
     col_date = '日期（6時至10時、16時至20時）'
     cw2 = [W*0.28, W*0.16, W*0.56]
-    data2 = [[Paragraph("<b>警　力　佈　署</b>", s_th), '', ''],
+    data2 = [[Paragraph("<b>警 力 佈 署</b>", s_th), '', ''],
              [Paragraph(f"<b>執行勤務日期</b>", s_th), Paragraph("<b>單位</b>", s_th), Paragraph("<b>路段</b>", s_th)]]
     for _, row in df_schedule.iterrows():
         data2.append([c(row.get(col_date, '')), c(row.get('單位','')), c(row.get('路段', ''), s_left)])
 
     t2_styles = [('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2'))]
     
-    if not df_schedule.empty:
+    if not df_schedule.empty and col_date in df_schedule.columns:
         non_empty = [i for i, v in enumerate(df_schedule[col_date]) if str(v).strip() != ""]
         non_empty.append(len(df_schedule))
         for k in range(len(non_empty) - 1):
@@ -213,18 +244,22 @@ def send_report_email(subject, month, df_cmd, df_schedule, notes):
 
 # --- 7. 主介面邏輯 ---
 df_set, df_cmd_raw, df_sch_raw, db_notes, err = load_data()
-if err or df_set is None:
-    c_month = DEFAULT_MONTH; ed_cmd, ed_sch = DEFAULT_CMD.copy(), DEFAULT_SCHEDULE.copy(); current_notes = DEFAULT_NOTES
-else:
+
+if err and err != "權限不足或未設定 Secrets":
+    st.warning(f"⚠️ 無法連線 Google Sheets ({err})，顯示預設資料。")
+
+if df_set is not None and not df_set.empty:
     sd = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     c_month = sd.get("month", DEFAULT_MONTH); ed_cmd, ed_sch = df_cmd_raw, df_sch_raw; current_notes = db_notes
+else:
+    c_month = DEFAULT_MONTH; ed_cmd, ed_sch = DEFAULT_CMD.copy(), DEFAULT_SCHEDULE.copy(); current_notes = DEFAULT_NOTES
 
 st.title("🚶 行人及護老交通安全專案勤務規劃表")
 c_month = st.text_input("1. 月份", value=c_month)
 st.subheader("2. 任務編組")
-ed_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
+ed_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
 st.subheader("3. 警力佈署")
-ed_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True)
+ed_sch = st.data_editor(ed_sch, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
 st.subheader("4. 備註編輯")
 ed_notes = st.text_area("編輯備註內容", value=current_notes, height=250)
 
@@ -249,12 +284,27 @@ def get_html(notes_content):
 st.markdown("---")
 st.components.v1.html(get_html(ed_notes), height=600, scrolling=True)
 
-if st.button("同步雲端、寄信並下載 PDF 💾", type="primary"):
-    if save_data(c_month, ed_cmd, ed_sch, ed_notes):
-        ok, mail_err = send_report_email(full_header_name, c_month, ed_cmd, ed_sch, ed_notes)
-        if ok: st.success("📧 同步成功，報表已寄至信箱！")
-        else: st.warning(f"⚠️ 雲端已同步，但寄信失敗：{mail_err}")
-        pdf_out = generate_pdf(c_month, ed_cmd, ed_sch, ed_notes)
-        st.download_button("點此下載 PDF", data=pdf_out, file_name=f"{full_header_name}.pdf")
-    else:
-        st.error("❌ 雲端同步失敗，請檢查權限設定。")
+colA, colB = st.columns(2)
+
+# --- 兩階段載入提示按鈕區 (解決按鈕包按鈕導致衝突的問題) ---
+if colA.button("💾 同步雲端並發送電子郵件備份", type="primary", use_container_width=True):
+    with st.spinner("同步中，請稍候…"):
+        if save_data(c_month, ed_cmd, ed_sch, ed_notes):
+            with st.spinner("同步成功，正在寄送郵件…"):
+                ok, mail_err = send_report_email(full_header_name, c_month, ed_cmd, ed_sch, ed_notes)
+            if ok: 
+                st.success("📧 資料已同步至 Google Sheets，規劃表 PDF 已成功寄出！")
+            else: 
+                st.error(f"❌ 雲端已更新，但寄信失敗：{mail_err}")
+        else:
+            st.error("❌ 雲端同步失敗，請檢查網路、Secrets 金鑰或試算表權限。")
+
+# 產生 PDF 資料流並單獨提供下載按鈕
+pdf_out = generate_pdf(c_month, ed_cmd, ed_sch, ed_notes)
+colB.download_button(
+    label="📥 下載規劃表 PDF 檔案", 
+    data=pdf_out, 
+    file_name=f"{full_header_name}.pdf",
+    mime="application/pdf",
+    use_container_width=True
+)
