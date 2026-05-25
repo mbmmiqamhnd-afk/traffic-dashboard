@@ -3,12 +3,8 @@ import streamlit as st
 # --- 1. 頁面設定 (必須放在全站最頂端第一個 Streamlit 指令) ---
 st.set_page_config(page_title="防制危險駕車勤務", layout="wide", page_icon="🚔")
 
-# 呼叫側邊欄
-try:
-    from menu import show_sidebar
-    show_sidebar()
-except ImportError:
-    pass
+from menu import show_sidebar
+show_sidebar()
 
 import pandas as pd
 import gspread
@@ -48,6 +44,35 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
+# ★★★ 5月22日 專案專屬底稿資料庫 ★★★
+DEFAULT_TIME_VAL = "115年5月22日22時至翌日6時"
+DEFAULT_CMDR_VAL = "龍潭所副所長全楚文"
+
+DEFAULT_CMD = pd.DataFrame([
+    {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導"},
+    {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
+    {"職稱": "副指揮官", "代號": "隆安3", "姓名": "副分局長蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
+    {"職稱": "業務組", "代號": "隆安13", "姓名": "交通組巡官郭勝隆", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報群聚飆車狀況。"},
+    {"職稱": "督導組", "代號": "隆安6", "姓名": "督察組組長 黃長旗", "任務": "督導各編組服儀裝備及勤務紀律"},
+    {"職稱": "通訊組", "代號": "隆安", "姓名": "主任蔡奇青\n執勤官李文章\n執勤員黃文興", "任務": "監看群聚告警訊息、指揮、調度及通報本勤務事宜"}
+])
+
+DEFAULT_SCHEDULE = pd.DataFrame([
+    {
+        "勤務時段": "5月23日\n零時至4時", 
+        "代號": "隆安62", 
+        "編組": "專責警力\n（龍潭所輪值）", 
+        "服勤人員": "00-02時段:\n警員廖怡惠\n警員劉柏延\n\n02-04時段:\n警員林軒宇\n警員廖怡惠", 
+        "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝(噪音)車輛（每2小時至責任區域內指定巡簽地點巡簽1次並守望10分鐘，將守望情形拍照上傳LINE「龍潭分局聯絡平臺」群組）"
+    },
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安80", "編組": "石門所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路及旭日路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安90", "編組": "高平所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安990", "編組": "龍潭交通分隊", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於龍源路及及旭日路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安50", "編組": "聖亭所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安60", "編組": "龍潭所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安70", "編組": "中興所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"}
+])
+
 # --- 工具函式 ---
 def normalize(s):
     return str(s).replace('\n', '').replace('\r', '').replace(' ', '').strip()
@@ -55,14 +80,7 @@ def normalize(s):
 def is_blank(val):
     return normalize(val) in ["", "None", "nan"]
 
-def format_staff_only(val):
-    if pd.isna(val) or str(val).strip() in ["None", "nan", ""]:
-        return ""
-    s = str(val).replace('\\', '\n').replace('、', '\n').replace('\xa0', ' ')
-    s = re.sub(r'(\d{2}[:：]?\d{0,2}\s*-\s*\d{2}[:：]?\d{0,2}[時]?[:：])\s*([^\n\s])', r'\1\n\2', s)
-    return '\n'.join([l.strip() for l in s.split('\n') if l.strip()])
-
-# --- Google Sheets 連線 (對齊二合一穩定認證版) ---
+# --- Google Sheets 連線 ---
 @st.cache_resource
 def get_client():
     try:
@@ -97,7 +115,6 @@ def load_from_cloud():
     except: 
         return None, None, None
 
-# --- 資料儲存 (對齊二合一自動防禦補開分頁版) ---
 def save_to_cloud(p_time, cmdr, df_c, df_p):
     try:
         client = get_client()
@@ -312,19 +329,19 @@ def get_preview_html(df_c, df_p, cmdr_n, time_s):
 # ============================================================
 st.title("🚔 防制危險駕車專案勤務規劃表")
 
-# 1. 狀態初始化
+# 1. 狀態初始化 (修改為：當雲端為空或沒連線時，直接抓 5月22日 專案資料作為預設底稿)
 if 'data_ptl' not in st.session_state:
     s, c, p = load_from_cloud()
     if s is not None and not s.empty:
         sd = dict(zip(s.iloc[:, 0].astype(str), s.iloc[:, 1].astype(str)))
-        st.session_state.p_time = sd.get("plan_time", "115年4月30日22時至翌日6時")
-        st.session_state.cmdr = sd.get("commander", "石門所副所長林榮裕")
+        st.session_state.p_time = sd.get("plan_time", DEFAULT_TIME_VAL)
+        st.session_state.cmdr = sd.get("commander", DEFAULT_CMDR_VAL)
         st.session_state.data_cmd, st.session_state.data_ptl = c, p
     else:
-        st.session_state.p_time = "115年4月30日22時至翌日6時"
-        st.session_state.cmdr = "石門所副所長林榮裕"
-        st.session_state.data_cmd = pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
-        st.session_state.data_ptl = pd.DataFrame([["", "", "", "", ""]], columns=["勤務時段", "代號", "編組", "服勤人員", "任務分工"])
+        st.session_state.p_time = DEFAULT_TIME_VAL
+        st.session_state.cmdr = DEFAULT_CMDR_VAL
+        st.session_state.data_cmd = DEFAULT_CMD.copy()
+        st.session_state.data_ptl = DEFAULT_SCHEDULE.copy()
 
 # 確保快取監聽變數存在
 if 'prev_p_time' not in st.session_state: st.session_state.prev_p_time = st.session_state.p_time
@@ -411,7 +428,6 @@ with st.expander("📄 預覽勤務規劃表"):
 
 col_pdf, col_sync = st.columns(2)
 
-# --- 兩階段載入提示按鈕區 (移除按鈕嵌套衝突，對齊二合一穩定傳輸邏輯) ---
 if col_sync.button("💾 同步雲端並寄信", type="primary", use_container_width=True):
     with st.spinner("同步中，請稍候…"):
         sync_ok = save_to_cloud(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
@@ -425,7 +441,7 @@ if col_sync.button("💾 同步雲端並寄信", type="primary", use_container_w
     else: 
         st.error("❌ 雲端同步失敗，請檢查網路、Secrets金鑰或分頁權限。")
 
-# 產生 PDF 資料流並單獨提供下載按鈕
+# 產生 PDF 資料流並提供下載按鈕
 pdf_buf = generate_pdf(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
 col_pdf.download_button(
     label="📥 下載 PDF", 
