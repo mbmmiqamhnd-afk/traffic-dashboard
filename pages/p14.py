@@ -102,7 +102,8 @@ def get_client():
     except:
         return None
 
-@st.cache_data(ttl=5)
+# 🛡️ 優化點 A：將快取 TTL 從 5 秒拉長至 60 秒，大幅降低短時間內重複讀取雲端的次數
+@st.cache_data(ttl=60)
 def load_data():
     try:
         client = get_client()
@@ -318,16 +319,26 @@ def sync_personnel_data(df_ptl, df_cp):
     return df_cp_new
 
 # --- 3. 主程式介面 ---
+
+# 🛡️ 優化點 B：在側邊欄最上方新增一個強制重新整理按鈕，方便您在外部修改試算表後手動同步
+if st.sidebar.button("🔄 強制從雲端更新資料"):
+    st.cache_data.clear()
+    st.rerun()
+
 st.title("🚓 二階段勤務規劃系統")
 
+# 讀取資料庫
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
 
-# 🛡️ 核心安全性修復：檢查資料庫載入是否出錯
+# 🛡️ 核心安全性修復：攔截 429 流量爆載錯誤，提示使用者並優雅阻斷
 if err:
-    st.error(f"❌ 雲端資料庫連線失敗，請檢查網路或密鑰設定。錯誤訊息: {err}")
-    st.stop()  # 阻斷後續程式碼執行，防止噴出 AttributeError
+    if "429" in str(err) or "Quota exceeded" in str(err):
+        st.error("⚠️ Google 雲端連線過於頻繁（API 額度暫時用光），系統已啟動保護。請等待 1 分鐘後再重新整理網頁即可恢復。")
+    else:
+        st.error(f"❌ 雲端資料庫連線失敗，請檢查網路或密鑰設定。錯誤訊息: {err}")
+    st.stop() 
 
-# 🛡️ 確保變數即便為空值也是正確的 DataFrame 結構，並防止 .empty 報錯
+# 🛡️ 確保變數即便為空值也是正確的 DataFrame 結構，並防止後續元件 .empty 報錯
 df_set = df_set if isinstance(df_set, pd.DataFrame) else pd.DataFrame()
 df_cmd = df_cmd if isinstance(df_cmd, pd.DataFrame) else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
 df_ptl = df_ptl if isinstance(df_ptl, pd.DataFrame) else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
@@ -357,7 +368,6 @@ phase1_desc = cc1.text_input("第一階段標題說明", p1_d)
 phase2_desc = cc2.text_input("第二階段標題說明", p2_d)
 
 st.subheader("1. 指揮編組")
-# 🛡️ 此處已安全，df_cmd 保證是 DataFrame 結構
 res_cmd = st.data_editor(df_cmd, num_rows="dynamic", use_container_width=True)
 b_info = st.text_area("📢 勤前教育", b, height=70)
 
