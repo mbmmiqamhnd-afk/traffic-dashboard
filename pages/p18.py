@@ -115,19 +115,38 @@ def parse_alloc_pdf(pdf_bytes, model, safety_settings):
                     pdf_text += extracted + "\n"
 
         if pdf_text.strip():
-            for line in pdf_text.split('\n'):
-                if '龍潭' in line:
-                    clean = line.replace(',', '').replace('"', '')
-                    nums  = re.findall(r'\d+\.\d+|\d+', clean)
-                    for i, num in enumerate(nums):
-                        if '.' in num:
-                            point_val = float(num)
-                            if i + 1 < len(nums):
-                                direct = int(nums[i + 1])
-                            if i + 2 < len(nums):
-                                coworker = int(nums[i + 2])
-                            method_msg = "pdfplumber 文字萃取"
-                            break
+            # 有時龍潭分局跨兩行，先把全文按行合併後再搜尋
+            lines = pdf_text.split('\n')
+            for line_idx, line in enumerate(lines):
+                if '龍潭' not in line:
+                    continue
+
+                # 合併當行與下一行，避免跨行斷裂
+                combined = line
+                if line_idx + 1 < len(lines):
+                    combined += " " + lines[line_idx + 1]
+
+                clean = combined.replace(',', '').replace('"', '')
+                nums  = re.findall(r'\d+\.\d+|\d+', clean)
+
+                # 找出所有帶小數點的候選點值（通常 1~3 元之間）
+                for i, num in enumerate(nums):
+                    if '.' not in num:
+                        continue
+                    pv = float(num)
+                    if not (0.5 < pv < 10):   # 點值合理範圍過濾
+                        continue
+
+                    # 點值後面的兩個整數 = 直接執行、共同作業
+                    # 取點值之後的所有純整數
+                    after = [n for n in nums[i+1:] if '.' not in n]
+                    if len(after) >= 2:
+                        point_val  = pv
+                        direct     = int(after[0])
+                        coworker   = int(after[1])
+                        method_msg = "pdfplumber 文字萃取"
+                        break
+
                 if point_val is not None:
                     break
     except Exception:
@@ -236,6 +255,19 @@ def p18_page():
         pdf_bytes = file_alloc.read()
 
         with st.spinner("📖 解析分配表中..."):
+            # debug：先顯示 pdfplumber 原始文字
+            try:
+                _dbg_text = ""
+                with pdfplumber.open(io.BytesIO(pdf_bytes)) as _pdf:
+                    for _p in _pdf.pages:
+                        _t = _p.extract_text()
+                        if _t:
+                            _dbg_text += _t + "\n"
+                with st.expander("🔍 pdfplumber 原始萃取文字（debug）", expanded=False):
+                    st.text(_dbg_text if _dbg_text.strip() else "（無法萃取文字，為掃描圖片）")
+            except Exception:
+                pass
+
             auto_point_val, official_direct, official_coworker, method_msg = \
                 parse_alloc_pdf(pdf_bytes, model, safety_settings)
 
