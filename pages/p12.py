@@ -25,7 +25,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -72,8 +72,12 @@ DEFAULT_NOTES = """壹、警察局規劃3月份「行人及護老交通安全專
 @st.cache_resource
 def get_client():
     try:
+        # 關鍵修正：將 secrets 轉換為字典並替換換行符號
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        
         creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
+            creds_dict,
             scopes=SCOPES,
         )
         return gspread.authorize(creds)
@@ -286,7 +290,7 @@ st.components.v1.html(get_html(ed_notes), height=600, scrolling=True)
 
 colA, colB = st.columns(2)
 
-# --- 兩階段載入提示按鈕區 (解決按鈕包按鈕導致衝突的問題) ---
+# --- 兩階段載入提示按鈕區 ---
 if colA.button("💾 同步雲端並發送電子郵件備份", type="primary", use_container_width=True):
     with st.spinner("同步中，請稍候…"):
         if save_data(c_month, ed_cmd, ed_sch, ed_notes):
