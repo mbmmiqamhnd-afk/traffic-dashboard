@@ -44,7 +44,7 @@ NOTES = """一、各編組執行前由帶班人員在駐地實施勤前教育。
 三、駕駛巡邏車應開啟警示燈，如發現危險駕車行為「勿追車」，請立即向勤指中心報告攔截圍捕。
 四、加強攔查改裝排管、無照駕駛、蛇行、逼車、拆除消音器、毒駕及公共危險罪等事項。"""
 
-# ★★★ 5月22日 專案專屬底稿資料庫 ★★★
+# ★★★ 5月22日 專案專屬精準底稿資料庫 ★★★
 DEFAULT_TIME_VAL = "115年5月22日22時至翌日6時"
 DEFAULT_CMDR_VAL = "龍潭所副所長全楚文"
 
@@ -80,10 +80,12 @@ def normalize(s):
 def is_blank(val):
     return normalize(val) in ["", "None", "nan"]
 
-# --- Google Sheets 連線 ---
+# ─────────────── ★ 核心連線：完全依照二合一正常功能程式碼修改 ───────────────
+
 @st.cache_resource
 def get_client():
     try:
+        # 完全移除舊版 .replace("\\n", "\n")，對齊二合一高穩定度寫法
         creds = Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
             scopes=SCOPES,
@@ -98,9 +100,9 @@ def clean_df_to_list(df):
 
 @st.cache_data(ttl=10)
 def load_from_cloud():
-    client = get_client()
-    if not client: return None, None, None
     try:
+        client = get_client()
+        if not client: return None, None, None
         sh = client.open_by_key(SHEET_ID)
         ws_list = sh.worksheets()
         
@@ -112,8 +114,10 @@ def load_from_cloud():
         c = pd.DataFrame(ws_cmd.get_all_records()).fillna("") if ws_cmd else pd.DataFrame()
         p = pd.DataFrame(ws_ptl.get_all_records()).fillna("") if ws_ptl else pd.DataFrame()
         return s, c, p
-    except: 
+    except Exception as e:
         return None, None, None
+
+# ─────────────── ★ 核心儲存：導入二合一自動健全防禦（自動防護補開分頁機制） ───────────────
 
 def save_to_cloud(p_time, cmdr, df_c, df_p):
     try:
@@ -152,7 +156,7 @@ def save_to_cloud(p_time, cmdr, df_c, df_p):
         load_from_cloud.clear()
         return True
     except Exception as e:
-        st.error(f"❌ 雲端同步失敗原因：{e}")
+        st.error(f"❌ 同步失敗原因：{e}")
         st.code(traceback.format_exc())
         return False
 
@@ -329,7 +333,7 @@ def get_preview_html(df_c, df_p, cmdr_n, time_s):
 # ============================================================
 st.title("🚔 防制危險駕車專案勤務規劃表")
 
-# 1. 狀態初始化 (修改為：當雲端為空或沒連線時，直接抓 5月22日 專案資料作為預設底稿)
+# 1. 狀態初始化 (對齊二合一判定規格：若雲端為空，自動導入預設 5/22 底稿)
 if 'data_ptl' not in st.session_state:
     s, c, p = load_from_cloud()
     if s is not None and not s.empty:
@@ -428,23 +432,24 @@ with st.expander("📄 預覽勤務規劃表"):
 
 col_pdf, col_sync = st.columns(2)
 
-if col_sync.button("💾 同步雲端並寄信", type="primary", use_container_width=True):
+# ── ★ 兩階段載入提示按鈕區：完全依照二合一正常功能程式碼規格修改 ──
+if col_sync.button("💾 同步雲端並寄信", use_container_width=True):
     with st.spinner("同步中，請稍候…"):
         sync_ok = save_to_cloud(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
     if sync_ok:
         with st.spinner("同步成功，正在寄送郵件…"):
             mail_ok, mail_err = send_report_email(p_time, cmdr_input, res_cmd, st.session_state.data_ptl, final_filename)
         if mail_ok: 
-            st.success(f"✅ 同步與郵件寄送成功！附件：{final_filename}.pdf")
+            st.success(f"✅ 資料已同步至 Google Sheets，郵件發送成功！")
         else: 
-            st.warning(f"⚠️ 雲端同步成功，但郵件發送失敗：{mail_err}")
+            st.warning(f"⚠️ 同步成功，但郵件發送失敗：{mail_err}")
     else: 
-        st.error("❌ 雲端同步失敗，請檢查網路、Secrets金鑰或分頁權限。")
+        st.error("❌ 雲端同步失敗，請檢查網路或密鑰設定。")
 
-# 產生 PDF 資料流並提供下載按鈕
+# 產生 PDF 資料流並單獨提供下載按鈕 (不再進行按鈕嵌套衝突)
 pdf_buf = generate_pdf(p_time, cmdr_input, res_cmd, st.session_state.data_ptl)
 col_pdf.download_button(
-    label="📥 下載 PDF", 
+    label="📝 下載規劃表 PDF", 
     data=pdf_buf.getvalue(), 
     file_name=f"{final_filename}.pdf",
     mime="application/pdf",
