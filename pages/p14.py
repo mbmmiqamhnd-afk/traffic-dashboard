@@ -4,8 +4,11 @@ import streamlit as st
 st.set_page_config(page_title="二階段勤務規劃系統", layout="wide", page_icon="🚓")
 
 # 呼叫側邊欄 (確保在 config 之後)
-from menu import show_sidebar
-show_sidebar()
+try:
+    from menu import show_sidebar
+    show_sidebar()
+except ImportError:
+    pass
 
 import pandas as pd
 import gspread
@@ -91,18 +94,21 @@ def draw_page_number(canvas, doc):
     canvas.setFont(_get_font(), 10)
     canvas.drawCentredString(105 * mm, 10 * mm, text)
 
+# ★★★ 核心連線修正區塊 ★★★
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets: return None
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        # 同步能運作程式碼的關鍵修正：處理私鑰的字串換行符號
+        if "private_key" in creds_dict and isinstance(creds_dict["private_key"], str):
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         return gspread.authorize(creds)
     except:
         return None
 
-# 🛡️ 優化點 A：將快取 TTL 從 5 秒拉長至 60 秒，大幅降低短時間內重複讀取雲端的次數
+# 優化點 A：將快取 TTL 從 5 秒拉長至 60 秒，大幅降低短時間內重複讀取雲端的次數
 @st.cache_data(ttl=60)
 def load_data():
     try:
@@ -118,6 +124,7 @@ def load_data():
 def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc):
     try:
         client = get_client()
+        if client is None: return False
         sh = client.open_by_key(SHEET_ID)
         ws_set = sh.worksheet(WS_MAP["set"])
         ws_set.clear()
@@ -320,7 +327,7 @@ def sync_personnel_data(df_ptl, df_cp):
 
 # --- 3. 主程式介面 ---
 
-# 🛡️ 優化點 B：在側邊欄最上方新增一個強制重新整理按鈕，方便您在外部修改試算表後手動同步
+# 優化點 B：在側邊欄最上方新增一個強制重新整理按鈕，方便您在外部修改試算表後手動同步
 if st.sidebar.button("🔄 強制從雲端更新資料"):
     st.cache_data.clear()
     st.rerun()
@@ -330,7 +337,7 @@ st.title("🚓 二階段勤務規劃系統")
 # 讀取資料庫
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
 
-# 🛡️ 核心安全性修復：攔截 429 流量爆載錯誤，提示使用者並優雅阻斷
+# 核心安全性修復：攔檢 429 流量爆載錯誤，提示使用者並優雅阻斷
 if err:
     if "429" in str(err) or "Quota exceeded" in str(err):
         st.error("⚠️ Google 雲端連線過於頻繁（API 額度暫時用光），系統已啟動保護。請等待 1 分鐘後再重新整理網頁即可恢復。")
@@ -338,7 +345,7 @@ if err:
         st.error(f"❌ 雲端資料庫連線失敗，請檢查網路或密鑰設定。錯誤訊息: {err}")
     st.stop() 
 
-# 🛡️ 確保變數即便為空值也是正確的 DataFrame 結構，並防止後續元件 .empty 報錯
+# 確保變數即便為空值也是正確的 DataFrame 結構，並防止後續元件 .empty 報錯
 df_set = df_set if isinstance(df_set, pd.DataFrame) else pd.DataFrame()
 df_cmd = df_cmd if isinstance(df_cmd, pd.DataFrame) else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
 df_ptl = df_ptl if isinstance(df_ptl, pd.DataFrame) else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
