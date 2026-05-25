@@ -95,7 +95,7 @@ def _get_font():
     return "Helvetica"
 
 # =========================
-# Google Sheets
+# Google Sheets 函數（保持不變）
 # =========================
 @st.cache_resource
 def get_client():
@@ -169,7 +169,7 @@ def save_data(settings_dict, cmd, ptl):
         return False
 
 # =========================
-# PDF 生成
+# PDF 生成（穩定版）
 # =========================
 def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, notes):
     font = _get_font()
@@ -188,11 +188,11 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     def c(txt, style=s_cell):
         return Paragraph(str(txt).replace("\n", "<br/>"), style)
 
-    # 標題與任務編組（略，與之前相同）
     story.append(Paragraph(f"<b>{UNIT_TITLE}執行「{project_name}」規劃表</b>", s_title))
     story.append(Paragraph(f"勤務時間：{time_str}", s_sub))
     story.append(Spacer(1, 3*mm))
 
+    # 任務編組
     cmd_clean = cmd_df.dropna(how="all").fillna("")
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", s_th), "", "", ""]]
     data_cmd.append([Paragraph(f"<b>{h}</b>", s_th) for h in CMD_COLS])
@@ -210,7 +210,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
         story.append(Paragraph(f"交通快打指揮官：{fast_cmd}", s_sub))
         story.append(Spacer(1, 2*mm))
 
-    # 警力佈署 - 加強清理
+    # 警力佈署
     ptl_clean = ptl_df.copy()
     if len(ptl_clean) < 3:
         ptl_clean = DEFAULT_PTL.copy()
@@ -257,7 +257,6 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     story.append(t_ptl)
     story.append(Spacer(1, 4*mm))
 
-    # 巡簽與備註
     if sign_points.strip():
         for line in sign_points.strip().split("\n"):
             if line.strip():
@@ -319,7 +318,7 @@ if err:
 use_cmd = cmd_df if (cmd_df is not None and not cmd_df.empty) else DEFAULT_CMD.copy()
 use_ptl = ptl_df if (ptl_df is not None and not ptl_df.empty) else DEFAULT_PTL.copy()
 
-# 再次確保沒有空白列
+# 最終確保無空白列
 use_ptl = use_ptl[use_ptl["勤務時段"].astype(str).str.strip() != ""].reset_index(drop=True)
 
 st.subheader("基本設定")
@@ -333,7 +332,7 @@ res_cmd = st.data_editor(use_cmd, num_rows="dynamic", use_container_width=True)
 
 st.subheader("2. 警力佈署")
 st.caption("💡 相同勤務時段會自動合併 • 已移除空白列")
-res_ptl = st.data_editor(use_ptl, num_rows="dynamic", use_container_width=True, height=650)
+res_ptl = st.data_editor(use_ptl, num_rows="dynamic", use_container_width=True, height=500)   # 降低高度，避免多餘空白
 
 st.subheader("3. 巡簽地點與備註")
 col_c, col_d = st.columns(2)
