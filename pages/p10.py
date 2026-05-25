@@ -62,34 +62,56 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     {
         "勤務時段": "5月23日\n零時至4時", 
         "代號": "隆安62", 
-        "編組": "專責警力\n（龍潭所輪值）", 
+        "編組": "專責警力\n（龍潭輪值）", 
         "服勤人員": "00-02時段:\n警員廖怡惠\n警員劉柏延\n\n02-04時段:\n警員林軒宇\n警員廖怡惠", 
         "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝(噪音)車輛（每2小時至責任區域內指定巡簽地點巡簽1次並守望10分鐘，將守望情形拍照上傳LINE「龍潭分局聯絡平臺」群組）"
     },
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安80", "編組": "石門所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路及旭日路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安90", "編組": "高平所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安990", "編組": "龍潭交通分隊", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於龍源路及及旭日路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安50", "編組": "聖亭所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安60", "編組": "龍潭所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
-    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安70", "編組": "中興所", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"}
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安80", "編組": "石門", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於中正路、文化路、中豐路、龍源路及旭日路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安90", "編組": "高平", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於中豐路及龍源路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安990", "編組": "交通分隊", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於龍源路及及旭日路巡邏(每1小時巡邏人員至責任區域內指定巡簽地點巡簽1次)"},
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安50", "編組": "聖亭", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安60", "編組": "龍潭", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"},
+    {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安70", "編組": "中興", "服勤人員": "線上巡邏組合警力兼任", "任務分工": "「區域聯防」勤務，於轄內易發生危險駕車路段巡邏"}
 ])
 
 def normalize(s): return str(s).replace('\n', '').replace('\r', '').replace(' ', '').strip()
 def is_blank(val): return normalize(val) in ["", "None", "nan"]
 
-# --- 2. Google Sheets 連線 (完全對齊聯合稽查版) ---
+# --- 2. Google Sheets 連線 (終極金鑰清洗版) ---
 @st.cache_resource
 def get_client():
     if "gcp_service_account" not in st.secrets: return None
     creds_dict = dict(st.secrets["gcp_service_account"])
-    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    return gspread.authorize(creds)
+    
+    # 終極防禦：針對 InvalidByte(1623, 61) 的格式清洗
+    if "private_key" in creds_dict:
+        pk = str(creds_dict["private_key"])
+        # 防呆：如果使用者不小心把其他欄位(如client_email=...)貼進了引號內，用正則切斷
+        if "client_email" in pk:
+            pk = pk.split("client_email")[0]
+        
+        pk = pk.replace("\\n", "\n")
+        
+        # 強制重新拼裝標準 PEM 格式，根絕一切隱形字元與錯誤等號
+        if "-----BEGIN PRIVATE KEY-----" in pk and "-----END PRIVATE KEY-----" in pk:
+            body = pk.split("-----BEGIN PRIVATE KEY-----")[-1].split("-----END PRIVATE KEY-----")[0]
+            # 清除所有的換行、空格、引號
+            body = re.sub(r'[\n\r\s\"\']', '', body)
+            # 每 64 個字元強制換行 (PEM 標準)
+            clean_body = "\n".join([body[i:i+64] for i in range(0, len(body), 64)])
+            creds_dict["private_key"] = f"-----BEGIN PRIVATE KEY-----\n{clean_body}\n-----END PRIVATE KEY-----\n"
 
-# ★★★ 移植聯合稽查的初始化函數 ★★★
+    try:
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        return gspread.authorize(creds)
+    except Exception as e:
+        st.error(f"Google 授權失敗：{e}")
+        return None
+
 def init_sheets():
     try:
         client = get_client()
+        if not client: return
         sh = client.open_by_key(SHEET_ID)
         headers = {
             WS_MAP["set"]: [["Key", "Value"]],
@@ -175,14 +197,14 @@ def calc_time_strings(p_time):
 def get_unit_details(cmdr_input):
     unit_base = "隆安99" if "分隊" in cmdr_input else "隆安8" if "石門" in cmdr_input else "隆安9" if "高平" in cmdr_input else "隆安5" if "聖亭" in cmdr_input else "隆安6" if "龍潭" in cmdr_input else "隆安7" if "中興" in cmdr_input else "隆安"
     suffix = "1" if ("所長" in cmdr_input and "副" not in cmdr_input) else "2"
-    unit_match = re.search(r'([\u4e00-\u9fa5]+?(?:派出所|所|分隊|警備隊))', cmdr_input)
-    unit_name = re.sub(r'派出所$', '所', unit_match.group(1)) if unit_match else cmdr_input[:3]
+    # 依修正紀錄：移除「所」等單位頭銜
+    unit_name = "石門" if "石門" in cmdr_input else "高平" if "高平" in cmdr_input else "聖亭" if "聖亭" in cmdr_input else "龍潭" if "龍潭" in cmdr_input else "中興" if "中興" in cmdr_input else "交通分隊" if "分隊" in cmdr_input else cmdr_input[:2]
     return unit_base + suffix, f"專責警力\n（{unit_name}輪值）"
 
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
-    for p in ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]:
+    for p in ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf", "/usr/share/fonts/truetype/custom/kaiu.ttf"]:
         if os.path.exists(p): pdfmetrics.registerFont(TTFont(fname, p)); return fname
     return "Helvetica"
 
@@ -192,6 +214,12 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
     page_width = A4[0] - 24*mm
     story = []
+    
+    def draw_footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 10)
+        canvas.drawCentredString(A4[0] / 2, 10 * mm, f"- {doc.page} -")
+        canvas.restoreState()
     
     style_title = ParagraphStyle('T', fontName=font, fontSize=16, alignment=1, spaceAfter=8)
     style_info = ParagraphStyle('I', fontName=font, fontSize=12, alignment=2, spaceAfter=10)
@@ -220,6 +248,7 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     for _, r in df_patrol.iterrows():
         if all(str(v).strip() == "" for v in r.values): continue
         data_ptl.append([Paragraph(br(r.get('勤務時段','')), style_cell), Paragraph(br(r.get('代號', '')), style_cell), Paragraph(br(r.get('編組','')), style_cell), Paragraph(br(r.get('服勤人員','')), style_cell), Paragraph(br(r.get('任務分工','')), style_cell_l)])
+
     t2 = Table(data_ptl, colWidths=[page_width*0.22, page_width*0.13, page_width*0.15, page_width*0.23, page_width*0.27])
     t2.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('SPAN',(0,1),(-1,1)), ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')), ('BACKGROUND',(0,2),(-1,2),colors.HexColor('#f2f2f2'))]))
     story.append(t2); story.append(Spacer(1, 6*mm))
@@ -231,7 +260,7 @@ def generate_pdf(time_str, commander, df_cmd, df_patrol):
     for l in NOTES.split('\n'):
         if l.strip(): story.append(Paragraph(l.strip(), style_note_hanging))
 
-    doc.build(story, onFirstPage=lambda c, d: c.drawCentredString(A4[0]/2, 10*mm, f"- {d.page} -"), onLaterPages=lambda c, d: c.drawCentredString(A4[0]/2, 10*mm, f"- {d.page} -"))
+    doc.build(story, onFirstPage=draw_footer, onLaterPages=draw_footer)
     buf.seek(0); return buf
 
 def get_preview_html(df_c, df_p, cmdr_n, time_s):
