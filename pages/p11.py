@@ -15,6 +15,7 @@ import smtplib
 import io
 import os
 import urllib.parse as _ul
+import re  # 👈 【補上關鍵引入】避免產生 NameError
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -57,7 +58,7 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
+    {"欄位名稱": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "115年5月15日～\n5月16日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
@@ -65,7 +66,7 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
-    {"日期（22時至翌日6時）": "115年5月22日～\n5月23日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "115年5月22日～\n5月23日", "單位": "石門派出所", "分工": "於中正路、文化路、慢車道、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
@@ -73,7 +74,7 @@ DEFAULT_SCHEDULE = pd.DataFrame([
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "115年5月29日～\n5月30日", "單位": "石門派出所", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "高平派出所", "分工": "於中豐路及龍源路巡邏（每1小時巡邏人員至下列轄區巡簽地點巡簽1次）"},
-    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、中豐路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
+    {"日期（22時至翌日6時）": "", "單位": "龍潭交通分隊", "分工": "於中正路、文化路、格致路、龍源路及旭日巡邏（每1小時巡邏人員至下列巡簽地點巡簽1次）"},
     {"日期（22時至翌日6時）": "", "單位": "聖亭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "龍潭派出所", "分工": "於轄內易發生危險駕車路段巡邏"},
     {"日期（22時至翌日6時）": "", "單位": "中興派出所", "分工": "於轄內易發生危險駕車路段巡邏"}
@@ -124,7 +125,6 @@ def save_data(month, df_cmd, df_schedule):
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
         
-        # 修正 3：明確指定範圍並處理 NaN
         ws_set = sh.worksheet("危駕月_設定")
         ws_set.clear()
         ws_set.update(range_name='A1', values=[["Key", "Value"], ["month", month]])
@@ -143,8 +143,7 @@ def save_data(month, df_cmd, df_schedule):
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
-    # 【建議】確保雲端環境有字體檔
-    font_paths = ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]
+    font_paths = ["kaiu.ttf", "./kaiu.ttf", "/usr/share/fonts/truetype/kaiu.ttf", "/app/kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]
     for p in font_paths:
         if os.path.exists(p):
             pdfmetrics.registerFont(TTFont(fname, p))
@@ -154,6 +153,7 @@ def _get_font():
 def generate_pdf_from_data(full_title, df_cmd, df_schedule):
     font = _get_font()
     buf = io.BytesIO()
+    # 調整邊距，給予表格完美伸展空間
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
     page_width = A4[0] - 24*mm
     story = []
@@ -167,31 +167,36 @@ def generate_pdf_from_data(full_title, df_cmd, df_schedule):
 
     style_title = ParagraphStyle('Title', fontName=font, fontSize=16, leading=22, alignment=1, spaceAfter=10)
     style_th = ParagraphStyle('THeader', fontName=font, fontSize=16, alignment=1, leading=22)
-    style_col_header = ParagraphStyle('ColHeader', fontName=font, fontSize=16, leading=20, alignment=1)
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=18, alignment=1)
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=18, alignment=0)
-    style_hanging = ParagraphStyle('Hanging', fontName=font, fontSize=14, leading=20, leftIndent=8.5*mm, firstLineIndent=-8.5*mm, spaceAfter=5)
-    style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=4)
+    style_col_header = ParagraphStyle('ColHeader', fontName=font, fontSize=14, leading=20, alignment=1)
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=12, leading=18, alignment=1)
+    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=18, alignment=0)
+    style_hanging = ParagraphStyle('Hanging', fontName=font, fontSize=12, leading=20, leftIndent=8.5*mm, firstLineIndent=-8.5*mm, spaceAfter=5)
+    style_section = ParagraphStyle('Section', fontName=font, fontSize=13, leading=20, spaceAfter=4)
 
     story.append(Paragraph(f"<b>{full_title}</b>", style_title))
     def clean(txt): return str(txt).replace("\n", "<br/>").replace("、", "<br/>")
 
-    # 任務編組
-    data_cmd = [[Paragraph("<b>任　務　編　組</b>", style_th), '', '', ''],
+    # 任務編組表格 (微調寬度比例，預留內距空隙防止右框線裁切)
+    data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_th), '', '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["職稱", "代號", "姓名", "任務"]]]
     for _, r in df_cmd.iterrows():
-        data_cmd.append([Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell), Paragraph(str(r.get('代號','')), style_cell), Paragraph(clean(r.get('姓名','')), style_cell), Paragraph(str(r.get('任務','')), style_cell_left)])
-    t1 = Table(data_cmd, colWidths=[page_width*0.15, page_width*0.12, page_width*0.28, page_width*0.45], repeatRows=2)
-    t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]))
+        data_cmd.append([
+            Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell), 
+            Paragraph(str(r.get('代號','')), style_cell), 
+            Paragraph(clean(r.get('姓名','')), style_cell), 
+            Paragraph(str(r.get('任務','')), style_cell_left)
+        ])
+    t1 = Table(data_cmd, colWidths=[page_width*0.14, page_width*0.11, page_width*0.28, page_width*0.45], repeatRows=2)
+    t1.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5)]))
     story.append(t1); story.append(Spacer(1, 6*mm))
 
-    # 警力佈署
-    data_sch = [[Paragraph("<b>警　力　佈　署</b>", style_th), '', ''],
+    # 警力佈署表格
+    data_sch = [[Paragraph("<b>警 力 佈 署</b>", style_th), '', ''],
                 [Paragraph(f"<b>{h}</b>", style_col_header) for h in ["日期（22時至翌日6時）", "單位", "分工"]]]
     for _, r in df_schedule.iterrows():
         data_sch.append([Paragraph(clean(r.get('日期（22時至翌日6時）','')), style_cell), Paragraph(clean(r.get('單位','')), style_cell), Paragraph(str(r.get('分工','')), style_cell_left)])
-    t2 = Table(data_sch, colWidths=[page_width*0.22, page_width*0.22, page_width*0.56], repeatRows=2)
-    t2_styles = [('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING', (0,0), (-1,-1), 6), ('BOTTOMPADDING', (0,0), (-1,-1), 6)]
+    t2 = Table(data_sch, colWidths=[page_width*0.22, page_width*0.22, page_width*0.55], repeatRows=2)
+    t2_styles = [('FONTNAME',(0,0),(-1,-1),font), ('GRID',(0,0),(-1,-1),0.5,colors.black), ('VALIGN',(0,0),(-1,-1),'MIDDLE'), ('SPAN',(0,0),(-1,0)), ('BACKGROUND',(0,0),(-1,1),colors.HexColor('#f2f2f2')), ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5)]
     
     # 合併日期單元格邏輯
     date_col = '日期（22時至翌日6時）'
@@ -273,6 +278,13 @@ def get_html():
     # 警力佈署表格
     parts.append("</table><br><table><tr><th colspan='3'>警 力 佈 署</th></tr><tr><th>日期</th><th>單位</th><th>分工</th></tr>")
     col_date = '日期（22時至翌日6時）'
+    
+    # 防止使用者在編輯器中誤改或刪除欄位名稱造成 Key表錯誤
+    if col_date not in res_sch.columns:
+        # 自動尋找可能相符的舊日期欄位，若找不到則抓取第一欄
+        potential_cols = [c for c in res_sch.columns if "日期" in c]
+        col_date = potential_cols[0] if potential_cols else res_sch.columns[0]
+
     dates = res_sch[col_date].tolist()
     non_empty_indices = [i for i, val in enumerate(dates) if str(val).strip() != ""]
     non_empty_indices.append(len(dates))
