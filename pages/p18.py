@@ -52,15 +52,21 @@ def send_report_email_auto(files, year, month):
         return False, str(e)
 
 
-# --- 排序函數（強制落實網頁與清冊 100% 絕對同步：分配類別 → 單位 → 主管優先在最上一列 → 副主管 → 承辦人）---
+# --- 排序函數（優先考量使用者的手動「排序調整」數字，其次落實機關倫理）---
 def sort_coworkers(df):
     df = df.copy()
     df['姓名'] = df['姓名'].fillna("")
     df['單位'] = df['單位'].fillna("")
     df['職別'] = df['職別'].fillna("")
     
-    df['分配類別'] = df['分配類別'].astype(str).str.strip()
+    # 防呆：確保排序調整欄位有預設數值，新增列時預設給 999 掉到最後面
+    if '排序調整' in df.columns:
+        df['排序調整'] = pd.to_numeric(df['排序調整'], errors='coerce').fillna(999).astype(int)
+    else:
+        # 如果是第一次建立，預設給 100 開始的流水號
+        df.insert(0, '排序調整', range(100, 100 + len(df)))
     
+    df['分配類別'] = df['分配類別'].astype(str).str.strip()
     cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"]
     df['分配類別'] = pd.Categorical(df['分配類別'], categories=cat_order, ordered=True)
     
@@ -72,7 +78,7 @@ def sort_coworkers(df):
             unit_order.append(u)
     df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
     
-    # 網頁與清冊排序專用的階級權重（數字越小排在該單位越上方）
+    # 機關預設階級權重（作為手動排序數字相同時的第二排序依據）
     def get_rank_weight(title):
         title = str(title)
         if title == '分局長': return 1
@@ -85,9 +91,9 @@ def sort_coworkers(df):
     
     df['職級權重'] = df['職別'].apply(get_rank_weight)
     
-    # 執行強制多重排序
-    df.sort_values(by=['分配類別', '單位', '職級權重', '姓名'], 
-                    ascending=[True, True, True, True], inplace=True)
+    # 執行多重排序：【手動調整數字】絕對優先 ➡️ 分配類別 ➡️ 單位 ➡️ 職級權重 ➡️ 姓名
+    df.sort_values(by=['排序調整', '分配類別', '單位', '職級權重', '姓名'], 
+                    ascending=[True, True, True, True, True], inplace=True)
     
     df.drop(columns=['職級權重'], inplace=True)
     df.reset_index(drop=True, inplace=True)
@@ -99,7 +105,7 @@ def on_data_edited():
     changes = st.session_state.co_editor
     df = st.session_state.current_roster.copy()
     
-    # 1. 處理更新
+    # 1. 處理更新（包括使用者手動改了排序調整數字）
     for row_idx, updated_cols in changes.get("edited_rows", {}).items():
         for col_name, val in updated_cols.items():
             df.at[row_idx, col_name] = val
@@ -113,13 +119,14 @@ def on_data_edited():
     if deleted_indices:
         df.drop(index=deleted_indices, inplace=True)
         
+    # 即時依最新手動調整數值重新排序名單順序
     st.session_state.current_roster = sort_coworkers(df)
 
 
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("🔥 系統同步：已修正產表邏輯死角，網頁表格名單與下載的 Excel 清冊排序已達到 100% 絕對同步。")
+    st.info("💡 挪移順序教學：表格最左側新增了「排序調整」欄位。想要變動某人的位子，直接把他的數字改大或改小，表格就會自動幫他移位插隊囉！")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -158,7 +165,6 @@ def p18_page():
         budget_type = ""
 
     st.markdown("**共同作業名單**")
-    st.caption("💡 提示：本表支援全自動職級重排，新增同仁或調整職稱後，表格會自發將主管、副主管抽至該單位最上方。")
 
     # --- 記憶檔與 Session State 融合初始化 ---
     roster_file = 'coworkers_roster.csv'
@@ -240,10 +246,13 @@ def p18_page():
         st.session_state.current_roster = sort_coworkers(df_init)
 
     df_display = st.session_state.current_roster.copy()
+    
+    # 建置欄位格式設定
     if "系統自動" not in alloc_mode:
         if '金額' not in df_display.columns:
-            df_display.insert(4, '金額', 0)
+            df_display.insert(5, '金額', 0)
         col_cfg = {
+            "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="調整此數字可手動改變上下順序", min_value=1, format="%d"),
             "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True),
             "金額": st.column_config.NumberColumn("金額", min_value=0, step=1, format="%d")
         }
@@ -251,6 +260,7 @@ def p18_page():
         if '金額' in df_display.columns:
             df_display = df_display.drop(columns=['金額'])
         col_cfg = {
+            "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="調整此數字可手動改變上下順序", min_value=1, format="%d"),
             "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
         }
 
@@ -267,7 +277,7 @@ def p18_page():
 
     if st.button("💾 儲存最新名單為預設值 (人員調動改完點此按鈕)", use_container_width=True, type="secondary"):
         st.session_state.current_roster.to_csv(roster_file, index=False, encoding='utf-8-sig')
-        st.success("✅ 名單已永久儲存，並刷新全自動組織階級排序！")
+        st.success("✅ 名單順序已永久記憶，並刷新全自動排序！")
         st.rerun()
 
     st.markdown("---")
@@ -405,7 +415,7 @@ def p18_page():
                     
                     df_coworkers_work['核發金額'] = 0
                     
-                    # === 負責管考(72%) 四階段精算法 ===
+                    # === 負責管考(72%) 複雜四階段精算法 ===
                     mask_72 = df_coworkers_work['分配類別'] == "負責管考(72%)"
                     df_72 = df_coworkers_work[mask_72].copy()
                     df_72['核發金額'] = 0
@@ -479,8 +489,12 @@ def p18_page():
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
                 
-                # 【終極修正核心】：在封裝清冊前，再次呼叫一模一樣的 sort_coworkers 引擎，洗掉分錢暫存檔的紊亂，確保清冊與網頁 100% 同步！
+                # 重新呼叫排序引擎，確保清冊與網頁呈現 100% 絕對一致
                 df_coworkers_output = sort_coworkers(df_coworkers_output)
+                
+                # 移除內部用的手動排序調整欄，避免呈送給長官的 Excel 被數字打亂
+                if '排序調整' in df_coworkers_output.columns:
+                    df_coworkers_output = df_coworkers_output.drop(columns=['排序調整'])
                 
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
