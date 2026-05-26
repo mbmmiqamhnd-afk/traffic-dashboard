@@ -197,7 +197,7 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "巡佐", "姓名": "李文章"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "巡佐", "姓名": "余清富"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警務佐", "姓名": "陳敬霖"},
-                {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "黃文興"},
+                {"分配長": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "黃文興"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "王天龍"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "曾嘉偉"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "江文頌"},
@@ -596,14 +596,13 @@ def p18_page():
                     workbook  = writer.book
                     worksheet1 = writer.sheets['直接執行人員']
                     
-                    # 建立標準文字上下左右置中、具備細邊框的公務格式
-                    cell_format = workbook.add_format({
-                        'align': 'center',       # 左右置中
-                        'v_align': 'vcenter',     # 上下置中
-                        'border': 1,              # 細邊框
-                        'font_name': '微軟正黑體',
-                        'font_size': 11
-                    })
+                    # 💡 【終極修正】：改用 xlsxwriter 模組最安全且通用的單獨呼叫宣告語法，徹底杜絕任何 Format 屬性遺漏錯誤
+                    cell_format = workbook.add_format()
+                    cell_format.set_align('center')   # 左右置中
+                    cell_format.set_align('vcenter')  # 上下置中
+                    cell_format.set_border(1)         # 細邊框
+                    cell_format.set_font_name('微軟正黑體')
+                    cell_format.set_font_size(11)
                     
                     # 幫直接人員分頁設定「蓋章欄」寬度與「資料列」高度
                     worksheet1.set_column('L:L', 16, cell_format) 
@@ -636,7 +635,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success("✅ 雙報表產出成功！Excel 蓋章欄已加寬、列高已舒適拉高，文字完美對齊。")
+                    st.success("✅ 雙報表產出成功！Excel 蓋章欄已拉大（列高35、欄寬16），且文字全部完美上下左右置中。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
