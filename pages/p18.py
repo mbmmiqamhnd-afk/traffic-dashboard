@@ -470,12 +470,18 @@ def p18_page():
                 df_coworkers_output = sort_coworkers(df_coworkers_output)
                 if '排序調整' in df_coworkers_output.columns:
                     df_coworkers_output = df_coworkers_output.drop(columns=['排序調整'])
+                
+                # 移除分配類別欄
+                if '分配類別' in df_coworkers_output.columns:
+                    df_coworkers_output = df_coworkers_output.drop(columns=['分配類別'])
+                
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
-                sub_72 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "負責管考(72%)", '金額'].sum()
-                sub_20 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "勤務督導(20%)", '金額'].sum()
-                sub_08 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "其他配合(8%)", '金額'].sum()
+                # 小計
+                sub_72 = df_coworkers_work[df_coworkers_work['分配類別'] == "負責管考(72%)"]['核發金額'].sum() if '核發金額' in df_coworkers_work.columns else 0
+                sub_20 = df_coworkers_work[df_coworkers_work['分配類別'] == "勤務督導(20%)"]['核發金額'].sum() if '核發金額' in df_coworkers_work.columns else 0
+                sub_08 = df_coworkers_work[df_coworkers_work['分配類別'] == "其他配合(8%)"]['核發金額'].sum() if '核發金額' in df_coworkers_work.columns else 0
                 coworkers_total_money = sub_72 + sub_20 + sub_08
 
                 summary_data = [
@@ -489,7 +495,7 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # E. Excel 輸出
+                # Excel 輸出
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
@@ -499,7 +505,7 @@ def p18_page():
                 pts_excel_data = pts_output.getvalue()
                 pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
 
-                # 印領清冊 - 最終格線處理
+                # 印領清冊 - 只要有資料的列，整列都有格線
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                     workbook = writer.book
@@ -513,7 +519,8 @@ def p18_page():
                     for r in range(len(df_direct_exec) + 1):
                         ws1.set_row(r, 38 if r > 0 else 25)
                         for c in range(len(df_direct_exec.columns)):
-                            ws1.write(r, c, df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c], border_format)
+                            value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
+                            ws1.write(r, c, value, border_format)
 
                     # 共同作業人員
                     if not df_coworkers_output.empty:
@@ -524,7 +531,8 @@ def p18_page():
                         for r in range(len(df_coworkers_output) + 1):
                             ws2.set_row(r, 38 if r > 0 else 25)
                             for c in range(len(df_coworkers_output.columns)):
-                                ws2.write(r, c, df_coworkers_output.iloc[r-1, c] if r > 0 else df_coworkers_output.columns[c], border_format)
+                                value = df_coworkers_output.iloc[r-1, c] if r > 0 else df_coworkers_output.columns[c]
+                                ws2.write(r, c, value, border_format)
 
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
 
