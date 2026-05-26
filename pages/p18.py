@@ -52,7 +52,7 @@ def send_report_email_auto(files, year, month):
         return False, str(e)
 
 
-# --- 排序函數（強制落實：分配類別 → 單位 → 主管優先在最上一列 → 副主管 → 承辦人）---
+# --- 排序函數（強制落實網頁與清冊 100% 絕對同步：分配類別 → 單位 → 主管優先在最上一列 → 副主管 → 承辦人）---
 def sort_coworkers(df):
     df = df.copy()
     df['姓名'] = df['姓名'].fillna("")
@@ -119,7 +119,7 @@ def on_data_edited():
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("🔥 系統更新：已優化平帳演算法，解決交通組主管因排序第一而遭受零頭扣減的問題，金額分配已完全均勻。")
+    st.info("🔥 系統同步：已修正產表邏輯死角，網頁表格名單與下載的 Excel 清冊排序已達到 100% 絕對同步。")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -405,13 +405,12 @@ def p18_page():
                     
                     df_coworkers_work['核發金額'] = 0
                     
-                    # === 負責管考(72%) 複雜四階段精算法 ===
+                    # === 負責管考(72%) 四階段精算法 ===
                     mask_72 = df_coworkers_work['分配類別'] == "負責管考(72%)"
                     df_72 = df_coworkers_work[mask_72].copy()
                     df_72['核發金額'] = 0
 
                     if not df_72.empty and pool_72 > 0:
-                        # 階段一：正副主官抽 8% 預算
                         main_officers_mask = df_72['職別'].str.contains('分局長|副分局長', na=False)
                         main_officers = df_72[main_officers_mask].copy()
                         if not main_officers.empty:
@@ -426,7 +425,6 @@ def p18_page():
                                     amount = 0
                                 df_72.at[idx, '核發金額'] = amount
 
-                        # 階段二：剩餘 92% 按指定比例分派各職級
                         remaining_pool = pool_72 - df_72['核發金額'].sum()
                         other_mask = ~df_72['職別'].str.contains('分局長|副分局長', na=False)
                         df_other = df_72[other_mask].copy()
@@ -446,13 +444,11 @@ def p18_page():
                             df_other['weight'] = df_other.apply(get_sub_weight, axis=1)
                             total_weight = df_other['weight'].sum()
                             if total_weight > 0:
-                                # 【終極平帳演算法優化】：精算到小數點，用最大餘數法補齊，避免單一主管被過度扣減
                                 exact_amounts = (df_other['weight'] / total_weight) * remaining_pool
                                 int_amounts = np.floor(exact_amounts).astype(int)
                                 
                                 diff = int(remaining_pool - int_amounts.sum())
                                 if diff > 0:
-                                    # 依據小數點餘數最大者（或順序）依序補1元，不盲目扣減首位
                                     remainders = exact_amounts - int_amounts
                                     top_indices = remainders.nlargest(diff).index
                                     int_amounts.loc[top_indices] += 1
@@ -465,7 +461,6 @@ def p18_page():
 
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
 
-                    # 勤務督導(20%) 與 其他配合(8%) 按人頭全自動公平均分
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
@@ -481,9 +476,11 @@ def p18_page():
                 else:
                     df_coworkers_output = df_coworkers_work.copy()
 
-                # 最終清冊封裝前處理
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
+                
+                # 【終極修正核心】：在封裝清冊前，再次呼叫一模一樣的 sort_coworkers 引擎，洗掉分錢暫存檔的紊亂，確保清冊與網頁 100% 同步！
+                df_coworkers_output = sort_coworkers(df_coworkers_output)
                 
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
@@ -528,7 +525,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success("✅ 雙報表產出成功！名單已全自動依照既定組織倫理邏輯排序妥當，檔案已寄送至信箱。")
+                    st.success("✅ 雙報表產出成功！網頁名單與 Excel 清冊排序已達成 100% 絕對一致，檔案已寄送至信箱。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
