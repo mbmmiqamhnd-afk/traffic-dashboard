@@ -12,7 +12,6 @@ from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
 
-# 自動將上層目錄加入路徑
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 try:
     from app import show_sidebar
@@ -25,7 +24,6 @@ def send_report_email_auto(files, year, month):
     try:
         if "email" not in st.secrets:
             return False, "找不到 st.secrets 中的 email 設定"
-          
         sender = st.secrets["email"]["user"]
         pwd = st.secrets["email"]["password"]
       
@@ -292,14 +290,12 @@ def p18_page():
 
                 for sheet_name, df in dfs_raw.items():
                     if '總表' in sheet_name: continue
-                   
                     start_r, start_c = None, None
                     for r_idx, row in df.iterrows():
                         row_str = [str(x).strip() for x in row.values]
                         if '員警姓名' in row_str:
                             start_r, start_c = r_idx, row_str.index('員警姓名')
                             break
-                   
                     if start_r is not None:
                         df_work = df.iloc[start_r:, start_c:].copy()
                         df_work.reset_index(drop=True, inplace=True)
@@ -461,12 +457,15 @@ def p18_page():
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
 
-                # 交通組兼領人員金額合併到負責管考類別（僅顯示用）
+                # 【關鍵修改】交通組勤務督導兼領人員合併到負責管考
                 df_coworkers_output['顯示類別'] = df_coworkers_output['分配類別'].copy()
-                df_coworkers_output.loc[(df_coworkers_output['單位'] == "交通組") & 
-                                       (df_coworkers_output['分配類別'] == "勤務督導(20%)"), '顯示類別'] = "負責管考(72%)"
+                df_coworkers_output.loc[
+                    (df_coworkers_output['單位'] == "交通組") & 
+                    (df_coworkers_output['分配類別'] == "勤務督導(20%)"), 
+                    '顯示類別'
+                ] = "負責管考(72%)"
 
-                # 移除原本的分配類別欄，改用顯示類別
+                # 移除分配類別，改用顯示類別
                 df_coworkers_output = df_coworkers_output.drop(columns=['分配類別']).rename(columns={'顯示類別': '分配類別'})
 
                 df_coworkers_output = sort_coworkers(df_coworkers_output)
@@ -476,7 +475,7 @@ def p18_page():
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
-                # 小計（使用顯示後的類別計算顯示用合計）
+                # 小計
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
                 sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
@@ -493,7 +492,7 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # E. Excel 輸出
+                # Excel 輸出
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
