@@ -52,7 +52,7 @@ def send_report_email_auto(files, year, month):
         return False, str(e)
 
 
-# --- 排序函數（強制落實：分配類別 → 單位 → 職級權重 → 姓名）---
+# --- 排序函數（完美落實：分配類別 → 單位 → 主管優先在最上一列 → 副主管 → 承辦人）---
 def sort_coworkers(df):
     df = df.copy()
     df['姓名'] = df['姓名'].fillna("")
@@ -72,12 +72,9 @@ def sort_coworkers(df):
             unit_order.append(u)
     df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
     
-    def get_rank_weight(row):
-        title = str(row['職別'])
-        unit = str(row['單位'])
-        # 如果單位是交通組，在排序與分錢階段一律視為同等階，確保金額完全對齊
-        if '交通組' in unit:
-            return 7
+    # 網頁與清冊排序專用的階級權重（數字越小排在該單位越上方）
+    def get_rank_weight(title):
+        title = str(title)
         if title == '分局長': return 1
         if title == '副分局長': return 2
         if any(x in title for x in ['副所長', '小隊長']): return 4
@@ -86,9 +83,9 @@ def sort_coworkers(df):
         if '巡官' in title: return 6
         return 7
     
-    df['職級權重'] = df.apply(get_rank_weight, axis=1)
+    df['職級權重'] = df['職別'].apply(get_rank_weight)
     
-    # 執行強制多重排序
+    # 執行強制多重排序（分配類別 → 單位 組織倫理 → 職級權重 官階倫理 ➡️ 姓名）
     df.sort_values(by=['分配類別', '單位', '職級權重', '姓名'], 
                     ascending=[True, True, True, True], inplace=True)
     
@@ -116,13 +113,14 @@ def on_data_edited():
     if deleted_indices:
         df.drop(index=deleted_indices, inplace=True)
         
+    # 編輯完成後即時重新理順階級排序，更新資料庫狀態
     st.session_state.current_roster = sort_coworkers(df)
 
 
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("🔥 系統更新：已改依【單位】判斷，交通組全體成員在負責管考類別中均自動歸入「交通業務承辦人(26%)」，金額完全一致。")
+    st.info("🔥 系統更新：已完美分離「計費邏輯」與「排序倫理」。各單位正副主管絕對固定在最上一列，且交通組全體金額維持均分！")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -145,7 +143,7 @@ def p18_page():
     )
    
     if "系統自動" in alloc_mode:
-        st.info("💡 負責管考(72%)：正副主官固定8%（分局長60%、副分局長40%），其餘按56%：26%：10%比例分配。交通組全體成員不看職稱，直接歸入26%子類別。")
+        st.info("💡 負責管考(72%)：正副主官固定8%（分局長60%、副分局長40%），其餘按56%：26%：10%比例分配。各單位正/副主管必定排列在最上方。")
         budget_type = st.selectbox("請選擇預算輸入方式：", [
             "A. 直接輸入【共同作業人員】的總分配預算",
             "B. 輸入【全分局】本月核撥總預算 (系統會自動先扣掉直接執行人員的總獎金)"
@@ -161,7 +159,7 @@ def p18_page():
         budget_type = ""
 
     st.markdown("**共同作業名單**")
-    st.caption("💡 提示：本表支援全自動動態排序，一旦編輯或新增完畢，表格會自發調整順序，無需手動排位。")
+    st.caption("💡 提示：本表支援全自動職級重排，新增同仁或調整職稱後，表格會自發將主管、副主管抽至該單位最上方。")
 
     # --- 記憶檔與 Session State 融合初始化 ---
     roster_file = 'coworkers_roster.csv'
@@ -435,7 +433,7 @@ def p18_page():
                         df_other = df_72[other_mask].copy()
 
                         if not df_other.empty and remaining_pool > 0:
-                            # 【核心邏輯升級】：完全改依「單位」判斷，只要是交通組，一律歸入 26 權重子類別
+                            # 【核心計費判定】：完全依「單位名稱」判斷，只要是交通組，在分錢階段一律視為權重 26 子類別
                             def get_sub_weight(row):
                                 title = str(row['職別'])
                                 unit = str(row['單位'])
