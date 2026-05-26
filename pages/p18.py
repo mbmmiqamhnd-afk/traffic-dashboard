@@ -54,14 +54,19 @@ def send_report_email_auto(files, year, month):
 def sort_coworkers(df):
     df = df.copy()
     
+    # 防呆：把空值補上空字串，避免未填姓名的人員被系統誤刪
+    df['姓名'] = df['姓名'].fillna("")
+    df['單位'] = df['單位'].fillna("")
+    df['職別'] = df['職別'].fillna("")
+    
     # 1. 確保分配類別順序
     cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"]
     df['分配類別'] = pd.Categorical(df['分配類別'], categories=cat_order, ordered=True)
 
     # 2. 確保單位依照固定的組織倫理順序排列
     unit_order = ["交通組", "會計室", "秘書室", "人事室", "龍潭分局", "勤務中心", "督察組", "保安民防組", "行政組", "防治組", "聖亭派出所", "龍潭派出所", "中興派出所", "石門派出所", "高平派出所", "三和派出所", "龍潭交通分隊"]
-    # 處理可能新增的單位
-    for u in df['單位'].dropna().unique():
+    # 處理您日後可能在網頁上新增的其他單位
+    for u in df['單位'].unique():
         if u not in unit_order:
             unit_order.append(u)
     df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
@@ -126,7 +131,7 @@ def p18_page():
         budget_input = 0
         budget_type = ""
 
-    st.markdown(f"**共同作業名單 (網頁已套用職級排序)**")
+    st.markdown(f"**共同作業名單 (已補齊會計室主任並套用職級排序)**")
     
     default_coworkers_data = [
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "業務單位主管", "姓名": "陳維明", "蓋章": ""},
@@ -136,8 +141,12 @@ def p18_page():
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "郭勝隆", "蓋章": ""},
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "吳享運", "蓋章": ""},
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "吳沛軒", "蓋章": ""},
+        
+        # --- 補齊的會計室主任 ---
+        {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主任", "姓名": "", "蓋章": ""},
         {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "郭貞彣", "蓋章": ""},
         {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "林玲宜", "蓋章": ""},
+        
         {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "主任", "姓名": "陳振貴", "蓋章": ""},
         {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "出納", "姓名": "簡啟峯", "蓋章": ""},
         {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容", "蓋章": ""},
@@ -344,9 +353,10 @@ def p18_page():
                 
                 # --- D. 處理共同作業人員 (按人頭全自動平分) ---
                 df_coworkers_work = edited_df_coworkers.copy()
-                df_coworkers_work.dropna(subset=['姓名'], inplace=True)
+                # 僅刪除完全空白的無效行，保留未填姓名但有職稱單位的行
+                df_coworkers_work.dropna(how='all', inplace=True)
                 
-                # 【關鍵】：發錢前，確保名單已經依照職級排好序！
+                # 發錢前，確保名單已經依照職級嚴格排好序！
                 df_coworkers_work = sort_coworkers(df_coworkers_work)
                 
                 if "系統自動" in alloc_mode:
@@ -374,7 +384,7 @@ def p18_page():
                             int_amount = int(np.floor(exact_amount))
                             amounts = np.full(count, int_amount)
                             
-                            # 把剩下發不出去的零錢，依序+1塊錢發給「排在最前面」的人 (因為已經排序過，最前面保證是主官/管)
+                            # 把剩下發不出去的零錢，依序+1塊錢發給排在最前面的主官/管
                             diff = int(pool - amounts.sum())
                             if diff > 0:
                                 amounts[:diff] += 1
@@ -432,7 +442,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success(f"✅ 雙報表產出成功！已完美套用主官優先之職級排序與均分機制，檔案已自動備份至信箱。")
+                    st.success(f"✅ 雙報表產出成功！檔案已自動夾帶備份至您的信箱。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
