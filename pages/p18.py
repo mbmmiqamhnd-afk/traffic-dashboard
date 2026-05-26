@@ -457,7 +457,7 @@ def p18_page():
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
                     
                     # 20% 與 8% 池計算
-                    for cat, pool in [("勤務督導(20%)", pool_20), ("反/其他配合(8%)", pool_08)]:
+                    for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
                         if count > 0 and pool > 0:
@@ -579,7 +579,7 @@ def p18_page():
                                 value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
                                 ws1.write(r, c, value, border_format)
 
-                    # 共同作業及配合人員工作表 (完美套用全新右移一欄核示座標)
+                    # 共同作業及配合人員工作表 (對齊對稱簽章欄位)
                     if not df_coworkers_final_sheet.empty:
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
@@ -594,24 +594,24 @@ def p18_page():
                                 value = df_coworkers_final_sheet.iloc[r-1, c] if r > 0 else df_coworkers_final_sheet.columns[c]
                                 ws2.write(r, c, value, border_format)
                         
-                        # 2. 【核心優化：長官簽章右移一欄布局】
+                        # 2. 【核心優化：全新垂直同列核示格位排版】
                         sign_start_row = data_len + 3 
                         sign_title_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 12, 'bold': True, 'align': 'left', 'valign': 'vcenter'})
                         
-                        # 【第一層】：單位主管、人事、主計、分局長 (通通往右平移一欄)
+                        # 【第一層】：製表人與人事同列 (人事、主計、分局長均往右對齊)
                         ws2.set_row(sign_start_row, 25)
-                        ws2.write(sign_start_row, 0, "單位主管：", sign_title_format) # 欄位 A (第 0 欄)
-                        ws2.write(sign_start_row, 3, "人事：", sign_title_format)     # 欄位 D (第 3 欄，原本在 C 右移一欄)
-                        ws2.write(sign_start_row, 5, "主計：", sign_title_format)     # 欄位 F (第 5 欄，原本在 E 右移一欄)
-                        ws2.write(sign_start_row, 7, "分局長：", sign_title_format)   # 欄位 H (第 7 欄，原本在 G 右移一欄)
+                        ws2.write(sign_start_row, 0, "製表人：", sign_title_format) # 欄位 A (第 0 欄)
+                        ws2.write(sign_start_row, 3, "人事：", sign_title_format)   # 欄位 D (第 3 欄)
+                        ws2.write(sign_start_row, 5, "主計：", sign_title_format)   # 欄位 F (第 5 欄)
+                        ws2.write(sign_start_row, 7, "分局長：", sign_title_format) # 欄位 H (第 7 欄)
                         
                         # 第一層蓋章列高空白
                         ws2.set_row(sign_start_row + 1, 50)
                         
-                        # 【第二層】：製表人、出納 (配合右移，出納與人事精準垂直對齊)
+                        # 【第二層】：單位主管與出納同列 (單位主管垂直對齊製表人，出納垂直對齊人事)
                         ws2.set_row(sign_start_row + 2, 25)
-                        ws2.write(sign_start_row + 2, 0, "製表人：", sign_title_format) # 欄位 A (第 0 欄)
-                        ws2.write(sign_start_row + 2, 3, "出納：", sign_title_format)   # 欄位 D (第 3 欄，原本在 C 右移一欄)
+                        ws2.write(sign_start_row + 2, 0, "單位主管：", sign_title_format) # 欄位 A (第 0 欄，精準對齊上方製表人)
+                        ws2.write(sign_start_row + 2, 3, "出納：", sign_title_format)     # 欄位 D (第 3 欄，精準對齊上方人事)
                         
                         # 第二層蓋章列高空白
                         ws2.set_row(sign_start_row + 3, 50)
