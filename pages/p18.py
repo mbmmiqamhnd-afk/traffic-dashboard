@@ -170,7 +170,7 @@ def p18_page():
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
-                {"分配類別": "反配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
+                {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
                 {"分配類別": "勤務督導(20%)", "單位": "秘書室", "職別": "巡官", "姓名": "陳鵬翔"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "主任", "姓名": "游新枝"},
@@ -584,7 +584,7 @@ def p18_page():
                                 value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
                                 ws1.write(r, c, value, border_format)
 
-                    # 共同作業及配合人員工作表 (完美套用全新往下移一列之核示簽章座標)
+                    # 共同作業及配合人員工作表
                     if not df_coworkers_final_sheet.empty:
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
@@ -605,21 +605,21 @@ def p18_page():
                         sign_start_row = data_len + 3 
                         sign_title_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 12, 'bold': True, 'align': 'left', 'valign': 'vcenter'})
                         
-                        # 【第一層】：製表人與人事同列 (維持在 sign_start_row)
+                        # 【第一層】：製表人與人事同列 (分局長精準移至第 8 欄，即欄位 I)
                         ws2.set_row(sign_start_row, 25)
                         ws2.write(sign_start_row, 0, "製表人：", sign_title_format) # 欄位 A (第 0 欄)
                         ws2.write(sign_start_row, 3, "人事：", sign_title_format)   # 欄位 D (第 3 欄)
                         ws2.write(sign_start_row, 5, "主計：", sign_title_format)   # 欄位 F (第 5 欄)
-                        ws2.write(sign_start_row, 7, "分局長：", sign_title_format) # 欄位 H (第 7 欄)
+                        ws2.write(sign_start_row, 8, "分局長：", sign_title_format) # 【關鍵修改】欄位 I (第 8 欄，主計右方隔兩欄)
                         
-                        # 【加強核心：擴大第一層與第二層間的留白高度】
-                        ws2.set_row(sign_start_row + 1, 45) # 留白列 1
-                        ws2.set_row(sign_start_row + 2, 45) # 留白列 2 (往下多跨一列空間)
+                        # 第一層至第二層之間的加倍留白列高
+                        ws2.set_row(sign_start_row + 1, 45) 
+                        ws2.set_row(sign_start_row + 2, 45) 
                         
-                        # 【第二層】：單位主管與出納同列 (精準往下順移一列至 sign_start_row + 3)
+                        # 【第二層】：單位主管與出納同列
                         ws2.set_row(sign_start_row + 3, 25)
-                        ws2.write(sign_start_row + 3, 0, "單位主管：", sign_title_format) # 欄位 A (第 0 欄，精準對齊上方製表人)
-                        ws2.write(sign_start_row + 3, 3, "出納：", sign_title_format)     # 欄位 D (第 3 欄，精準對齊上方人事)
+                        ws2.write(sign_start_row + 3, 0, "單位主管：", sign_title_format) # 欄位 A (第 0 欄)
+                        ws2.write(sign_start_row + 3, 3, "出納：", sign_title_format)     # 欄位 D (第 3 欄)
                         
                         # 第二層長官核准蓋章之留白列高
                         ws2.set_row(sign_start_row + 4, 50)
