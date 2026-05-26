@@ -56,7 +56,7 @@ def send_report_email_auto(files, year, month):
 def sort_coworkers(df):
     df = df.copy()
     
-    # 1. 核心解法：強制將可能被鎖定的 Categorical 欄位降維回最安全的純文字 (Object) 型態
+    # 1. 強制將可能被鎖定的 Categorical 欄位降維回最安全的純文字 (Object) 型態
     for col in ['分配類別', '單位', '職別', '姓名']:
         if col in df.columns:
             df[col] = df[col].astype(str)
@@ -86,7 +86,7 @@ def sort_coworkers(df):
             unit_order.append(u)
     df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
     
-    # 4. 建立官階倫理權重
+    # 4. 建立官階倫理權重（確保分局長、副分局長永遠置頂排序）
     def get_rank_weight(title):
         title = str(title)
         if title == '分局長': return 1
@@ -105,7 +105,7 @@ def sort_coworkers(df):
     
     df.drop(columns=['職級權重'], inplace=True)
     
-    # 6. 【關鍵修正】：排序完畢後，立刻把欄位恢復成一般文字型態，徹底解放鎖定狀態，不留後患給下一次編輯
+    # 6. 排序完畢後，立刻把欄位恢復成一般文字型態，徹底解放鎖定狀態
     for col in ['分配類別', '單位']:
         df[col] = df[col].astype(str)
         
@@ -190,7 +190,11 @@ def p18_page():
         if os.path.exists(roster_file):
             df_init = pd.read_csv(roster_file)
         else:
+            # 【完美回歸修正】分局長改至「負責管考(72%)」，並將單位對齊「龍潭分局」
             default_coworkers_data = [
+                {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰"},
+                {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "何憶雯"},
+                {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "蔡志明"},
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "業務單位主管", "姓名": "陳維明"},
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "盧冠仁"},
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "李峯甫"},
@@ -204,14 +208,11 @@ def p18_page():
                 {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "主任", "姓名": "陳振貴"},
                 {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "出納", "姓名": "簡啟峯"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
-                {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
+                {"分配類別": "Other配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
                 {"分配類別": "勤務督導(20%)", "單位": "秘書室", "職別": "巡官", "姓名": "陳鵬翔"},
-                {"分配類別": "勤務督導(20%)", "單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰"},
-                {"分配類別": "勤務督導(20%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "何憶雯"},
-                {"分配類別": "勤務督導(20%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "蔡志明"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "主任", "姓名": "游新枝"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "巡佐", "姓名": "李文章"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "巡佐", "姓名": "余清富"},
@@ -225,7 +226,7 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "督察組", "職別": "警務員", "姓名": "陳冠彰"},
                 {"分配類別": "勤務督導(20%)", "單位": "督察組", "職別": "巡官", "姓名": "全楚文"},
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "組長", "姓名": "蔡奇青"},
-                {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "警務員", "姓名": "Cent鉉"},
+                {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "警務員", "姓名": "曾盛鉉"},
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "巡官", "姓名": "李立人"},
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "巡官", "姓名": "林沛達"},
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "巡官", "姓名": "吳國棟"},
@@ -431,26 +432,45 @@ def p18_page():
                     
                     df_coworkers_work['核發金額'] = 0
                     
-                    # === 負責管考(72%) 複雜四階段精算法 ===
+                    # === 負責管考(72%) 階層精算法 ===
                     mask_72 = df_coworkers_work['分配類別'] == "負責管考(72%)"
                     df_72 = df_coworkers_work[mask_72].copy()
                     df_72['核發金額'] = 0
 
                     if not df_72.empty and pool_72 > 0:
+                        # 分組計算：先抓出正副主官 (8%)
                         main_officers_mask = df_72['職別'].str.contains('分局長|副分局長', na=False)
                         main_officers = df_72[main_officers_mask].copy()
+                        
                         if not main_officers.empty:
                             pool_main = int(np.round(pool_72 * 0.08))
+                            
+                            # 動態計算正副主官各自獲分配權重
+                            # 分局長佔主官池 60%，每位副分局長平分 40%
+                            num_deputies = main_officers['職別'].str.contains('副分局長').sum()
+                            
+                            main_exact_list = []
                             for idx, row in main_officers.iterrows():
-                                title = str(row['職別'])
-                                if '分局長' in title:
-                                    amount = int(np.round(pool_main * 0.60))
-                                elif '副分局長' in title:
-                                    amount = pool_main - int(np.round(pool_main * 0.60))
+                                t = str(row['職別'])
+                                if '分局長' in t and '副' not in t:
+                                    w = 0.60
+                                elif '副分局長' in t:
+                                    w = 0.40 / num_deputies if num_deputies > 0 else 0.40
                                 else:
-                                    amount = 0
-                                df_72.at[idx, '核發金額'] = amount
+                                    w = 0
+                                main_exact_list.append((idx, w * pool_main))
+                                
+                            # 主官池平帳
+                            tot_w_main = sum(x[1] for x in main_exact_list)
+                            if tot_w_main > 0:
+                                main_amounts = np.floor([x[1] for x in main_exact_list]).astype(int)
+                                diff_m = pool_main - main_amounts.sum()
+                                if diff_m > 0:
+                                    main_amounts[:diff_m] += 1
+                                for idx_m, (orig_idx, _) in enumerate(main_exact_list):
+                                    df_72.at[orig_idx, '核發金額'] = main_amounts[idx_m]
 
+                        # 其餘 92% 管考預算給其他業務人員 (56% : 26% : 10%)
                         remaining_pool = pool_72 - df_72['核發金額'].sum()
                         other_mask = ~df_72['職別'].str.contains('分局長|副分局長', na=False)
                         df_other = df_72[other_mask].copy()
@@ -487,6 +507,7 @@ def p18_page():
 
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
 
+                    # === 勤務督導(20%) 與 其他配合(8%) 人頭均分池 ===
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
