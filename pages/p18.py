@@ -54,7 +54,7 @@ def p18_page():
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統支援【管考72% / 督導20% / 其他8%】按人頭自動均分！")
+    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統支援【管考72% / 督導20% / 其他8%】按人頭自動均分與職級自動排序！")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -75,7 +75,6 @@ def p18_page():
         ["🤖 系統自動按人頭平分 (管考72%、督導20%、其他8%)", "✍️ 手動輸入固定金額 (僅於總表分類顯示)"]
     )
     
-    # 根據選擇模式切換顯示與設定
     if "系統自動" in alloc_mode:
         st.info("💡 系統會依您設定的總預算切成三塊 (72/20/8)，再按照下方名單內的「各類別總人數」，全自動均勻平分獎金。")
         budget_type = st.selectbox("請選擇預算輸入方式：", [
@@ -94,7 +93,6 @@ def p18_page():
 
     st.markdown(f"**共同作業名單**")
     
-    # 完整名單 (徹底移除金額欄位，純呈現人員清單)
     default_coworkers_data = [
         # --- 負責管考 (72%) ---
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "業務單位主管", "姓名": "陳維明", "蓋章": ""},
@@ -105,7 +103,7 @@ def p18_page():
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "吳享運", "蓋章": ""},
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "吳沛軒", "蓋章": ""},
         
-        # --- 其他配合 (8%)：會計室、人事室，以及秘書室的主任與出納 ---
+        # --- 其他配合 (8%) ---
         {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "郭貞彣", "蓋章": ""},
         {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "林玲宜", "蓋章": ""},
         {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "主任", "姓名": "陳振貴", "蓋章": ""},
@@ -116,7 +114,7 @@ def p18_page():
         {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥", "蓋章": ""},
         {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉", "蓋章": ""},
 
-        # --- 勤務督導 (20%)：包含秘書室巡官與其他各單位 ---
+        # --- 勤務督導 (20%) ---
         {"分配類別": "勤務督導(20%)", "單位": "秘書室", "職別": "巡官", "姓名": "陳鵬翔", "蓋章": ""},
         {"分配類別": "勤務督導(20%)", "單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰", "蓋章": ""},
         {"分配類別": "勤務督導(20%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "何憶雯", "蓋章": ""},
@@ -170,7 +168,6 @@ def p18_page():
     ]
     df_coworkers_default = pd.DataFrame(default_coworkers_data)
 
-    # 根據模式決定是否要動態加入「金額」欄位供填寫
     if "系統自動" not in alloc_mode:
         df_coworkers_default.insert(4, '金額', 0)
         col_cfg = {
@@ -333,35 +330,60 @@ def p18_page():
                     
                     df_coworkers_work['核發金額'] = 0
                     
-                    # 針對每一類別根據「總人數」進行無腦均分
                     for cat, pool in [("負責管考(72%)", pool_72), ("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
-                        count = cat_mask.sum()  # 計算該類別總人數
+                        count = cat_mask.sum()
                         
                         if count > 0 and pool > 0:
-                            # 算出每人包含小數點的精確金額
                             exact_amount = pool / count
-                            # 先無條件捨去取整數
                             int_amount = int(np.floor(exact_amount))
-                            
-                            # 建立一個陣列存放大家的錢
                             amounts = np.full(count, int_amount)
                             
-                            # 把剩下發不出去的零錢 (diff)，依序+1塊錢發給前幾個人平帳
                             diff = int(pool - amounts.sum())
                             if diff > 0:
                                 amounts[:diff] += 1
                                 
                             df_coworkers_work.loc[cat_mask, '核發金額'] = amounts
                             
-                    # 用計算完真實核發的金額取代
                     df_coworkers_output = df_coworkers_work.rename(columns={'核發金額': '金額'})
                 else:
-                    # 手動模式：原本輸入多少錢就發多少錢
                     df_coworkers_output = df_coworkers_work.copy()
                 
-                # 自動排序並插入序號
-                df_coworkers_output.sort_values(by='分配類別', ascending=False, inplace=True)
+                # --- 多重自訂排序邏輯 (類別 -> 單位 -> 職務位階) ---
+                # 1. 確保分配類別順序
+                cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"]
+                df_coworkers_output['分配類別'] = pd.Categorical(df_coworkers_output['分配類別'], categories=cat_order, ordered=True)
+
+                # 2. 確保單位依照預設的倫理順序排列
+                unit_order = []
+                for u in default_coworkers_data:
+                    if u["單位"] not in unit_order:
+                        unit_order.append(u["單位"])
+                for u in df_coworkers_output['單位'].unique():
+                    if u not in unit_order:
+                        unit_order.append(u)
+                df_coworkers_output['單位'] = pd.Categorical(df_coworkers_output['單位'], categories=unit_order, ordered=True)
+
+                # 3. 建立職級權重 (讓正/副主管優先排前面)
+                def get_rank_weight(title):
+                    title = str(title)
+                    if title == '分局長': return 1
+                    if title == '副分局長': return 2
+                    # 必須先抓副主管，以免被主管關鍵字誤判 (如"副所長"包含"所長")
+                    if any(x in title for x in ['副所長', '小隊長']): return 4
+                    if any(x in title for x in ['主管', '組長', '主任', '所長', '分隊長', '主計']): return 3
+                    if any(x in title for x in ['巡佐', '督察員', '警務員']): return 5
+                    if '巡官' in title: return 6
+                    return 7 # 承辦人、警員、出納等皆屬此層級
+
+                df_coworkers_output['職級權重'] = df_coworkers_output['職別'].apply(get_rank_weight)
+
+                # 4. 執行多重排序，並清理中介用的權重欄位
+                df_coworkers_output.sort_values(by=['分配類別', '單位', '職級權重'], ascending=[True, True, True], inplace=True)
+                df_coworkers_output.drop(columns=['職級權重'], inplace=True)
+
+                # 重設 Index 並插入序號
+                df_coworkers_output.reset_index(drop=True, inplace=True)
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 
                 # 分類加總供支領一覽表使用
@@ -408,7 +430,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success(f"✅ 雙報表產出成功！已使用最新公平平分法，檔案已自動備份至您的信箱。")
+                    st.success(f"✅ 雙報表產出成功！已自動處理職級排序與均分，檔案已夾帶備份至您的信箱。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
