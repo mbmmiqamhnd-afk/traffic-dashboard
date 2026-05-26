@@ -52,11 +52,11 @@ def send_report_email_auto(files, year, month):
         return False, str(e)
 
 
-# --- 排序函數（徹底解除 Categorical 衝突的終極安全版本）---
+# --- 排序函數 ---
 def sort_coworkers(df):
     df = df.copy()
     
-    # 1. 強制將可能被鎖定的 Categorical 欄位降維回最安全的純文字 (Object) 型態
+    # 1. 強制將可能被鎖定的 Categorical 欄位降維回最安全的純文字型態
     for col in ['分配類別', '單位', '職別', '姓名']:
         if col in df.columns:
             df[col] = df[col].astype(str)
@@ -86,7 +86,7 @@ def sort_coworkers(df):
             unit_order.append(u)
     df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
     
-    # 4. 建立官階倫理權重（確保分局長、副分局長永遠置頂排序）
+    # 4. 建立官階倫理權重
     def get_rank_weight(title):
         title = str(title)
         if title == '分局長': return 1
@@ -99,13 +99,13 @@ def sort_coworkers(df):
     
     df['職級權重'] = df['職別'].apply(get_rank_weight)
     
-    # 5. 執行多重安全排序
+    # 5. 執行多重排序
     df.sort_values(by=['排序調整', '分配類別', '單位', '職級權重', '姓名'], 
                     ascending=[True, True, True, True, True], inplace=True)
     
     df.drop(columns=['職級權重'], inplace=True)
     
-    # 6. 排序完畢後，立刻把欄位恢復成一般文字型態，徹底解放鎖定狀態
+    # 6. 恢復常規文字型態
     for col in ['分配類別', '單位']:
         df[col] = df[col].astype(str)
         
@@ -113,26 +113,22 @@ def sort_coworkers(df):
     return df
 
 
-# --- 表格即時監聽排序回呼函數 (Callback) ---
+# --- 表格即時監聽回呼函數 ---
 def on_data_edited():
     changes = st.session_state.co_editor
     df = st.session_state.current_roster.copy()
     
-    # 在更新變更前，也確保型態全部解鎖為常規文字型態，避免 fillna 衝突
     for col in ['分配類別', '單位', '職別', '姓名']:
         if col in df.columns:
             df[col] = df[col].astype(str)
             
-    # 1. 處理更新
     for row_idx, updated_cols in changes.get("edited_rows", {}).items():
         for col_name, val in updated_cols.items():
             df.at[row_idx, col_name] = val
             
-    # 2. 處理新增
     for new_row in changes.get("added_rows", {}):
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         
-    # 3. 處理刪除
     deleted_indices = changes.get("deleted_rows", [])
     if deleted_indices:
         df.drop(index=deleted_indices, inplace=True)
@@ -143,11 +139,10 @@ def on_data_edited():
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("💡 挪移順序教學：表格最左側設有「排序調整」欄位。想要變動某人的位子，直接修改該數字，表格就會自動幫他移位插隊囉！")
+    st.info("💡 挪移順序教學：表格最左側設有「排序調整」欄位。修改該數字，表格就會自動重新排序。")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
-    # 1. 檔案上傳區
     st.subheader("📂 1. 當月原始資料上傳")
     c1, c2 = st.columns(2)
     file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xlsx'])
@@ -155,7 +150,6 @@ def p18_page():
     file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", 
                                       type=['xlsx'], accept_multiple_files=True)
     
-    # 2. 分配設定
     st.subheader("📝 2. 印領清冊與獎金分配設定")
     point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
     
@@ -166,12 +160,11 @@ def p18_page():
     )
    
     if "系統自動" in alloc_mode:
-        st.info("💡 負責管考(72%)：正副主官固定8%（分局長60%、副分局長40%），其餘按56%：26%：10%比例分配。各單位正/副主管必定排列在最上方。")
+        st.info("💡 負責管考(72%)：正副主官固定8%（分局長60%、副分局長40%），其餘按56%：26%：10%比例分配。")
         budget_type = st.selectbox("請選擇預算輸入方式：", [
             "A. 直接輸入【共同作業人員】的總分配預算",
-            "B. 輸入【全分局】本月核撥總預算 (系統會自動先扣掉直接執行人員的總獎金)"
+            "B. 輸入【全分局】本月核撥總預算"
         ])
-        
         if "A" in budget_type:
             budget_input = st.number_input("💰 輸入【共同作業人員】總預算 (元)", value=10000, step=100)
         else:
@@ -182,15 +175,12 @@ def p18_page():
         budget_type = ""
 
     st.markdown("**共同作業名單**")
-
-    # --- 記憶檔與 Session State 融合初始化 ---
     roster_file = 'coworkers_roster.csv'
    
     if 'current_roster' not in st.session_state:
         if os.path.exists(roster_file):
             df_init = pd.read_csv(roster_file)
         else:
-            # 【完美回歸修正】分局長改至「負責管考(72%)」，並將單位對齊「龍潭分局」
             default_coworkers_data = [
                 {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰"},
                 {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "何憶雯"},
@@ -208,7 +198,7 @@ def p18_page():
                 {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "主任", "姓名": "陳振貴"},
                 {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "出納", "姓名": "簡啟峯"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
-                {"分配類別": "Other配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
+                {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
@@ -292,9 +282,9 @@ def p18_page():
         on_change=on_data_edited
     )
 
-    if st.button("💾 儲存最新名單為預設值 (人員調動改完點此按鈕)", use_container_width=True, type="secondary"):
+    if st.button("💾 儲存最新名單為預設值", use_container_width=True, type="secondary"):
         st.session_state.current_roster.to_csv(roster_file, index=False, encoding='utf-8-sig')
-        st.success("✅ 名單順序已永久記憶，並刷新全自動排序！")
+        st.success("✅ 名單順序已永久記憶！")
         st.rerun()
 
     st.markdown("---")
@@ -423,7 +413,7 @@ def p18_page():
                     else:
                         coworker_pool = int(budget_input) - direct_total_money
                         if coworker_pool < 0:
-                            st.error(f"❌ 全分局預算 ({budget_input}) 不足支付直接執行人員 ({direct_total_money})")
+                            st.error(f"❌ 全分局預算不足支付直接執行人員")
                             return
                            
                     pool_72 = int(np.round(coworker_pool * 0.72))
@@ -438,15 +428,11 @@ def p18_page():
                     df_72['核發金額'] = 0
 
                     if not df_72.empty and pool_72 > 0:
-                        # 分組計算：先抓出正副主官 (8%)
                         main_officers_mask = df_72['職別'].str.contains('分局長|副分局長', na=False)
                         main_officers = df_72[main_officers_mask].copy()
                         
                         if not main_officers.empty:
                             pool_main = int(np.round(pool_72 * 0.08))
-                            
-                            # 動態計算正副主官各自獲分配權重
-                            # 分局長佔主官池 60%，每位副分局長平分 40%
                             num_deputies = main_officers['職別'].str.contains('副分局長').sum()
                             
                             main_exact_list = []
@@ -460,7 +446,6 @@ def p18_page():
                                     w = 0
                                 main_exact_list.append((idx, w * pool_main))
                                 
-                            # 主官池平帳
                             tot_w_main = sum(x[1] for x in main_exact_list)
                             if tot_w_main > 0:
                                 main_amounts = np.floor([x[1] for x in main_exact_list]).astype(int)
@@ -470,7 +455,6 @@ def p18_page():
                                 for idx_m, (orig_idx, _) in enumerate(main_exact_list):
                                     df_72.at[orig_idx, '核發金額'] = main_amounts[idx_m]
 
-                        # 其餘 92% 管考預算給其他業務人員 (56% : 26% : 10%)
                         remaining_pool = pool_72 - df_72['核發金額'].sum()
                         other_mask = ~df_72['職別'].str.contains('分局長|副分局長', na=False)
                         df_other = df_72[other_mask].copy()
@@ -520,6 +504,32 @@ def p18_page():
                             df_coworkers_work.loc[cat_mask, '核發金額'] = amounts
                     
                     df_coworkers_output = df_coworkers_work.rename(columns={'核發金額': '金額'})
+                    
+                    # ========================================================
+                    # 💡 【核心邏輯升級】：執行跨類別金額歸併（勤務督導合併至負責管考）
+                    # ========================================================
+                    # 1. 篩選出負責管考(72%)的名單索引與金額對照表 (Key: 單位+姓名)
+                    mgr_lookup = {}
+                    for idx, row in df_coworkers_output[df_coworkers_output['分配類別'] == '負責管考(72%)'].iterrows():
+                        key = (str(row['單位']).strip(), str(row['姓名']).strip())
+                        if key[1] != "":  # 姓名不能為空值
+                            mgr_lookup[key] = idx
+                    
+                    # 2. 掃描勤務督導(20%)，若有相同單位且相同姓名的人，將金額整併
+                    indices_to_drop = []
+                    for idx, row in df_coworkers_output[df_coworkers_output['分配類別'] == '勤務督導(20%)'].iterrows():
+                        key = (str(row['單位']).strip(), str(row['姓名']).strip())
+                        if key in mgr_lookup:
+                            target_mgr_idx = mgr_lookup[key]
+                            # 將督導金額累加到管考金額中
+                            df_coworkers_output.at[target_mgr_idx, '金額'] += row['金額']
+                            # 標記這一列督導資料，等一下從最終清冊中移除（避免重複領取）
+                            indices_to_drop.append(idx)
+                    
+                    if indices_to_drop:
+                        df_coworkers_output.drop(index=indices_to_drop, inplace=True)
+                    # ========================================================
+                    
                 else:
                     df_coworkers_output = df_coworkers_work.copy()
 
@@ -527,13 +537,13 @@ def p18_page():
                     df_coworkers_output['金額'] = 0
                 
                 df_coworkers_output = sort_coworkers(df_coworkers_output)
-                
                 if '排序調整' in df_coworkers_output.columns:
                     df_coworkers_output = df_coworkers_output.drop(columns=['排序調整'])
                 
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
+                # 重新根據清冊現有的列計算小計 (因合併，此處總金額依然100%對齊)
                 sub_72 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "負責管考(72%)", '金額'].sum()
                 sub_20 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "勤務督導(20%)", '金額'].sum()
                 sub_08 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "其他配合(8%)", '金額'].sum()
@@ -574,7 +584,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success("✅ 雙報表產出成功！網頁名單與 Excel 清冊排序已達成 100% 絕對一致，檔案已寄送至信箱。")
+                    st.success("✅ 雙報表產出成功！交通組雙重身分同仁金額已自動完美加總合併，無重複列。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
