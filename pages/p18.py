@@ -52,33 +52,39 @@ def send_report_email_auto(files, year, month):
         return False, str(e)
 
 
-# --- 排序函數（優先考量使用者的手動「排序調整」數字，其次落實機關倫理）---
+# --- 排序函數（已修復 Categorical fillna 衝突 Bug）---
 def sort_coworkers(df):
     df = df.copy()
-    df['姓名'] = df['姓名'].fillna("")
-    df['單位'] = df['單位'].fillna("")
-    df['職別'] = df['職別'].fillna("")
     
-    # 防呆：確保排序調整欄位有預設數值，新增列時預設給 999 掉到最後面
+    # 1. 必須在轉換為 Categorical 之前，先把所有純文字欄位的空值補齊
+    df['姓名'] = df['姓名'].fillna("").astype(str).str.strip()
+    df['單位'] = df['單位'].fillna("").astype(str).str.strip()
+    df['職別'] = df['職別'].fillna("").astype(str).str.strip()
+    df['分配類別'] = df['分配類別'].fillna("").astype(str).str.strip()
+    
+    # 防呆：確保手動調整的數值欄位為整數
     if '排序調整' in df.columns:
         df['排序調整'] = pd.to_numeric(df['排序調整'], errors='coerce').fillna(999).astype(int)
     else:
-        # 如果是第一次建立，預設給 100 開始的流水號
         df.insert(0, '排序調整', range(100, 100 + len(df)))
     
-    df['分配類別'] = df['分配類別'].astype(str).str.strip()
-    cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"]
+    # 2. 定義分配類別順序，包含空字串防呆
+    cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)", ""]
     df['分配類別'] = pd.Categorical(df['分配類別'], categories=cat_order, ordered=True)
     
+    # 3. 定義單位組織倫理順序，包含空字串防呆
     unit_order = ["交通組", "會計室", "秘書室", "人事室", "龍潭分局", "勤務中心", "督察組", 
                   "保安民防組", "行政組", "防治組", "聖亭派出所", "龍潭派出所", "中興派出所", 
-                  "石門派出所", "高平派出所", "三和派出所", "龍潭交通分隊"]
+                  "石門派出所", "高平派出所", "三和派出所", "龍潭交通分隊", ""]
+    
+    # 動態捕捉使用者手動新增的其他單位
     for u in df['單位'].unique():
         if u not in unit_order:
             unit_order.append(u)
+            
     df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
     
-    # 機關預設階級權重（作為手動排序數字相同時的第二排序依據）
+    # 4. 建立官階倫理權重
     def get_rank_weight(title):
         title = str(title)
         if title == '分局長': return 1
@@ -91,7 +97,7 @@ def sort_coworkers(df):
     
     df['職級權重'] = df['職別'].apply(get_rank_weight)
     
-    # 執行多重排序：【手動調整數字】絕對優先 ➡️ 分配類別 ➡️ 單位 ➡️ 職級權重 ➡️ 姓名
+    # 5. 執行多重安全排序
     df.sort_values(by=['排序調整', '分配類別', '單位', '職級權重', '姓名'], 
                     ascending=[True, True, True, True, True], inplace=True)
     
@@ -105,7 +111,7 @@ def on_data_edited():
     changes = st.session_state.co_editor
     df = st.session_state.current_roster.copy()
     
-    # 1. 處理更新（包括使用者手動改了排序調整數字）
+    # 1. 處理更新
     for row_idx, updated_cols in changes.get("edited_rows", {}).items():
         for col_name, val in updated_cols.items():
             df.at[row_idx, col_name] = val
@@ -119,14 +125,13 @@ def on_data_edited():
     if deleted_indices:
         df.drop(index=deleted_indices, inplace=True)
         
-    # 即時依最新手動調整數值重新排序名單順序
     st.session_state.current_roster = sort_coworkers(df)
 
 
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("💡 挪移順序教學：表格最左側新增了「排序調整」欄位。想要變動某人的位子，直接把他的數字改大或改小，表格就會自動幫他移位插隊囉！")
+    st.info("💡 挪移順序教學：表格最左側設有「排序調整」欄位。想要變動某人的位子，直接修改該數字，表格就會自動幫他移位插隊囉！")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -247,7 +252,6 @@ def p18_page():
 
     df_display = st.session_state.current_roster.copy()
     
-    # 建置欄位格式設定
     if "系統自動" not in alloc_mode:
         if '金額' not in df_display.columns:
             df_display.insert(5, '金額', 0)
@@ -489,10 +493,8 @@ def p18_page():
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
                 
-                # 重新呼叫排序引擎，確保清冊與網頁呈現 100% 絕對一致
                 df_coworkers_output = sort_coworkers(df_coworkers_output)
                 
-                # 移除內部用的手動排序調整欄，避免呈送給長官的 Excel 被數字打亂
                 if '排序調整' in df_coworkers_output.columns:
                     df_coworkers_output = df_coworkers_output.drop(columns=['排序調整'])
                 
