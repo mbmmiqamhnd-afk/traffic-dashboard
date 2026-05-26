@@ -205,12 +205,12 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "所長", "姓名": "董亦文"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "何昀融"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "林榮裕"},
-                {"分配類別": "勤務督導(20%)", "單位": "心中興派出所", "職別": "業務承辦人", "姓名": "鄧雅文"},
+                {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "業務承辦人", "姓名": "鄧雅文"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "所長", "姓名": "林育辰"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "副所長", "姓名": "薛德祥"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "業務承辦人", "姓名": "陳琦"},
                 {"分配類別": "勤務督導(20%)", "單位": "高平派出所", "職別": "所長", "姓名": "王梓岳"},
-                {"分配類別": "勤務督導(20%)", "單位": "高平派出所", "職別": "副所長", "姓名": "楊勝吉"}, # 此處已完美修正字典語法
+                {"分配類別": "勤務督導(20%)", "單位": "高平派出所", "職別": "副所長", "姓名": "楊勝吉"},
                 {"分配類別": "勤務督導(20%)", "單位": "高平派出所", "職別": "業務承辦人", "姓名": "黃丞潁"},
                 {"分配類別": "勤務督導(20%)", "單位": "三和派出所", "職別": "所長", "姓名": "宋開國"},
                 {"分配類別": "勤務督導(20%)", "單位": "三和派出所", "職別": "副所長", "姓名": "陳佶汎"},
@@ -230,7 +230,7 @@ def p18_page():
             df_display.insert(5, '金額', 0)
         col_cfg = {
             "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="修改數字可調整順序", min_value=1, format="%d"),
-            "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True),
+            "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "反/其他配合(8%)"], required=True),
             "金額": st.column_config.NumberColumn("金額", min_value=0, step=1, format="%d")
         }
     else:
@@ -584,7 +584,7 @@ def p18_page():
                                 value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
                                 ws1.write(r, c, value, border_format)
 
-                    # 共同作業及配合人員工作表 
+                    # 共同作業及配合人員工作表
                     if not df_coworkers_final_sheet.empty:
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
@@ -593,15 +593,41 @@ def p18_page():
                         ws2.set_portrait()
                         ws2.set_paper(9) 
                         
-                        # 1. 繪製主表格與總計列
+                        # 1. 繪製主表格與各數據列（排除最後兩列：合計列、總計列）
                         data_len = len(df_coworkers_final_sheet)
-                        for r in range(data_len + 1):
+                        main_data_len = data_len - 2 # 去掉最後兩列特殊列
+                        
+                        for r in range(main_data_len + 1):
                             ws2.set_row(r, 38 if r > 0 else 25)
                             for c in range(len(df_coworkers_final_sheet.columns)):
                                 value = df_coworkers_final_sheet.iloc[r-1, c] if r > 0 else df_coworkers_final_sheet.columns[c]
                                 ws2.write(r, c, value, border_format)
+                                
+                        # 2. 【核心新增：合計列 與 總計列的跨欄置中合併布局】
+                        total_row_idx = main_data_len + 1  # 合計列所在的 Excel Row 索引
+                        grand_row_idx = main_data_len + 2  # 總計列所在的 Excel Row 索引
                         
-                        # 2. 簽章布局精準位移
+                        # 宣告特殊列專用的粗體與加粗邊框格式
+                        style_total = workbook.add_format({'border': 1, 'bold': True, 'align': 'center', 'valign': 'vcenter'})
+                        style_total_money = workbook.add_format({'border': 1, 'bold': True, 'align': 'center', 'valign': 'vcenter'})
+                        
+                        # --- 處理「合計列」的合併 ---
+                        ws2.set_row(total_row_idx, 38)
+                        # 將 序號(0)、單位(1)、職別(2)、姓名(3) 進行橫向跨欄合併
+                        ws2.merge_range(total_row_idx, 0, total_row_idx, 3, "合計", style_total)
+                        # 填入精算後的共同作業小計金額與外框
+                        ws2.write(total_row_idx, 4, coworker_sheet_total_money, style_total_money)
+                        ws2.write(total_row_idx, 5, "", style_total) # 蓋章欄位填空並上框
+                        
+                        # --- 處理「總計列（含直接執行人員）」的合併 ---
+                        ws2.set_row(grand_row_idx, 38)
+                        # 同樣將前 4 欄進行橫向跨欄合併
+                        ws2.merge_range(grand_row_idx, 0, grand_row_idx, 3, "總計（含直接執行人員）", style_total)
+                        # 填入全分局大總計金額與外框
+                        ws2.write(grand_row_idx, 4, direct_total_money + coworker_sheet_total_money, style_total_money)
+                        ws2.write(grand_row_idx, 5, "", style_total) # 蓋章欄位填空並上框
+                        
+                        # 3. 簽章布局精準位移
                         sign_start_row = data_len + 3 
                         sign_title_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 12, 'bold': True, 'align': 'left', 'valign': 'vcenter'})
                         
