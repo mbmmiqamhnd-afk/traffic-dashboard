@@ -141,7 +141,6 @@ def p18_page():
     st.subheader("📝 2. 印領清冊與獎金分配設定")
     point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
     
-    # 💡 關鍵修正：讓使用者輸入局發直接人員總額，提供程式比對基礎
     target_direct_budget = st.number_input("🎯 警察局核撥【直接執行人員】總獎金目標 (元) *若為 0 則不啟動自動平帳", value=0, step=1)
     
     st.markdown("##### 👥 共同作業及配合人員 - 分配模式")
@@ -191,7 +190,7 @@ def p18_page():
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
-                {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
+                {"分配類別": "人事室", "職別": "警員", "姓名": "陳明祥"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
                 {"分配類別": "勤務督導(20%)", "單位": "秘書室", "職別": "巡官", "姓名": "陳鵬翔"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "主任", "姓名": "游新枝"},
@@ -309,8 +308,6 @@ def p18_page():
                 summary_rows = []
                 g_cite, g_acc, g_traf, g_all = 0, 0, 0, 0
                 direct_exec_list = []
-                
-                # 用來在平帳時修正個別單位 Sheet 小計的對照字典
                 sheet_reward_diff = {} 
 
                 for sheet_name, df in dfs_raw.items():
@@ -357,26 +354,21 @@ def p18_page():
                                     "事故點數": ap if ap > 0 else '', "交整時數": th if th > 0 else '',
                                     "交整點數": tp if tp > 0 else '', "個人總點數": total_pts,
                                     "每點獎金": point_value, "實領獎金": reward, "蓋章": "",
-                                    "_orig_df_idx": idx # 暫存用於回填修正
+                                    "_orig_df_idx": idx
                                 })
                         final_sheets[sheet_name] = {"df_members": df_members, "df_work": df_work}
 
-                # ========================================================
-                # 💡 【核心邏輯升級】：執行直接執行人員 1元 終極平帳
-                # ========================================================
+                # === 直接執行人員 1元 自動平帳調頂區塊 ===
                 df_direct_exec = pd.DataFrame(direct_exec_list)
                 if not df_direct_exec.empty and target_direct_budget > 0:
                     current_sum = df_direct_exec['實領獎金'].sum()
                     diff = target_direct_budget - current_sum
                     
-                    # 如果有 1 元的落差，全自動抓取第 1 位同仁來±1元平帳
-                    if diff != 0 and abs(diff) <= 5: # 防呆：落差在合理銅板範圍內才調
+                    if diff != 0 and abs(diff) <= 5: 
                         df_direct_exec.at[0, '實領獎金'] += diff
-                        # 紀錄在哪個單位發生了調整，以便更新該單位的點數表 Excel
                         target_sheet = df_direct_exec.at[0, '單位名稱']
                         sheet_reward_diff[target_sheet] = diff
                         st.info(f"⚖️ 系統偵測到直接執行人員總額與警察局目標相差 {diff} 元，已自動於首列（{df_direct_exec.at[0, '員警姓名']}）完成強制平帳。")
-                # ========================================================
 
                 # 重新回填與建立各單位的 Excel 點數分頁
                 for sheet_name, f_data in final_sheets.items():
@@ -384,7 +376,6 @@ def p18_page():
                     df_work = f_data["df_work"]
                     s_cite, s_acc, s_traf = 0, 0, 0
                     
-                    # 重新計算點數
                     for idx, row in df_members.iterrows():
                         name = str(row.get('員警姓名', '')).strip()
                         a2 = dict_acc.get(name, {}).get('A2類', 0)
@@ -410,10 +401,8 @@ def p18_page():
                         v_sum = pd.to_numeric(df_members[col_n], errors='coerce').sum()
                         sub_row_data[col_n] = v_sum if v_sum > 0 else 0
                     
-                    # 回填實領獎金欄位（如果有此欄位，確保更新）
                     if '實領獎金' in df_members.columns:
                         df_members['實領獎金'] = (pd.to_numeric(df_members['個人總點數'], errors='coerce') * point_value).round().fillna(0).astype(int)
-                        # 如果這個分頁有被平帳調整，加上落差
                         if sheet_name in sheet_reward_diff:
                             first_idx = df_members.index[0]
                             df_members.at[first_idx, '實領獎金'] += sheet_reward_diff[sheet_name]
@@ -426,10 +415,13 @@ def p18_page():
                     summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
                     g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
 
+                # 💡 確保序號生成與取得【正確平帳後】的直接人員總獎金
                 if not df_direct_exec.empty:
                     if '_orig_df_idx' in df_direct_exec.columns:
                         df_direct_exec = df_direct_exec.drop(columns=['_orig_df_idx'])
                     df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
+                
+                # 🎯 關鍵變數：直接人員總預算現在完美包含那 1 元的落差
                 direct_total_money = df_direct_exec['實領獎金'].sum() if not df_direct_exec.empty else 0
 
                 # D. 共同作業人員處理
@@ -569,6 +561,7 @@ def p18_page():
                 sub_08 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "其他配合(8%)", '金額'].sum()
                 coworkers_total_money = sub_72 + sub_20 + sub_08
 
+                # 💡 這裡的 summary_data 已經完全使用對齊標準答案後的金額，1 元落差會確實顯示出來！
                 summary_data = [
                     {"項目": "一、直接執行人員", "金額": direct_total_money},
                     {"項目": "二、共同作業-負責管考(72%)", "金額": sub_72},
@@ -604,7 +597,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success("✅ 雙報表產出成功！直接執行人員已對齊局核撥目標，100% 完美平帳。")
+                    st.success("✅ 雙報表產出成功！直接執行人員與總表一覽表已完成 100% 聯動平帳。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
