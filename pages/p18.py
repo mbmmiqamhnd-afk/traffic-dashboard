@@ -59,6 +59,9 @@ def sort_coworkers(df):
     df['單位'] = df['單位'].fillna("")
     df['職別'] = df['職別'].fillna("")
     
+    # 確保異動類別時，格式與名稱完全精準一致
+    df['分配類別'] = df['分配類別'].astype(str).str.strip()
+    
     cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"]
     df['分配類別'] = pd.Categorical(df['分配類別'], categories=cat_order, ordered=True)
     
@@ -94,7 +97,7 @@ def sort_coworkers(df):
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("✅ 已恢復網頁與清冊完美同步之排序邏輯 + 支援 72% 各級職務百分比自動配算。")
+    st.info("✅ 已修正網頁同步更新排序問題：新增人員點擊「儲存」按鈕後，網頁將自動重整排好序。")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -133,7 +136,7 @@ def p18_page():
         budget_type = ""
 
     st.markdown("**共同作業名單**")
-    st.caption("💡 提示：此表格內不呈現金額欄位，計算時將全自動根據職稱分配。調動同仁請直接點擊表格修改並按下方藍色儲存按鈕。")
+    st.caption("💡 提示：新增同仁或調整職稱後，請務必點擊【💾 儲存最新名單為預設值】按鈕，網頁便會全自動重新編排好順序！")
 
     # --- 記憶檔讀取 ---
     roster_file = 'coworkers_roster.csv'
@@ -156,8 +159,8 @@ def p18_page():
             {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "出納", "姓名": "簡啟峯"},
             {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
             {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
-            {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
-            {"分配類別": "擺配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
+            {"分配類別": "other配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
+            {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
             {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
             {"分配類別": "勤務督導(20%)", "單位": "秘書室", "職別": "巡官", "姓名": "陳鵬翔"},
             {"分配類別": "勤務督導(20%)", "單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰"},
@@ -213,7 +216,7 @@ def p18_page():
         df_coworkers_default = pd.DataFrame(default_coworkers_data)
         df_coworkers_default = sort_coworkers(df_coworkers_default)
 
-    # 動態欄位配置：自動模式時網頁不呈現任何多餘的「金額」欄位
+    # 動態欄位配置
     if "系統自動" not in alloc_mode:
         if '金額' not in df_coworkers_default.columns:
             df_coworkers_default.insert(4, '金額', 0)
@@ -228,19 +231,22 @@ def p18_page():
             "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
         }
 
+    # 【關鍵修正】：利用唯一金鑰 key='co_editor' 鎖定，並在存檔後強制更新畫面的顯示順序
     edited_df_coworkers = st.data_editor(
         df_coworkers_default,
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
         height=500,
-        column_config=col_cfg
+        column_config=col_cfg,
+        key="co_editor"
     )
 
     if st.button("💾 儲存最新名單為預設值 (人員調動改完點此按鈕)", use_container_width=True, type="secondary"):
         sorted_save_df = sort_coworkers(edited_df_coworkers)
         sorted_save_df.to_csv(roster_file, index=False, encoding='utf-8-sig')
-        st.success("✅ 名單已永久儲存並完成階級排序！")
+        st.success("✅ 名單已永久儲存並更新網頁排序！")
+        # 透過強制 rerun，洗掉 data_editor 的舊畫面暫存，網頁順序就會立刻更新
         st.rerun()
 
     st.markdown("---")
@@ -358,7 +364,7 @@ def p18_page():
                     df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
                 direct_total_money = df_direct_exec['實領獎金'].sum() if not df_direct_exec.empty else 0
 
-                # D. 共同作業人員處理 (強制重新套用原本排序)
+                # D. 共同作業人員處理
                 df_coworkers_work = edited_df_coworkers.copy()
                 df_coworkers_work.dropna(how='all', inplace=True)
                 df_coworkers_work = sort_coworkers(df_coworkers_work)
@@ -437,7 +443,6 @@ def p18_page():
                             int_amount = int(np.floor(pool / count))
                             amounts = np.full(count, int_amount)
                             diff = pool - amounts.sum()
-                            # 餘數依序補給排在最前列的主管人員
                             if diff > 0:
                                 amounts[:diff] += 1
                             df_coworkers_work.loc[cat_mask, '核發金額'] = amounts
