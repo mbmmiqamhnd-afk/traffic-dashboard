@@ -52,7 +52,7 @@ def send_report_email_auto(files, year, month):
         return False, str(e)
 
 
-# --- 排序函數（完美落實：分配類別 → 單位 → 主管優先在最上一列 → 副主管 → 承辦人）---
+# --- 排序函數（強制落實：分配類別 → 單位 → 主管優先在最上一列 → 副主管 → 承辦人）---
 def sort_coworkers(df):
     df = df.copy()
     df['姓名'] = df['姓名'].fillna("")
@@ -85,7 +85,7 @@ def sort_coworkers(df):
     
     df['職級權重'] = df['職別'].apply(get_rank_weight)
     
-    # 執行強制多重排序（分配類別 → 單位 組織倫理 → 職級權重 官階倫理 ➡️ 姓名）
+    # 執行強制多重排序
     df.sort_values(by=['分配類別', '單位', '職級權重', '姓名'], 
                     ascending=[True, True, True, True], inplace=True)
     
@@ -113,14 +113,13 @@ def on_data_edited():
     if deleted_indices:
         df.drop(index=deleted_indices, inplace=True)
         
-    # 編輯完成後即時重新理順階級排序，更新資料庫狀態
     st.session_state.current_roster = sort_coworkers(df)
 
 
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("🔥 系統更新：已完美分離「計費邏輯」與「排序倫理」。各單位正副主管絕對固定在最上一列，且交通組全體金額維持均分！")
+    st.info("🔥 系統更新：已優化平帳演算法，解決交通組主管因排序第一而遭受零頭扣減的問題，金額分配已完全均勻。")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -433,7 +432,6 @@ def p18_page():
                         df_other = df_72[other_mask].copy()
 
                         if not df_other.empty and remaining_pool > 0:
-                            # 【核心計費判定】：完全依「單位名稱」判斷，只要是交通組，在分錢階段一律視為權重 26 子類別
                             def get_sub_weight(row):
                                 title = str(row['職別'])
                                 unit = str(row['單位'])
@@ -448,12 +446,21 @@ def p18_page():
                             df_other['weight'] = df_other.apply(get_sub_weight, axis=1)
                             total_weight = df_other['weight'].sum()
                             if total_weight > 0:
-                                df_other['核發金額'] = (df_other['weight'] / total_weight * remaining_pool).round(0).astype(int)
+                                # 【終極平帳演算法優化】：精算到小數點，用最大餘數法補齊，避免單一主管被過度扣減
+                                exact_amounts = (df_other['weight'] / total_weight) * remaining_pool
+                                int_amounts = np.floor(exact_amounts).astype(int)
                                 
-                                # 最大餘數平帳法：將四捨五入落差補給第一個同仁
-                                diff = remaining_pool - df_other['核發金額'].sum()
-                                if diff != 0 and len(df_other) > 0:
-                                    df_other.iloc[0, df_other.columns.get_loc('核發金額')] += diff
+                                diff = int(remaining_pool - int_amounts.sum())
+                                if diff > 0:
+                                    # 依據小數點餘數最大者（或順序）依序補1元，不盲目扣減首位
+                                    remainders = exact_amounts - int_amounts
+                                    top_indices = remainders.nlargest(diff).index
+                                    int_amounts.loc[top_indices] += 1
+                                elif diff < 0:
+                                    top_indices = int_amounts.nlargest(abs(diff)).index
+                                    int_amounts.loc[top_indices] -= 1
+                                    
+                                df_other['核發金額'] = int_amounts
                                 df_72.loc[other_mask, '核發金額'] = df_other['核發金額']
 
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
