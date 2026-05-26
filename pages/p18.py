@@ -50,11 +50,46 @@ def send_report_email_auto(files, year, month):
     except Exception as e:
         return False, str(e)
 
+# --- 定義共用的排序邏輯 ---
+def sort_coworkers(df):
+    df = df.copy()
+    
+    # 1. 確保分配類別順序
+    cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"]
+    df['分配類別'] = pd.Categorical(df['分配類別'], categories=cat_order, ordered=True)
+
+    # 2. 確保單位依照固定的組織倫理順序排列
+    unit_order = ["交通組", "會計室", "秘書室", "人事室", "龍潭分局", "勤務中心", "督察組", "保安民防組", "行政組", "防治組", "聖亭派出所", "龍潭派出所", "中興派出所", "石門派出所", "高平派出所", "三和派出所", "龍潭交通分隊"]
+    # 處理可能新增的單位
+    for u in df['單位'].dropna().unique():
+        if u not in unit_order:
+            unit_order.append(u)
+    df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
+
+    # 3. 建立職級權重 (讓正/副主管優先排前面)
+    def get_rank_weight(title):
+        title = str(title)
+        if title == '分局長': return 1
+        if title == '副分局長': return 2
+        if any(x in title for x in ['副所長', '小隊長']): return 4
+        if any(x in title for x in ['主管', '組長', '主任', '所長', '分隊長', '主計']): return 3
+        if any(x in title for x in ['巡佐', '督察員', '警務員']): return 5
+        if '巡官' in title: return 6
+        return 7 # 承辦人、警員、出納等皆屬此層級
+
+    df['職級權重'] = df['職別'].apply(get_rank_weight)
+
+    # 4. 執行多重排序
+    df.sort_values(by=['分配類別', '單位', '職級權重'], ascending=[True, True, True], inplace=True)
+    df.drop(columns=['職級權重'], inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    return df
+
 def p18_page():
     show_sidebar()
 
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統支援【管考72% / 督導20% / 其他8%】按人頭自動均分與職級自動排序！")
+    st.info("權重已固定 (A2:10, A3:5, 交整:5)。系統支援按人頭自動均分，除不盡之餘數將依職級優先分配予主官管！")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -76,7 +111,7 @@ def p18_page():
     )
     
     if "系統自動" in alloc_mode:
-        st.info("💡 系統會依您設定的總預算切成三塊 (72/20/8)，再按照下方名單內的「各類別總人數」，全自動均勻平分獎金。")
+        st.info("💡 系統會依您設定的總預算切成三塊，全自動均勻平分獎金。無法整除的 1~2 塊錢會自動分配給該單位職級最高者。")
         budget_type = st.selectbox("請選擇預算輸入方式：", [
             "A. 直接輸入【共同作業人員】的總分配預算", 
             "B. 輸入【全分局】本月核撥總預算 (系統會自動先扣掉直接執行人員的總獎金)"
@@ -91,10 +126,9 @@ def p18_page():
         budget_input = 0
         budget_type = ""
 
-    st.markdown(f"**共同作業名單**")
+    st.markdown(f"**共同作業名單 (網頁已套用職級排序)**")
     
     default_coworkers_data = [
-        # --- 負責管考 (72%) ---
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "業務單位主管", "姓名": "陳維明", "蓋章": ""},
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "盧冠仁", "蓋章": ""},
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "李峯甫", "蓋章": ""},
@@ -102,8 +136,6 @@ def p18_page():
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "郭勝隆", "蓋章": ""},
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "吳享運", "蓋章": ""},
         {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "吳沛軒", "蓋章": ""},
-        
-        # --- 其他配合 (8%) ---
         {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "郭貞彣", "蓋章": ""},
         {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "林玲宜", "蓋章": ""},
         {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "主任", "姓名": "陳振貴", "蓋章": ""},
@@ -113,8 +145,6 @@ def p18_page():
         {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源", "蓋章": ""},
         {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥", "蓋章": ""},
         {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉", "蓋章": ""},
-
-        # --- 勤務督導 (20%) ---
         {"分配類別": "勤務督導(20%)", "單位": "秘書室", "職別": "巡官", "姓名": "陳鵬翔", "蓋章": ""},
         {"分配類別": "勤務督導(20%)", "單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰", "蓋章": ""},
         {"分配類別": "勤務督導(20%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "何憶雯", "蓋章": ""},
@@ -166,7 +196,10 @@ def p18_page():
         {"分配類別": "勤務督導(20%)", "單位": "龍潭交通分隊", "職別": "小隊長", "姓名": "蔡安龍", "蓋章": ""},
         {"分配類別": "勤務督導(20%)", "單位": "龍潭交通分隊", "職別": "業務承辦人", "姓名": "陳建穎", "蓋章": ""}
     ]
+    
+    # 建立 DataFrame 並套用排序邏輯 (讓網頁一顯示就是排好序的)
     df_coworkers_default = pd.DataFrame(default_coworkers_data)
+    df_coworkers_default = sort_coworkers(df_coworkers_default)
 
     if "系統自動" not in alloc_mode:
         df_coworkers_default.insert(4, '金額', 0)
@@ -273,7 +306,6 @@ def p18_page():
                             
                             s_cite += cp; s_acc += ap; s_traf += tp
                             
-                            # 直接執行人員精算
                             if total_pts > 0:
                                 reward = int(np.round(total_pts * point_value))
                                 direct_exec_list.append({
@@ -314,6 +346,9 @@ def p18_page():
                 df_coworkers_work = edited_df_coworkers.copy()
                 df_coworkers_work.dropna(subset=['姓名'], inplace=True)
                 
+                # 【關鍵】：發錢前，確保名單已經依照職級排好序！
+                df_coworkers_work = sort_coworkers(df_coworkers_work)
+                
                 if "系統自動" in alloc_mode:
                     if "A" in budget_type:
                         coworker_pool = int(budget_input)
@@ -339,6 +374,7 @@ def p18_page():
                             int_amount = int(np.floor(exact_amount))
                             amounts = np.full(count, int_amount)
                             
+                            # 把剩下發不出去的零錢，依序+1塊錢發給「排在最前面」的人 (因為已經排序過，最前面保證是主官/管)
                             diff = int(pool - amounts.sum())
                             if diff > 0:
                                 amounts[:diff] += 1
@@ -349,41 +385,7 @@ def p18_page():
                 else:
                     df_coworkers_output = df_coworkers_work.copy()
                 
-                # --- 多重自訂排序邏輯 (類別 -> 單位 -> 職務位階) ---
-                # 1. 確保分配類別順序
-                cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"]
-                df_coworkers_output['分配類別'] = pd.Categorical(df_coworkers_output['分配類別'], categories=cat_order, ordered=True)
-
-                # 2. 確保單位依照預設的倫理順序排列
-                unit_order = []
-                for u in default_coworkers_data:
-                    if u["單位"] not in unit_order:
-                        unit_order.append(u["單位"])
-                for u in df_coworkers_output['單位'].unique():
-                    if u not in unit_order:
-                        unit_order.append(u)
-                df_coworkers_output['單位'] = pd.Categorical(df_coworkers_output['單位'], categories=unit_order, ordered=True)
-
-                # 3. 建立職級權重 (讓正/副主管優先排前面)
-                def get_rank_weight(title):
-                    title = str(title)
-                    if title == '分局長': return 1
-                    if title == '副分局長': return 2
-                    # 必須先抓副主管，以免被主管關鍵字誤判 (如"副所長"包含"所長")
-                    if any(x in title for x in ['副所長', '小隊長']): return 4
-                    if any(x in title for x in ['主管', '組長', '主任', '所長', '分隊長', '主計']): return 3
-                    if any(x in title for x in ['巡佐', '督察員', '警務員']): return 5
-                    if '巡官' in title: return 6
-                    return 7 # 承辦人、警員、出納等皆屬此層級
-
-                df_coworkers_output['職級權重'] = df_coworkers_output['職別'].apply(get_rank_weight)
-
-                # 4. 執行多重排序，並清理中介用的權重欄位
-                df_coworkers_output.sort_values(by=['分配類別', '單位', '職級權重'], ascending=[True, True, True], inplace=True)
-                df_coworkers_output.drop(columns=['職級權重'], inplace=True)
-
-                # 重設 Index 並插入序號
-                df_coworkers_output.reset_index(drop=True, inplace=True)
+                # 插入最終序號供印領清冊使用
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 
                 # 分類加總供支領一覽表使用
@@ -430,7 +432,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success(f"✅ 雙報表產出成功！已自動處理職級排序與均分，檔案已夾帶備份至您的信箱。")
+                    st.success(f"✅ 雙報表產出成功！已完美套用主官優先之職級排序與均分機制，檔案已自動備份至信箱。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
