@@ -205,12 +205,12 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "所長", "姓名": "董亦文"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "何昀融"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "林榮裕"},
-                {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "業務承辦人", "姓名": "鄧雅文"},
+                {"分配類別": "勤務督導(20%)", "單位": "心中興派出所", "職別": "業務承辦人", "姓名": "鄧雅文"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "所長", "姓名": "林育辰"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "副所長", "姓名": "薛德祥"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "業務承辦人", "姓名": "陳琦"},
                 {"分配類別": "勤務督導(20%)", "單位": "高平派出所", "職別": "所長", "姓名": "王梓岳"},
-                {"分配長(20%)", "單位": "高平派出所", "職別": "副所長", "姓名": "楊勝吉"},
+                {"分配類別": "勤務督導(20%)", "單位": "高平派出所", "職別": "副所長", "姓名": "楊勝吉"}, # 此處已完美修正字典語法
                 {"分配類別": "勤務督導(20%)", "單位": "高平派出所", "職別": "業務承辦人", "姓名": "黃丞潁"},
                 {"分配類別": "勤務督導(20%)", "單位": "三和派出所", "職別": "所長", "姓名": "宋開國"},
                 {"分配類別": "勤務督導(20%)", "單位": "三和派出所", "職別": "副所長", "姓名": "陳佶汎"},
@@ -584,7 +584,7 @@ def p18_page():
                                 value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
                                 ws1.write(r, c, value, border_format)
 
-                    # 共同作業及配合人員工作表 (完美套用全面左移一欄後之新簽章座標)
+                    # 共同作業及配合人員工作表 
                     if not df_coworkers_final_sheet.empty:
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
@@ -605,21 +605,21 @@ def p18_page():
                         sign_start_row = data_len + 3 
                         sign_title_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 12, 'bold': True, 'align': 'left', 'valign': 'vcenter'})
                         
-                        # 【第一層】：製表人與人事同列 (人事、主計、分局長均往左移一欄，完美對齊)
+                        # 【第一層】：製表人與人事同列 
                         ws2.set_row(sign_start_row, 25)
                         ws2.write(sign_start_row, 0, "製表人：", sign_title_format) # 欄位 A (第 0 欄)
-                        ws2.write(sign_start_row, 2, "人事：", sign_title_format)   # 【關鍵修改】欄位 C (第 2 欄)
-                        ws2.write(sign_start_row, 4, "主計：", sign_title_format)   # 【關鍵修改】欄位 E (第 4 欄)
-                        ws2.write(sign_start_row, 6, "分局長：", sign_title_format) # 【關鍵修改】欄位 G (第 6 欄)
+                        ws2.write(sign_start_row, 2, "人事：", sign_title_format)   # 欄位 C (第 2 欄)
+                        ws2.write(sign_start_row, 4, "主計：", sign_title_format)   # 欄位 E (第 4 欄)
+                        ws2.write(sign_start_row, 6, "分局長：", sign_title_format) # 欄位 G (第 6 欄)
                         
                         # 第一層至第二層之間的舒適留白列高
                         ws2.set_row(sign_start_row + 1, 45) 
                         ws2.set_row(sign_start_row + 2, 45) 
                         
-                        # 【第二層】：單位主管與出納同列 (出納往左平移一欄，與人事達成垂直對齊)
+                        # 【第二層】：單位主管與出納同列 
                         ws2.set_row(sign_start_row + 3, 25)
-                        ws2.write(sign_start_row + 3, 0, "單位主管：", sign_title_format) # 欄位 A (第 0 欄，精準對齊上方製表人)
-                        ws2.write(sign_start_row + 3, 2, "出納：", sign_title_format)     # 【關鍵修改】欄位 C (第 2 欄，精準對齊上方人事)
+                        ws2.write(sign_start_row + 3, 0, "單位主管：", sign_title_format) # 欄位 A (第 0 欄)
+                        ws2.write(sign_start_row + 3, 2, "出納：", sign_title_format)     # 欄位 C (第 2 欄)
                         
                         # 第二層長官核准蓋章之留白列高
                         ws2.set_row(sign_start_row + 4, 50)
