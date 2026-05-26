@@ -76,7 +76,7 @@ def sort_coworkers(df):
     df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
     
     def get_rank_weight(title):
-        title = str(title)
+        title = str(title).strip()
         if title == '分局長': return 1
         if title == '副分局長': return 2
         if any(x in title for x in ['副所長', '小隊長']): return 4
@@ -151,8 +151,6 @@ def p18_page():
         if os.path.exists(roster_file):
             df_init = pd.read_csv(roster_file)
         else:
-            # ==================== 【主官類別校正防線】 ====================
-            # 已將分局長、副分局長之「分配類別」修正為「負責管考(72%)」
             default_coworkers_data = [
                 {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰"},
                 {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "何憶雯"},
@@ -413,20 +411,30 @@ def p18_page():
                     df_72 = df_coworkers_work[mask_72].copy()
                     df_72['核發金額'] = 0
                     if not df_72.empty and pool_72 > 0:
-                        main_officers = df_72[df_72['職別'].str.contains('分局長|副分局長', na=False)].copy()
+                        # 【關鍵修改 1：精準將職別去除空白再篩選正副主官，避免 contains 交互攔截】
+                        df_72['職別_clean'] = df_72['職別'].astype(str).str.strip()
+                        main_officers_mask = df_72['職別_clean'].isin(['分局長', '副分局長'])
+                        main_officers = df_72[main_officers_mask].copy()
+                        
                         if not main_officers.empty:
                             pool_main = int(np.round(pool_72 * 0.08))
                             for idx, row in main_officers.iterrows():
-                                title = str(row['職別'])
-                                if '分局長' in title:
+                                title = str(row['職別_clean'])
+                                # 【關鍵修改 2：嚴格完全對齊精確字串，拉開分局長與副分局長池差距】
+                                if title == '分局長':
                                     amount = int(np.round(pool_main * 0.60))
-                                elif '副分局長' in title:
-                                    amount = pool_main - int(np.round(pool_main * 0.60))
+                                elif title == '副分局長':
+                                    # 先算分局長領走的錢，剩下來的由所有副分局長平分
+                                    chief_pay = int(np.round(pool_main * 0.60))
+                                    sub_pool = pool_main - chief_pay
+                                    sub_count = sum(df_72['職別_clean'] == '副分局長')
+                                    amount = int(np.floor(sub_pool / sub_count)) if sub_count > 0 else 0
                                 else:
                                     amount = 0
                                 df_72.at[idx, '核發金額'] = amount
+                                
                         remaining_pool = pool_72 - df_72['核發金額'].sum()
-                        other_mask = ~df_72['職別'].str.contains('分局長|副分局長', na=False)
+                        other_mask = ~df_72['職別_clean'].isin(['分局長', '副分局長'])
                         df_other = df_72[other_mask].copy()
                         if not df_other.empty and remaining_pool > 0:
                             def get_sub_weight(row):
@@ -448,6 +456,7 @@ def p18_page():
                                     int_amounts.loc[top_indices] += 1
                                 df_other['核發金額'] = int_amounts
                                 df_72.loc[other_mask, '核發金額'] = df_other['核發金額']
+                        
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
                     
                     # 20% 與 8% 池計算
