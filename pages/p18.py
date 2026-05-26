@@ -151,7 +151,7 @@ def p18_page():
    
     if "系統自動" in alloc_mode:
         st.info("💡 負責管考(72%)：正副主官固定8%（分局長60%、副分局長40%），其餘按56%：26%：10%比例分配。")
-        budget_type = st.selectbox("請選擇預算輸入方式：", [
+        budget_type = st.selectbox("請选择預算輸入方式：", [
             "A. 直接輸入【共同作業人員】的總分配預算",
             "B. 輸入【全分局】本月核撥總預算"
         ])
@@ -427,7 +427,6 @@ def p18_page():
                 df_coworkers_work.dropna(how='all', inplace=True)
                 df_coworkers_work = sort_coworkers(df_coworkers_work)
 
-                # 初始化預算池變數 (提供後面一覽表精準調用)
                 pool_72, pool_20, pool_08 = 0, 0, 0
 
                 if "系統自動" in alloc_mode:
@@ -527,7 +526,7 @@ def p18_page():
                     
                     df_coworkers_output = df_coworkers_work.rename(columns={'核發金額': '金額'})
                     
-                    # 💡 跨類別金額歸併（把 20% 重複者的金額，灌進 72% 裡面）
+                    # 跨類別金額歸併
                     mgr_lookup = {}
                     for idx, row in df_coworkers_output[df_coworkers_output['分配類別'] == '負責管考(72%)'].iterrows():
                         key = (str(row['單位']).strip(), str(row['姓名']).strip())
@@ -557,9 +556,7 @@ def p18_page():
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
-                # ========================================================
-                # 💡 【核心邏輯升級】：獎勵金支領一覽表完全照「原始撥付科目原意」顯示
-                # ========================================================
+                # 獎勵金支領一覽表摘要
                 if "系統自動" in alloc_mode:
                     sub_72 = pool_72
                     sub_20 = pool_20
@@ -581,7 +578,6 @@ def p18_page():
                     {"項目": "製表人", "金額": ""}
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
-                # ========================================================
 
                 # E. Excel 雙報表輸出
                 pts_output = io.BytesIO()
@@ -593,12 +589,51 @@ def p18_page():
                 pts_excel_data = pts_output.getvalue()
                 pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
 
+                # ========================================================
+                # 💡 【核心邏輯升級】：運用 XlsxWriter 表格美化與容納職名章寬高調整
+                # ========================================================
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
+                    # 1. 輸出：直接執行人員
                     df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
+                    workbook  = writer.book
+                    worksheet1 = writer.sheets['直接執行人員']
+                    
+                    # 建立標準文字置中、具備邊框的公務格式
+                    cell_format = workbook.add_format({
+                        'align': 'center',       # 左右置中
+                        'v_align': 'vcenter',     # 上下置中
+                        'border': 1,              # 細邊框
+                        'font_name': '微軟正黑體',
+                        'font_size': 11
+                    })
+                    
+                    # 幫直接人員分頁設定「蓋章欄」寬度與「資料列」高度
+                    worksheet1.set_column('L:L', 16, cell_format) # L 欄通常是直接人員的蓋章欄
+                    for r_idx in range(1, len(df_direct_exec) + 1):
+                        worksheet1.set_row(r_idx, 35, cell_format) # 每一行資料拉高到 35，完美容納印章
+                    
+                    # 2. 輸出：共同作業及配合人員
                     if not df_coworkers_output.empty:
                         df_coworkers_output.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
+                        worksheet2 = writer.sheets['共同作業及配合人員']
+                        
+                        # 自動抓取最後一欄（蓋章欄）的位置字母並設定寬度 16
+                        stamp_col_letter = chr(65 + df_coworkers_output.columns.get_loc('蓋章'))
+                        worksheet2.set_column(f'{stamp_col_letter}:{stamp_col_letter}', 16, cell_format)
+                        
+                        # 每一行共同作業同仁資料拉高到 35
+                        for r_idx in range(1, len(df_coworkers_output) + 1):
+                            worksheet2.set_row(r_idx, 35, cell_format)
+                            
+                    # 3. 輸出：一覽表摘要
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
+                    worksheet3 = writer.sheets['獎勵金支領一覽表']
+                    worksheet3.set_column('A:B', 25, cell_format)
+                    for r_idx in range(1, len(df_payroll_summary) + 1):
+                        worksheet3.set_row(r_idx, 22, cell_format) # 一覽表無印章需求，維持美觀的 22 列高
+                # ========================================================
+
                 payroll_excel_data = payroll_output.getvalue()
                 payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
 
@@ -607,7 +642,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success("✅ 雙報表產出成功！一覽表金額已完美維持原本分配人數的完整預算科目原意。")
+                    st.success("✅ 雙報表產出成功！印領清冊的蓋章欄已加寬、列高已舒適拉高，可完美容納同仁職名章。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
