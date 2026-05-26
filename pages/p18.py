@@ -25,6 +25,7 @@ def send_report_email_auto(files, year, month):
     try:
         if "email" not in st.secrets:
             return False, "找不到 st.secrets 中的 email 設定"
+          
         sender = st.secrets["email"]["user"]
         pwd = st.secrets["email"]["password"]
       
@@ -99,14 +100,18 @@ def sort_coworkers(df):
 def on_data_edited():
     changes = st.session_state.co_editor
     df = st.session_state.current_roster.copy()
+  
     for row_idx, updated_cols in changes.get("edited_rows", {}).items():
         for col_name, val in updated_cols.items():
             df.at[row_idx, col_name] = val
+          
     for new_row in changes.get("added_rows", []):
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+      
     deleted_indices = changes.get("deleted_rows", [])
     if deleted_indices:
         df.drop(index=deleted_indices, inplace=True)
+      
     st.session_state.current_roster = sort_coworkers(df)
 
 
@@ -294,12 +299,14 @@ def p18_page():
 
                 for sheet_name, df in dfs_raw.items():
                     if '總表' in sheet_name: continue
+                   
                     start_r, start_c = None, None
                     for r_idx, row in df.iterrows():
                         row_str = [str(x).strip() for x in row.values]
                         if '員警姓名' in row_str:
                             start_r, start_c = r_idx, row_str.index('員警姓名')
                             break
+                   
                     if start_r is not None:
                         df_work = df.iloc[start_r:, start_c:].copy()
                         df_work.reset_index(drop=True, inplace=True)
@@ -482,33 +489,31 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # ==================== Excel 輸出 - 關鍵修正 ====================
+                # E. Excel 輸出
                 pts_output = io.BytesIO()
+                df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
-                    df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                     df_pts_summary.to_excel(writer, sheet_name='總表', header=False, index=False)
                     for sn, df_f in final_sheets.items():
                         df_f.to_excel(writer, sheet_name=sn, index=False)
                 pts_excel_data = pts_output.getvalue()
                 pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
 
-                # 印領清冊 - 只要該列有資料，整列都有格線
+                # 印領清冊 - 最終格線處理
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                     workbook = writer.book
-                    full_row_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                    border_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
 
                     # 直接執行人員
                     df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                     ws1 = writer.sheets['直接執行人員']
                     stamp_col = df_direct_exec.columns.get_loc('蓋章')
                     ws1.set_column(stamp_col, stamp_col, 22)
-                    # 對有資料的每一列加上完整格線
                     for r in range(len(df_direct_exec) + 1):
                         ws1.set_row(r, 38 if r > 0 else 25)
-                    # 整列加上格式
-                    ws1.conditional_format(0, 0, len(df_direct_exec), len(df_direct_exec.columns)-1,
-                                         {'type': 'no_blanks', 'format': full_row_format})
+                        for c in range(len(df_direct_exec.columns)):
+                            ws1.write(r, c, df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c], border_format)
 
                     # 共同作業人員
                     if not df_coworkers_output.empty:
@@ -518,8 +523,8 @@ def p18_page():
                         ws2.set_column(stamp_col2, stamp_col2, 22)
                         for r in range(len(df_coworkers_output) + 1):
                             ws2.set_row(r, 38 if r > 0 else 25)
-                        ws2.conditional_format(0, 0, len(df_coworkers_output), len(df_coworkers_output.columns)-1,
-                                             {'type': 'no_blanks', 'format': full_row_format})
+                            for c in range(len(df_coworkers_output.columns)):
+                                ws2.write(r, c, df_coworkers_output.iloc[r-1, c] if r > 0 else df_coworkers_output.columns[c], border_format)
 
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
 
