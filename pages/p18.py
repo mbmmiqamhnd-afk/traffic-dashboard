@@ -122,12 +122,15 @@ def p18_page():
     
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
+    # 1. 檔案上傳
     st.subheader("📂 1. 當月原始資料上傳")
     c1, c2 = st.columns(2)
     file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xlsx'])
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
-    file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xlsx'], accept_multiple_files=True)
+    file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)",
+                                      type=['xlsx'], accept_multiple_files=True)
   
+    # 2. 設定
     st.subheader("📝 2. 印領清冊與獎金分配設定")
     point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
     target_direct_budget = st.number_input("🎯 警察局核撥【直接執行人員】總獎金目標 (元) *若為 0 則不啟動自動平帳", value=0, step=1)
@@ -467,21 +470,25 @@ def p18_page():
 
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
+
+                # 【重點】交通組兼領人員金額合併到管考類別（顯示用）
+                df_coworkers_output['顯示類別'] = df_coworkers_output['分配類別']
+                df_coworkers_output.loc[df_coworkers_output['單位'] == "交通組", '顯示類別'] = "負責管考(72%)"
+
+                # 移除原本分配類別，改用顯示類別
+                df_coworkers_output = df_coworkers_output.drop(columns=['分配類別']).rename(columns={'顯示類別': '分配類別'})
+
                 df_coworkers_output = sort_coworkers(df_coworkers_output)
                 if '排序調整' in df_coworkers_output.columns:
                     df_coworkers_output = df_coworkers_output.drop(columns=['排序調整'])
                 
-                # 移除分配類別欄
-                if '分配類別' in df_coworkers_output.columns:
-                    df_coworkers_output = df_coworkers_output.drop(columns=['分配類別'])
-                
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
-                # 小計
-                sub_72 = df_coworkers_work[df_coworkers_work['分配類別'] == "負責管考(72%)"]['核發金額'].sum() if '核發金額' in df_coworkers_work.columns else 0
-                sub_20 = df_coworkers_work[df_coworkers_work['分配類別'] == "勤務督導(20%)"]['核發金額'].sum() if '核發金額' in df_coworkers_work.columns else 0
-                sub_08 = df_coworkers_work[df_coworkers_work['分配類別'] == "其他配合(8%)"]['核發金額'].sum() if '核發金額' in df_coworkers_work.columns else 0
+                # 小計（使用顯示後的類別）
+                sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
+                sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
+                sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
                 coworkers_total_money = sub_72 + sub_20 + sub_08
 
                 summary_data = [
@@ -495,7 +502,7 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # Excel 輸出
+                # E. Excel 輸出
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
