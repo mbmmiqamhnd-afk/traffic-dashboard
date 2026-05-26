@@ -359,7 +359,9 @@ def p18_page():
                             if '交整點數' in df_members.columns: df_members.at[idx, '交整點數'] = tp if tp > 0 else ""
                             if '個人總點數' in df_members.columns: df_members.at[idx, '個人總點數'] = total_pts
                            
-                            s_cite += cp; s_acc += ap; s_traf += tp
+                            s_cite += cp
+                            s_acc += ap
+                            s_traf += tp
                            
                             if total_pts > 0:
                                 reward = int(np.round(total_pts * point_value))
@@ -384,7 +386,10 @@ def p18_page():
                         final_sheets[sheet_name] = df_final
                       
                         summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
-                        g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
+                        g_cite += s_cite
+                        g_acc += s_acc
+                        g_traf += s_traf
+                        g_all += (s_cite + s_acc + s_traf)
 
                 df_direct_exec = pd.DataFrame(direct_exec_list)
                 if not df_direct_exec.empty:
@@ -396,13 +401,11 @@ def p18_page():
                 if not df_direct_exec.empty and target_direct_budget > 0:
                     current_sum = direct_total_money
                     diff = target_direct_budget - current_sum
-                    
                     if diff != 0:
                         st.info(f"🎯 目標金額：**{target_direct_budget:,}** 元 | 目前計算：{current_sum:,} 元 | **差額 {diff:+,} 元**")
-                        
                         if abs(diff) <= 5:
                             df_direct_exec.at[0, '實領獎金'] += diff
-                            st.success(f"✅ 已自動調整第 1 筆資料 {diff:+,} 元（小額平帳）")
+                            st.success(f"✅ 已自動調整第 1 筆資料 {diff:+,} 元")
                         else:
                             n = len(df_direct_exec)
                             base = diff // n
@@ -411,8 +414,7 @@ def p18_page():
                             df_direct_exec['實領獎金'] += base
                             if rem > 0:
                                 df_direct_exec.iloc[:rem, df_direct_exec.columns.get_loc('實領獎金')] += sign
-                            st.success(f"✅ 已將差額 {diff:+,} 元**平均分散**調整至 {n} 位人員")
-                        
+                            st.success(f"✅ 已將差額 {diff:+,} 元平均分散調整")
                         direct_total_money = df_direct_exec['實領獎金'].sum()
 
                 # D. 共同作業人員處理
@@ -519,7 +521,7 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # E. Excel 輸出 - 蓋章欄位優化
+                # E. Excel 輸出
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
@@ -529,26 +531,31 @@ def p18_page():
                 pts_excel_data = pts_output.getvalue()
                 pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
 
-                # 印領清冊 - 重點優化蓋章欄位
+                # 印領清冊 - 格線 + 蓋章優化
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
+                    workbook = writer.book
+                    grid_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
+
                     # 直接執行人員
                     df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                     ws1 = writer.sheets['直接執行人員']
-                    stamp_col1 = df_direct_exec.columns.get_loc('蓋章')
-                    ws1.set_column(stamp_col1, stamp_col1, 20)  # 欄寬加寬
-                    for r in range(1, len(df_direct_exec) + 2):
-                        ws1.set_row(r, 38)  # 列高適合一顆印章
-                    
+                    ws1.set_column(0, len(df_direct_exec.columns)-1, 15, grid_format)
+                    stamp_col = df_direct_exec.columns.get_loc('蓋章')
+                    ws1.set_column(stamp_col, stamp_col, 22)
+                    for r in range(len(df_direct_exec) + 1):
+                        ws1.set_row(r, 38 if r > 0 else 25)
+
                     # 共同作業人員
                     if not df_coworkers_output.empty:
                         df_coworkers_output.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
+                        ws2.set_column(0, len(df_coworkers_output.columns)-1, 15, grid_format)
                         stamp_col2 = df_coworkers_output.columns.get_loc('蓋章')
-                        ws2.set_column(stamp_col2, stamp_col2, 20)
-                        for r in range(1, len(df_coworkers_output) + 2):
-                            ws2.set_row(r, 38)
-                    
+                        ws2.set_column(stamp_col2, stamp_col2, 22)
+                        for r in range(len(df_coworkers_output) + 1):
+                            ws2.set_row(r, 38 if r > 0 else 25)
+
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
 
                 payroll_excel_data = payroll_output.getvalue()
