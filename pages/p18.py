@@ -52,22 +52,31 @@ def send_report_email_auto(files, year, month):
         return False, str(e)
 
 
-# --- 排序函數（恢復原本排序邏輯）---
+# --- 排序函數（已優化）---
 def sort_coworkers(df):
     df = df.copy()
-    for col in ['分配類別', '單位', '職別', '姓名']:
-        if col in df.columns:
-            df[col] = df[col].astype(str).fillna("")
-    
-    cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"]
+   
+    df['姓名'] = df['姓名'].fillna("").astype(str).str.strip()
+    df['單位'] = df['單位'].fillna("").astype(str).str.strip()
+    df['職別'] = df['職別'].fillna("").astype(str).str.strip()
+    df['分配類別'] = df['分配類別'].fillna("").astype(str).str.strip()
+   
+    if '排序調整' in df.columns:
+        df['排序調整'] = pd.to_numeric(df['排序調整'], errors='coerce').fillna(999).astype(int)
+    else:
+        df.insert(0, '排序調整', range(100, 100 + len(df)))
+   
+    cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)", ""]
     df['分配類別'] = pd.Categorical(df['分配類別'], categories=cat_order, ordered=True)
    
     unit_order = ["交通組", "會計室", "秘書室", "人事室", "龍潭分局", "勤務中心", "督察組",
                   "保安民防組", "行政組", "防治組", "聖亭派出所", "龍潭派出所", "中興派出所",
-                  "石門派出所", "高平派出所", "三和派出所", "龍潭交通分隊"]
+                  "石門派出所", "高平派出所", "三和派出所", "龍潭交通分隊", ""]
+   
     for u in df['單位'].unique():
-        if u not in unit_order and str(u).strip() != "":
+        if u not in unit_order:
             unit_order.append(u)
+           
     df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
    
     def get_rank_weight(title):
@@ -81,11 +90,10 @@ def sort_coworkers(df):
         return 7
    
     df['職級權重'] = df['職別'].apply(get_rank_weight)
-    
-    # 主要排序：分配類別 → 單位 → 職級權重 → 姓名
-    df.sort_values(by=['分配類別', '單位', '職級權重', '姓名'],
-                   ascending=[True, True, True, True], inplace=True)
-    
+   
+    df.sort_values(by=['排序調整', '分配類別', '單位', '職級權重', '姓名'],
+                    ascending=[True, True, True, True, True], inplace=True)
+   
     df.drop(columns=['職級權重'], inplace=True, errors='ignore')
     df.reset_index(drop=True, inplace=True)
     return df
@@ -94,7 +102,7 @@ def sort_coworkers(df):
 def on_data_edited():
     changes = st.session_state.co_editor
     df = st.session_state.current_roster.copy()
-    
+   
     for row_idx, updated_cols in changes.get("edited_rows", {}).items():
         for col_name, val in updated_cols.items():
             df.at[row_idx, col_name] = val
@@ -112,7 +120,7 @@ def on_data_edited():
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("✅ 已恢復原本排序 + 支援兼領 + 清除 Excel 贅欄贅列")
+    st.info("💡 挪移順序教學：表格最左側「排序調整」欄位可手動調整順序")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -121,37 +129,40 @@ def p18_page():
     c1, c2 = st.columns(2)
     file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xlsx'])
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
-    file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", 
+    file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)",
                                       type=['xlsx'], accept_multiple_files=True)
-
+   
     # 2. 設定
     st.subheader("📝 2. 印領清冊與獎金分配設定")
     point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
-
+   
+    target_direct_budget = st.number_input("🎯 警察局核撥【直接執行人員】總獎金目標 (元) *若為 0 則不啟動自動平帳", value=0, step=1)
+   
+    st.markdown("##### 👥 共同作業及配合人員 - 分配模式")
     alloc_mode = st.radio(
-        "共同作業及配合人員分配方式：",
-        ["🤖 系統自動按比例分配 (72%差異化)", "✍️ 手動輸入固定金額"]
+        "請選擇「共同作業及配合人員」的獎金計算方式：",
+        ["🤖 系統自動按比例分配 (72%差異化)", "✍️ 手動輸入固定金額 (僅於總表分類顯示)"]
     )
-
+  
     if "系統自動" in alloc_mode:
-        st.info("💡 負責管考(72%)：正副主官固定8%（分局長60%、副分局長40%），其餘按56%：26%：10%分配")
-        budget_type = st.selectbox("預算輸入方式：", [
+        st.info("💡 負責管考(72%)：正副主官固定8%（分局長60%、副分局長40%），其餘按56%：26%：10%比例分配。")
+        budget_type = st.selectbox("請選擇預算輸入方式：", [
             "A. 直接輸入【共同作業人員】的總分配預算",
             "B. 輸入【全分局】本月核撥總預算"
         ])
+       
         if "A" in budget_type:
-            budget_input = st.number_input("💰 共同作業總預算 (元)", value=10000, step=100)
+            budget_input = st.number_input("💰 輸入【共同作業人員】總預算 (元)", value=10000, step=100)
         else:
-            budget_input = st.number_input("💰 全分局總預算 (元)", value=50000, step=100)
+            budget_input = st.number_input("💰 輸入【全分局】核撥總預算 (元)", value=50000, step=100)
     else:
+        st.info("💡 手動模式：請於表格內自行填寫實際金額。")
         budget_input = 0
         budget_type = ""
 
     st.markdown("**共同作業名單**")
-    st.caption("💡 交通組兼領勤務督導人員請新增一行重複姓名，分別設定不同分配類別")
-
-    # 名單管理
     roster_file = 'coworkers_roster.csv'
+  
     if 'current_roster' not in st.session_state:
         if os.path.exists(roster_file):
             df_init = pd.read_csv(roster_file)
@@ -229,11 +240,12 @@ def p18_page():
         st.session_state.current_roster = sort_coworkers(df_init)
 
     df_display = st.session_state.current_roster.copy()
-
+   
     if "系統自動" not in alloc_mode:
         if '金額' not in df_display.columns:
-            df_display.insert(len(df_display.columns), '金額', 0)
+            df_display.insert(5, '金額', 0)
         col_cfg = {
+            "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="修改數字可調整順序", min_value=1, format="%d"),
             "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True),
             "金額": st.column_config.NumberColumn("金額", min_value=0, step=1, format="%d")
         }
@@ -241,10 +253,11 @@ def p18_page():
         if '金額' in df_display.columns:
             df_display = df_display.drop(columns=['金額'])
         col_cfg = {
+            "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="修改數字可調整順序", min_value=1, format="%d"),
             "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
         }
 
-    edited_df = st.data_editor(
+    edited_df_coworkers = st.data_editor(
         df_display,
         num_rows="dynamic",
         use_container_width=True,
@@ -255,10 +268,8 @@ def p18_page():
         on_change=on_data_edited
     )
 
-    if st.button("💾 儲存最新名單為預設值", use_container_width=True):
-        sorted_df = sort_coworkers(edited_df)
-        sorted_df.to_csv(roster_file, index=False, encoding='utf-8-sig')
-        st.session_state.current_roster = sorted_df
+    if st.button("💾 儲存最新名單為預設值", use_container_width=True, type="secondary"):
+        st.session_state.current_roster.to_csv(roster_file, index=False, encoding='utf-8-sig')
         st.success("✅ 名單已永久儲存！")
         st.rerun()
 
@@ -296,7 +307,7 @@ def p18_page():
                         if found_date: break
                     if found_date: break
 
-                # C. 直接執行人員計算
+                # C. 直接執行人員計算 + 金額誤差處理
                 final_sheets = {}
                 summary_rows = []
                 g_cite, g_acc, g_traf, g_all = 0, 0, 0, 0
@@ -373,8 +384,18 @@ def p18_page():
                         g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
 
                 df_direct_exec = pd.DataFrame(direct_exec_list)
-                df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
-                direct_total_money = df_direct_exec['實領獎金'].sum()
+                if not df_direct_exec.empty:
+                    df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
+                
+                # === 金額誤差處理（保留您原本邏輯）===
+                if not df_direct_exec.empty and target_direct_budget > 0:
+                    current_sum = df_direct_exec['實領獎金'].sum()
+                    diff = target_direct_budget - current_sum
+                    if abs(diff) <= 5:
+                        df_direct_exec.at[0, '實領獎金'] += diff
+                        st.info(f"⚖️ 直接執行人員已自動平帳調整 {diff} 元")
+
+                direct_total_money = df_direct_exec['實領獎金'].sum() if not df_direct_exec.empty else 0
 
                 # D. 共同作業人員處理
                 df_coworkers_work = st.session_state.current_roster.copy()
@@ -387,9 +408,9 @@ def p18_page():
                     else:
                         coworker_pool = int(budget_input) - direct_total_money
                         if coworker_pool < 0:
-                            st.error(f"❌ 全分局預算 ({budget_input}) 不足")
+                            st.error(f"❌ 全分局預算 ({budget_input}) 不足支付直接執行人員 ({direct_total_money})")
                             return
-                           
+                          
                     pool_72 = int(np.round(coworker_pool * 0.72))
                     pool_20 = int(np.round(coworker_pool * 0.20))
                     pool_08 = coworker_pool - pool_72 - pool_20
@@ -402,7 +423,7 @@ def p18_page():
                     df_72['核發金額'] = 0
 
                     if not df_72.empty and pool_72 > 0:
-                        # 第一階段：正副主官 8%
+                        # 正副主官 8%
                         main_officers = df_72[df_72['職別'].str.contains('分局長|副分局長', na=False)].copy()
                         if not main_officers.empty:
                             pool_main = int(np.round(pool_72 * 0.08))
@@ -414,9 +435,9 @@ def p18_page():
                                     amount = pool_main - int(np.round(pool_main * 0.60))
                                 else:
                                     amount = 0
-                                df_72.loc[idx, '核發金額'] = amount
+                                df_72.at[idx, '核發金額'] = amount
 
-                        # 第二階段：剩餘92%
+                        # 剩餘92%
                         remaining_pool = pool_72 - df_72['核發金額'].sum()
                         other_mask = ~df_72['職別'].str.contains('分局長|副分局長', na=False)
                         df_other = df_72[other_mask].copy()
@@ -425,10 +446,10 @@ def p18_page():
                             def get_sub_weight(row):
                                 title = str(row['職別'])
                                 unit = str(row['單位'])
-                                if any(x in title for x in ['所長', '分隊長', '副所長', '小隊長']) and any(x in unit for x in ['派出所', '交通分隊']):
-                                    return 56
-                                elif '交通組' in unit and any(x in title for x in ['承辦', '業務']):
+                                if '交通組' in unit:
                                     return 26
+                                elif any(x in title for x in ['所長', '分隊長', '副所長', '小隊長']) and any(x in unit for x in ['派出所', '交通分隊']):
+                                    return 56
                                 elif any(x in title for x in ['承辦', '業務']) and any(x in unit for x in ['派出所', '交通分隊']):
                                     return 10
                                 return 1
@@ -436,10 +457,14 @@ def p18_page():
                             df_other['weight'] = df_other.apply(get_sub_weight, axis=1)
                             total_weight = df_other['weight'].sum()
                             if total_weight > 0:
-                                df_other['核發金額'] = (df_other['weight'] / total_weight * remaining_pool).round(0).astype(int)
-                                diff = remaining_pool - df_other['核發金額'].sum()
-                                if diff != 0 and len(df_other) > 0:
-                                    df_other.iloc[-1, df_other.columns.get_loc('核發金額')] += diff
+                                exact_amounts = (df_other['weight'] / total_weight) * remaining_pool
+                                int_amounts = np.floor(exact_amounts).astype(int)
+                                diff = int(remaining_pool - int_amounts.sum())
+                                if diff > 0:
+                                    remainders = exact_amounts - int_amounts
+                                    top_indices = remainders.nlargest(diff).index
+                                    int_amounts.loc[top_indices] += 1
+                                df_other['核發金額'] = int_amounts
                                 df_72.loc[other_mask, '核發金額'] = df_other['核發金額']
 
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
@@ -460,8 +485,13 @@ def p18_page():
                 else:
                     df_coworkers_output = df_coworkers_work.copy()
 
-                # 最終整理
+                if '金額' not in df_coworkers_output.columns:
+                    df_coworkers_output['金額'] = 0
+
                 df_coworkers_output = sort_coworkers(df_coworkers_output)
+                if '排序調整' in df_coworkers_output.columns:
+                    df_coworkers_output = df_coworkers_output.drop(columns=['排序調整'])
+
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
@@ -481,7 +511,7 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # Excel 輸出（已優化清除贅欄贅列）
+                # E. Excel 輸出
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
@@ -502,7 +532,7 @@ def p18_page():
                 payroll_excel_data = payroll_output.getvalue()
                 payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
 
-                # 寄信與下載
+                # F. 寄信與下載
                 files_to_attach = [(pts_excel_data, pts_filename), (payroll_excel_data, payroll_filename)]
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                
