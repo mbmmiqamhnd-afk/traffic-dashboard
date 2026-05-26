@@ -55,25 +55,20 @@ def send_report_email_auto(files, year, month):
 # --- 排序函數 ---
 def sort_coworkers(df):
     df = df.copy()
-    
-    # 1. 強制將可能被鎖定的 Categorical 欄位降維回最安全的純文字型態
     for col in ['分配類別', '單位', '職別', '姓名']:
         if col in df.columns:
             df[col] = df[col].astype(str)
             
-    # 2. 安全補齊所有純文字欄位的空值與去空白
     df['姓名'] = df['姓名'].replace(['nan', 'None'], '').fillna("").str.strip()
     df['單位'] = df['單位'].replace(['nan', 'None'], '').fillna("").str.strip()
     df['職別'] = df['職別'].replace(['nan', 'None'], '').fillna("").str.strip()
     df['分配類別'] = df['分配類別'].replace(['nan', 'None'], '').fillna("").str.strip()
     
-    # 確保手動調整的數值欄位為整數
     if '排序調整' in df.columns:
         df['排序調整'] = pd.to_numeric(df['排序調整'], errors='coerce').fillna(999).astype(int)
     else:
         df.insert(0, '排序調整', range(100, 100 + len(df)))
     
-    # 3. 僅在排序當下套用 Categorical 順序
     cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)", ""]
     df['分配類別'] = pd.Categorical(df['分配類別'], categories=cat_order, ordered=True)
     
@@ -86,7 +81,6 @@ def sort_coworkers(df):
             unit_order.append(u)
     df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
     
-    # 4. 建立官階倫理權重
     def get_rank_weight(title):
         title = str(title)
         if title == '分局長': return 1
@@ -98,14 +92,10 @@ def sort_coworkers(df):
         return 7
     
     df['職級權重'] = df['職別'].apply(get_rank_weight)
-    
-    # 5. 執行多重排序
     df.sort_values(by=['排序調整', '分配類別', '單位', '職級權重', '姓名'], 
                     ascending=[True, True, True, True, True], inplace=True)
-    
     df.drop(columns=['職級權重'], inplace=True)
     
-    # 6. 恢復常規文字型態
     for col in ['分配類別', '單位']:
         df[col] = df[col].astype(str)
         
@@ -113,7 +103,6 @@ def sort_coworkers(df):
     return df
 
 
-# --- 表格即時監聽回呼函數 ---
 def on_data_edited():
     changes = st.session_state.co_editor
     df = st.session_state.current_roster.copy()
@@ -139,7 +128,6 @@ def on_data_edited():
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("💡 挪移順序教學：表格最左側設有「排序調整」欄位。修改該數字，表格就會自動重新排序。")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -152,6 +140,9 @@ def p18_page():
     
     st.subheader("📝 2. 印領清冊與獎金分配設定")
     point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
+    
+    # 💡 關鍵修正：讓使用者輸入局發直接人員總額，提供程式比對基礎
+    target_direct_budget = st.number_input("🎯 警察局核撥【直接執行人員】總獎金目標 (元) *若為 0 則不啟動自動平帳", value=0, step=1)
     
     st.markdown("##### 👥 共同作業及配合人員 - 分配模式")
     alloc_mode = st.radio(
@@ -234,7 +225,7 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "龍潭派出所", "職別": "業務承辦人", "姓名": "周薇"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "所長", "姓名": "董亦文"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "何昀融"},
-                {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "林榮裕"},
+                {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "巡視員", "姓名": "林榮裕"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "業務承辦人", "姓名": "鄧雅文"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "所長", "姓名": "林育辰"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "副所長", "姓名": "薛德祥"},
@@ -254,12 +245,11 @@ def p18_page():
         st.session_state.current_roster = sort_coworkers(df_init)
 
     df_display = st.session_state.current_roster.copy()
-    
     if "系統自動" not in alloc_mode:
         if '金額' not in df_display.columns:
             df_display.insert(5, '金額', 0)
         col_cfg = {
-            "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="調整此數字可手動改變上下順序", min_value=1, format="%d"),
+            "排序調整": st.column_config.NumberColumn("排序調整 🔢", min_value=1, format="%d"),
             "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True),
             "金額": st.column_config.NumberColumn("金額", min_value=0, step=1, format="%d")
         }
@@ -267,19 +257,12 @@ def p18_page():
         if '金額' in df_display.columns:
             df_display = df_display.drop(columns=['金額'])
         col_cfg = {
-            "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="調整此數字可手動改變上下順序", min_value=1, format="%d"),
+            "排序調整": st.column_config.NumberColumn("排序調整 🔢", min_value=1, format="%d"),
             "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
         }
 
     edited_df_coworkers = st.data_editor(
-        df_display,
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        height=500,
-        column_config=col_cfg,
-        key="co_editor",
-        on_change=on_data_edited
+        df_display, num_rows="dynamic", use_container_width=True, hide_index=True, height=500, column_config=col_cfg, key="co_editor", on_change=on_data_edited
     )
 
     if st.button("💾 儲存最新名單為預設值", use_container_width=True, type="secondary"):
@@ -321,11 +304,14 @@ def p18_page():
                         if found_date: break
                     if found_date: break
 
-                # C. 直接執行人員計算
+                # C. 直接執行人員原始金額計算
                 final_sheets = {}
                 summary_rows = []
                 g_cite, g_acc, g_traf, g_all = 0, 0, 0, 0
                 direct_exec_list = []
+                
+                # 用來在平帳時修正個別單位 Sheet 小計的對照字典
+                sheet_reward_diff = {} 
 
                 for sheet_name, df in dfs_raw.items():
                     if '總表' in sheet_name: continue
@@ -351,7 +337,6 @@ def p18_page():
                             member_rows.append(r)
                         
                         df_members = df_work.iloc[member_rows].copy()
-                        s_cite, s_acc, s_traf = 0, 0, 0
                        
                         for idx, row in df_members.iterrows():
                             name = str(row.get('員警姓名', '')).strip()
@@ -363,42 +348,87 @@ def p18_page():
                             cp = pd.to_numeric(row.get('取締點數', 0), errors='coerce') or 0
                             total_pts = cp + ap + tp
                             
-                            if 'A2件數' in df_members.columns: df_members.at[idx, 'A2件數'] = a2 if a2 > 0 else ""
-                            if 'A3件數' in df_members.columns: df_members.at[idx, 'A3件數'] = a3 if a3 > 0 else ""
-                            if '事故點數' in df_members.columns: df_members.at[idx, '事故點數'] = ap if ap > 0 else ""
-                            if '交整時數' in df_members.columns: df_members.at[idx, '交整時數'] = th if th > 0 else ""
-                            if '交整點數' in df_members.columns: df_members.at[idx, '交整點數'] = tp if tp > 0 else ""
-                            if '個人總點數' in df_members.columns: df_members.at[idx, '個人總點數'] = total_pts
-                            
-                            s_cite += cp; s_acc += ap; s_traf += tp
-                            
+                            reward = int(np.round(total_pts * point_value))
                             if total_pts > 0:
-                                reward = int(np.round(total_pts * point_value))
                                 direct_exec_list.append({
                                     "單位名稱": sheet_name, "員警姓名": name,
                                     "取締件數": row.get('取締件數', ''), "取締點數": cp if cp > 0 else '',
                                     "A2件數": a2 if a2 > 0 else '', "A3件數": a3 if a3 > 0 else '',
                                     "事故點數": ap if ap > 0 else '', "交整時數": th if th > 0 else '',
                                     "交整點數": tp if tp > 0 else '', "個人總點數": total_pts,
-                                    "每點獎金": point_value, "實領獎金": reward, "蓋章": ""
+                                    "每點獎金": point_value, "實領獎金": reward, "蓋章": "",
+                                    "_orig_df_idx": idx # 暫存用於回填修正
                                 })
-                        
-                        sub_row_data = {c: "" for c in df_work.columns}
-                        sub_row_data['員警姓名'] = '小計'
-                        for col_n in df_work.columns:
-                            if col_n in ['員警姓名', '蓋章']: continue
-                            v_sum = pd.to_numeric(df_members[col_n], errors='coerce').sum()
-                            sub_row_data[col_n] = v_sum if v_sum > 0 else 0
-                       
-                        df_final = pd.concat([df_members, pd.DataFrame([sub_row_data])], ignore_index=True)
-                        if '蓋章' in df_final.columns: df_final = df_final.drop(columns=['蓋章'])
-                        final_sheets[sheet_name] = df_final
-                       
-                        summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
-                        g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
+                        final_sheets[sheet_name] = {"df_members": df_members, "df_work": df_work}
 
+                # ========================================================
+                # 💡 【核心邏輯升級】：執行直接執行人員 1元 終極平帳
+                # ========================================================
                 df_direct_exec = pd.DataFrame(direct_exec_list)
+                if not df_direct_exec.empty and target_direct_budget > 0:
+                    current_sum = df_direct_exec['實領獎金'].sum()
+                    diff = target_direct_budget - current_sum
+                    
+                    # 如果有 1 元的落差，全自動抓取第 1 位同仁來±1元平帳
+                    if diff != 0 and abs(diff) <= 5: # 防呆：落差在合理銅板範圍內才調
+                        df_direct_exec.at[0, '實領獎金'] += diff
+                        # 紀錄在哪個單位發生了調整，以便更新該單位的點數表 Excel
+                        target_sheet = df_direct_exec.at[0, '單位名稱']
+                        sheet_reward_diff[target_sheet] = diff
+                        st.info(f"⚖️ 系統偵測到直接執行人員總額與警察局目標相差 {diff} 元，已自動於首列（{df_direct_exec.at[0, '員警姓名']}）完成強制平帳。")
+                # ========================================================
+
+                # 重新回填與建立各單位的 Excel 點數分頁
+                for sheet_name, f_data in final_sheets.items():
+                    df_members = f_data["df_members"]
+                    df_work = f_data["df_work"]
+                    s_cite, s_acc, s_traf = 0, 0, 0
+                    
+                    # 重新計算點數
+                    for idx, row in df_members.iterrows():
+                        name = str(row.get('員警姓名', '')).strip()
+                        a2 = dict_acc.get(name, {}).get('A2類', 0)
+                        a3 = dict_acc.get(name, {}).get('A3類', 0)
+                        th = dict_traf.get(name, 0)
+                        ap = a2 * P_A2 + a3 * P_A3
+                        tp = th * P_TRAF
+                        cp = pd.to_numeric(row.get('取締點數', 0), errors='coerce') or 0
+                        total_pts = cp + ap + tp
+                        
+                        if 'A2件數' in df_members.columns: df_members.at[idx, 'A2件數'] = a2 if a2 > 0 else ""
+                        if 'A3件數' in df_members.columns: df_members.at[idx, 'A3件數'] = a3 if a3 > 0 else ""
+                        if '事故點數' in df_members.columns: df_members.at[idx, '事故點數'] = ap if ap > 0 else ""
+                        if '交整時數' in df_members.columns: df_members.at[idx, '交整時數'] = th if th > 0 else ""
+                        if '交整點數' in df_members.columns: df_members.at[idx, '交整點數'] = tp if tp > 0 else ""
+                        if '個人總點數' in df_members.columns: df_members.at[idx, '個人總點數'] = total_pts
+                        s_cite += cp; s_acc += ap; s_traf += tp
+                    
+                    sub_row_data = {c: "" for c in df_work.columns}
+                    sub_row_data['員警姓名'] = '小計'
+                    for col_n in df_work.columns:
+                        if col_n in ['員警姓名', '蓋章']: continue
+                        v_sum = pd.to_numeric(df_members[col_n], errors='coerce').sum()
+                        sub_row_data[col_n] = v_sum if v_sum > 0 else 0
+                    
+                    # 回填實領獎金欄位（如果有此欄位，確保更新）
+                    if '實領獎金' in df_members.columns:
+                        df_members['實領獎金'] = (pd.to_numeric(df_members['個人總點數'], errors='coerce') * point_value).round().fillna(0).astype(int)
+                        # 如果這個分頁有被平帳調整，加上落差
+                        if sheet_name in sheet_reward_diff:
+                            first_idx = df_members.index[0]
+                            df_members.at[first_idx, '實領獎金'] += sheet_reward_diff[sheet_name]
+                        sub_row_data['實領獎金'] = df_members['實領獎金'].sum()
+
+                    df_final = pd.concat([df_members, pd.DataFrame([sub_row_data])], ignore_index=True)
+                    if '蓋章' in df_final.columns: df_final = df_final.drop(columns=['蓋章'])
+                    final_sheets[sheet_name] = df_final
+                    
+                    summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
+                    g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
+
                 if not df_direct_exec.empty:
+                    if '_orig_df_idx' in df_direct_exec.columns:
+                        df_direct_exec = df_direct_exec.drop(columns=['_orig_df_idx'])
                     df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
                 direct_total_money = df_direct_exec['實領獎金'].sum() if not df_direct_exec.empty else 0
 
@@ -491,7 +521,6 @@ def p18_page():
 
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
 
-                    # === 勤務督導(20%) 與 其他配合(8%) 人頭均分池 ===
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
@@ -505,31 +534,23 @@ def p18_page():
                     
                     df_coworkers_output = df_coworkers_work.rename(columns={'核發金額': '金額'})
                     
-                    # ========================================================
-                    # 💡 【核心邏輯升級】：執行跨類別金額歸併（勤務督導合併至負責管考）
-                    # ========================================================
-                    # 1. 篩選出負責管考(72%)的名單索引與金額對照表 (Key: 單位+姓名)
+                    # 跨類別金額歸併
                     mgr_lookup = {}
                     for idx, row in df_coworkers_output[df_coworkers_output['分配類別'] == '負責管考(72%)'].iterrows():
                         key = (str(row['單位']).strip(), str(row['姓名']).strip())
-                        if key[1] != "":  # 姓名不能為空值
+                        if key[1] != "":
                             mgr_lookup[key] = idx
                     
-                    # 2. 掃描勤務督導(20%)，若有相同單位且相同姓名的人，將金額整併
                     indices_to_drop = []
                     for idx, row in df_coworkers_output[df_coworkers_output['分配類別'] == '勤務督導(20%)'].iterrows():
                         key = (str(row['單位']).strip(), str(row['姓名']).strip())
                         if key in mgr_lookup:
                             target_mgr_idx = mgr_lookup[key]
-                            # 將督導金額累加到管考金額中
                             df_coworkers_output.at[target_mgr_idx, '金額'] += row['金額']
-                            # 標記這一列督導資料，等一下從最終清冊中移除（避免重複領取）
                             indices_to_drop.append(idx)
                     
                     if indices_to_drop:
                         df_coworkers_output.drop(index=indices_to_drop, inplace=True)
-                    # ========================================================
-                    
                 else:
                     df_coworkers_output = df_coworkers_work.copy()
 
@@ -543,7 +564,6 @@ def p18_page():
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
-                # 重新根據清冊現有的列計算小計 (因合併，此處總金額依然100%對齊)
                 sub_72 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "負責管考(72%)", '金額'].sum()
                 sub_20 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "勤務督導(20%)", '金額'].sum()
                 sub_08 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "其他配合(8%)", '金額'].sum()
@@ -584,7 +604,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success("✅ 雙報表產出成功！交通組雙重身分同仁金額已自動完美加總合併，無重複列。")
+                    st.success("✅ 雙報表產出成功！直接執行人員已對齊局核撥目標，100% 完美平帳。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
