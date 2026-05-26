@@ -278,6 +278,11 @@ def p18_page():
 
         with st.spinner("正在精算比例與發放金額..."):
             try:
+                # 💡 【終極修正安全線】：第一時間完成全域變數名稱安全宣告，徹底封殺 Scope 未定義錯誤
+                ext_year, ext_month = "115", "4"
+                pts_filename = f"龍潭分局115年4月份_點數統計表.xlsx"
+                payroll_filename = f"龍潭分局115年4月份_獎勵金印領清冊.xlsx"
+
                 # A. 點數數據預處理
                 df_acc_raw = pd.read_excel(file_acc, header=4)
                 df_acc_raw['姓名'] = df_acc_raw['姓名'].astype(str).str.strip()
@@ -289,7 +294,6 @@ def p18_page():
 
                 # B. 讀取點數範本與日期偵測
                 dfs_raw = pd.read_excel(file_template, sheet_name=None, header=None)
-                ext_year, ext_month = "115", "4"
                 found_date = False
                 for _, df_scan in dfs_raw.items():
                     for r in range(min(15, len(df_scan))):
@@ -298,6 +302,9 @@ def p18_page():
                             m = re.search(r'開單日期[：:\s]*(\d{3})(\d{2})', v)
                             if m:
                                 ext_year, ext_month = m.group(1), str(int(m.group(2)))
+                                # 偵測到正確日期後，立刻重新整理最新的確切檔名
+                                pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
+                                payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
                                 found_date = True
                                 break
                         if found_date: break
@@ -571,7 +578,7 @@ def p18_page():
                     {"項目": "二、共同作業-勤務督導(20%)", "金額": sub_20},
                     {"項目": "二、共同作業-其他配合(8%)", "金額": sub_08},
                     {"項目": "共同作業人員小計", "金額": coworkers_total_money},
-                    {"項目": "本月合計應發發", "金額": direct_total_money + coworkers_total_money},
+                    {"項目": "本月合計應發放", "金額": direct_total_money + coworkers_total_money},
                     {"項目": "製表人", "金額": ""}
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
@@ -587,12 +594,10 @@ def p18_page():
 
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
-                    # 1. 輸出：直接執行人員
                     df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                     workbook  = writer.book
                     worksheet1 = writer.sheets['直接執行人員']
                     
-                    # 建立通用基礎樣式（文字對齊與表格框線）
                     cell_format = workbook.add_format()
                     cell_format.set_align('center')   
                     cell_format.set_align('vcenter')  
@@ -603,19 +608,14 @@ def p18_page():
                     num_direct_rows = len(df_direct_exec)
                     num_direct_cols = len(df_direct_exec.columns)
                     
-                    # 💡 【終極修正核心】：將有數據範圍外的其餘「全量空白列與空白欄」進行 Excel 網格物理隱藏
-                    # 隱藏右側多餘欄：從最後一欄一直到第 250 欄全數隱藏
                     worksheet1.set_column(num_direct_cols, 250, None, None, {'hidden': True})
-                    # 隱藏下方多餘列：從最後一行資料列一直到第 65000 行全數隱藏
                     for r in range(num_direct_rows + 1, num_direct_rows + 500):
                         worksheet1.set_row(r, None, None, {'hidden': True})
                     
-                    # 精準為有資料的列加高至 35，蓋章更舒適
                     for r_idx in range(1, num_direct_rows + 1):
                         worksheet1.set_row(r_idx, 35, cell_format)
                     worksheet1.set_column('L:L', 16, cell_format) 
                     
-                    # 2. 輸出：共同作業及配合人員
                     if not df_coworkers_output.empty:
                         df_coworkers_output.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         worksheet2 = writer.sheets['共同作業及配合人員']
@@ -623,7 +623,6 @@ def p18_page():
                         num_co_rows = len(df_coworkers_output)
                         num_co_cols = len(df_coworkers_output.columns)
                         
-                        # 物理隱藏共同作業右側與下方盲區
                         worksheet2.set_column(num_co_cols, 250, None, None, {'hidden': True})
                         for r in range(num_co_rows + 1, num_co_rows + 500):
                             worksheet2.set_row(r, None, None, {'hidden': True})
@@ -635,14 +634,12 @@ def p18_page():
                         stamp_col_letter = chr(65 + stamp_col_idx)
                         worksheet2.set_column(f'{stamp_col_letter}:{stamp_col_letter}', 16, cell_format)
                             
-                    # 3. 輸出：一覽表摘要
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
                     worksheet3 = writer.sheets['獎勵金支領一覽表']
                     
                     num_sum_rows = len(df_payroll_summary)
                     num_sum_cols = len(df_payroll_summary.columns)
                     
-                    # 物理隱藏一覽表右側與下方盲區
                     worksheet3.set_column(num_sum_cols, 250, None, None, {'hidden': True})
                     for r in range(num_sum_rows + 1, num_sum_rows + 100):
                         worksheet3.set_row(r, None, None, {'hidden': True})
@@ -652,14 +649,13 @@ def p18_page():
                         worksheet3.set_row(r_idx, 22, cell_format)
                         
                 payroll_excel_data = payroll_output.getvalue()
-                payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
 
                 # F. 同步與發送
                 files_to_attach = [(pts_excel_data, pts_filename), (payroll_excel_data, payroll_filename)]
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success("✅ 雙報表產出成功！Excel 的多餘灰色贅欄與贅列已全數由底層執行物理隱藏，打開後畫面非常乾淨、漂亮。")
+                    st.success("✅ 全系統結構優化成功！檔名安全變數已全面就位，報表完成 100% 完美產出並寄送成功。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
