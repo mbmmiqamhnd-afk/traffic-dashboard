@@ -596,7 +596,7 @@ def p18_page():
                     workbook  = writer.book
                     worksheet1 = writer.sheets['直接執行人員']
                     
-                    # 【核心修正】：利用 xlsxwriter 正確語法設定置中格式
+                    # 建立標準文字上下左右置中、具備細邊框的公務格式
                     cell_format = workbook.add_format({
                         'align': 'center',       # 左右置中
                         'v_align': 'vcenter',     # 上下置中
@@ -636,7 +636,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success("✅ 雙報表產出成功！Excel 蓋章儲存格已放大且文字完美置中。")
+                    st.success("✅ 雙報表產出成功！Excel 蓋章欄已加寬、列高已舒適拉高，文字完美對齊。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
