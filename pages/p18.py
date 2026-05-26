@@ -179,7 +179,7 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警務佐", "姓名": "陳敬霖"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "黃文興"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "王天龍", "姓名": "王天龍"},
-                {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "開國"},
+                {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "曾嘉偉"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "江文頌"},
                 {"分配類別": "勤務督導(20%)", "單位": "督察組", "職別": "組長", "姓名": "賴永益"},
                 {"分配類別": "勤務督導(20%)", "單位": "督察組", "職別": "督察員", "姓名": "黃中彥"},
@@ -572,9 +572,13 @@ def p18_page():
                         df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                         ws1 = writer.sheets['直接執行人員']
                         
-                        # 【核心修改 1：設定直接執行人員工作表之列印方向為縱向，紙張設為 A4 (代碼 9)】
+                        # 版面設定：縱向、A4 紙張
                         ws1.set_portrait()
-                        ws1.set_paper(9) # xlsxwriter 中 9 代表 A4 紙張
+                        ws1.set_paper(9) 
+                        
+                        # 【核心新增：設定頁尾頁碼】
+                        # &C 代表置中，&P 代表目前頁碼，&N 代表總頁數
+                        ws1.set_footer('&C第 &P 頁，共 &N 頁')
                         
                         stamp_col = df_direct_exec.columns.get_loc('蓋章')
                         ws1.set_column(stamp_col, stamp_col, 22)
@@ -589,9 +593,12 @@ def p18_page():
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
                         
-                        # 【核心修改 2：設定共同作業人員工作表之列印方向為縱向，紙張設為 A4 (代碼 9)】
+                        # 版面設定：縱向、A4 紙張
                         ws2.set_portrait()
-                        ws2.set_paper(9) # xlsxwriter 中 9 代表 A4 紙張
+                        ws2.set_paper(9) 
+                        
+                        # 【核心新增：設定頁尾頁碼】
+                        ws2.set_footer('&C第 &P 頁，共 &N 頁')
                         
                         stamp_col2 = df_coworkers_final_sheet.columns.get_loc('蓋章')
                         ws2.set_column(stamp_col2, stamp_col2, 22)
