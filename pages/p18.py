@@ -165,7 +165,7 @@ def p18_page():
                 {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "主任", "姓名": "陳振貴"},
                 {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "出納", "姓名": "簡啟峯"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
-                {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
+                {"分配類別": "人事室", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
@@ -360,7 +360,7 @@ def p18_page():
                 if not df_direct_exec.empty:
                     df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
 
-                # 金額誤差處理
+                # 金額誤差處理与平帳
                 direct_total_money = df_direct_exec['實領獎金'].sum() if not df_direct_exec.empty else 0
                 if not df_direct_exec.empty and target_direct_budget > 0:
                     current_sum = direct_total_money
@@ -380,6 +380,13 @@ def p18_page():
                                 df_direct_exec.iloc[:rem, df_direct_exec.columns.get_loc('實領獎金')] += sign
                             st.success(f"✅ 已將差額 {diff:+,} 元平均分散調整")
                         direct_total_money = df_direct_exec['實領獎金'].sum()
+
+                # 【關鍵修改：直接執行人員工作表尾端附加合計列】
+                if not df_direct_exec.empty:
+                    direct_total_row = {c: "" for c in df_direct_exec.columns}
+                    direct_total_row['員警姓名'] = '合計'
+                    direct_total_row['實領獎金'] = direct_total_money
+                    df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
 
                 # D. 共同作業人員處理（完全維持原分配原則進行精算）
                 df_coworkers_work = st.session_state.current_roster.copy()
@@ -461,8 +468,6 @@ def p18_page():
                     df_coworkers_output['金額'] = 0
 
                 # ==================== 【預算分配原則與總表一覽表防線】 ====================
-                
-                # 計算「支領一覽表（總表）」所需小計（此處完全依據原本的預算結構計算）
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
                 sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
@@ -482,7 +487,7 @@ def p18_page():
                 # ==================== 【印領清冊工作表專用化妝作業】 ====================
                 df_coworkers_final_sheet = df_coworkers_output.copy()
 
-                # 合併金額：找出交通組且原本是勤務督導(20%)的人
+                # 合併金額：交通組兼領人員合併
                 traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
                 
                 for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
@@ -505,7 +510,7 @@ def p18_page():
                       (df_coworkers_final_sheet['金額'] == 0))
                 ]
 
-                # 計算在移除分配類別前，所有共同作業人員實領金額的「總和」用於工作表合計
+                # 計算共同作業人員實領總和
                 coworker_sheet_total_money = df_coworkers_final_sheet['金額'].sum()
 
                 # 洗牌排序
@@ -524,11 +529,10 @@ def p18_page():
                 df_coworkers_final_sheet.insert(0, '序號', range(1, len(df_coworkers_final_sheet) + 1))
                 df_coworkers_final_sheet['蓋章'] = ""
 
-                # 【核心新增】建立「合計」列資料夾入 Dataframe 尾端
+                # 建立「共同作業人員」合計列
                 total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                 total_row_data['單位'] = '合計'
                 total_row_data['金額'] = coworker_sheet_total_money
-                
                 df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([total_row_data])], ignore_index=True)
 
                 # ==================================================================================
@@ -549,25 +553,24 @@ def p18_page():
                     workbook = writer.book
                     border_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
 
-                    # 直接執行人員工作表
-                    df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
-                    ws1 = writer.sheets['直接執行人員']
-                    stamp_col = df_direct_exec.columns.get_loc('蓋章')
-                    ws1.set_column(stamp_col, stamp_col, 22)
-                    for r in range(len(df_direct_exec) + 1):
-                        ws1.set_row(r, 38 if r > 0 else 25)
-                        for c in range(len(df_direct_exec.columns)):
-                            value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
-                            ws1.write(r, c, value, border_format)
+                    # 直接執行人員工作表 (已附加合計列並完美套用框線)
+                    if not df_direct_exec.empty:
+                        df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
+                        ws1 = writer.sheets['直接執行人員']
+                        stamp_col = df_direct_exec.columns.get_loc('蓋章')
+                        ws1.set_column(stamp_col, stamp_col, 22)
+                        for r in range(len(df_direct_exec) + 1):
+                            ws1.set_row(r, 38 if r > 0 else 25)
+                            for c in range(len(df_direct_exec.columns)):
+                                value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
+                                ws1.write(r, c, value, border_format)
 
-                    # 共同作業及配合人員工作表 (包含最底下新追加的合計列)
+                    # 共同作業及配合人員工作表 (已包含合計列並完美套用框線)
                     if not df_coworkers_final_sheet.empty:
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
                         stamp_col2 = df_coworkers_final_sheet.columns.get_loc('蓋章')
                         ws2.set_column(stamp_col2, stamp_col2, 22)
-                        
-                        # 迴圈渲染包括最後一列合計列的框線樣式
                         for r in range(len(df_coworkers_final_sheet) + 1):
                             ws2.set_row(r, 38 if r > 0 else 25)
                             for c in range(len(df_coworkers_final_sheet.columns)):
