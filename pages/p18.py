@@ -411,7 +411,6 @@ def p18_page():
                     df_72 = df_coworkers_work[mask_72].copy()
                     df_72['核發金額'] = 0
                     if not df_72.empty and pool_72 > 0:
-                        # 【關鍵修改 1：精準將職別去除空白再篩選正副主官，避免 contains 交互攔截】
                         df_72['職別_clean'] = df_72['職別'].astype(str).str.strip()
                         main_officers_mask = df_72['職別_clean'].isin(['分局長', '副分局長'])
                         main_officers = df_72[main_officers_mask].copy()
@@ -420,11 +419,9 @@ def p18_page():
                             pool_main = int(np.round(pool_72 * 0.08))
                             for idx, row in main_officers.iterrows():
                                 title = str(row['職別_clean'])
-                                # 【關鍵修改 2：嚴格完全對齊精確字串，拉開分局長與副分局長池差距】
                                 if title == '分局長':
                                     amount = int(np.round(pool_main * 0.60))
                                 elif title == '副分局長':
-                                    # 先算分局長領走的錢，剩下來的由所有副分局長平分
                                     chief_pay = int(np.round(pool_main * 0.60))
                                     sub_pool = pool_main - chief_pay
                                     sub_count = sum(df_72['職別_clean'] == '副分局長')
@@ -540,11 +537,17 @@ def p18_page():
                 df_coworkers_final_sheet.insert(0, '序號', range(1, len(df_coworkers_final_sheet) + 1))
                 df_coworkers_final_sheet['蓋章'] = ""
 
-                # 建立「共同作業人員」合計列
+                # 建立「共同作業人員」小計列
                 total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                 total_row_data['單位'] = '合計'
                 total_row_data['金額'] = coworker_sheet_total_money
                 df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([total_row_data])], ignore_index=True)
+
+                # 【核心修改：追加全分局大總計列（直接執行人員加總共同作業及配合人員）】
+                grand_total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
+                grand_total_row_data['單位'] = '總計（含直接執行人員）'
+                grand_total_row_data['金額'] = direct_total_money + coworker_sheet_total_money
+                df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
 
                 # ==================================================================================
 
@@ -576,17 +579,45 @@ def p18_page():
                                 value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
                                 ws1.write(r, c, value, border_format)
 
-                    # 共同作業及配合人員工作表
+                    # 共同作業及配合人員工作表 (完美包覆 合計、總計、與底端核示簽章欄位)
                     if not df_coworkers_final_sheet.empty:
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
                         stamp_col2 = df_coworkers_final_sheet.columns.get_loc('蓋章')
                         ws2.set_column(stamp_col2, stamp_col2, 22)
-                        for r in range(len(df_coworkers_final_sheet) + 1):
+                        
+                        # 1. 繪製主表格、合計列與總計列的標準框線
+                        data_len = len(df_coworkers_final_sheet)
+                        for r in range(data_len + 1):
                             ws2.set_row(r, 38 if r > 0 else 25)
                             for c in range(len(df_coworkers_final_sheet.columns)):
                                 value = df_coworkers_final_sheet.iloc[r-1, c] if r > 0 else df_coworkers_final_sheet.columns[c]
                                 ws2.write(r, c, value, border_format)
+                        
+                        # 2. 【核心新增：於數據與總計列下方，以文字精準排版各單位核示簽章欄位】
+                        sign_start_row = data_len + 3 # 空出兩行空間，提供視覺緩衝與舒適的版面配置
+                        
+                        # 定義對齊與字體樣式
+                        sign_title_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 12, 'bold': True, 'align': 'left', 'valign': 'vcenter'})
+                        sign_cell_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 11, 'align': 'center', 'valign': 'vcenter'})
+                        
+                        # 第一層職稱：單位主管、人事
+                        ws2.set_row(sign_start_row, 25)
+                        ws2.write(sign_start_row, 0, "單位主管：", sign_title_format)
+                        ws2.write(sign_start_row, 2, "人事：", sign_title_format)
+                        
+                        # 保留蓋章空白空間（列高放大）
+                        ws2.set_row(sign_start_row + 1, 50)
+                        ws2.set_row(sign_start_row + 2, 25)
+                        
+                        # 第二層職稱：製表人、出納、主計、分局長
+                        ws2.write(sign_start_row + 3, 0, "製表人：", sign_title_format)
+                        ws2.write(sign_start_row + 3, 1, "出納：", sign_title_format)
+                        ws2.write(sign_start_row + 3, 2, "主計：", sign_title_format)
+                        ws2.write(sign_start_row + 3, 4, "分局長：", sign_title_format)
+                        
+                        # 再次為第二層保留蓋章空白高度
+                        ws2.set_row(sign_start_row + 4, 50)
 
                     # 獎勵金支領一覽表工作表
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
