@@ -52,36 +52,38 @@ def send_report_email_auto(files, year, month):
         return False, str(e)
 
 
-# --- 排序函數（已修復 Categorical fillna 衝突 Bug）---
+# --- 排序函數（徹底解除 Categorical 衝突的終極安全版本）---
 def sort_coworkers(df):
     df = df.copy()
     
-    # 1. 必須在轉換為 Categorical 之前，先把所有純文字欄位的空值補齊
-    df['姓名'] = df['姓名'].fillna("").astype(str).str.strip()
-    df['單位'] = df['單位'].fillna("").astype(str).str.strip()
-    df['職別'] = df['職別'].fillna("").astype(str).str.strip()
-    df['分配類別'] = df['分配類別'].fillna("").astype(str).str.strip()
+    # 1. 核心解法：強制將可能被鎖定的 Categorical 欄位降維回最安全的純文字 (Object) 型態
+    for col in ['分配類別', '單位', '職別', '姓名']:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+            
+    # 2. 安全補齊所有純文字欄位的空值與去空白
+    df['姓名'] = df['姓名'].replace(['nan', 'None'], '').fillna("").str.strip()
+    df['單位'] = df['單位'].replace(['nan', 'None'], '').fillna("").str.strip()
+    df['職別'] = df['職別'].replace(['nan', 'None'], '').fillna("").str.strip()
+    df['分配類別'] = df['分配類別'].replace(['nan', 'None'], '').fillna("").str.strip()
     
-    # 防呆：確保手動調整的數值欄位為整數
+    # 確保手動調整的數值欄位為整數
     if '排序調整' in df.columns:
         df['排序調整'] = pd.to_numeric(df['排序調整'], errors='coerce').fillna(999).astype(int)
     else:
         df.insert(0, '排序調整', range(100, 100 + len(df)))
     
-    # 2. 定義分配類別順序，包含空字串防呆
+    # 3. 僅在排序當下套用 Categorical 順序
     cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)", ""]
     df['分配類別'] = pd.Categorical(df['分配類別'], categories=cat_order, ordered=True)
     
-    # 3. 定義單位組織倫理順序，包含空字串防呆
     unit_order = ["交通組", "會計室", "秘書室", "人事室", "龍潭分局", "勤務中心", "督察組", 
                   "保安民防組", "行政組", "防治組", "聖亭派出所", "龍潭派出所", "中興派出所", 
                   "石門派出所", "高平派出所", "三和派出所", "龍潭交通分隊", ""]
     
-    # 動態捕捉使用者手動新增的其他單位
     for u in df['單位'].unique():
         if u not in unit_order:
             unit_order.append(u)
-            
     df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
     
     # 4. 建立官階倫理權重
@@ -102,6 +104,11 @@ def sort_coworkers(df):
                     ascending=[True, True, True, True, True], inplace=True)
     
     df.drop(columns=['職級權重'], inplace=True)
+    
+    # 6. 【關鍵修正】：排序完畢後，立刻把欄位恢復成一般文字型態，徹底解放鎖定狀態，不留後患給下一次編輯
+    for col in ['分配類別', '單位']:
+        df[col] = df[col].astype(str)
+        
     df.reset_index(drop=True, inplace=True)
     return df
 
@@ -111,6 +118,11 @@ def on_data_edited():
     changes = st.session_state.co_editor
     df = st.session_state.current_roster.copy()
     
+    # 在更新變更前，也確保型態全部解鎖為常規文字型態，避免 fillna 衝突
+    for col in ['分配類別', '單位', '職別', '姓名']:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+            
     # 1. 處理更新
     for row_idx, updated_cols in changes.get("edited_rows", {}).items():
         for col_name, val in updated_cols.items():
@@ -213,7 +225,7 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "督察組", "職別": "警務員", "姓名": "陳冠彰"},
                 {"分配類別": "勤務督導(20%)", "單位": "督察組", "職別": "巡官", "姓名": "全楚文"},
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "組長", "姓名": "蔡奇青"},
-                {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "警務員", "姓名": "曾盛鉉"},
+                {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "警務員", "姓名": "Cent鉉"},
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "巡官", "姓名": "李立人"},
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "巡官", "姓名": "林沛達"},
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "巡官", "姓名": "吳國棟"},
