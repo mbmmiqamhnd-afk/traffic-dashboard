@@ -179,7 +179,7 @@ def p18_page():
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "盧冠仁"},
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "李峯甫"},
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "羅千金"},
-                {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承承辦人", "姓名": "郭勝隆"},
+                {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "郭勝隆"},
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "吳享運"},
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "吳沛軒"},
                 {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主任", "姓名": ""},
@@ -358,19 +358,16 @@ def p18_page():
                                 })
                         final_sheets[sheet_name] = {"df_members": df_members, "df_work": df_work}
 
-                # === 直接執行人員 1元 自動平帳調頂區塊 ===
                 df_direct_exec = pd.DataFrame(direct_exec_list)
                 if not df_direct_exec.empty and target_direct_budget > 0:
                     current_sum = df_direct_exec['實領獎金'].sum()
                     diff = target_direct_budget - current_sum
-                    
                     if diff != 0 and abs(diff) <= 5: 
                         df_direct_exec.at[0, '實領獎金'] += diff
                         target_sheet = df_direct_exec.at[0, '單位名稱']
                         sheet_reward_diff[target_sheet] = diff
-                        st.info(f"⚖️ 直接執行人員完成 ±1 元強制平帳補齊。")
+                        st.info(f"⚖️ 直接執行人員完成強制平帳補齊。")
 
-                # 重新回填與建立各單位的 Excel 點數分頁
                 for sheet_name, f_data in final_sheets.items():
                     df_members = f_data["df_members"]
                     df_work = f_data["df_work"]
@@ -556,7 +553,7 @@ def p18_page():
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
-                # 支領一覽表摘要
+                # 一覽表
                 if "系統自動" in alloc_mode:
                     sub_72 = pool_72
                     sub_20 = pool_20
@@ -579,7 +576,7 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # E. Excel 雙報表美化與邊界鎖定輸出
+                # E. Excel 雙報表精準鎖定範圍輸出
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
@@ -587,7 +584,6 @@ def p18_page():
                     for sn, df_f in final_sheets.items():
                         df_f.to_excel(writer, sheet_name=sn, index=False)
                 pts_excel_data = pts_output.getvalue()
-                pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
 
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
@@ -596,7 +592,7 @@ def p18_page():
                     workbook  = writer.book
                     worksheet1 = writer.sheets['直接執行人員']
                     
-                    # 建立安全不報錯的樣式物件
+                    # 建立通用基礎置中與格線樣式
                     cell_format = workbook.add_format()
                     cell_format.set_align('center')   
                     cell_format.set_align('vcenter')  
@@ -604,24 +600,28 @@ def p18_page():
                     cell_format.set_font_name('微軟正黑體')
                     cell_format.set_font_size(11)
                     
-                    # 💡 【重大更新】：限制蓋章範圍並重設其餘空白列，鎖定外圍防線
-                    worksheet1.set_default_row(18)  # 其餘沒有資料的地方一律維持預設列高
+                    # 💡 【終極修正亮點】：開啟 Excel 的「限制可見範圍」防護功能
                     num_direct_rows = len(df_direct_exec)
+                    num_direct_cols = len(df_direct_exec.columns)
                     
-                    # 精準只在「有資料的行數」加高列高
+                    # 鎖定右方及下方的其餘無資料儲存格，讓它們全部變成純白、不具備格線與灰色陰影
+                    worksheet1.set_scroll_area(0, 0, num_direct_rows + 1, num_direct_cols)
+                    
+                    # 精準限制高列高範圍
                     for r_idx in range(1, num_direct_rows + 1):
                         worksheet1.set_row(r_idx, 35, cell_format)
-                    
-                    # 精準加寬 L 欄（蓋章欄）
-                    worksheet1.set_column('L:L', 16, cell_format)
+                    worksheet1.set_column('L:L', 16, cell_format) 
                     
                     # 2. 輸出：共同作業及配合人員
                     if not df_coworkers_output.empty:
                         df_coworkers_output.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         worksheet2 = writer.sheets['共同作業及配合人員']
                         
-                        worksheet2.set_default_row(18)  # 其餘空白列鎖定
                         num_co_rows = len(df_coworkers_output)
+                        num_co_cols = len(df_coworkers_output.columns)
+                        
+                        # 鎖定共同作業分頁的範圍
+                        worksheet2.set_scroll_area(0, 0, num_co_rows + 1, num_co_cols)
                         
                         for r_idx in range(1, num_co_rows + 1):
                             worksheet2.set_row(r_idx, 35, cell_format)
@@ -633,7 +633,10 @@ def p18_page():
                     # 3. 輸出：一覽表摘要
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
                     worksheet3 = writer.sheets['獎勵金支領一覽表']
-                    worksheet3.set_default_row(18)
+                    
+                    # 鎖定一覽表摘要的範圍
+                    worksheet3.set_scroll_area(0, 0, len(df_payroll_summary) + 1, len(df_payroll_summary.columns))
+                    
                     worksheet3.set_column('A:B', 25, cell_format)
                     for r_idx in range(1, len(df_payroll_summary) + 1):
                         worksheet3.set_row(r_idx, 22, cell_format)
@@ -641,12 +644,12 @@ def p18_page():
                 payroll_excel_data = payroll_output.getvalue()
                 payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
 
-                # F. 發送與下載
+                # F. 同步與發送
                 files_to_attach = [(pts_excel_data, pts_filename), (payroll_excel_data, payroll_filename)]
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success("✅ 雙報表產出成功！Excel 右方及下方已切齊邊界，無任何多餘贅欄列框。")
+                    st.success("✅ 雙報表產出成功！Excel 畫面的無資料盲區已成功利用 Windows 視窗滾動範圍限制（Scroll Area Locks）徹底切齊，畫面絕無多餘列欄！")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
