@@ -238,7 +238,7 @@ def p18_page():
             df_display = df_display.drop(columns=['金額'])
         col_cfg = {
             "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="修改數字可調整順序", min_value=1, format="%d"),
-            "分配類select": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
+            "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
         }
 
     st.data_editor(df_display, num_rows="dynamic", use_container_width=True, hide_index=True, height=500, column_config=col_cfg, key="co_editor", on_change=on_data_edited)
@@ -460,15 +460,14 @@ def p18_page():
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
 
-                # ==================== 【關鍵修改區：產出報表前的遮罩與合併作業】 ====================
+                # ==================== 【預算分配原則與總表一覽表防線】 ====================
                 
-                # 1. 先計算「支領一覽表（總表）」所需的小計（此時金額完全符合原始分配原則）
+                # 計算「支領一覽表（總表）」所需小計（此處完全依據原本的預算結構計算）
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
                 sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
                 coworkers_total_money = sub_72 + sub_20 + sub_08
 
-                # 建立完全不被變動的一覽表資料
                 summary_data = [
                     {"項目": "一、直接執行人員", "金額": direct_total_money},
                     {"項目": "二、共同作業-負責管考(72%)", "金額": sub_72},
@@ -480,36 +479,36 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # 2. 開始製作「印領清冊」工作表專用的對外格式 (不更動原始精算邏輯，純粹挪移合併與隱藏欄位)
+                # ==================== 【印領清冊工作表專用化妝作業】 ====================
                 df_coworkers_final_sheet = df_coworkers_output.copy()
 
-                # 【合併金額】找出交通組且原本是勤務督導(20%)的人
+                # 合併金額：找出交通組且原本是勤務督導(20%)的人
                 traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
                 
                 for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
                     p_name = row['姓名']
                     p_money = row['金額']
                     if p_money > 0:
-                        # 尋找該員在「負責管考(72%)」對應的列
                         target_idx = df_coworkers_final_sheet[
                             (df_coworkers_final_sheet['姓名'] == p_name) & 
                             (df_coworkers_final_sheet['分配類別'] == "負責管考(72%)")
                         ].index
                         
                         if not target_idx.empty:
-                            # 將金額併入負責管考那一列
                             df_coworkers_final_sheet.at[target_idx[0], '金額'] += p_money
-                            # 將原本勤務督導那一列的金額歸零
                             df_coworkers_final_sheet.at[idx, '金額'] = 0
 
-                # 剔除掉因為合併而變成金額為 0 且原本是勤務督導的交通組列（避免畫面上出現重複名字卻領 0 元）
+                # 剔除因為金額合併而歸零的交通組督導重複列
                 df_coworkers_final_sheet = df_coworkers_final_sheet[
                     ~((df_coworkers_final_sheet['單位'] == "交通組") & 
                       (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)") & 
                       (df_coworkers_final_sheet['金額'] == 0))
                 ]
 
-                # 依照原始要求的特殊排序欄位重新洗牌排序（不使用會被 Categorical 限制的分配類別排序）
+                # 計算在移除分配類別前，所有共同作業人員實領金額的「總和」用於工作表合計
+                coworker_sheet_total_money = df_coworkers_final_sheet['金額'].sum()
+
+                # 洗牌排序
                 if '排序調整' in df_coworkers_final_sheet.columns:
                     df_coworkers_final_sheet['排序調整'] = pd.to_numeric(df_coworkers_final_sheet['排序調整'], errors='coerce').fillna(999).astype(int)
                     df_coworkers_final_sheet.sort_values(by=['排序調整', '單位', '姓名'], ascending=[True, True, True], inplace=True)
@@ -521,13 +520,20 @@ def p18_page():
                 df_coworkers_final_sheet.drop(columns=['分配類別'], inplace=True, errors='ignore')
                 df_coworkers_final_sheet.reset_index(drop=True, inplace=True)
                 
-                # 重新刷上序號與準備蓋章欄
+                # 重新編排序號
                 df_coworkers_final_sheet.insert(0, '序號', range(1, len(df_coworkers_final_sheet) + 1))
                 df_coworkers_final_sheet['蓋章'] = ""
 
+                # 【核心新增】建立「合計」列資料夾入 Dataframe 尾端
+                total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
+                total_row_data['單位'] = '合計'
+                total_row_data['金額'] = coworker_sheet_total_money
+                
+                df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([total_row_data])], ignore_index=True)
+
                 # ==================================================================================
 
-                # Excel 輸出
+                # Excel 輸出 - 點數統計表
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
@@ -537,13 +543,13 @@ def p18_page():
                 pts_excel_data = pts_output.getvalue()
                 pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
 
-                # 印領清冊
+                # Excel 輸出 - 獎勵金印領清冊
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                     workbook = writer.book
                     border_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
 
-                    # 直接執行人員
+                    # 直接執行人員工作表
                     df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                     ws1 = writer.sheets['直接執行人員']
                     stamp_col = df_direct_exec.columns.get_loc('蓋章')
@@ -554,19 +560,21 @@ def p18_page():
                             value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
                             ws1.write(r, c, value, border_format)
 
-                    # 共同作業及配合人員（使用我們完美化妝後的 df_coworkers_final_sheet）
+                    # 共同作業及配合人員工作表 (包含最底下新追加的合計列)
                     if not df_coworkers_final_sheet.empty:
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
                         stamp_col2 = df_coworkers_final_sheet.columns.get_loc('蓋章')
                         ws2.set_column(stamp_col2, stamp_col2, 22)
+                        
+                        # 迴圈渲染包括最後一列合計列的框線樣式
                         for r in range(len(df_coworkers_final_sheet) + 1):
                             ws2.set_row(r, 38 if r > 0 else 25)
                             for c in range(len(df_coworkers_final_sheet.columns)):
                                 value = df_coworkers_final_sheet.iloc[r-1, c] if r > 0 else df_coworkers_final_sheet.columns[c]
                                 ws2.write(r, c, value, border_format)
 
-                    # 獎勵金支領一覽表（獨立總表，金額與大池完美對齊不變動）
+                    # 獎勵金支領一覽表工作表
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
 
                 payroll_excel_data = payroll_output.getvalue()
