@@ -122,12 +122,14 @@ def p18_page():
     
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
+    # 1. 檔案上傳
     st.subheader("📂 1. 當月原始資料上傳")
     c1, c2 = st.columns(2)
     file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xlsx'])
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
     file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xlsx'], accept_multiple_files=True)
   
+    # 2. 設定
     st.subheader("📝 2. 印領清冊與獎金分配設定")
     point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
     target_direct_budget = st.number_input("🎯 警察局核撥【直接執行人員】總獎金目標 (元) *若為 0 則不啟動自動平帳", value=0, step=1)
@@ -153,6 +155,7 @@ def p18_page():
         budget_input = 0
         budget_type = ""
 
+    # 共同作業名單
     st.markdown("**共同作業名單**")
     roster_file = 'coworkers_roster.csv'
 
@@ -250,7 +253,10 @@ def p18_page():
             "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
         }
 
-    st.data_editor(df_display, num_rows="dynamic", use_container_width=True, hide_index=True, height=500, column_config=col_cfg, key="co_editor", on_change=on_data_edited)
+    edited_df_coworkers = st.data_editor(
+        df_display, num_rows="dynamic", use_container_width=True, hide_index=True,
+        height=500, column_config=col_cfg, key="co_editor", on_change=on_data_edited
+    )
 
     if st.button("💾 儲存最新名單為預設值", use_container_width=True, type="secondary"):
         st.session_state.current_roster.to_csv(roster_file, index=False, encoding='utf-8-sig')
@@ -299,14 +305,14 @@ def p18_page():
 
                 for sheet_name, df in dfs_raw.items():
                     if '總表' in sheet_name: continue
-                    
+                   
                     start_r, start_c = None, None
                     for r_idx, row in df.iterrows():
                         row_str = [str(x).strip() for x in row.values]
                         if '員警姓名' in row_str:
                             start_r, start_c = r_idx, row_str.index('員警姓名')
                             break
-                    
+                   
                     if start_r is not None:
                         df_work = df.iloc[start_r:, start_c:].copy()
                         df_work.reset_index(drop=True, inplace=True)
@@ -373,7 +379,6 @@ def p18_page():
 
                 # 金額誤差處理
                 direct_total_money = df_direct_exec['實領獎金'].sum() if not df_direct_exec.empty else 0
-
                 if not df_direct_exec.empty and target_direct_budget > 0:
                     current_sum = direct_total_money
                     diff = target_direct_budget - current_sum
@@ -497,7 +502,7 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # E. Excel 輸出 - 最終修正版
+                # Excel 輸出 - 僅有資料的列有格線
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
@@ -507,19 +512,21 @@ def p18_page():
                 pts_excel_data = pts_output.getvalue()
                 pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
 
-                # 印領清冊 - 格線修正版
+                # 印領清冊 - 僅有資料列有格線
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                     workbook = writer.book
-                    grid_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                    cell_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
 
                     # 直接執行人員
                     df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                     ws1 = writer.sheets['直接執行人員']
                     stamp_col = df_direct_exec.columns.get_loc('蓋章')
-                    for col in range(len(df_direct_exec.columns)):
-                        ws1.set_column(col, col, 15 if col != stamp_col else 22, grid_format)
-                    for r in range(1, len(df_direct_exec) + 1):   # 只對有資料的列
+                    ws1.set_column(stamp_col, stamp_col, 22)
+                    # 只對有資料的區域加格線
+                    last_row1 = len(df_direct_exec)
+                    ws1.conditional_format(0, 0, last_row1, len(df_direct_exec.columns)-1, {'type': 'no_blanks', 'format': cell_format})
+                    for r in range(1, last_row1 + 1):
                         ws1.set_row(r, 38)
 
                     # 共同作業人員
@@ -527,9 +534,10 @@ def p18_page():
                         df_coworkers_output.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
                         stamp_col2 = df_coworkers_output.columns.get_loc('蓋章')
-                        for col in range(len(df_coworkers_output.columns)):
-                            ws2.set_column(col, col, 15 if col != stamp_col2 else 22, grid_format)
-                        for r in range(1, len(df_coworkers_output) + 1):
+                        ws2.set_column(stamp_col2, stamp_col2, 22)
+                        last_row2 = len(df_coworkers_output)
+                        ws2.conditional_format(0, 0, last_row2, len(df_coworkers_output.columns)-1, {'type': 'no_blanks', 'format': cell_format})
+                        for r in range(1, last_row2 + 1):
                             ws2.set_row(r, 38)
 
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
@@ -537,6 +545,7 @@ def p18_page():
                 payroll_excel_data = payroll_output.getvalue()
                 payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
 
+                # F. 寄信與下載
                 files_to_attach = [(pts_excel_data, pts_filename), (payroll_excel_data, payroll_filename)]
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
               
