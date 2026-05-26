@@ -34,7 +34,7 @@ def send_report_email_auto(files, year, month):
         msg['To'] = sender
         msg['Subject'] = f"【系統備份】龍潭分局 {year}年{month}月 獎勵金點數統計表暨印領清冊"
         
-        body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共裝兩份 Excel 檔案，請查收。"
+        body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共包含兩份 Excel 檔案，請查收。"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
         for file_data, filename in files:
@@ -95,32 +95,30 @@ def sort_coworkers(df):
 
 # --- 表格即時監聽排序回呼函數 (Callback) ---
 def on_data_edited():
-    # 當使用者修改表格（修改、新增、刪除）時，Streamlit 會把變更記錄存在 st.session_state.co_editor
     changes = st.session_state.co_editor
     df = st.session_state.current_roster.copy()
     
-    # 1. 處理更新 (Edited)
+    # 1. 處理更新
     for row_idx, updated_cols in changes.get("edited_rows", {}).items():
         for col_name, val in updated_cols.items():
             df.at[row_idx, col_name] = val
             
-    # 2. 處理新增 (Added)
+    # 2. 處理新增
     for new_row in changes.get("added_rows", {}):
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         
-    # 3. 處理刪除 (Deleted)
+    # 3. 處理刪除
     deleted_indices = changes.get("deleted_rows", [])
     if deleted_indices:
         df.drop(index=deleted_indices, inplace=True)
         
-    # 核心關鍵：將更新後的資料，立刻重新執行完美排序，並蓋回 session_state
     st.session_state.current_roster = sort_coworkers(df)
 
 
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("🔥 系統升級：網頁名單已啟動即時動態重排！不論您如何編輯或新增同仁，表格畫面都會隨時保持正確排序。")
+    st.info("🔥 系統更新：交通組主管已與組內承辦人員合併列入 26% 分配子類別，確保金額分配均勻合理。")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -143,7 +141,7 @@ def p18_page():
     )
    
     if "系統自動" in alloc_mode:
-        st.info("💡 負責管考(72%)：正副主官固定8%（分局長60%、副分局長40%），其餘按56%：26%：10%比例分配。督導與配合人員按人頭均分。")
+        st.info("💡 負責管考(72%)：正副主官固定8%（分局長60%、副分局長40%），其餘按56%：26%：10%比例分配。交通組主管與同仁合併計入26%子類別。")
         budget_type = st.selectbox("請選擇預算輸入方式：", [
             "A. 直接輸入【共同作業人員】的總分配預算",
             "B. 輸入【全分局】本月核撥總預算 (系統會自動先扣掉直接執行人員的總獎金)"
@@ -177,10 +175,10 @@ def p18_page():
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "吳享運"},
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "交通業務承辦人", "姓名": "吳沛軒"},
                 {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主任", "姓名": ""},
-                {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "郭貞彣"},
+                {"分配類別": "Nav配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "郭貞彣"},
                 {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "林玲宜"},
                 {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "主任", "姓名": "陳振貴"},
-                {"分配類別": "Box配合(8%)", "單位": "秘書室", "職別": "出納", "姓名": "簡啟峯"},
+                {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "出納", "姓名": "簡啟峯"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
@@ -205,7 +203,7 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "組長", "姓名": "蔡奇青"},
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "警務員", "姓名": "曾盛鉉"},
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "巡官", "姓名": "李立人"},
-                {"分配類载": "勤務督導(20%)", "單位": "保安民防組", "職別": "巡官", "姓名": "林沛達"},
+                {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "巡官", "姓名": "林沛達"},
                 {"分配類別": "勤務督導(20%)", "單位": "保安民防組", "職別": "巡官", "姓名": "吳國棟"},
                 {"分配類別": "勤務督導(20%)", "單位": "行政組", "職別": "組長", "姓名": "周金柱"},
                 {"分配類別": "勤務督導(20%)", "單位": "行政組", "職別": "巡官", "姓名": "蕭凱文"},
@@ -222,7 +220,7 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "所長", "姓名": "董亦文"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "何昀融"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "林榮裕"},
-                {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "業務承辦人", "姓名": "鄧雅文"},
+                {"分配類別": "勤務督導(20%)", "單位": "忠興派出所", "職別": "業務承辦人", "姓名": "鄧雅文"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "所長", "姓名": "林育辰"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "副所長", "姓名": "薛德祥"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "業務承辦人", "姓名": "陳琦"},
@@ -240,7 +238,6 @@ def p18_page():
             df_init = pd.DataFrame(default_coworkers_data)
         st.session_state.current_roster = sort_coworkers(df_init)
 
-    # 根據手動/自動分配動態處理欄位
     df_display = st.session_state.current_roster.copy()
     if "系統自動" not in alloc_mode:
         if '金額' not in df_display.columns:
@@ -256,7 +253,6 @@ def p18_page():
             "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
         }
 
-    # 【核心升級】：綁定 on_change 參數與 key，讓每一次點擊跟打字，後台都會即時攔截並重新理順排序
     edited_df_coworkers = st.data_editor(
         df_display,
         num_rows="dynamic",
@@ -269,7 +265,6 @@ def p18_page():
     )
 
     if st.button("💾 儲存最新名單為預設值 (人員調動改完點此按鈕)", use_container_width=True, type="secondary"):
-        # 由於監聽回呼已經隨時將 st.session_state.current_roster 排好，直接存檔即可
         st.session_state.current_roster.to_csv(roster_file, index=False, encoding='utf-8-sig')
         st.success("✅ 名單已永久儲存，並刷新全自動組織階級排序！")
         st.rerun()
@@ -389,7 +384,7 @@ def p18_page():
                     df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
                 direct_total_money = df_direct_exec['實領獎金'].sum() if not df_direct_exec.empty else 0
 
-                # D. 共同作業人員處理 (使用隨時保持最新排序的資料庫)
+                # D. 共同作業人員處理
                 df_coworkers_work = st.session_state.current_roster.copy()
                 df_coworkers_work.dropna(how='all', inplace=True)
                 df_coworkers_work = sort_coworkers(df_coworkers_work)
@@ -436,13 +431,14 @@ def p18_page():
                         df_other = df_72[other_mask].copy()
 
                         if not df_other.empty and remaining_pool > 0:
+                            # 【核心邏輯修正】：交通組主管與同仁合併計入 26 權重子類別
                             def get_sub_weight(row):
                                 title = str(row['職別'])
                                 unit = str(row['單位'])
-                                if any(x in title for x in ['所長', '分隊長', '副所長', '小隊長']) and any(x in unit for x in ['派出所', '交通分隊', '警備隊']):
-                                    return 56
-                                elif '交通組' in unit and any(x in title for x in ['承辦', '業務', '同仁', '警員']):
+                                if '交通組' in unit:
                                     return 26
+                                elif any(x in title for x in ['所長', '分隊長', '副所長', '小隊長']) and any(x in unit for x in ['派出所', '交通分隊', '警備隊']):
+                                    return 56
                                 elif any(x in title for x in ['承辦', '業務', '同仁', '警員']) and any(x in unit for x in ['派出所', '交通分隊', '警備隊']):
                                     return 10
                                 return 1
@@ -452,7 +448,7 @@ def p18_page():
                             if total_weight > 0:
                                 df_other['核發金額'] = (df_other['weight'] / total_weight * remaining_pool).round(0).astype(int)
                                 
-                                # 最大餘數平帳法：將四捨五入落差補給排序第一的主管同仁
+                                # 最大餘數平帳法：將四捨五入落差補給排序第一的同仁
                                 diff = remaining_pool - df_other['核發金額'].sum()
                                 if diff != 0 and len(df_other) > 0:
                                     df_other.iloc[0, df_other.columns.get_loc('核發金額')] += diff
