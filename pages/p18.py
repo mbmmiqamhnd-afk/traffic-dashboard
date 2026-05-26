@@ -100,18 +100,14 @@ def sort_coworkers(df):
 def on_data_edited():
     changes = st.session_state.co_editor
     df = st.session_state.current_roster.copy()
-  
     for row_idx, updated_cols in changes.get("edited_rows", {}).items():
         for col_name, val in updated_cols.items():
             df.at[row_idx, col_name] = val
-          
     for new_row in changes.get("added_rows", []):
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-      
     deleted_indices = changes.get("deleted_rows", [])
     if deleted_indices:
         df.drop(index=deleted_indices, inplace=True)
-      
     st.session_state.current_roster = sort_coworkers(df)
 
 
@@ -122,15 +118,12 @@ def p18_page():
     
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
-    # 1. 檔案上傳
     st.subheader("📂 1. 當月原始資料上傳")
     c1, c2 = st.columns(2)
     file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xlsx'])
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
-    file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)",
-                                      type=['xlsx'], accept_multiple_files=True)
+    file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xlsx'], accept_multiple_files=True)
   
-    # 2. 設定
     st.subheader("📝 2. 印領清冊與獎金分配設定")
     point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
     target_direct_budget = st.number_input("🎯 警察局核撥【直接執行人員】總獎金目標 (元) *若為 0 則不啟動自動平帳", value=0, step=1)
@@ -143,10 +136,7 @@ def p18_page():
  
     if "系統自動" in alloc_mode:
         st.info("💡 負責管考(72%)：正副主官固定8%（分局長60%、副分局長40%），其餘按56%：26%：10%比例分配。")
-        budget_type = st.selectbox("請選擇預算輸入方式：", [
-            "A. 直接輸入【共同作業人員】的總分配預算",
-            "B. 輸入【全分局】本月核撥總預算"
-        ])
+        budget_type = st.selectbox("請選擇預算輸入方式：", ["A. 直接輸入【共同作業人員】的總分配預算", "B. 輸入【全分局】本月核撥總預算"])
         if "A" in budget_type:
             budget_input = st.number_input("💰 輸入【共同作業人員】總預算 (元)", value=10000, step=100)
         else:
@@ -471,11 +461,10 @@ def p18_page():
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
 
-                # 【重點】交通組兼領人員金額合併到管考類別（顯示用）
+                # 交通組兼領人員合併到管考類別
                 df_coworkers_output['顯示類別'] = df_coworkers_output['分配類別']
                 df_coworkers_output.loc[df_coworkers_output['單位'] == "交通組", '顯示類別'] = "負責管考(72%)"
 
-                # 移除原本分配類別，改用顯示類別
                 df_coworkers_output = df_coworkers_output.drop(columns=['分配類別']).rename(columns={'顯示類別': '分配類別'})
 
                 df_coworkers_output = sort_coworkers(df_coworkers_output)
@@ -485,7 +474,6 @@ def p18_page():
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
-                # 小計（使用顯示後的類別）
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
                 sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
@@ -512,34 +500,42 @@ def p18_page():
                 pts_excel_data = pts_output.getvalue()
                 pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
 
-                # 印領清冊 - 只要有資料的列，整列都有格線
+                # 印領清冊 - 加上合計行
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                     workbook = writer.book
                     border_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
 
-                    # 直接執行人員
+                    # 直接執行人員 + 合計
                     df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                     ws1 = writer.sheets['直接執行人員']
                     stamp_col = df_direct_exec.columns.get_loc('蓋章')
                     ws1.set_column(stamp_col, stamp_col, 22)
-                    for r in range(len(df_direct_exec) + 1):
+                    last_row = len(df_direct_exec)
+                    for r in range(last_row + 1):
                         ws1.set_row(r, 38 if r > 0 else 25)
                         for c in range(len(df_direct_exec.columns)):
                             value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
                             ws1.write(r, c, value, border_format)
+                    # 合計行
+                    ws1.write(last_row + 1, 0, "合計", border_format)
+                    ws1.write(last_row + 1, df_direct_exec.columns.get_loc('實領獎金'), direct_total_money, border_format)
 
-                    # 共同作業人員
+                    # 共同作業人員 + 合計
                     if not df_coworkers_output.empty:
                         df_coworkers_output.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
                         stamp_col2 = df_coworkers_output.columns.get_loc('蓋章')
                         ws2.set_column(stamp_col2, stamp_col2, 22)
-                        for r in range(len(df_coworkers_output) + 1):
+                        last_row2 = len(df_coworkers_output)
+                        for r in range(last_row2 + 1):
                             ws2.set_row(r, 38 if r > 0 else 25)
                             for c in range(len(df_coworkers_output.columns)):
                                 value = df_coworkers_output.iloc[r-1, c] if r > 0 else df_coworkers_output.columns[c]
                                 ws2.write(r, c, value, border_format)
+                        # 合計行
+                        ws2.write(last_row2 + 1, 0, "合計", border_format)
+                        ws2.write(last_row2 + 1, df_coworkers_output.columns.get_loc('金額'), coworkers_total_money, border_format)
 
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
 
