@@ -190,7 +190,7 @@ def p18_page():
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
-                {"分配類別": "人事室", "職別": "警員", "姓名": "陳明祥"},
+                {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
                 {"分配類別": "勤務督導(20%)", "單位": "秘書室", "職別": "巡官", "姓名": "陳鵬翔"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "主任", "姓名": "游新枝"},
@@ -368,7 +368,7 @@ def p18_page():
                         df_direct_exec.at[0, '實領獎金'] += diff
                         target_sheet = df_direct_exec.at[0, '單位名稱']
                         sheet_reward_diff[target_sheet] = diff
-                        st.info(f"⚖️ 系統偵測到直接執行人員總額與警察局目標相差 {diff} 元，已自動於首列（{df_direct_exec.at[0, '員警姓名']}）完成強制平帳。")
+                        st.info(f"⚖️ 系統偵測到直接執行人員總額與警察局目標相差 {diff} 元，已自動於首列完成強制平帳。")
 
                 # 重新回填與建立各單位的 Excel 點數分頁
                 for sheet_name, f_data in final_sheets.items():
@@ -415,19 +415,20 @@ def p18_page():
                     summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
                     g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
 
-                # 💡 確保序號生成與取得【正確平帳後】的直接人員總獎金
                 if not df_direct_exec.empty:
                     if '_orig_df_idx' in df_direct_exec.columns:
                         df_direct_exec = df_direct_exec.drop(columns=['_orig_df_idx'])
                     df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
                 
-                # 🎯 關鍵變數：直接人員總預算現在完美包含那 1 元的落差
                 direct_total_money = df_direct_exec['實領獎金'].sum() if not df_direct_exec.empty else 0
 
                 # D. 共同作業人員處理
                 df_coworkers_work = st.session_state.current_roster.copy()
                 df_coworkers_work.dropna(how='all', inplace=True)
                 df_coworkers_work = sort_coworkers(df_coworkers_work)
+
+                # 初始化預算池變數 (提供後面一覽表精準調用)
+                pool_72, pool_20, pool_08 = 0, 0, 0
 
                 if "系統自動" in alloc_mode:
                     if "A" in budget_type:
@@ -526,7 +527,7 @@ def p18_page():
                     
                     df_coworkers_output = df_coworkers_work.rename(columns={'核發金額': '金額'})
                     
-                    # 跨類別金額歸併
+                    # 💡 跨類別金額歸併（把 20% 重複者的金額，灌進 72% 裡面）
                     mgr_lookup = {}
                     for idx, row in df_coworkers_output[df_coworkers_output['分配類別'] == '負責管考(72%)'].iterrows():
                         key = (str(row['單位']).strip(), str(row['姓名']).strip())
@@ -556,12 +557,20 @@ def p18_page():
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
-                sub_72 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "負責管考(72%)", '金額'].sum()
-                sub_20 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "勤務督導(20%)", '金額'].sum()
-                sub_08 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "其他配合(8%)", '金額'].sum()
-                coworkers_total_money = sub_72 + sub_20 + sub_08
+                # ========================================================
+                # 💡 【核心邏輯升級】：獎勵金支領一覽表完全照「原始撥付科目原意」顯示
+                # ========================================================
+                if "系統自動" in alloc_mode:
+                    sub_72 = pool_72
+                    sub_20 = pool_20
+                    sub_08 = pool_08
+                    coworkers_total_money = pool_72 + pool_20 + pool_08
+                else:
+                    sub_72 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "負責管考(72%)", '金額'].sum()
+                    sub_20 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "勤務督導(20%)", '金額'].sum()
+                    sub_08 = df_coworkers_output.loc[df_coworkers_output['分配類別'] == "其他配合(8%)", '金額'].sum()
+                    coworkers_total_money = sub_72 + sub_20 + sub_08
 
-                # 💡 這裡的 summary_data 已經完全使用對齊標準答案後的金額，1 元落差會確實顯示出來！
                 summary_data = [
                     {"項目": "一、直接執行人員", "金額": direct_total_money},
                     {"項目": "二、共同作業-負責管考(72%)", "金額": sub_72},
@@ -572,6 +581,7 @@ def p18_page():
                     {"項目": "製表人", "金額": ""}
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
+                # ========================================================
 
                 # E. Excel 雙報表輸出
                 pts_output = io.BytesIO()
@@ -597,7 +607,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success("✅ 雙報表產出成功！直接執行人員與總表一覽表已完成 100% 聯動平帳。")
+                    st.success("✅ 雙報表產出成功！一覽表金額已完美維持原本分配人數的完整預算科目原意。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
