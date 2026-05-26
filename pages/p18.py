@@ -461,10 +461,12 @@ def p18_page():
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
 
-                # 交通組兼領人員合併到管考類別
-                df_coworkers_output['顯示類別'] = df_coworkers_output['分配類別']
-                df_coworkers_output.loc[df_coworkers_output['單位'] == "交通組", '顯示類別'] = "負責管考(72%)"
+                # 交通組兼領人員金額合併到負責管考類別（僅顯示用）
+                df_coworkers_output['顯示類別'] = df_coworkers_output['分配類別'].copy()
+                df_coworkers_output.loc[(df_coworkers_output['單位'] == "交通組") & 
+                                       (df_coworkers_output['分配類別'] == "勤務督導(20%)"), '顯示類別'] = "負責管考(72%)"
 
+                # 移除原本的分配類別欄，改用顯示類別
                 df_coworkers_output = df_coworkers_output.drop(columns=['分配類別']).rename(columns={'顯示類別': '分配類別'})
 
                 df_coworkers_output = sort_coworkers(df_coworkers_output)
@@ -474,6 +476,7 @@ def p18_page():
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
+                # 小計（使用顯示後的類別計算顯示用合計）
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
                 sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
@@ -500,42 +503,34 @@ def p18_page():
                 pts_excel_data = pts_output.getvalue()
                 pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
 
-                # 印領清冊 - 加上合計行
+                # 印領清冊
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                     workbook = writer.book
                     border_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
 
-                    # 直接執行人員 + 合計
+                    # 直接執行人員
                     df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                     ws1 = writer.sheets['直接執行人員']
                     stamp_col = df_direct_exec.columns.get_loc('蓋章')
                     ws1.set_column(stamp_col, stamp_col, 22)
-                    last_row = len(df_direct_exec)
-                    for r in range(last_row + 1):
+                    for r in range(len(df_direct_exec) + 1):
                         ws1.set_row(r, 38 if r > 0 else 25)
                         for c in range(len(df_direct_exec.columns)):
                             value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
                             ws1.write(r, c, value, border_format)
-                    # 合計行
-                    ws1.write(last_row + 1, 0, "合計", border_format)
-                    ws1.write(last_row + 1, df_direct_exec.columns.get_loc('實領獎金'), direct_total_money, border_format)
 
-                    # 共同作業人員 + 合計
+                    # 共同作業及配合人員（已移除分配類別）
                     if not df_coworkers_output.empty:
                         df_coworkers_output.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
                         stamp_col2 = df_coworkers_output.columns.get_loc('蓋章')
                         ws2.set_column(stamp_col2, stamp_col2, 22)
-                        last_row2 = len(df_coworkers_output)
-                        for r in range(last_row2 + 1):
+                        for r in range(len(df_coworkers_output) + 1):
                             ws2.set_row(r, 38 if r > 0 else 25)
                             for c in range(len(df_coworkers_output.columns)):
                                 value = df_coworkers_output.iloc[r-1, c] if r > 0 else df_coworkers_output.columns[c]
                                 ws2.write(r, c, value, border_format)
-                        # 合計行
-                        ws2.write(last_row2 + 1, 0, "合計", border_format)
-                        ws2.write(last_row2 + 1, df_coworkers_output.columns.get_loc('金額'), coworkers_total_money, border_format)
 
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
 
