@@ -52,7 +52,7 @@ def send_report_email_auto(files, year, month):
         return False, str(e)
 
 
-# --- 定義共用的職級自訂排序邏輯（支援兼領）---
+# --- 排序函數（已恢復原本排序規則）---
 def sort_coworkers(df):
     df = df.copy()
     df['姓名'] = df['姓名'].fillna("")
@@ -82,9 +82,10 @@ def sort_coworkers(df):
    
     df['職級權重'] = df['職別'].apply(get_rank_weight)
     
-    # 支援兼領：同一人不同類別時，負責管考排前面
-    df.sort_values(by=['姓名', '分配類別', '單位', '職級權重'], 
+    # 主要排序：分配類別 → 單位 → 職級權重 → 姓名（恢復原本排序）
+    df.sort_values(by=['分配類別', '單位', '職級權重', '姓名'], 
                    ascending=[True, True, True, True], inplace=True)
+    
     df.drop(columns=['職級權重'], inplace=True)
     df.reset_index(drop=True, inplace=True)
     return df
@@ -93,7 +94,7 @@ def sort_coworkers(df):
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
-    st.info("✅ 已支援交通組人員兼領（同一人可同時出現在負責管考與勤務督導）")
+    st.info("✅ 已恢復原本排序 + 支援兼領（交通組5人可同時領管考與督導獎金）")
 
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
 
@@ -111,15 +112,15 @@ def p18_page():
     
     st.markdown("##### 👥 共同作業及配合人員 - 分配模式")
     alloc_mode = st.radio(
-        "請選擇分配方式：",
-        ["🤖 系統自動按比例分配 (72%差異化)", "✍️ 手動輸入固定金額"]
+        "請選擇「共同作業及配合人員」的獎金計算方式：",
+        ["🤖 系統自動按比例分配 (72%差異化)", "✍️ 手動輸入固定金額 (僅於總表分類顯示)"]
     )
    
     if "系統自動" in alloc_mode:
         st.info("💡 負責管考(72%)：正副主官固定8%（分局長60%、副分局長40%），其餘按56%：26%：10%分配")
         budget_type = st.selectbox("請選擇預算輸入方式：", [
             "A. 直接輸入【共同作業人員】的總分配預算",
-            "B. 輸入【全分局】本月核撥總預算"
+            "B. 輸入【全分局】本月核撥總預算 (系統會自動先扣掉直接執行人員的總獎金)"
         ])
        
         if "A" in budget_type:
@@ -127,14 +128,14 @@ def p18_page():
         else:
             budget_input = st.number_input("💰 輸入【全分局】核撥總預算 (元)", value=50000, step=100)
     else:
-        st.info("💡 系統將使用下方表格填寫的實際金額。")
+        st.info("💡 系統將使用您在下方表格填寫的實際金額進行發放。")
         budget_input = 0
         budget_type = ""
 
     st.markdown("**共同作業名單**")
-    st.caption("💡 交通組5位兼具勤務督導身分的人員，請**新增一行重複姓名**，分別設定不同分配類別即可兼領")
+    st.caption("💡 交通組兼領人員請新增一行重複姓名，分別設定不同分配類別即可兼領")
 
-    # --- 名單讀取 ---
+    # --- 記憶檔讀取 ---
     roster_file = 'coworkers_roster.csv'
    
     if os.path.exists(roster_file):
@@ -246,12 +247,12 @@ def p18_page():
 
     if st.button("🚀 執行彙整、計算獎金與發送報表", type="primary", use_container_width=True):
         if not (file_template and file_acc and file_traf_list):
-            st.error("⚠️ 請確保上方 3 種檔案皆已上傳！")
+            st.error("⚠️ 請確保上方 3 種點數統計資料皆已完成上傳！")
             return
 
         with st.spinner("正在精算比例與發放金額..."):
             try:
-                # A. 資料讀取
+                # A. 點數數據預處理
                 df_acc_raw = pd.read_excel(file_acc, header=4)
                 df_acc_raw['姓名'] = df_acc_raw['姓名'].astype(str).str.strip()
                 dict_acc = df_acc_raw.groupby('姓名')[['A2類', 'A3類']].sum().to_dict(orient='index')
@@ -260,7 +261,7 @@ def p18_page():
                 df_traf_all['姓名'] = df_traf_all['姓名'].astype(str).str.strip()
                 dict_traf = df_traf_all.groupby('姓名')['總計尖峰時數'].sum().to_dict()
 
-                # B. 日期偵測
+                # B. 讀取點數範本與日期偵測
                 dfs_raw = pd.read_excel(file_template, sheet_name=None, header=None)
                 ext_year, ext_month = "115", "4"
                 found_date = False
@@ -300,7 +301,7 @@ def p18_page():
                        
                         member_rows = []
                         for r in range(len(df_work)):
-                            name_cell = str(df_work.iloc[r, 0] if len(df_work.columns) > 0 else "").strip()
+                            name_cell = str(df_work.iloc[r, 0]).strip()
                             if '小計' in name_cell or '總計' in name_cell or name_cell in ['nan', 'None', '']:
                                 continue
                             member_rows.append(r)
@@ -325,9 +326,7 @@ def p18_page():
                             if '交整點數' in df_members.columns: df_members.at[idx, '交整點數'] = tp if tp > 0 else ""
                             if '個人總點數' in df_members.columns: df_members.at[idx, '個人總點數'] = total_pts
                             
-                            s_cite += cp
-                            s_acc += ap
-                            s_traf += tp
+                            s_cite += cp; s_acc += ap; s_traf += tp
                             
                             if total_pts > 0:
                                 reward = int(np.round(total_pts * point_value))
@@ -352,10 +351,7 @@ def p18_page():
                         final_sheets[sheet_name] = df_final
                        
                         summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
-                        g_cite += s_cite
-                        g_acc += s_acc
-                        g_traf += s_traf
-                        g_all += (s_cite + s_acc + s_traf)
+                        g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
 
                 df_direct_exec = pd.DataFrame(direct_exec_list)
                 df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
@@ -381,7 +377,7 @@ def p18_page():
                    
                     df_coworkers_work['核發金額'] = 0
                    
-                    # ==================== 負責管考(72%) 兩階段分配 ====================
+                    # 負責管考(72%) 兩階段分配
                     mask_72 = df_coworkers_work['分配類別'] == "負責管考(72%)"
                     df_72 = df_coworkers_work[mask_72].copy()
                     df_72['核發金額'] = 0
@@ -429,7 +425,7 @@ def p18_page():
 
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
 
-                    # 勤務督導(20%) 與 其他配合(8%) 維持人頭均分
+                    # 勤務督導與其他配合維持人頭均分
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
@@ -445,7 +441,7 @@ def p18_page():
                 else:
                     df_coworkers_output = df_coworkers_work.copy()
 
-                # 產出清冊
+                # 產表準備
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
@@ -465,10 +461,9 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # Excel 輸出
+                # E. Excel 輸出
                 pts_output = io.BytesIO()
-                df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + 
-                                            summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
+                df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
                     df_pts_summary.to_excel(writer, sheet_name='總表', header=False, index=False)
                     for sn, df_f in final_sheets.items():
@@ -485,12 +480,12 @@ def p18_page():
                 payroll_excel_data = payroll_output.getvalue()
                 payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
 
-                # 寄信與下載
+                # F. 寄信與下載
                 files_to_attach = [(pts_excel_data, pts_filename), (payroll_excel_data, payroll_filename)]
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                
                 if ok:
-                    st.success("✅ 報表產出成功！已自動寄送至信箱。")
+                    st.success("✅ 雙報表產出成功！檔案已自動寄送至信箱。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
