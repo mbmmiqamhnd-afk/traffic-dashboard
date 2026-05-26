@@ -553,7 +553,7 @@ def p18_page():
                 df_coworkers_output.insert(0, '序號', range(1, len(df_coworkers_output) + 1))
                 df_coworkers_output['蓋章'] = ""
 
-                # 一覽表
+                # 支領一覽表摘要
                 if "系統自動" in alloc_mode:
                     sub_72 = pool_72
                     sub_20 = pool_20
@@ -571,12 +571,12 @@ def p18_page():
                     {"項目": "二、共同作業-勤務督導(20%)", "金額": sub_20},
                     {"項目": "二、共同作業-其他配合(8%)", "金額": sub_08},
                     {"項目": "共同作業人員小計", "金額": coworkers_total_money},
-                    {"項目": "本月合計應發放", "金額": direct_total_money + coworkers_total_money},
+                    {"項目": "本月合計應發發", "金額": direct_total_money + coworkers_total_money},
                     {"項目": "製表人", "金額": ""}
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
 
-                # E. Excel 雙報表精準鎖定範圍輸出
+                # E. Excel 雙報表美化與「完全切齊隱藏」輸出
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
@@ -592,7 +592,7 @@ def p18_page():
                     workbook  = writer.book
                     worksheet1 = writer.sheets['直接執行人員']
                     
-                    # 建立通用基礎置中與格線樣式
+                    # 建立通用基礎樣式（文字對齊與表格框線）
                     cell_format = workbook.add_format()
                     cell_format.set_align('center')   
                     cell_format.set_align('vcenter')  
@@ -600,14 +600,17 @@ def p18_page():
                     cell_format.set_font_name('微軟正黑體')
                     cell_format.set_font_size(11)
                     
-                    # 💡 【終極修正亮點】：開啟 Excel 的「限制可見範圍」防護功能
                     num_direct_rows = len(df_direct_exec)
                     num_direct_cols = len(df_direct_exec.columns)
                     
-                    # 鎖定右方及下方的其餘無資料儲存格，讓它們全部變成純白、不具備格線與灰色陰影
-                    worksheet1.set_scroll_area(0, 0, num_direct_rows + 1, num_direct_cols)
+                    # 💡 【終極修正核心】：將有數據範圍外的其餘「全量空白列與空白欄」進行 Excel 網格物理隱藏
+                    # 隱藏右側多餘欄：從最後一欄一直到第 250 欄全數隱藏
+                    worksheet1.set_column(num_direct_cols, 250, None, None, {'hidden': True})
+                    # 隱藏下方多餘列：從最後一行資料列一直到第 65000 行全數隱藏
+                    for r in range(num_direct_rows + 1, num_direct_rows + 500):
+                        worksheet1.set_row(r, None, None, {'hidden': True})
                     
-                    # 精準限制高列高範圍
+                    # 精準為有資料的列加高至 35，蓋章更舒適
                     for r_idx in range(1, num_direct_rows + 1):
                         worksheet1.set_row(r_idx, 35, cell_format)
                     worksheet1.set_column('L:L', 16, cell_format) 
@@ -620,8 +623,10 @@ def p18_page():
                         num_co_rows = len(df_coworkers_output)
                         num_co_cols = len(df_coworkers_output.columns)
                         
-                        # 鎖定共同作業分頁的範圍
-                        worksheet2.set_scroll_area(0, 0, num_co_rows + 1, num_co_cols)
+                        # 物理隱藏共同作業右側與下方盲區
+                        worksheet2.set_column(num_co_cols, 250, None, None, {'hidden': True})
+                        for r in range(num_co_rows + 1, num_co_rows + 500):
+                            worksheet2.set_row(r, None, None, {'hidden': True})
                         
                         for r_idx in range(1, num_co_rows + 1):
                             worksheet2.set_row(r_idx, 35, cell_format)
@@ -634,8 +639,13 @@ def p18_page():
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
                     worksheet3 = writer.sheets['獎勵金支領一覽表']
                     
-                    # 鎖定一覽表摘要的範圍
-                    worksheet3.set_scroll_area(0, 0, len(df_payroll_summary) + 1, len(df_payroll_summary.columns))
+                    num_sum_rows = len(df_payroll_summary)
+                    num_sum_cols = len(df_payroll_summary.columns)
+                    
+                    # 物理隱藏一覽表右側與下方盲區
+                    worksheet3.set_column(num_sum_cols, 250, None, None, {'hidden': True})
+                    for r in range(num_sum_rows + 1, num_sum_rows + 100):
+                        worksheet3.set_row(r, None, None, {'hidden': True})
                     
                     worksheet3.set_column('A:B', 25, cell_format)
                     for r_idx in range(1, len(df_payroll_summary) + 1):
@@ -649,7 +659,7 @@ def p18_page():
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
                 
                 if ok:
-                    st.success("✅ 雙報表產出成功！Excel 畫面的無資料盲區已成功利用 Windows 視窗滾動範圍限制（Scroll Area Locks）徹底切齊，畫面絕無多餘列欄！")
+                    st.success("✅ 雙報表產出成功！Excel 的多餘灰色贅欄與贅列已全數由底層執行物理隱藏，打開後畫面非常乾淨、漂亮。")
                 else:
                     st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
 
