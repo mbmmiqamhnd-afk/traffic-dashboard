@@ -543,7 +543,7 @@ def p18_page():
                 total_row_data['金額'] = coworker_sheet_total_money
                 df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([total_row_data])], ignore_index=True)
 
-                # 【核心修改：追加全分局大總計列（直接執行人員加總共同作業及配合人員）】
+                # 追加全分局大總計列
                 grand_total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                 grand_total_row_data['單位'] = '總計（含直接執行人員）'
                 grand_total_row_data['金額'] = direct_total_money + coworker_sheet_total_money
@@ -579,14 +579,14 @@ def p18_page():
                                 value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
                                 ws1.write(r, c, value, border_format)
 
-                    # 共同作業及配合人員工作表 (完美包覆 合計、總計、與底端核示簽章欄位)
+                    # 共同作業及配合人員工作表 (重新編排核示簽章位置)
                     if not df_coworkers_final_sheet.empty:
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
                         stamp_col2 = df_coworkers_final_sheet.columns.get_loc('蓋章')
                         ws2.set_column(stamp_col2, stamp_col2, 22)
                         
-                        # 1. 繪製主表格、合計列與總計列的標準框線
+                        # 1. 繪製主表格與總計列
                         data_len = len(df_coworkers_final_sheet)
                         for r in range(data_len + 1):
                             ws2.set_row(r, 38 if r > 0 else 25)
@@ -594,30 +594,27 @@ def p18_page():
                                 value = df_coworkers_final_sheet.iloc[r-1, c] if r > 0 else df_coworkers_final_sheet.columns[c]
                                 ws2.write(r, c, value, border_format)
                         
-                        # 2. 【核心新增：於數據與總計列下方，以文字精準排版各單位核示簽章欄位】
-                        sign_start_row = data_len + 3 # 空出兩行空間，提供視覺緩衝與舒適的版面配置
-                        
-                        # 定義對齊與字體樣式
+                        # 2. 【核心優化：全新核示簽章座標布局】
+                        sign_start_row = data_len + 3 # 數據下方空出適度緩衝行數
                         sign_title_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 12, 'bold': True, 'align': 'left', 'valign': 'vcenter'})
-                        sign_cell_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 11, 'align': 'center', 'valign': 'vcenter'})
                         
-                        # 第一層職稱：單位主管、人事
+                        # 【第一層】：單位主管、人事、主計、分局長 (並依照需求空格定位)
                         ws2.set_row(sign_start_row, 25)
-                        ws2.write(sign_start_row, 0, "單位主管：", sign_title_format)
-                        ws2.write(sign_start_row, 2, "人事：", sign_title_format)
+                        ws2.write(sign_start_row, 0, "單位主管：", sign_title_format) # 欄位 A (第 0 欄)
+                        ws2.write(sign_start_row, 2, "人事：", sign_title_format)     # 欄位 C (第 2 欄)
+                        ws2.write(sign_start_row, 4, "主計：", sign_title_format)     # 欄位 E (第 4 欄，人事右方空一欄 D)
+                        ws2.write(sign_start_row, 6, "分局長：", sign_title_format)   # 欄位 G (第 6 欄，主計右方空一欄 F)
                         
-                        # 保留蓋章空白空間（列高放大）
+                        # 為第一層保留高度 50 的蓋章空白空間
                         ws2.set_row(sign_start_row + 1, 50)
+                        
+                        # 【第二層】：製表人、出納 (對齊原出納與主計核示流)
                         ws2.set_row(sign_start_row + 2, 25)
+                        ws2.write(sign_start_row + 2, 0, "製表人：", sign_title_format) # 欄位 A (第 0 欄，與單位主管垂直互換)
+                        ws2.write(sign_start_row + 2, 2, "出納：", sign_title_format)   # 欄位 C (第 2 欄，移動至原本主計位置)
                         
-                        # 第二層職稱：製表人、出納、主計、分局長
-                        ws2.write(sign_start_row + 3, 0, "製表人：", sign_title_format)
-                        ws2.write(sign_start_row + 3, 1, "出納：", sign_title_format)
-                        ws2.write(sign_start_row + 3, 2, "主計：", sign_title_format)
-                        ws2.write(sign_start_row + 3, 4, "分局長：", sign_title_format)
-                        
-                        # 再次為第二層保留蓋章空白高度
-                        ws2.set_row(sign_start_row + 4, 50)
+                        # 為第二層保留高度 50 的蓋章空白空間
+                        ws2.set_row(sign_start_row + 3, 50)
 
                     # 獎勵金支領一覽表工作表
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
