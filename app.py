@@ -109,7 +109,6 @@ def get_ws_by_index(sh, idx):
     cached = getattr(sh, '_cached_worksheets', [])
     if idx < len(cached):
         return cached[idx]
-    # fallback：直接取（不算額外讀取清單）
     return sh.get_worksheet(idx)
 
 
@@ -265,7 +264,6 @@ def process_overload(files, sh):
     st.dataframe(df_final, hide_index=True)
 
     if sh:
-        # 使用索引取，避免重複呼叫 worksheets()
         ws = get_ws_by_index(sh, 1)
         _ws_update(ws, 'A1', [['取締超載違規件數統計表']])
         _ws_update(ws, 'A2', [df_final.columns.tolist()] + df_final.values.tolist())
@@ -484,12 +482,14 @@ def process_major(files, sh):
 
     if sh:
         try:
-            # ✅ 使用預先快取的工作表清單，整個函式只有「寫入」請求，零額外讀取
+            all_worksheets = sh.worksheets()
+            existing_sheets = [s.title for s in all_worksheets]
+
             red_color   = {"red": 1.0, "green": 0.0, "blue": 0.0}
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             blue_color  = {"red": 0.0, "green": 0.0, "blue": 1.0}
 
-            # ── 總表格式：單獨一包送出（不含 mergeCells，不會衝突）──
+            # ── 總表格式 ──
             ws_main = get_ws_by_index(sh, 0)
             titles_main  = df_result.columns.tolist()
             top_row_m    = [t[0] for t in titles_main]
@@ -524,10 +524,32 @@ def process_major(files, sh):
             if reqs_main:
                 _sh_batch_update(sh, {"requests": reqs_main})
 
-            # ── 7 個細項分頁：每頁各自獨立一包送出，避免跨頁 unmerge/merge 互相干擾 ──
+            # ── 7 個細項分頁：徹底修正 400 儲存格合併範圍報錯問題 ──
             for cat, df_c in cat_dfs.items():
                 ws_name = f"重大違規-{cat}"
                 ws_cat = get_or_create_ws(sh, ws_name, rows=30, cols=15)
+                
+                # 💡 核心修正：在寫入新資料與合併前，先將前 5 列的格式與合併儲存格徹底「重設」為完全空白。
+                # 這樣做可以確保 API 不會對非對稱或殘留的舊儲存格範圍丟出 400 錯誤。
+                reset_reqs = [
+                    {
+                        "updateCells": {
+                            "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 5, "startColumnIndex": 0, "endColumnIndex": 15},
+                            "fields": "userEnteredValue,userEnteredFormat"
+                        }
+                    },
+                    {
+                        "unmergeCells": {
+                            "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 5, "startColumnIndex": 0, "endColumnIndex": 15}
+                        }
+                    }
+                ]
+                try:
+                    _sh_batch_update(sh, {"requests": reset_reqs})
+                except Exception:
+                    pass # 如果本來就沒有任何合併殘留，略過拆分錯誤
+                
+                # 清除舊內容
                 _ws_clear(ws_cat)
 
                 titles_c     = df_c.columns.tolist()
@@ -538,7 +560,6 @@ def process_major(files, sh):
                 title_text = f"取締【{cat}】違規統計表 (累計至 {date_yr})"
                 _ws_update(ws_cat, 'A1', [[title_text] + [""] * 9, top_row_c, bottom_row_c] + data_body_c)
 
-                # 每個分頁的格式請求獨立打包，unmerge 必須在同一包裡緊接 merge 才有效
                 reqs_cat = []
 
                 if "(" in title_text:
@@ -565,15 +586,13 @@ def process_major(files, sh):
                             "fields": "userEnteredValue,textFormatRuns"
                         }})
 
-                # unmerge 整塊表頭後，再依序重新合併——必須在同一 batch 且同一分頁
+                # 💡 精確對齊 MultiIndex 欄位寬度的全新合併區 (總共 10 欄，索引 0 ~ 10)
                 reqs_cat.extend([
-                    {"unmergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10}}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 1, "endColumnIndex": 4}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 4, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
-                    {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 5, "endColumnIndex": 6}, "mergeType": "MERGE_ALL"}},
                     {"repeatCell": {
                         "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10},
                         "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
@@ -584,16 +603,17 @@ def process_major(files, sh):
                 for r_idx, row_vals in enumerate(data_body_c):
                     target_row = 3 + r_idx
                     for c_idx in [7, 8, 9]:
-                        val = row_vals[c_idx]
-                        is_negative = isinstance(val, (int, float)) and val < 0
-                        fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
-                        reqs_cat.append({"repeatCell": {
-                            "range": {"sheetId": ws_cat.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": c_idx, "endColumnIndex": c_idx + 1},
-                            "cell": {"userEnteredFormat": fmt},
-                            "fields": "userEnteredFormat.textFormat.foregroundColor"
-                        }})
+                        if c_idx < len(row_vals):
+                            val = row_vals[c_idx]
+                            is_negative = isinstance(val, (int, float)) and val < 0
+                            fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
+                            reqs_cat.append({"repeatCell": {
+                                "range": {"sheetId": ws_cat.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": c_idx, "endColumnIndex": c_idx + 1},
+                                "cell": {"userEnteredFormat": fmt},
+                                "fields": "userEnteredFormat.textFormat.foregroundColor"
+                            }})
 
-                # 每個分頁單獨送出，完全隔離 unmerge/merge 的作用域
+                # 隔離分頁執行
                 _sh_batch_update(sh, {"requests": reqs_cat})
 
             st.write("✅ 重大違規 (含原先總表及 7 項獨立分頁) 雲端打包同步完成！")
@@ -722,7 +742,6 @@ def process_project(files, sh):
                 "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": False}}},
                 "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"
             }},
-            # ✅ 先整塊 unmerge，清除舊合併儲存格，避免 400 錯誤
             {"unmergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
             {"updateCells": {
@@ -814,7 +833,6 @@ def process_accident(files, sh):
             ws = get_ws_by_index(sh, ws_idx)
             _ws_batch_clear(ws, ["A2:G20"])
 
-            # ✅ 合併兩次 batch_update 為一次
             reqs = []
             for c_idx, c_name in enumerate(df.columns):
                 reqs.append(get_gsheet_rich_text_req(ws.id, 1, c_idx, c_name))
@@ -834,7 +852,6 @@ def process_accident(files, sh):
                     "fields": "userEnteredFormat.textFormat.foregroundColor"
                 }})
 
-            # 先寫資料，再一次送出所有格式請求
             _ws_update(ws, 'A3', data_rows)
             _sh_batch_update(sh, {"requests": reqs})
 
@@ -943,7 +960,6 @@ def process_jing_tao(files, sh):
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             red_color   = {"red": 1.0, "green": 0.0, "blue": 0.0}
             reqs = [
-                # ✅ 先整塊 unmerge，清除舊合併儲存格，避免 400 錯誤
                 {"unmergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 6}}},
                 {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 6}, "mergeType": "MERGE_ALL"}},
                 {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
@@ -1001,7 +1017,7 @@ if uploads:
         for f in uploads:
             name = f.name.lower()
             if any(k in name for k in ["list", "地點", "科技"]):               cat_files["科技執法"].append(f)
-            elif any(k in name for k in ["stone", "超載"]):                    cat_files["超載統計"].append(f)
+            elif any(k in name for k in ["stone", "超載"]):                     cat_files["超載統計"].append(f)
             elif any(k in name for k in ["重大", "重點"]):                     cat_files["重大違規"].append(f)
             elif any(k in name for k in ["強化", "專案", "砂石", "大貨", "r17", "法條", "自選匯出"]): cat_files["強化專案"].append(f)
             elif any(k in name for k in ["a1", "a2", "事故", "案件統計"]):     cat_files["交通事故"].append(f)
