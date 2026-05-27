@@ -35,16 +35,10 @@ except:
 
 @st.cache_resource
 def get_gsheet_connection():
-    """
-    取得並快取 Google Sheets 連線。
-    同時預先載入工作表清單，避免各函式重複呼叫 sh.worksheets()
-    造成 429 Read requests quota exceeded。
-    """
     if GCP_CREDS:
         try:
             gc = gspread.service_account_from_dict(GCP_CREDS)
             sh = gc.open_by_url(GOOGLE_SHEET_URL)
-            # 預先快取工作表清單，整個 session 只讀取一次
             sh._cached_worksheets = sh.worksheets()
             return sh
         except Exception as e:
@@ -53,10 +47,6 @@ def get_gsheet_connection():
 
 
 def _gsheet_call_with_retry(fn, *args, max_retries=4, base_delay=5, **kwargs):
-    """
-    對任何 gspread API 呼叫加上指數退避重試。
-    遇到 429 時依序等待 5 → 10 → 20 → 40 秒後重試。
-    """
     for attempt in range(max_retries):
         try:
             return fn(*args, **kwargs)
@@ -70,30 +60,22 @@ def _gsheet_call_with_retry(fn, *args, max_retries=4, base_delay=5, **kwargs):
 
 
 def _ws_update(ws, range_name, values):
-    """包裝 ws.update，自動重試。"""
     _gsheet_call_with_retry(ws.update, range_name=range_name, values=values)
 
 
 def _ws_clear(ws):
-    """包裝 ws.clear，自動重試。"""
     _gsheet_call_with_retry(ws.clear)
 
 
 def _ws_batch_clear(ws, ranges):
-    """包裝 ws.batch_clear，自動重試。"""
     _gsheet_call_with_retry(ws.batch_clear, ranges)
 
 
 def _sh_batch_update(sh, body):
-    """包裝 sh.batch_update，自動重試。"""
     _gsheet_call_with_retry(sh.batch_update, body)
 
 
 def get_or_create_ws(sh, ws_name, rows=100, cols=20):
-    """
-    從快取清單取得工作表；若不存在則新建並更新快取。
-    完全不發出額外的 worksheets() 讀取請求。
-    """
     cached = getattr(sh, '_cached_worksheets', [])
     ws = next((s for s in cached if s.title == ws_name), None)
     if not ws:
@@ -103,9 +85,6 @@ def get_or_create_ws(sh, ws_name, rows=100, cols=20):
 
 
 def get_ws_by_index(sh, idx):
-    """
-    從快取清單依索引取得工作表，避免呼叫 get_worksheet()。
-    """
     cached = getattr(sh, '_cached_worksheets', [])
     if idx < len(cached):
         return cached[idx]
@@ -524,32 +503,30 @@ def process_major(files, sh):
             if reqs_main:
                 _sh_batch_update(sh, {"requests": reqs_main})
 
-            # ── 7 個細項分頁：徹底修正 400 儲存格合併範圍報錯問題 ──
+            # ── 👑 7 個細項分頁：全自動定型為「標楷體」格式（大標題 + 粗體表頭 + 全局格線） ──
             for cat, df_c in cat_dfs.items():
                 ws_name = f"重大違規-{cat}"
                 ws_cat = get_or_create_ws(sh, ws_name, rows=30, cols=15)
                 
-                # 💡 核心修正：在寫入新資料與合併前，先將前 5 列的格式與合併儲存格徹底「重設」為完全空白。
-                # 這樣做可以確保 API 不會對非對稱或殘留的舊儲存格範圍丟出 400 錯誤。
+                # 預先清除格式，防止 400 合併儲存格衝突
                 reset_reqs = [
                     {
                         "updateCells": {
-                            "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 5, "startColumnIndex": 0, "endColumnIndex": 15},
+                            "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 15, "startColumnIndex": 0, "endColumnIndex": 15},
                             "fields": "userEnteredValue,userEnteredFormat"
                         }
                     },
                     {
                         "unmergeCells": {
-                            "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 5, "startColumnIndex": 0, "endColumnIndex": 15}
+                            "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 15, "startColumnIndex": 0, "endColumnIndex": 15}
                         }
                     }
                 ]
                 try:
                     _sh_batch_update(sh, {"requests": reset_reqs})
                 except Exception:
-                    pass # 如果本來就沒有任何合併殘留，略過拆分錯誤
+                    pass 
                 
-                # 清除舊內容
                 _ws_clear(ws_cat)
 
                 titles_c     = df_c.columns.tolist()
@@ -562,31 +539,33 @@ def process_major(files, sh):
 
                 reqs_cat = []
 
+                # A1 標題：設定放大 16 級、粗體、全面導入「DFKai-SB（標楷體）」
                 if "(" in title_text:
                     p_start_title = title_text.find("(")
                     reqs_cat.append({"updateCells": {
                         "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
                         "rows": [{"values": [{"userEnteredValue": {"stringValue": title_text},
                             "textFormatRuns": [
-                                {"startIndex": 0, "format": {"foregroundColor": blue_color}},
-                                {"startIndex": p_start_title, "format": {"foregroundColor": red_color}}
+                                {"startIndex": 0, "format": {"foregroundColor": blue_color, "fontSize": 16, "bold": True, "fontFamily": "DFKai-SB"}},
+                                {"startIndex": p_start_title, "format": {"foregroundColor": red_color, "fontSize": 16, "bold": True, "fontFamily": "DFKai-SB"}}
                             ]}]}],
                         "fields": "userEnteredValue,textFormatRuns"
                     }})
 
+                # 表頭資料：鎖定粗體、標楷體
                 for i, text in enumerate(top_row_c):
                     if "(" in text:
                         p_start = text.find("(")
                         reqs_cat.append({"updateCells": {
                             "range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i + 1},
                             "rows": [{"values": [{"textFormatRuns": [
-                                {"startIndex": 0, "format": {"foregroundColor": black_color}},
-                                {"startIndex": p_start, "format": {"foregroundColor": red_color}}
+                                {"startIndex": 0, "format": {"foregroundColor": black_color, "fontSize": 11, "bold": True, "fontFamily": "DFKai-SB"}},
+                                {"startIndex": p_start, "format": {"foregroundColor": red_color, "fontSize": 11, "bold": True, "fontFamily": "DFKai-SB"}}
                             ], "userEnteredValue": {"stringValue": text}}]}],
                             "fields": "userEnteredValue,textFormatRuns"
                         }})
 
-                # 💡 精確對齊 MultiIndex 欄位寬度的全新合併區 (總共 10 欄，索引 0 ~ 10)
+                # 表頭對齊與跨欄合併結構
                 reqs_cat.extend([
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
@@ -595,25 +574,46 @@ def process_major(files, sh):
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
                     {"repeatCell": {
                         "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10},
-                        "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
-                        "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"
+                        "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "textFormat": {"fontFamily": "DFKai-SB", "bold": True}}},
+                        "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.textFormat"
                     }}
                 ])
 
+                # 內文及數據格式：全面維持標楷體對齊
                 for r_idx, row_vals in enumerate(data_body_c):
                     target_row = 3 + r_idx
+                    reqs_cat.append({
+                        "repeatCell": {
+                            "range": {"sheetId": ws_cat.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 0, "endColumnIndex": 10},
+                            "cell": {"userEnteredFormat": {"textFormat": {"fontFamily": "DFKai-SB"}}},
+                            "fields": "userEnteredFormat.textFormat.fontFamily"
+                        }
+                    })
                     for c_idx in [7, 8, 9]:
                         if c_idx < len(row_vals):
                             val = row_vals[c_idx]
                             is_negative = isinstance(val, (int, float)) and val < 0
-                            fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
+                            fmt = {"textFormat": {"foregroundColor": red_color, "fontFamily": "DFKai-SB", "bold": is_negative}} if is_negative else {"textFormat": {"foregroundColor": black_color, "fontFamily": "DFKai-SB"}}
                             reqs_cat.append({"repeatCell": {
                                 "range": {"sheetId": ws_cat.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": c_idx, "endColumnIndex": c_idx + 1},
                                 "cell": {"userEnteredFormat": fmt},
-                                "fields": "userEnteredFormat.textFormat.foregroundColor"
+                                "fields": "userEnteredFormat.textFormat"
                             }})
 
-                # 隔離分頁執行
+                # 全自動加回完美的網格格線（黑灰色實線邊框）
+                total_data_rows = 3 + len(data_body_c)
+                reqs_cat.append({
+                    "updateBorders": {
+                        "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": total_data_rows, "startColumnIndex": 0, "endColumnIndex": 10},
+                        "top": {"style": "SOLID", "color": {"red": 0.4, "green": 0.4, "blue": 0.4}},
+                        "bottom": {"style": "SOLID", "color": {"red": 0.4, "green": 0.4, "blue": 0.4}},
+                        "left": {"style": "SOLID", "color": {"red": 0.4, "green": 0.4, "blue": 0.4}},
+                        "right": {"style": "SOLID", "color": {"red": 0.4, "green": 0.4, "blue": 0.4}},
+                        "innerHorizontal": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}},
+                        "innerVertical": {"style": "SOLID", "color": {"red": 0.7, "green": 0.7, "blue": 0.7}}
+                    }
+                })
+
                 _sh_batch_update(sh, {"requests": reqs_cat})
 
             st.write("✅ 重大違規 (含原先總表及 7 項獨立分頁) 雲端打包同步完成！")
@@ -665,7 +665,7 @@ def process_project(files, sh):
             df2_all.append(df_c)
 
     df2 = pd.concat(df2_all, ignore_index=True)
-    for c in ['舉發總數', '違反管制規定', '其他違規']:
+    for c in ['舉發總數', '違反管制規定', '其他微規']:
         df2[c] = pd.to_numeric(df2.get(c, 0), errors='coerce').fillna(0)
     df2['大型車純違規'] = (df2['舉發總數'] - df2['違反管制規定'] - df2['其他違規']).clip(lower=0)
 
@@ -1047,7 +1047,7 @@ if uploads:
                     time.sleep(1.5)
 
             if cat_files["交通事故"]:
-                with st.status("🚑 處理【交通事故】...", expanded=True):
+                with st.status("橫 處理【交通事故】...", expanded=True):
                     process_accident(cat_files["交通事故"], sh)
                     time.sleep(1.5)
 
