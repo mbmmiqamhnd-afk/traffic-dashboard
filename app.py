@@ -485,24 +485,23 @@ def process_major(files, sh):
     if sh:
         try:
             # ✅ 使用預先快取的工作表清單，整個函式只有「寫入」請求，零額外讀取
-            existing_titles = [s.title for s in sh._cached_worksheets]
-            requests = []
             red_color   = {"red": 1.0, "green": 0.0, "blue": 0.0}
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             blue_color  = {"red": 0.0, "green": 0.0, "blue": 1.0}
 
-            # 總表同步
+            # ── 總表格式：單獨一包送出（不含 mergeCells，不會衝突）──
             ws_main = get_ws_by_index(sh, 0)
-            titles_main = df_result.columns.tolist()
-            top_row_m   = [t[0] for t in titles_main]
+            titles_main  = df_result.columns.tolist()
+            top_row_m    = [t[0] for t in titles_main]
             bottom_row_m = [t[1] for t in titles_main]
             data_body_m  = df_result.values.tolist()
             _ws_update(ws_main, 'A2', [top_row_m, bottom_row_m] + data_body_m)
 
+            reqs_main = []
             for i, text in enumerate(top_row_m):
                 if "(" in text:
                     p_start = text.find("(")
-                    requests.append({"updateCells": {
+                    reqs_main.append({"updateCells": {
                         "range": {"sheetId": ws_main.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i + 1},
                         "rows": [{"values": [{"textFormatRuns": [
                             {"startIndex": 0, "format": {"foregroundColor": black_color, "bold": True}},
@@ -516,29 +515,35 @@ def process_major(files, sh):
                 target_row = 3 + r_idx
                 is_negative = isinstance(val, (int, float)) and val < 0
                 fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
-                requests.append({"repeatCell": {
+                reqs_main.append({"repeatCell": {
                     "range": {"sheetId": ws_main.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 7, "endColumnIndex": 8},
                     "cell": {"userEnteredFormat": fmt},
                     "fields": "userEnteredFormat.textFormat.foregroundColor"
                 }})
 
-            # 7 個細項分頁同步
+            if reqs_main:
+                _sh_batch_update(sh, {"requests": reqs_main})
+
+            # ── 7 個細項分頁：每頁各自獨立一包送出，避免跨頁 unmerge/merge 互相干擾 ──
             for cat, df_c in cat_dfs.items():
                 ws_name = f"重大違規-{cat}"
                 ws_cat = get_or_create_ws(sh, ws_name, rows=30, cols=15)
                 _ws_clear(ws_cat)
 
-                titles_c    = df_c.columns.tolist()
-                top_row_c   = [t[0] for t in titles_c]
+                titles_c     = df_c.columns.tolist()
+                top_row_c    = [t[0] for t in titles_c]
                 bottom_row_c = [t[1] for t in titles_c]
                 data_body_c  = df_c.values.tolist()
 
                 title_text = f"取締【{cat}】違規統計表 (累計至 {date_yr})"
                 _ws_update(ws_cat, 'A1', [[title_text] + [""] * 9, top_row_c, bottom_row_c] + data_body_c)
 
+                # 每個分頁的格式請求獨立打包，unmerge 必須在同一包裡緊接 merge 才有效
+                reqs_cat = []
+
                 if "(" in title_text:
                     p_start_title = title_text.find("(")
-                    requests.append({"updateCells": {
+                    reqs_cat.append({"updateCells": {
                         "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
                         "rows": [{"values": [{"userEnteredValue": {"stringValue": title_text},
                             "textFormatRuns": [
@@ -551,7 +556,7 @@ def process_major(files, sh):
                 for i, text in enumerate(top_row_c):
                     if "(" in text:
                         p_start = text.find("(")
-                        requests.append({"updateCells": {
+                        reqs_cat.append({"updateCells": {
                             "range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i + 1},
                             "rows": [{"values": [{"textFormatRuns": [
                                 {"startIndex": 0, "format": {"foregroundColor": black_color}},
@@ -560,10 +565,9 @@ def process_major(files, sh):
                             "fields": "userEnteredValue,textFormatRuns"
                         }})
 
-                requests.extend([
-                    # ✅ 先整塊 unmerge，清除舊合併儲存格，避免 400 錯誤
+                # unmerge 整塊表頭後，再依序重新合併——必須在同一 batch 且同一分頁
+                reqs_cat.extend([
                     {"unmergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10}}},
-                    # 再重新合併
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 1, "endColumnIndex": 4}, "mergeType": "MERGE_ALL"}},
@@ -583,15 +587,14 @@ def process_major(files, sh):
                         val = row_vals[c_idx]
                         is_negative = isinstance(val, (int, float)) and val < 0
                         fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
-                        requests.append({"repeatCell": {
+                        reqs_cat.append({"repeatCell": {
                             "range": {"sheetId": ws_cat.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": c_idx, "endColumnIndex": c_idx + 1},
                             "cell": {"userEnteredFormat": fmt},
                             "fields": "userEnteredFormat.textFormat.foregroundColor"
                         }})
 
-            # ✅ 全部請求一次性打包送出
-            if requests:
-                _sh_batch_update(sh, {"requests": requests})
+                # 每個分頁單獨送出，完全隔離 unmerge/merge 的作用域
+                _sh_batch_update(sh, {"requests": reqs_cat})
 
             st.write("✅ 重大違規 (含原先總表及 7 項獨立分頁) 雲端打包同步完成！")
         except Exception as e:
