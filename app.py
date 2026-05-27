@@ -116,8 +116,12 @@ def process_tech_enforcement(files, sh):
     st.dataframe(loc_summary, hide_index=True)
     
     if sh:
+        all_worksheets = sh.worksheets()
         ws_name = "科技執法-路段排行"
-        ws = sh.worksheet(ws_name) if ws_name in [s.title for s in sh.worksheets()] else sh.add_worksheet(title=ws_name, rows="100", cols="20")
+        ws = next((s for s in all_worksheets if s.title == ws_name), None)
+        if not ws:
+            ws = sh.add_worksheet(title=ws_name, rows="100", cols="20")
+            
         ws.clear()
         title_text = f"科技執法成效 ({date_range_str})"
         ws.update(range_name='A1', values=[[title_text, ""], ["路段名稱", "舉發件數"]] + loc_summary.values.tolist() + [["舉發總數", len(df)]])
@@ -198,7 +202,7 @@ def process_overload(files, sh):
                 })
         if requests: sh.batch_update({"requests": requests})
 
-# ----------------- [3. 重大交通違規 (CSV三報表終極引擎版)] -----------------
+# ----------------- [3. 重大交通違規 (CSV三報表優化引擎版)] -----------------
 def process_major(files, sh):
     if len(files) < 2:
         st.error("❌ 請上傳『本期』與『年累計』報表。若要精確比較細項，請一併上傳第三份『去年累計』報表。")
@@ -207,12 +211,9 @@ def process_major(files, sh):
     # --- 1. 三報表智慧辨識 ---
     f_wk, f_year, f_ly = None, None, None
     for f in files:
-        if "本期" in f.name: 
-            f_wk = f
-        elif "去年" in f.name: 
-            f_ly = f
-        elif "年累計" in f.name: 
-            f_year = f
+        if "本期" in f.name: f_wk = f
+        elif "去年" in f.name: f_ly = f
+        elif "年累計" in f.name: f_year = f
 
     if not f_wk or not f_year:
         st.warning("⚠️ 無法完全匹配「本期」與「年累計」檔名，系統將嘗試自動分類...")
@@ -252,8 +253,7 @@ def process_major(files, sh):
         f.seek(0)
         if f.name.lower().endswith('.csv'):
             try: return [pd.read_csv(f, header=None)]
-            except: 
-                f.seek(0); return [pd.read_csv(f, encoding='cp950', header=None)]
+            except: f.seek(0); return [pd.read_csv(f, encoding='cp950', header=None)]
         else:
             try:
                 xl = pd.ExcelFile(f)
@@ -264,9 +264,7 @@ def process_major(files, sh):
     dfs_yr = get_dfs(f_year)
     dfs_ly = get_dfs(f_ly)
 
-    # =========================================================
     # 第一部分：處理原先的「重大違規（總表）」
-    # =========================================================
     def parse_main_table(dfs):
         d_yt, d_ly = {}, {}
         dt_str = ""
@@ -275,10 +273,8 @@ def process_major(files, sh):
             for idx, r in df.iterrows():
                 u = clean_unit(r.iloc[0])
                 if u and "合計" not in str(r.iloc[0]):
-                    if len(r) > 16:
-                        d_yt[u] = {'stop': to_i(r.iloc[15]), 'cit': to_i(r.iloc[16])}
-                    if len(r) > 19:
-                        d_ly[u] = {'stop': to_i(r.iloc[18]), 'cit': to_i(r.iloc[19])}
+                    if len(r) > 16: d_yt[u] = {'stop': to_i(r.iloc[15]), 'cit': to_i(r.iloc[16])}
+                    if len(r) > 19: d_ly[u] = {'stop': to_i(r.iloc[18]), 'cit': to_i(r.iloc[19])}
         return d_yt, d_ly, dt_str
 
     d_wk_yt, _, date_wk = parse_main_table(dfs_wk)
@@ -291,11 +287,7 @@ def process_major(files, sh):
     for u in MAJOR_UNIT_ORDER:
         w_data = d_wk_yt.get(u, {'stop':0, 'cit':0})
         y_data = d_yr_yt.get(u, {'stop':0, 'cit':0})
-        
-        if dfs_ly:
-            l_data = d_ly_yt.get(u, {'stop':0, 'cit':0})
-        else:
-            l_data = d_yr_ly_internal.get(u, {'stop':0, 'cit':0})
+        l_data = d_ly_yt.get(u, {'stop':0, 'cit':0}) if dfs_ly else d_yr_ly_internal.get(u, {'stop':0, 'cit':0})
         
         y_total = y_data['stop'] + y_data['cit']
         l_total = l_data['stop'] + l_data['cit']
@@ -328,13 +320,11 @@ def process_major(files, sh):
     st.write("📊 **重大違規統計結果 (總表)：**")
     st.dataframe(df_result, use_container_width=True)
 
-    # =========================================================
     # 第二部分：處理「7大違規細項表」(補足嚴重超速辨識)
-    # =========================================================
     DETAIL_CATEGORIES = {
         "酒駕": ["酒駕", "酒後", "35條"],
         "闖紅燈": ["闖紅燈", "53條"],
-        "嚴重超速": ["嚴重超速", "嚴重", "超速", "43條", "40條", "度超過"], # 解決 Font bug 問題新增的字詞與法條對應
+        "嚴重超速": ["嚴重超速", "嚴重", "超速", "43條", "40條", "度超過"],
         "逆向行駛": ["逆向", "45條"],
         "轉彎未依規定": ["轉彎", "48條"],
         "蛇行惡意逼車": ["蛇行", "逼車", "惡意", "43條"],
@@ -344,32 +334,26 @@ def process_major(files, sh):
     def parse_detail_data(dfs):
         res = {cat: {u: {'stop':0, 'cit':0} for u in MAJOR_UNIT_ORDER} for cat in DETAIL_CATEGORIES}
         if not dfs: return res
-        
         for df in dfs:
             header_idx = -1
             for i in range(min(15, len(df))):
                 row_str = "".join([str(x) for x in df.iloc[i].values if pd.notna(x)])
                 if sum(1 for kw in ["酒駕", "闖紅燈", "逆向行駛", "轉彎", "超速"] if kw in row_str) >= 2:
                     header_idx = i; break
-                    
             if header_idx != -1:
                 headers = [str(x).replace('\n', '').strip() for x in df.iloc[header_idx].values]
                 sub_headers = [str(x).replace('\n', '').strip() for x in df.iloc[header_idx+1].values] if header_idx+1 < len(df) else headers
-                
                 cat_cols = {cat: {'stop': -1, 'cit': -1} for cat in DETAIL_CATEGORIES}
                 for c in range(len(headers)):
                     h1, h2 = headers[c], sub_headers[c]
                     current_cat = None
                     for cat, kws in DETAIL_CATEGORIES.items():
-                        if any(kw in h1 for kw in kws): 
-                            current_cat = cat; break
-                            
+                        if any(kw in h1 for kw in kws): current_cat = cat; break
                     if current_cat:
                         if any(k in h2 for k in ["現場", "攔停", "當場", "違法"]):
                             if cat_cols[current_cat]['stop'] == -1: cat_cols[current_cat]['stop'] = c
                         elif any(k in h2 for k in ["逕", "違規"]):
                             if cat_cols[current_cat]['cit'] == -1: cat_cols[current_cat]['cit'] = c
-                            
                 for idx, row in df.iloc[header_idx+1:].iterrows():
                     u = clean_unit(row.values[0])
                     if u and "合計" not in str(row.values[0]):
@@ -391,47 +375,38 @@ def process_major(files, sh):
         sum_cat = {'ys':0, 'yc':0, 'yt':0, 'ls':0, 'lc':0, 'lt':0, 'ds':0, 'dc':0, 'dt':0}
         for u in MAJOR_UNIT_ORDER:
             ys = d_yr_cat[cat][u]['stop']; yc = d_yr_cat[cat][u]['cit']
-            
-            if dfs_ly:
-                ls = d_ly_cat[cat][u]['stop']; lc = d_ly_cat[cat][u]['cit']
-            else:
-                ls = 0; lc = 0
-                
+            ls = d_ly_cat[cat][u]['stop'] if dfs_ly else 0
+            lc = d_ly_cat[cat][u]['cit'] if dfs_ly else 0
             yt, lt = ys + yc, ls + lc
             ds, dc, dt = ys - ls, yc - lc, yt - lt
-            
             rows.append([u, ys, yc, yt, ls, lc, lt, ds if u != '警備隊' else "—", dc if u != '警備隊' else "—", dt if u != '警備隊' else "—"])
-            
             sum_cat['ys'] += ys; sum_cat['yc'] += yc; sum_cat['yt'] += yt
             sum_cat['ls'] += ls; sum_cat['lc'] += lc; sum_cat['lt'] += lt
-            if u != '警備隊': 
-                sum_cat['ds'] += ds; sum_cat['dc'] += dc; sum_cat['dt'] += dt
-                
+            if u != '警備隊': sum_cat['ds'] += ds; sum_cat['dc'] += dc; sum_cat['dt'] += dt
         tot_row = ['合計', sum_cat['ys'], sum_cat['yc'], sum_cat['yt'], sum_cat['ls'], sum_cat['lc'], sum_cat['lt'], sum_cat['ds'], sum_cat['dc'], sum_cat['dt']]
         rows.insert(0, tot_row)
         cat_dfs[cat] = pd.DataFrame(rows, columns=pd.MultiIndex.from_arrays([h1_cat, h2_cat]))
 
     with st.expander("🔍 檢視 7 大項重大違規細表 (點擊展開)"):
-        if not dfs_ly: 
-            st.info("💡 提醒：因為您未上傳單獨的『去年累計』報表，細項的去年欄位將暫時以 0 計算。")
+        if not dfs_ly: st.info("💡 提醒：因為您未上傳單獨的『去年累計』報表，細項的去年欄位將暫時以 0 計算。")
         for cat, df_c in cat_dfs.items():
             st.write(f"**【{cat}】統計表**")
             st.dataframe(df_c, use_container_width=True)
 
-    # =========================================================
-    # 第三部分：雲端同步 (包含總表與細項表)
-    # =========================================================
+    # 第三部分：雲端打包同步區
     if sh:
         try:
-            existing_sheets = [s.title for s in sh.worksheets()]
-            requests = []
+            # 🛑 核心優化：唯獨在最開始拉取一次全分頁清單，嚴禁在迴圈內呼叫 API 讀取
+            all_worksheets = sh.worksheets()
+            existing_sheets = [s.title for s in all_worksheets]
             
+            requests = []
             red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             blue_color = {"red": 0.0, "green": 0.0, "blue": 1.0}
             
             # --- 3-1. 同步總表 ---
-            ws_main = sh.get_worksheet(0)
+            ws_main = all_worksheets[0]
             titles_main = df_result.columns.tolist()
             top_row_m, bottom_row_m = [t[0] for t in titles_main], [t[1] for t in titles_main]
             data_body_m = df_result.values.tolist()
@@ -452,9 +427,14 @@ def process_major(files, sh):
             # --- 3-2. 同步 7 個細項分頁 ---
             for cat, df_c in cat_dfs.items():
                 ws_name = f"重大違規-{cat}"
-                ws_cat = sh.worksheet(ws_name) if ws_name in existing_sheets else sh.add_worksheet(title=ws_name, rows="30", cols="15")
-                ws_cat.clear()
                 
+                # 從已載入的快取中篩選，避免重複請求
+                if ws_name in existing_sheets:
+                    ws_cat = next(s for s in all_worksheets if s.title == ws_name)
+                else:
+                    ws_cat = sh.add_worksheet(title=ws_name, rows="30", cols="15")
+                    
+                ws_cat.clear()
                 titles_c = df_c.columns.tolist()
                 top_row_c, bottom_row_c = [t[0] for t in titles_c], [t[1] for t in titles_c]
                 data_body_c = df_c.values.tolist()
@@ -464,35 +444,12 @@ def process_major(files, sh):
                 
                 if "(" in title_text:
                     p_start_title = title_text.find("(")
-                    requests.append({
-                        "updateCells": {
-                            "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
-                            "rows": [{
-                                "values": [{
-                                    "userEnteredValue": {"stringValue": title_text},
-                                    "textFormatRuns": [
-                                        {"startIndex": 0, "format": {"foregroundColor": blue_color}},
-                                        {"startIndex": p_start_title, "format": {"foregroundColor": red_color}}
-                                    ]
-                                }]
-                            }],
-                            "fields": "userEnteredValue,textFormatRuns"
-                        }
-                    })
+                    requests.append({"updateCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": title_text}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": blue_color}}, {"startIndex": p_start_title, "format": {"foregroundColor": red_color}}]}]}], "fields": "userEnteredValue,textFormatRuns"}})
 
                 for i, text in enumerate(top_row_c):
                     if "(" in text:
                         p_start = text.find("(")
-                        requests.append({
-                            "updateCells": {
-                                "range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1},
-                                "rows": [{ "values": [{ "textFormatRuns": [
-                                    {"startIndex": 0, "format": {"foregroundColor": black_color}},
-                                    {"startIndex": p_start, "format": {"foregroundColor": red_color}}
-                                ], "userEnteredValue": {"stringValue": text} }] }],
-                                "fields": "userEnteredValue,textFormatRuns"
-                            }
-                        })
+                        requests.append({"updateCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i+1}, "rows": [{ "values": [{ "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": black_color}}, {"startIndex": p_start, "format": {"foregroundColor": red_color}}], "userEnteredValue": {"stringValue": text} }] }], "fields": "userEnteredValue,textFormatRuns"}})
 
                 requests.extend([
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
@@ -500,6 +457,7 @@ def process_major(files, sh):
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 1, "endColumnIndex": 4}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 4, "endColumnIndex": 7}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
+                    {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 5, "endColumnIndex": 6}, "mergeType": "MERGE_ALL"}},
                     {"repeatCell": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}}, "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"}}
                 ])
                 
@@ -511,8 +469,11 @@ def process_major(files, sh):
                         fmt = {"textFormat": {"foregroundColor": red_color}} if is_negative else {"textFormat": {"foregroundColor": black_color}}
                         requests.append({"repeatCell": {"range": {"sheetId": ws_cat.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": c_idx, "endColumnIndex": c_idx + 1}, "cell": {"userEnteredFormat": fmt}, "fields": "userEnteredFormat.textFormat.foregroundColor"}})
 
-            if requests: sh.batch_update({"requests": requests})
-            st.write("✅ 重大違規 (含原先總表及 7 項獨立分頁) 雲端同步完成！")
+            # 🛑 核心打包：上百個細項樣式與合併儲存格一次性送出，徹底絕殺 429 Error
+            if requests: 
+                sh.batch_update({"requests": requests})
+                
+            st.write("✅ 重大違規 (含原先總表及 7 項獨立分頁) 雲端打包同步完成！")
         except Exception as e:
             st.error(f"雲端同步出錯：{e}")
             st.write(traceback.format_exc())
@@ -530,8 +491,7 @@ def process_project(files, sh):
         f.seek(0)
         if f.name.endswith('.csv'):
             try: return pd.read_csv(f, **kwargs)
-            except: 
-                f.seek(0); return pd.read_csv(f, encoding='cp950', **kwargs)
+            except: f.seek(0); return pd.read_csv(f, encoding='cp950', **kwargs)
         return pd.read_excel(f, **kwargs)
 
     date_str = "未知期間"
@@ -602,7 +562,11 @@ def process_project(files, sh):
     st.dataframe(df_f, hide_index=True)
 
     if sh:
-        ws = sh.worksheet(PROJECT_NAME)
+        all_worksheets = sh.worksheets()
+        ws = next((s for s in all_worksheets if s.title == PROJECT_NAME), None)
+        if not ws:
+            ws = sh.add_worksheet(title=PROJECT_NAME, rows="40", cols="25")
+            
         full_t = f"{PROJECT_NAME} (統計期間：{date_str})"
         ws.clear()
         ws.update(range_name='A1', values=[[full_t] + [""] * 18, [""] + [c for c in PROJECT_CATS for _ in range(3)], ["單位"] + ["取締件數", "目標值", "達成率"] * 6] + df_f.values.tolist())
@@ -632,14 +596,14 @@ def process_project(files, sh):
             {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 3, "endRowIndex": 20, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": False}}}, "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
             {"updateCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1}, "rows": [{"values": [{"userEnteredValue": {"stringValue": full_t}, "textFormatRuns": [{"startIndex": 0, "format": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}, "bold": True, "fontSize": 16}}, {"startIndex": len(PROJECT_NAME), "format": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True, "fontSize": 16}}]}]}], "fields": "userEnteredValue,textFormatRuns"}},
-            {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}}, "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"}}
-        ]
+            {"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 19}, "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}}, "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"}
+        }]
         
         red_format = {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True}}
         for r, c in red_cells:
             reqs.append({"repeatCell": {"range": {"sheetId": ws.id, "startRowIndex": r, "endRowIndex": r+1, "startColumnIndex": c, "endColumnIndex": c+1}, "cell": {"userEnteredFormat": red_format}, "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"}})
 
-        ws.spreadsheet.batch_update({"requests": reqs})
+        sh.batch_update({"requests": reqs})
         st.write("✅ 強化專案雲端同步完成 (未達100%自動標示紅字)")
 
 # ----------------- [5. 交通事故] -----------------
@@ -807,8 +771,12 @@ def process_jing_tao(files, sh):
 
     if sh:
         try:
+            all_worksheets = sh.worksheets()
             ws_name = "靜桃計畫"
-            ws = sh.worksheet(ws_name) if ws_name in [s.title for s in sh.worksheets()] else sh.add_worksheet(title=ws_name, rows="30", cols="10")
+            ws = next((s for s in all_worksheets if s.title == ws_name), None)
+            if not ws:
+                ws = sh.add_worksheet(title=ws_name, rows="30", cols="10")
+                
             ws.clear()
             top_row, bottom_row = [t[0] for t in df_res.columns], [t[1] for t in df_res.columns]
             ws.update(range_name='A1', values=[['「靜桃計畫」大執法專案統計表'], top_row, bottom_row] + df_res.values.tolist())
@@ -837,7 +805,7 @@ try:
     from menu import show_sidebar
     show_sidebar()
 except ImportError:
-    pass # 若本機沒有 menu 模組則略過
+    pass 
 
 st.header("📈 交通執法數據全自動批次處理中心")
 st.info("💡 請將所需報表全選後，直接拖曳至下方區域即可自動分流處理。")
@@ -870,27 +838,27 @@ if uploads:
             if cat_files["科技執法"]:
                 with st.status("📸 處理【科技執法】...", expanded=True):
                     process_tech_enforcement(cat_files["科技執法"], sh)
-                    time.sleep(1.5) # 加入緩衝時間，避免 429 Error
+                    time.sleep(1.0) # 降底請求頻率緩衝
             
             if cat_files["超載統計"]:
                 with st.status("🚛 處理【超載統計】...", expanded=True):
                     process_overload(cat_files["超載統計"], sh)
-                    time.sleep(1.5)
+                    time.sleep(1.0)
             
             if cat_files["重大違規"]:
                 with st.status("🚨 處理【重大交通違規】...", expanded=True):
                     process_major(cat_files["重大違規"], sh)
-                    time.sleep(1.5)
+                    time.sleep(1.0)
             
             if cat_files["強化專案"]:
                 with st.status("🔥 處理【強化專案】...", expanded=True):
                     process_project(cat_files["強化專案"], sh)
-                    time.sleep(1.5)
+                    time.sleep(1.0)
             
             if cat_files["交通事故"]:
                 with st.status("🚑 處理【交通事故】...", expanded=True):
                     process_accident(cat_files["交通事故"], sh)
-                    time.sleep(1.5)
+                    time.sleep(1.0)
             
             if cat_files["靜桃計畫"]:
                 with st.status("🤫 處理【靜桃計畫】...", expanded=True):
