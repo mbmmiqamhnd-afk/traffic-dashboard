@@ -838,7 +838,7 @@ if uploads:
             if cat_files["科技執法"]:
                 with st.status("📸 處理【科技執法】...", expanded=True):
                     process_tech_enforcement(cat_files["科技執法"], sh)
-                    time.sleep(1.0) # 降底請求頻率緩衝
+                    time.sleep(1.0) # 降低請求頻率緩衝
             
             if cat_files["超載統計"]:
                 with st.status("🚛 處理【超載統計】...", expanded=True):
