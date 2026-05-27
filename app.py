@@ -561,6 +561,9 @@ def process_major(files, sh):
                         }})
 
                 requests.extend([
+                    # ✅ 先整塊 unmerge，清除舊合併儲存格，避免 400 錯誤
+                    {"unmergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10}}},
+                    # 再重新合併
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 1, "endColumnIndex": 4}, "mergeType": "MERGE_ALL"}},
@@ -716,6 +719,8 @@ def process_project(files, sh):
                 "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.0, "blue": 0.0}, "bold": False}}},
                 "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"
             }},
+            # ✅ 先整塊 unmerge，清除舊合併儲存格，避免 400 錯誤
+            {"unmergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}}},
             {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 19}, "mergeType": "MERGE_ALL"}},
             {"updateCells": {
                 "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
@@ -935,6 +940,8 @@ def process_jing_tao(files, sh):
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             red_color   = {"red": 1.0, "green": 0.0, "blue": 0.0}
             reqs = [
+                # ✅ 先整塊 unmerge，清除舊合併儲存格，避免 400 錯誤
+                {"unmergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 6}}},
                 {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 6}, "mergeType": "MERGE_ALL"}},
                 {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
                 {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 1, "endColumnIndex": 3}, "mergeType": "MERGE_ALL"}},
