@@ -503,7 +503,7 @@ def process_major(files, sh):
             if reqs_main:
                 _sh_batch_update(sh, {"requests": reqs_main})
 
-            # ── 👑 7 個細項分頁：全自動定型為「標楷體」格式（大標題 + 粗體表頭 + 全局格線） ──
+            # ── 👑 7 個細項分頁：鎖定「22級標題」與「16級全體數據標楷粗體」 ──
             for cat, df_c in cat_dfs.items():
                 ws_name = f"重大違規-{cat}"
                 ws_cat = get_or_create_ws(sh, ws_name, rows=30, cols=15)
@@ -539,33 +539,34 @@ def process_major(files, sh):
 
                 reqs_cat = []
 
-                # A1 標題：設定放大 16 級、粗體、全面導入「DFKai-SB（標楷體）」
+                # 🚀 【核心修改：標題升級 22 級字】鎖定大字體（22級字）、全粗體、標楷體（DFKai-SB）
                 if "(" in title_text:
                     p_start_title = title_text.find("(")
                     reqs_cat.append({"updateCells": {
                         "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
                         "rows": [{"values": [{"userEnteredValue": {"stringValue": title_text},
                             "textFormatRuns": [
-                                {"startIndex": 0, "format": {"foregroundColor": blue_color, "fontSize": 16, "bold": True, "fontFamily": "DFKai-SB"}},
-                                {"startIndex": p_start_title, "format": {"foregroundColor": red_color, "fontSize": 16, "bold": True, "fontFamily": "DFKai-SB"}}
+                                {"startIndex": 0, "format": {"foregroundColor": blue_color, "fontSize": 22, "bold": True, "fontFamily": "DFKai-SB"}},
+                                {"startIndex": p_start_title, "format": {"foregroundColor": red_color, "fontSize": 22, "bold": True, "fontFamily": "DFKai-SB"}}
                             ]}]}],
                         "fields": "userEnteredValue,textFormatRuns"
                     }})
 
-                # 表頭資料：鎖定粗體、標楷體
+                # 表頭資料：鎖定 16 級、粗體、標楷體
                 for i, text in enumerate(top_row_c):
                     if "(" in text:
                         p_start = text.find("(")
                         reqs_cat.append({"updateCells": {
                             "range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i + 1},
                             "rows": [{"values": [{"textFormatRuns": [
-                                {"startIndex": 0, "format": {"foregroundColor": black_color, "fontSize": 11, "bold": True, "fontFamily": "DFKai-SB"}},
-                                {"startIndex": p_start, "format": {"foregroundColor": red_color, "fontSize": 11, "bold": True, "fontFamily": "DFKai-SB"}}
+                                {"startIndex": 0, "format": {"foregroundColor": black_color, "fontSize": 16, "bold": True, "fontFamily": "DFKai-SB"}},
+                                {"startIndex": p_start, "format": {"foregroundColor": red_color, "fontSize": 16, "bold": True, "fontFamily": "DFKai-SB"}
+                                 }
                             ], "userEnteredValue": {"stringValue": text}}]}],
                             "fields": "userEnteredValue,textFormatRuns"
                         }})
 
-                # 表頭對齊與跨欄合併結構
+                # 表頭對齊與結構合併設定（維持 16 級粗體標楷）
                 reqs_cat.extend([
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
@@ -574,33 +575,34 @@ def process_major(files, sh):
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 7, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
                     {"repeatCell": {
                         "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 10},
-                        "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "textFormat": {"fontFamily": "DFKai-SB", "bold": True}}},
+                        "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "textFormat": {"fontFamily": "DFKai-SB", "bold": True, "fontSize": 16}}},
                         "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.textFormat"
                     }}
                 ])
 
-                # 內文及數據格式：全面維持標楷體對齊
+                # 內文及執法數據數據列：同步定型為「16級字、標楷體、粗體」
                 for r_idx, row_vals in enumerate(data_body_c):
                     target_row = 3 + r_idx
                     reqs_cat.append({
                         "repeatCell": {
                             "range": {"sheetId": ws_cat.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": 0, "endColumnIndex": 10},
-                            "cell": {"userEnteredFormat": {"textFormat": {"fontFamily": "DFKai-SB"}}},
-                            "fields": "userEnteredFormat.textFormat.fontFamily"
+                            "cell": {"userEnteredFormat": {"textFormat": {"fontFamily": "DFKai-SB", "fontSize": 16, "bold": True}, "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+                            "fields": "userEnteredFormat.textFormat.fontFamily,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"
                         }
                     })
+                    # 處理後三欄比較值（維持 16 級、粗體、遇到負數帶紅字規格）
                     for c_idx in [7, 8, 9]:
                         if c_idx < len(row_vals):
                             val = row_vals[c_idx]
                             is_negative = isinstance(val, (int, float)) and val < 0
-                            fmt = {"textFormat": {"foregroundColor": red_color, "fontFamily": "DFKai-SB", "bold": is_negative}} if is_negative else {"textFormat": {"foregroundColor": black_color, "fontFamily": "DFKai-SB"}}
+                            fg_color = red_color if is_negative else black_color
                             reqs_cat.append({"repeatCell": {
                                 "range": {"sheetId": ws_cat.id, "startRowIndex": target_row, "endRowIndex": target_row + 1, "startColumnIndex": c_idx, "endColumnIndex": c_idx + 1},
-                                "cell": {"userEnteredFormat": fmt},
+                                "cell": {"userEnteredFormat": {"textFormat": {"foregroundColor": fg_color, "fontFamily": "DFKai-SB", "fontSize": 16, "bold": True}}},
                                 "fields": "userEnteredFormat.textFormat"
                             }})
 
-                # 全自動加回完美的網格格線（黑灰色實線邊框）
+                # 自動補回黑灰色網格實線格線
                 total_data_rows = 3 + len(data_body_c)
                 reqs_cat.append({
                     "updateBorders": {
@@ -616,7 +618,7 @@ def process_major(files, sh):
 
                 _sh_batch_update(sh, {"requests": reqs_cat})
 
-            st.write("✅ 重大違規 (含原先總表及 7 項獨立分頁) 雲端打包同步完成！")
+            st.write("✅ 重大違規 (含總表及 7 項獨立分頁) 雲端打包同步完成！")
         except Exception as e:
             st.error(f"雲端同步出錯：{e}")
             st.write(traceback.format_exc())
@@ -667,7 +669,7 @@ def process_project(files, sh):
     df2 = pd.concat(df2_all, ignore_index=True)
     for c in ['舉發總數', '違反管制規定', '其他微規']:
         df2[c] = pd.to_numeric(df2.get(c, 0), errors='coerce').fillna(0)
-    df2['大型車純違規'] = (df2['舉發總數'] - df2['違反管制規定'] - df2['其他違規']).clip(lower=0)
+    df2['大型車純違規'] = (df2['舉發總數'] - df2['違反管制規定'] - df2['其他微規']).clip(lower=0)
 
     def get_unit(raw):
         raw = str(raw).strip()
@@ -763,7 +765,7 @@ def process_project(files, sh):
         red_format = {"textFormat": {"foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}, "bold": True}}
         for r, c in red_cells:
             reqs.append({"repeatCell": {
-                "range": {"sheetId": ws.id, "startRowIndex": r, "endRowIndex": r + 1, "startColumnIndex": c, "endColumnIndex": c + 1},
+                "range": {"sheetId": ws.id, "startRowIndex": r, "startColumnIndex": c, "endColumnIndex": c + 1, "endRowIndex": r + 1},
                 "cell": {"userEnteredFormat": red_format},
                 "fields": "userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold"
             }})
@@ -1047,7 +1049,7 @@ if uploads:
                     time.sleep(1.5)
 
             if cat_files["交通事故"]:
-                with st.status("橫 處理【交通事故】...", expanded=True):
+                with st.status("🚑 處理【交通事故】...", expanded=True):
                     process_accident(cat_files["交通事故"], sh)
                     time.sleep(1.5)
 
