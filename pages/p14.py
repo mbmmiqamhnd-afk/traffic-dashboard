@@ -12,6 +12,7 @@ except ImportError:
 
 import pandas as pd
 import gspread
+from gspread.exceptions import WorksheetNotFound, APIError
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import smtplib, io, os, traceback
@@ -102,7 +103,6 @@ def draw_page_number(canvas, doc):
 def get_client():
     try:
         info = dict(st.secrets["gcp_service_account"])
-        # 確保 private_key 的 \n 是真實換行而非字面字串
         info["private_key"] = info["private_key"].replace("\\n", "\n")
         creds = Credentials.from_service_account_info(info, scopes=SCOPES)
         return gspread.authorize(creds)
@@ -149,7 +149,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
 
         try:
             ws_set = sh.worksheet(WS_MAP["set"])
-        except Exception:
+        except WorksheetNotFound:
             ws_set = sh.add_worksheet(title=WS_MAP["set"], rows="50", cols="5")
         ws_set.clear()
         ws_set.update(range_name='A1', values=[
@@ -164,7 +164,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
 
         try:
             ws_cmd = sh.worksheet(WS_MAP["cmd"])
-        except Exception:
+        except WorksheetNotFound:
             ws_cmd = sh.add_worksheet(title=WS_MAP["cmd"], rows="100", cols="20")
         ws_cmd.clear()
         clean_cmd = df_cmd.dropna(how="all").fillna("")
@@ -173,7 +173,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
 
         try:
             ws_ptl = sh.worksheet(WS_MAP["ptl"])
-        except Exception:
+        except WorksheetNotFound:
             ws_ptl = sh.add_worksheet(title=WS_MAP["ptl"], rows="100", cols="20")
         ws_ptl.clear()
         clean_ptl = df_ptl.dropna(how="all").fillna("")
@@ -182,7 +182,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
 
         try:
             ws_cp = sh.worksheet(WS_MAP["cp"])
-        except Exception:
+        except WorksheetNotFound:
             ws_cp = sh.add_worksheet(title=WS_MAP["cp"], rows="100", cols="20")
         ws_cp.clear()
         clean_cp = df_cp.dropna(how="all").fillna("")
@@ -191,6 +191,9 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
 
         st.cache_data.clear()
         return True
+    except APIError as e:
+        st.error(f"❌ Google API 流量限制或連線錯誤：{e}")
+        return False
     except Exception as e:
         st.error(f"❌ 同步失敗原因：{e}")
         st.code(traceback.format_exc())
@@ -389,16 +392,13 @@ def sync_personnel_data(df_ptl, df_cp):
         persons_str = str(row.get('服勤人員', '')).strip()
         current_persons = [p.strip() for p in re.split(split_pattern, persons_str) if p.strip()]
         
-        # 如果單位或人員是空的，直接跳過
         if not units or not current_persons:
             continue
             
-        # 確保這列出現的「所有單位」都已經在字典裡建立好空名單
         for u in units:
             if u not in p_dict: 
                 p_dict[u] = []
                 
-        # 進行人員分配
         if len(units) == 1:
             u = units[0]
             for p in current_persons:
@@ -419,7 +419,6 @@ def sync_personnel_data(df_ptl, df_cp):
                     for p in current_persons:
                         if p not in p_dict[uk]: p_dict[uk].append(p)
 
-    # 讀取第二階段並進行人員填寫
     df_cp_new = df_cp.copy()
     for idx, row in df_cp_new.iterrows():
         u_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
@@ -431,7 +430,6 @@ def sync_personnel_data(df_ptl, df_cp):
                 if p not in combined: combined.append(p)
         if combined: 
             df_cp_new.at[idx, '服勤人員'] = "、".join(combined)
-            # 強制清空該列舊的無線電代號，讓系統重新判定尾數
             df_cp_new.at[idx, '無線電'] = "" 
             
     return df_cp_new
@@ -502,29 +500,23 @@ with tab1:
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
     
-    # 先取得當前的暫存狀態
     current_cp = st.session_state.get("synced_cp", df_cp)
     
     if st.button("🔄 一鍵自動帶入第一階段人員"):
-        # 進行人員同步
         new_cp = sync_personnel_data(res_ptl, current_cp)
-        # 強制預先算好所有無線電代號，確保畫面一亮出來就有字！
         new_cp = auto_assign_radio_code(new_cp)
-        # 存入暫存並強制重整畫面
         st.session_state["synced_cp"] = new_cp
         if "cp_editor" in st.session_state:
             del st.session_state["cp_editor"]
         st.rerun()
     
     if st.button("🔄 刷新第二階段代號顯示"):
-        # 點擊刷新時，一樣在背景先算好代號再重整
         current_cp = auto_assign_radio_code(current_cp)
         st.session_state["synced_cp"] = current_cp
         if "cp_editor" in st.session_state:
             del st.session_state["cp_editor"]
         st.rerun()
         
-    # 顯示表格
     res_cp = auto_assign_radio_code(
         st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     ).dropna(how="all").fillna("")
