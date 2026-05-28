@@ -431,6 +431,8 @@ def sync_personnel_data(df_ptl, df_cp):
                 if p not in combined: combined.append(p)
         if combined: 
             df_cp_new.at[idx, '服勤人員'] = "、".join(combined)
+            # 強制清空該列舊的無線電代號，讓系統重新判定尾數
+            df_cp_new.at[idx, '無線電'] = "" 
             
     return df_cp_new
 
