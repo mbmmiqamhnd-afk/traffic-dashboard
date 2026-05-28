@@ -32,7 +32,7 @@ def send_report_email_auto(files, year, month):
         msg['To'] = sender
         msg['Subject'] = f"【系統備份】龍潭分局 {year}年{month}月 獎勵金點數統計表暨印領清冊"
         
-        body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共裝兩份 Excel 檔案，請查收。"
+        body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共兩份 Excel 檔案，請查收。"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
         for file_data, filename in files:
@@ -386,11 +386,12 @@ def p18_page():
                     direct_total_row['實領獎金'] = direct_total_money
                     df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
 
-                # D. 共同作業人員處理（核心修正：算錢前在背景自動注入交通組兼領名單）
+                # D. 共同作業人員處理
                 df_coworkers_raw_list = st.session_state.current_roster.copy()
                 df_coworkers_raw_list.dropna(how='all', inplace=True)
                 
-                # 【核心修正點】：在計算前，自動在背景追加這 5 位的 20% 勤務督導列，確保大池基數百分之百精確！
+                # 【核心邏輯升級 1：算錢前，自動在背景複製注入這 5 位的 20% 勤務督導列】
+                # 完全避免上一版的平均數切片偏移 Bug，確保總帳絕對一致
                 traf_auto_names = ["楊孟竟", "盧冠仁", "李峯甫", "葉佳媛", "郭勝隆"]
                 auto_rows = []
                 for name in traf_auto_names:
@@ -398,7 +399,7 @@ def p18_page():
                         "排序調整": 999, 
                         "分配類別": "勤務督導(20%)", 
                         "單位": "交通組", 
-                        "職別": "警務員", # 給予平均督導權重
+                        "職別": "業務承辦人", # 設定為業務承辦，背景分流對齊 20% 池
                         "姓名": name
                     })
                 if auto_rows:
@@ -449,9 +450,11 @@ def p18_page():
                         other_mask = ~df_72['職別_clean'].isin(['分局長', '副分局長'])
                         df_other = df_72[other_mask].copy()
                         if not df_other.empty and remaining_pool > 0:
+                            # 【核心邏輯升級 2：定義權重水庫池分類，將交通組全體人員精準鎖定在「交通業務承辦人(26%)」】
                             def get_sub_weight(row):
                                 title = str(row['職別'])
                                 unit = str(row['單位'])
+                                # 只要單位是交通組，不論原本名單上寫的是組長還是警員，一律視同交通業務承辦人享受 26 權重池平分
                                 if '交通組' in unit: return 26
                                 elif any(x in title for x in ['所長', '分隊長', '副所長', '小隊長']) and any(x in unit for x in ['派出所', '交通分隊']): return 56
                                 elif any(x in title for x in ['承辦', '業務']) and any(x in unit for x in ['派出所', '交通分隊']): return 10
@@ -471,7 +474,7 @@ def p18_page():
                         
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
                     
-                    # 20% 與 8% 池計算（此時大池基數已完美包含所有人，平分金額百分之百精確）
+                    # 20% 與 8% 池計算（大池分母精準無誤，不影響派出所督導金額）
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
@@ -493,7 +496,7 @@ def p18_page():
                 # ==================== 【預算分配原則與總表一覽表防線】 ====================
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
-                sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
+                sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "反/其他配合(8%)"]['金額'].sum()
                 coworkers_total_money = sub_72 + sub_20 + sub_08
 
                 summary_data = [
@@ -510,9 +513,8 @@ def p18_page():
                 # ==================== 【印領清冊工作表專用化妝作業】 ====================
                 df_coworkers_final_sheet = df_coworkers_output.copy()
 
-                # 合併金額：自動將剛才背景精算出的交通組督導獎金合併回負責管考那一列
+                # 自動執行化妝術：將背景中這 5 位的 20% 督導金額，無縫歸零並加回 72% 水庫列中
                 traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
-                
                 for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
                     p_name = row['姓名']
                     p_money = row['金額']
@@ -521,12 +523,11 @@ def p18_page():
                             (df_coworkers_final_sheet['姓名'] == p_name) & 
                             (df_coworkers_final_sheet['分配類別'] == "負責管考(72%)")
                         ].index
-                        
                         if not target_idx.empty:
                             df_coworkers_final_sheet.at[target_idx[0], '金額'] += p_money
                             df_coworkers_final_sheet.at[idx, '金額'] = 0
 
-                # 剔除因為金額合併而歸零的交通組督導重複列（畫面再次恢復乾淨不重複）
+                # 剔除因為金額合併而歸零的交通組督導重複列，還給長官一張乾淨清爽的清冊
                 df_coworkers_final_sheet = df_coworkers_final_sheet[
                     ~((df_coworkers_final_sheet['單位'] == "交通組") & 
                       (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)") & 
