@@ -386,15 +386,16 @@ def p18_page():
                 if "系統自動" in alloc_mode:
                     if "A" in budget_type:
                         coworker_pool = int(budget_input)
+                        st.success(f"模式 A：共同作業總預算 = **{coworker_pool:,} 元**")
                     else:
                         coworker_pool = int(budget_input) - direct_total_money
-                        if coworker_pool < 0:
-                            st.error(f"❌ 全分局預算 ({budget_input}) 不足")
-                            return
+                        st.info(f"模式 B：全分局 {budget_input:,} - 直接執行 {direct_total_money:,} = **{coworker_pool:,} 元**")
                     
                     pool_72 = int(np.round(coworker_pool * 0.72))
                     pool_20 = int(np.round(coworker_pool * 0.20))
                     pool_08 = coworker_pool - pool_72 - pool_20
+                    
+                    st.success(f"✅ **72% 金額 = {pool_72:,} 元** | 20% = {pool_20:,} 元 | 8% = {pool_08:,} 元")
                     
                     df_coworkers_work['核發金額'] = 0
                     
@@ -403,7 +404,6 @@ def p18_page():
                     df_72['核發金額'] = 0
                     
                     if not df_72.empty and pool_72 > 0:
-                        # 正副主官 8%
                         main_pool = int(np.round(pool_72 * 0.08))
                         chief_mask = df_72['職別'].str.contains('分局長', na=False)
                         vice_mask = df_72['職別'].str.contains('副分局長', na=False)
@@ -416,7 +416,6 @@ def p18_page():
                         
                         remaining_pool = pool_72 - df_72['核發金額'].sum()
                         
-                        # 剩餘92% 百分比分配
                         sup_pool = int(np.round(remaining_pool * 0.56))
                         traf_pool = int(np.round(remaining_pool * 0.26))
                         clerk_pool = int(np.round(remaining_pool * 0.10))
@@ -455,7 +454,7 @@ def p18_page():
                         
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
                     
-                    # 20% 和 8% 平均分配
+                    # 20% 與 8% 平均分配
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
@@ -474,7 +473,7 @@ def p18_page():
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
                 
-                # 總表數據
+                # 總表與印領清冊處理（與之前版本相同）
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
                 sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
@@ -491,9 +490,8 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
                 
-                # 印領清冊處理
+                # 印領清冊處理（交通組合併等）
                 df_coworkers_final_sheet = df_coworkers_output.copy()
-                
                 traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
                 for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
                     p_name = row['姓名']
@@ -537,7 +535,7 @@ def p18_page():
                 grand_total_row_data['金額'] = direct_total_money + coworker_sheet_total_money
                 df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
                 
-                # Excel 輸出
+                # Excel 輸出部分（與之前版本相同）
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
