@@ -179,7 +179,7 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警務佐", "姓名": "陳敬霖"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "黃文興"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "王天龍", "姓名": "王天龍"},
-                {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "曾嘉偉"},
+                {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "開國"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "警員", "姓名": "江文頌"},
                 {"分配類別": "勤務督導(20%)", "單位": "督察組", "職別": "組長", "姓名": "黃長旗"},
                 {"分配類別": "勤務督導(20%)", "單位": "督察組", "職別": "督察員", "姓名": "黃中彥"},
@@ -386,12 +386,11 @@ def p18_page():
                     direct_total_row['實領獎金'] = direct_total_money
                     df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
 
-                # D. 共同作業人員處理
+                # D. 共同作業人員處理（核心修正：背景完美前置注入兼領名單）
                 df_coworkers_raw_list = st.session_state.current_roster.copy()
                 df_coworkers_raw_list.dropna(how='all', inplace=True)
                 
-                # 【核心邏輯升級 1：算錢前，自動在背景複製注入這 5 位的 20% 勤務督導列】
-                # 完全避免上一版的平均數切片偏移 Bug，確保總帳絕對一致
+                # 背景精準注入：這 5 位同仁不論職稱是組長還是警員，強制在背景複製一列 20% 督導池
                 traf_auto_names = ["楊孟竟", "盧冠仁", "李峯甫", "葉佳媛", "郭勝隆"]
                 auto_rows = []
                 for name in traf_auto_names:
@@ -399,7 +398,7 @@ def p18_page():
                         "排序調整": 999, 
                         "分配類別": "勤務督導(20%)", 
                         "單位": "交通組", 
-                        "職別": "業務承辦人", # 設定為業務承辦，背景分流對齊 20% 池
+                        "職別": "自動兼領", # 獨立特徵，防堵平均數切片位移
                         "姓名": name
                     })
                 if auto_rows:
@@ -450,14 +449,16 @@ def p18_page():
                         other_mask = ~df_72['職別_clean'].isin(['分局長', '副分局長'])
                         df_other = df_72[other_mask].copy()
                         if not df_other.empty and remaining_pool > 0:
-                            # 【核心邏輯升級 2：定義權重水庫池分類，將交通組全體人員精準鎖定在「交通業務承辦人(26%)」】
+                            # 【終極核心修正點】：權重池不看職別，只要單位是「交通組」，權重直接鎖死 26！
                             def get_sub_weight(row):
-                                title = str(row['職別'])
                                 unit = str(row['單位'])
-                                # 只要單位是交通組，不論原本名單上寫的是組長還是警員，一律視同交通業務承辦人享受 26 權重池平分
-                                if '交通組' in unit: return 26
-                                elif any(x in title for x in ['所長', '分隊長', '副所長', '小隊長']) and any(x in unit for x in ['派出所', '交通分隊']): return 56
-                                elif any(x in title for x in ['承辦', '業務']) and any(x in unit for x in ['派出所', '交通分隊']): return 10
+                                title = str(row['職別'])
+                                if '交通組' in unit: 
+                                    return 26  # 交通組全體同仁不管職稱寫什麼，通通完美鎖定 26% 池
+                                elif any(x in title for x in ['所長', '分隊長', '副所長', '小隊長']) and any(x in unit for x in ['派出所', '交通分隊']): 
+                                    return 56
+                                elif any(x in title for x in ['承辦', '業務']) and any(x in unit for x in ['派出所', '交通分隊']): 
+                                    return 10
                                 return 1
                             df_other['weight'] = df_other.apply(get_sub_weight, axis=1)
                             total_weight = df_other['weight'].sum()
@@ -474,7 +475,7 @@ def p18_page():
                         
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
                     
-                    # 20% 與 8% 池計算（大池分母精準無誤，不影響派出所督導金額）
+                    # 20% 與 8% 池計算（分母大池精確包含，金額一文不差）
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
@@ -496,7 +497,7 @@ def p18_page():
                 # ==================== 【預算分配原則與總表一覽表防線】 ====================
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
-                sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "反/其他配合(8%)"]['金額'].sum()
+                sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
                 coworkers_total_money = sub_72 + sub_20 + sub_08
 
                 summary_data = [
@@ -513,7 +514,7 @@ def p18_page():
                 # ==================== 【印領清冊工作表專用化妝作業】 ====================
                 df_coworkers_final_sheet = df_coworkers_output.copy()
 
-                # 自動執行化妝術：將背景中這 5 位的 20% 督導金額，無縫歸零並加回 72% 水庫列中
+                # 自動執行清冊化妝：將背景複製出的這 5 筆督導金額疊加回他們的 72% 水庫列
                 traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
                 for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
                     p_name = row['姓名']
@@ -527,7 +528,7 @@ def p18_page():
                             df_coworkers_final_sheet.at[target_idx[0], '金額'] += p_money
                             df_coworkers_final_sheet.at[idx, '金額'] = 0
 
-                # 剔除因為金額合併而歸零的交通組督導重複列，還給長官一張乾淨清爽的清冊
+                # 再次剔除背景歸零的督導列，清冊恢復不重複的乾淨狀態
                 df_coworkers_final_sheet = df_coworkers_final_sheet[
                     ~((df_coworkers_final_sheet['單位'] == "交通組") & 
                       (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)") & 
