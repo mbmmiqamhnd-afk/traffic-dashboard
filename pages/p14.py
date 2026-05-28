@@ -379,34 +379,47 @@ def auto_assign_radio_code(df):
 def sync_personnel_data(df_ptl, df_cp):
     df_ptl = clean_df(df_ptl)
     if df_ptl.empty or df_cp.empty: return df_cp
+    
     split_pattern = r'[、,，\s/]+'
     p_dict = {}
+    
     for _, row in df_ptl.iterrows():
         unit_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
         units = [u.strip() for u in re.split(split_pattern, unit_str) if u.strip()]
         persons_str = str(row.get('服勤人員', '')).strip()
         current_persons = [p.strip() for p in re.split(split_pattern, persons_str) if p.strip()]
+        
+        # 如果單位或人員是空的，直接跳過
+        if not units or not current_persons:
+            continue
+            
+        # 確保這列出現的「所有單位」都已經在字典裡建立好空名單
         for u in units:
-            if u not in p_dict: p_dict[u] = []
-            if not current_persons: continue
-            if len(units) == 1:
-                for p in current_persons:
-                    if p not in p_dict[u]: p_dict[u].append(p)
-            else:
-                M, N = len(current_persons), len(units)
-                if M >= N:
-                    base, rem, cur_idx = M // N, M % N, 0
-                    for i, uk in enumerate(units):
-                        count = base + (1 if i < rem else 0)
-                        for _ in range(count):
-                            if cur_idx < M:
-                                p = current_persons[cur_idx]
-                                if p not in p_dict[uk]: p_dict[uk].append(p)
-                                cur_idx += 1
-                else:
-                    for uk in units:
-                        for p in current_persons:
+            if u not in p_dict: 
+                p_dict[u] = []
+                
+        # 進行人員分配
+        if len(units) == 1:
+            u = units[0]
+            for p in current_persons:
+                if p not in p_dict[u]: p_dict[u].append(p)
+        else:
+            M, N = len(current_persons), len(units)
+            if M >= N:
+                base, rem, cur_idx = M // N, M % N, 0
+                for i, uk in enumerate(units):
+                    count = base + (1 if i < rem else 0)
+                    for _ in range(count):
+                        if cur_idx < M:
+                            p = current_persons[cur_idx]
                             if p not in p_dict[uk]: p_dict[uk].append(p)
+                            cur_idx += 1
+            else:
+                for uk in units:
+                    for p in current_persons:
+                        if p not in p_dict[uk]: p_dict[uk].append(p)
+
+    # 讀取第二階段並進行人員填寫
     df_cp_new = df_cp.copy()
     for idx, row in df_cp_new.iterrows():
         u_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
@@ -416,8 +429,11 @@ def sync_personnel_data(df_ptl, df_cp):
             persons_from_dict = p_dict.get(u, [])
             for p in persons_from_dict:
                 if p not in combined: combined.append(p)
-        if combined: df_cp_new.at[idx, '服勤人員'] = "、".join(combined)
+        if combined: 
+            df_cp_new.at[idx, '服勤人員'] = "、".join(combined)
+            
     return df_cp_new
+
 
 # --- 3. 主程式介面 ---
 
@@ -472,16 +488,30 @@ tab1, tab2 = st.tabs(["📍 第一階段", "🚧 第二階段"])
 
 with tab1:
     st.info(f"當前標題：{phase1_desc}")
+    # 增加一個手動刷新按鈕來清除編輯器暫存
+    if st.button("🔄 刷新第一階段代號顯示"):
+        if "ptl_editor" in st.session_state:
+            del st.session_state["ptl_editor"]
+        st.rerun()
+        
     res_ptl = auto_assign_radio_code(
         st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
     ).dropna(how="all").fillna("")
 
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
+    
     if st.button("🔄 一鍵自動帶入第一階段人員"):
         st.session_state["synced_cp"] = sync_personnel_data(res_ptl, df_cp)
         st.rerun()
     current_cp = st.session_state.get("synced_cp", df_cp)
+    
+    # 增加一個手動刷新按鈕來清除編輯器暫存
+    if st.button("🔄 刷新第二階段代號顯示"):
+        if "cp_editor" in st.session_state:
+            del st.session_state["cp_editor"]
+        st.rerun()
+        
     res_cp = auto_assign_radio_code(
         st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     ).dropna(how="all").fillna("")
@@ -491,7 +521,7 @@ pdf_plan       = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
 
 col_dl1, col_dl2 = st.columns(2)
-col_dl1.download_button("📝 下載規劃表", data=pdf_plan,       file_name=f"{u}執行{p_name}勤務規劃表.pdf", use_container_width=True)
+col_dl1.download_button("📝 下載規劃表", data=pdf_plan,        file_name=f"{u}執行{p_name}勤務規劃表.pdf", use_container_width=True)
 col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_name=f"{u}執行{p_name}勤務簽到表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True):
