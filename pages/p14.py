@@ -436,7 +436,6 @@ def sync_personnel_data(df_ptl, df_cp):
             
     return df_cp_new
 
-
 # --- 3. 主程式介面 ---
 
 if st.sidebar.button("🔄 強制從雲端更新資料"):
@@ -490,7 +489,7 @@ tab1, tab2 = st.tabs(["📍 第一階段", "🚧 第二階段"])
 
 with tab1:
     st.info(f"當前標題：{phase1_desc}")
-    # 增加一個手動刷新按鈕來清除編輯器暫存
+    
     if st.button("🔄 刷新第一階段代號顯示"):
         if "ptl_editor" in st.session_state:
             del st.session_state["ptl_editor"]
@@ -503,17 +502,29 @@ with tab1:
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
     
-    if st.button("🔄 一鍵自動帶入第一階段人員"):
-        st.session_state["synced_cp"] = sync_personnel_data(res_ptl, df_cp)
-        st.rerun()
+    # 先取得當前的暫存狀態
     current_cp = st.session_state.get("synced_cp", df_cp)
     
-    # 增加一個手動刷新按鈕來清除編輯器暫存
+    if st.button("🔄 一鍵自動帶入第一階段人員"):
+        # 進行人員同步
+        new_cp = sync_personnel_data(res_ptl, current_cp)
+        # 強制預先算好所有無線電代號，確保畫面一亮出來就有字！
+        new_cp = auto_assign_radio_code(new_cp)
+        # 存入暫存並強制重整畫面
+        st.session_state["synced_cp"] = new_cp
+        if "cp_editor" in st.session_state:
+            del st.session_state["cp_editor"]
+        st.rerun()
+    
     if st.button("🔄 刷新第二階段代號顯示"):
+        # 點擊刷新時，一樣在背景先算好代號再重整
+        current_cp = auto_assign_radio_code(current_cp)
+        st.session_state["synced_cp"] = current_cp
         if "cp_editor" in st.session_state:
             del st.session_state["cp_editor"]
         st.rerun()
         
+    # 顯示表格
     res_cp = auto_assign_radio_code(
         st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     ).dropna(how="all").fillna("")
