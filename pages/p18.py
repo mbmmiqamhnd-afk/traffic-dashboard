@@ -278,7 +278,7 @@ def p18_page():
                         if found_date: break
                     if found_date: break
                 
-                # C. 直接執行人員計算（保持不變）
+                # C. 直接執行人員計算
                 final_sheets = {}
                 summary_rows = []
                 g_cite, g_acc, g_traf, g_all = 0, 0, 0, 0
@@ -324,7 +324,9 @@ def p18_page():
                             if '交整點數' in df_members.columns: df_members.at[idx, '交整點數'] = tp if tp > 0 else ""
                             if '個人總點數' in df_members.columns: df_members.at[idx, '個人總點數'] = total_pts
                            
-                            s_cite += cp; s_acc += ap; s_traf += tp
+                            s_cite += cp
+                            s_acc += ap
+                            s_traf += tp
                            
                             if total_pts > 0:
                                 reward = int(np.round(total_pts * point_value))
@@ -349,13 +351,17 @@ def p18_page():
                         final_sheets[sheet_name] = df_final
                        
                         summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
-                        g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
+                        g_cite += s_cite
+                        g_acc += s_acc
+                        g_traf += s_traf
+                        g_all += (s_cite + s_acc + s_traf)
                 
                 df_direct_exec = pd.DataFrame(direct_exec_list)
                 if not df_direct_exec.empty:
                     df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
                 
                 direct_total_money = df_direct_exec['實領獎金'].sum() if not df_direct_exec.empty else 0
+                
                 if not df_direct_exec.empty and target_direct_budget > 0:
                     diff = target_direct_budget - direct_total_money
                     if diff != 0:
@@ -377,7 +383,7 @@ def p18_page():
                     direct_total_row['實領獎金'] = direct_total_money
                     df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
                 
-                # D. 共同作業人員 - 按百分比分配（重點修改部分）
+                # D. 共同作業人員 - 百分比分配（已修正）
                 df_coworkers_work = st.session_state.current_roster.copy()
                 df_coworkers_work.dropna(how='all', inplace=True)
                 df_coworkers_work = sort_coworkers(df_coworkers_work)
@@ -397,7 +403,6 @@ def p18_page():
                     
                     df_coworkers_work['核發金額'] = 0
                     
-                    # 72% 處理
                     mask_72 = df_coworkers_work['分配類別'] == "負責管考(72%)"
                     df_72 = df_coworkers_work[mask_72].copy()
                     df_72['核發金額'] = 0
@@ -417,42 +422,45 @@ def p18_page():
                         remaining_pool = pool_72 - df_72['核發金額'].sum()
                         
                         # 剩餘92% 按百分比分配
-                        sup_pool = int(np.round(remaining_pool * 0.56))      # 正副主管 56%
-                        traf_pool = int(np.round(remaining_pool * 0.26))     # 交通組 26%
-                        clerk_pool = int(np.round(remaining_pool * 0.10))    # 業務承辦人 10%
+                        sup_pool = int(np.round(remaining_pool * 0.56))
+                        traf_pool = int(np.round(remaining_pool * 0.26))
+                        clerk_pool = int(np.round(remaining_pool * 0.10))
                         
-                        # 派出所/交通分隊 正副主管
+                        # 正副主管
                         sup_mask = (df_72['單位'].str.contains('派出所|交通分隊', na=False)) & \
-                                   df_72['職別'].str.contains('所長|副所長|分隊長|小隊長', na=False)
-                        if sup_mask.sum() > 0:
-                            base = int(np.floor(sup_pool / sup_mask.sum()))
-                            df_72.loc[sup_mask, '核發金額'] = base
-                            extra = sup_pool - base * sup_mask.sum()
+                                   (df_72['職別'].str.contains('所長|副所長|分隊長|小隊長', na=False))
+                        sup_indices = df_72[sup_mask].index
+                        if len(sup_indices) > 0:
+                            base = int(np.floor(sup_pool / len(sup_indices)))
+                            df_72.loc[sup_indices, '核發金額'] = base
+                            extra = sup_pool - base * len(sup_indices)
                             if extra > 0:
-                                df_72.loc[sup_mask][:extra, '核發金額'] += 1
+                                df_72.loc[sup_indices[:extra], '核發金額'] += 1
                         
                         # 交通組
                         traf_mask = df_72['單位'] == "交通組"
-                        if traf_mask.sum() > 0:
-                            base = int(np.floor(traf_pool / traf_mask.sum()))
-                            df_72.loc[traf_mask, '核發金額'] = base
-                            extra = traf_pool - base * traf_mask.sum()
+                        traf_indices = df_72[traf_mask].index
+                        if len(traf_indices) > 0:
+                            base = int(np.floor(traf_pool / len(traf_indices)))
+                            df_72.loc[traf_indices, '核發金額'] = base
+                            extra = traf_pool - base * len(traf_indices)
                             if extra > 0:
-                                df_72.loc[traf_mask][:extra, '核發金額'] += 1
+                                df_72.loc[traf_indices[:extra], '核發金額'] += 1
                         
                         # 業務承辦人
                         clerk_mask = (df_72['單位'].str.contains('派出所|交通分隊', na=False)) & \
-                                     df_72['職別'].str.contains('業務承辦人|承辦', na=False)
-                        if clerk_mask.sum() > 0:
-                            base = int(np.floor(clerk_pool / clerk_mask.sum()))
-                            df_72.loc[clerk_mask, '核發金額'] = base
-                            extra = clerk_pool - base * clerk_mask.sum()
+                                     (df_72['職別'].str.contains('業務承辦人|承辦', na=False))
+                        clerk_indices = df_72[clerk_mask].index
+                        if len(clerk_indices) > 0:
+                            base = int(np.floor(clerk_pool / len(clerk_indices)))
+                            df_72.loc[clerk_indices, '核發金額'] = base
+                            extra = clerk_pool - base * len(clerk_indices)
                             if extra > 0:
-                                df_72.loc[clerk_mask][:extra, '核發金額'] += 1
+                                df_72.loc[clerk_indices[:extra], '核發金額'] += 1
                         
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
                     
-                    # 20% 與 8% 維持平均分配
+                    # 20% 與 8% 平均分配
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
@@ -471,7 +479,7 @@ def p18_page():
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
                 
-                # 後續總表、印領清冊等處理（與之前版本相同）
+                # 總表數據
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
                 sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
@@ -488,8 +496,10 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
                 
-                # 印領清冊處理（保持不變）
+                # 印領清冊處理
                 df_coworkers_final_sheet = df_coworkers_output.copy()
+                
+                # 交通組兼領合併
                 traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
                 for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
                     p_name = row['姓名']
@@ -511,6 +521,7 @@ def p18_page():
                 
                 coworker_sheet_total_money = df_coworkers_final_sheet['金額'].sum()
                 
+                # 排序
                 if '排序調整' in df_coworkers_final_sheet.columns:
                     df_coworkers_final_sheet['排序調整'] = pd.to_numeric(df_coworkers_final_sheet['排序調整'], errors='coerce').fillna(999).astype(int)
                     df_coworkers_final_sheet.sort_values(by=['排序調整', '單位', '姓名'], ascending=[True, True, True], inplace=True)
@@ -523,11 +534,13 @@ def p18_page():
                 df_coworkers_final_sheet.insert(0, '序號', range(1, len(df_coworkers_final_sheet) + 1))
                 df_coworkers_final_sheet['蓋章'] = ""
                 
+                # 合計列
                 total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                 total_row_data['單位'] = '合計'
                 total_row_data['金額'] = coworker_sheet_total_money
                 df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([total_row_data])], ignore_index=True)
                 
+                # 總計列
                 grand_total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                 grand_total_row_data['單位'] = '總計（含直接執行人員）'
                 grand_total_row_data['金額'] = direct_total_money + coworker_sheet_total_money
