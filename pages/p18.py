@@ -219,9 +219,8 @@ def p18_page():
             ]
             df_init = pd.DataFrame(default_coworkers_data)
         
-        # 強制修正：所有派出所與交通分隊設為負責管考(72%)
-        mask_station = df_init['單位'].str.contains('派出所|交通分隊', na=False)
-        df_init.loc[mask_station, '分配類別'] = "負責管考(72%)"
+        # 強制所有派出所與交通分隊為負責管考(72%)
+        df_init.loc[df_init['單位'].str.contains('派出所|交通分隊', na=False), '分配類別'] = "負責管考(72%)"
         
         st.session_state.current_roster = sort_coworkers(df_init)
     
@@ -414,11 +413,9 @@ def p18_page():
                         traf_pool = int(np.round(remaining_pool * 0.26))
                         clerk_pool = int(np.round(remaining_pool * 0.10))
                         
-                        # 加強版匹配 - 派出所/交通分隊正副主管 56%
-                        sup_mask = (
-                            df_72['單位'].str.contains('派出所|交通分隊', na=False) & 
-                            df_72['職別'].str.contains('所長|副所長|分隊長|小隊長|主管|警備', na=False)
-                        )
+                        # 派出所/交通分隊正副主管 56%
+                        sup_mask = (df_72['單位'].str.contains('派出所|交通分隊', na=False)) & \
+                                   (df_72['職別'].str.contains('所長|副所長|分隊長|小隊長', na=False))
                         sup_indices = df_72[sup_mask].index
                         if len(sup_indices) > 0:
                             base = int(np.floor(sup_pool / len(sup_indices)))
@@ -438,10 +435,8 @@ def p18_page():
                                 df_72.loc[traf_indices[:extra], '核發金額'] += 1
                         
                         # 業務承辦人 10%
-                        clerk_mask = (
-                            df_72['單位'].str.contains('派出所|交通分隊', na=False) & 
-                            df_72['職別'].str.contains('業務承辦人|承辦人|承辦', na=False)
-                        )
+                        clerk_mask = (df_72['單位'].str.contains('派出所|交通分隊', na=False)) & \
+                                     (df_72['職別'].str.contains('業務承辦人|承辦', na=False))
                         clerk_indices = df_72[clerk_mask].index
                         if len(clerk_indices) > 0:
                             base = int(np.floor(clerk_pool / len(clerk_indices)))
@@ -452,6 +447,7 @@ def p18_page():
                         
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
                     
+                    # 20% 和 8% 分配
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
@@ -470,25 +466,8 @@ def p18_page():
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
                 
-                sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
-                sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
-                sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
-                coworkers_total_money = sub_72 + sub_20 + sub_08
-                
-                summary_data = [
-                    {"項目": "一、直接執行人員", "金額": direct_total_money},
-                    {"項目": "二、共同作業-負責管考(72%)", "金額": sub_72},
-                    {"項目": "二、共同作業-勤務督導(20%)", "金額": sub_20},
-                    {"項目": "二、共同作業-其他配合(8%)", "金額": sub_08},
-                    {"項目": "共同作業人員小計", "金額": coworkers_total_money},
-                    {"項目": "本月合計應發放", "金額": direct_total_money + coworkers_total_money},
-                    {"項目": "製表人", "金額": ""}
-                ]
-                df_payroll_summary = pd.DataFrame(summary_data)
-                
-                # 印領清冊最終處理
+                # 交通組兼領勤務督導人員合併（關鍵修正）
                 df_coworkers_final_sheet = df_coworkers_output.copy()
-                
                 traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
                 for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
                     p_name = row['姓名']
@@ -606,26 +585,4 @@ def p18_page():
                         ws2.write(sign_start_row + 3, 2, "出納：", sign_title_format)
                         ws2.set_row(sign_start_row + 4, 50)
                     
-                    df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
-                
-                payroll_excel_data = payroll_output.getvalue()
-                payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
-                
-                files_to_attach = [(pts_excel_data, pts_filename), (payroll_excel_data, payroll_filename)]
-                ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
-             
-                if ok:
-                    st.success("✅ 報表產出成功！已自動寄送至信箱。")
-                else:
-                    st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
-                
-                c5, c6 = st.columns(2)
-                c5.download_button("📥 下載【點數統計表】", pts_excel_data, pts_filename, use_container_width=True)
-                c6.download_button("📥 下載【印領清冊】", payroll_excel_data, payroll_filename, use_container_width=True, type="primary")
-                
-            except Exception as e:
-                st.error(f"❌ 發生錯誤：{str(e)}")
-
-
-if __name__ == "__main__":
-    p18_page()
+                    df_payroll_summary.to_excel(writer
