@@ -324,9 +324,7 @@ def p18_page():
                             if '交整點數' in df_members.columns: df_members.at[idx, '交整點數'] = tp if tp > 0 else ""
                             if '個人總點數' in df_members.columns: df_members.at[idx, '個人總點數'] = total_pts
                            
-                            s_cite += cp
-                            s_acc += ap
-                            s_traf += tp
+                            s_cite += cp; s_acc += ap; s_traf += tp
                            
                             if total_pts > 0:
                                 reward = int(np.round(total_pts * point_value))
@@ -351,10 +349,7 @@ def p18_page():
                         final_sheets[sheet_name] = df_final
                        
                         summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
-                        g_cite += s_cite
-                        g_acc += s_acc
-                        g_traf += s_traf
-                        g_all += (s_cite + s_acc + s_traf)
+                        g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
                 
                 df_direct_exec = pd.DataFrame(direct_exec_list)
                 if not df_direct_exec.empty:
@@ -383,7 +378,7 @@ def p18_page():
                     direct_total_row['實領獎金'] = direct_total_money
                     df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
                 
-                # D. 共同作業人員 - 百分比分配（已修正）
+                # ====================== 共同作業人員處理 ======================
                 df_coworkers_work = st.session_state.current_roster.copy()
                 df_coworkers_work.dropna(how='all', inplace=True)
                 df_coworkers_work = sort_coworkers(df_coworkers_work)
@@ -394,7 +389,7 @@ def p18_page():
                     else:
                         coworker_pool = int(budget_input) - direct_total_money
                         if coworker_pool < 0:
-                            st.error(f"❌ 全分局預算 ({budget_input}) 不足支付直接執行人員 ({direct_total_money})")
+                            st.error(f"❌ 全分局預算 ({budget_input}) 不足")
                             return
                     
                     pool_72 = int(np.round(coworker_pool * 0.72))
@@ -421,7 +416,7 @@ def p18_page():
                         
                         remaining_pool = pool_72 - df_72['核發金額'].sum()
                         
-                        # 剩餘92% 按百分比分配
+                        # 剩餘92% 百分比分配
                         sup_pool = int(np.round(remaining_pool * 0.56))
                         traf_pool = int(np.round(remaining_pool * 0.26))
                         clerk_pool = int(np.round(remaining_pool * 0.10))
@@ -460,7 +455,7 @@ def p18_page():
                         
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
                     
-                    # 20% 與 8% 平均分配
+                    # 20% 和 8% 平均分配
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
@@ -499,7 +494,6 @@ def p18_page():
                 # 印領清冊處理
                 df_coworkers_final_sheet = df_coworkers_output.copy()
                 
-                # 交通組兼領合併
                 traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
                 for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
                     p_name = row['姓名']
@@ -521,7 +515,6 @@ def p18_page():
                 
                 coworker_sheet_total_money = df_coworkers_final_sheet['金額'].sum()
                 
-                # 排序
                 if '排序調整' in df_coworkers_final_sheet.columns:
                     df_coworkers_final_sheet['排序調整'] = pd.to_numeric(df_coworkers_final_sheet['排序調整'], errors='coerce').fillna(999).astype(int)
                     df_coworkers_final_sheet.sort_values(by=['排序調整', '單位', '姓名'], ascending=[True, True, True], inplace=True)
@@ -534,13 +527,11 @@ def p18_page():
                 df_coworkers_final_sheet.insert(0, '序號', range(1, len(df_coworkers_final_sheet) + 1))
                 df_coworkers_final_sheet['蓋章'] = ""
                 
-                # 合計列
                 total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                 total_row_data['單位'] = '合計'
                 total_row_data['金額'] = coworker_sheet_total_money
                 df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([total_row_data])], ignore_index=True)
                 
-                # 總計列
                 grand_total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                 grand_total_row_data['單位'] = '總計（含直接執行人員）'
                 grand_total_row_data['金額'] = direct_total_money + coworker_sheet_total_money
