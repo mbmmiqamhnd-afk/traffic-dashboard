@@ -26,22 +26,22 @@ def send_report_email_auto(files, year, month):
             return False, "找不到 st.secrets 中的 email 設定"
         sender = st.secrets["email"]["user"]
         pwd = st.secrets["email"]["password"]
-       
+        
         msg = MIMEMultipart()
         msg['From'] = sender
         msg['To'] = sender
         msg['Subject'] = f"【系統備份】龍潭分局 {year}年{month}月 獎勵金點數統計表暨印領清冊"
-       
+        
         body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共兩份 Excel 檔案，請查收。"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
-       
+        
         for file_data, filename in files:
             part = MIMEBase('application', 'octet-stream')
             part.set_payload(file_data)
             encoders.encode_base64(part)
             part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(filename)}")
             msg.attach(part)
-       
+        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
             server.send_message(msg)
@@ -56,25 +56,25 @@ def sort_coworkers(df):
     df['單位'] = df['單位'].fillna("").astype(str).str.strip()
     df['職別'] = df['職別'].fillna("").astype(str).str.strip()
     df['分配類別'] = df['分配類別'].fillna("").astype(str).str.strip()
-   
+    
     if '排序調整' in df.columns:
         df['排序調整'] = pd.to_numeric(df['排序調整'], errors='coerce').fillna(999).astype(int)
     else:
         df.insert(0, '排序調整', range(100, 100 + len(df)))
-   
+    
     cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)", ""]
     df['分配類別'] = pd.Categorical(df['分配類別'], categories=cat_order, ordered=True)
-   
+    
     unit_order = ["交通組", "會計室", "秘書室", "人事室", "龍潭分局", "勤務中心", "督察組",
                   "保安民防組", "行政組", "防治組", "聖亭派出所", "龍潭派出所", "中興派出所",
                   "石門派出所", "高平派出所", "三和派出所", "龍潭交通分隊", ""]
-   
+    
     for u in df['單位'].unique():
         if u not in unit_order:
             unit_order.append(u)
-           
+            
     df['單位'] = pd.Categorical(df['單位'], categories=unit_order, ordered=True)
-   
+    
     def get_rank_weight(title):
         title = str(title).strip()
         if title == '分局長': return 1
@@ -84,12 +84,12 @@ def sort_coworkers(df):
         if any(x in title for x in ['巡佐', '督察員', '警務員']): return 5
         if '巡官' in title: return 6
         return 7
-   
+    
     df['職級權重'] = df['職別'].apply(get_rank_weight)
-   
+    
     df.sort_values(by=['排序調整', '分配類別', '單位', '職級權重', '姓名'],
                     ascending=[True, True, True, True, True], inplace=True)
-   
+    
     df.drop(columns=['職級權重'], inplace=True, errors='ignore')
     df.reset_index(drop=True, inplace=True)
     return df
@@ -113,18 +113,18 @@ def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
     st.info("💡 挪移順序教學：表格最左側「排序調整」欄位可手動調整順序")
-   
+    
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
     st.subheader("📂 1. 當月原始資料上傳")
     c1, c2 = st.columns(2)
     file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xlsx'])
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
     file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xlsx'], accept_multiple_files=True)
- 
+
     st.subheader("📝 2. 印領清冊與獎金分配設定")
     point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
     target_direct_budget = st.number_input("🎯 警察局核撥【直接執行人員】總獎金目標 (元) *若為 0 則不啟動自動平帳", value=0, step=1)
- 
+
     st.markdown("##### 👥 共同作業及配合人員 - 分配模式")
     alloc_mode = st.radio(
         "請選擇「共同作業及配合人員」的獎金計算方式：",
@@ -229,7 +229,7 @@ def p18_page():
         st.session_state.current_roster = sort_coworkers(df_init)
     
     df_display = st.session_state.current_roster.copy()
- 
+
     if "系統自動" not in alloc_mode:
         if '金額' not in df_display.columns:
             df_display.insert(5, '金額', 0)
@@ -306,17 +306,17 @@ def p18_page():
                         df_work.reset_index(drop=True, inplace=True)
                         df_work.columns = [str(c).strip() for c in df_work.iloc[0]]
                         df_work = df_work.drop(0).astype(object)
-                       
+                        
                         member_rows = []
                         for r in range(len(df_work)):
                             name_cell = str(df_work.iloc[r, 0]).strip()
                             if '小計' in name_cell or '總計' in name_cell or name_cell in ['nan', 'None', '']:
                                 continue
                             member_rows.append(r)
-                       
+                        
                         df_members = df_work.iloc[member_rows].copy()
                         s_cite, s_acc, s_traf = 0, 0, 0
-                       
+                        
                         for idx, row in df_members.iterrows():
                             name = str(row.get('員警姓名', '')).strip()
                             a2 = dict_acc.get(name, {}).get('A2類', 0)
@@ -326,9 +326,9 @@ def p18_page():
                             tp = th * P_TRAF
                             cp = pd.to_numeric(row.get('取締點數', 0), errors='coerce') or 0
                             total_pts = cp + ap + tp
-                           
+                            
                             s_cite += cp; s_acc += ap; s_traf += tp
-                           
+                            
                             if total_pts > 0:
                                 reward = int(np.round(total_pts * point_value))
                                 direct_exec_list.append({
@@ -339,18 +339,18 @@ def p18_page():
                                     "交整點數": tp if tp > 0 else '', "個人總點數": total_pts,
                                     "每點獎金": point_value, "實領獎金": reward, "蓋章": ""
                                 })
-                       
+                        
                         sub_row_data = {c: "" for c in df_work.columns}
                         sub_row_data['員警姓名'] = '小計'
                         for col_n in df_work.columns:
                             if col_n in ['員警姓名', '蓋章']: continue
                             v_sum = pd.to_numeric(df_members[col_n], errors='coerce').sum()
                             sub_row_data[col_n] = v_sum if v_sum > 0 else 0
-                       
+                        
                         df_final = pd.concat([df_members, pd.DataFrame([sub_row_data])], ignore_index=True)
                         if '蓋章' in df_final.columns: df_final = df_final.drop(columns=['蓋章'])
                         final_sheets[sheet_name] = df_final
-                       
+                        
                         summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
                         g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
                 
@@ -406,16 +406,17 @@ def p18_page():
                         main_pool = int(np.round(pool_72 * 0.08))
                         chief_mask = df_72['職別'].str.contains('分局長', na=False)
                         vice_mask = df_72['職別'].str.contains('副分局長', na=False)
+                        
                         if chief_mask.any():
                             df_72.loc[chief_mask, '核發金額'] = int(np.round(main_pool * 0.60))
                         if vice_mask.any():
                             df_72.loc[vice_mask, '核發金額'] = int(np.round(main_pool * 0.40 / vice_mask.sum()))
                         
-                        remaining_pool = pool_72 - df_72['核發金額'].sum()
+                        actual_main_used = df_72['核發金額'].sum()
                         
-                        sup_pool = int(np.round(remaining_pool * 0.56))
-                        traf_pool = int(np.round(remaining_pool * 0.26))
-                        clerk_pool = int(np.round(remaining_pool * 0.10))
+                        sup_pool = int(np.round(pool_72 * 0.56))
+                        traf_pool = int(np.round(pool_72 * 0.26))
+                        clerk_pool = pool_72 - actual_main_used - sup_pool - traf_pool
                         
                         sup_mask = (df_72['單位'].str.contains('派出所|交通分隊', na=False)) & \
                                    (df_72['職別'].str.contains('所長|副所長|分隊長|小隊長', na=False))
