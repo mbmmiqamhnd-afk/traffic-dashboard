@@ -404,6 +404,7 @@ def p18_page():
                     df_72['核發金額'] = 0
                     
                     if not df_72.empty and pool_72 > 0:
+                        # 正副主官 8%
                         main_pool = int(np.round(pool_72 * 0.08))
                         chief_mask = df_72['職別'].str.contains('分局長', na=False)
                         vice_mask = df_72['職別'].str.contains('副分局長', na=False)
@@ -416,6 +417,7 @@ def p18_page():
                         
                         remaining_pool = pool_72 - df_72['核發金額'].sum()
                         
+                        # 剩餘92% 按比例分配
                         sup_pool = int(np.round(remaining_pool * 0.56))
                         traf_pool = int(np.round(remaining_pool * 0.26))
                         clerk_pool = int(np.round(remaining_pool * 0.10))
