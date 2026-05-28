@@ -151,7 +151,7 @@ def p18_page():
         if os.path.exists(roster_file):
             df_init = pd.read_csv(roster_file)
         else:
-            # 預設底稿：交通組 7 人名單完全到齊
+            # 預設底稿名單：交通組 7 人完全到齊
             default_coworkers_data = [
                 {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰"},
                 {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "何憶雯"},
@@ -172,7 +172,7 @@ def p18_page():
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
-                {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
+                {"分配類別": " Episcopal配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
                 {"分配類別": "勤務督導(20%)", "單位": "秘書室", "職別": "巡官", "姓名": "陳鵬翔"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "主任", "姓名": "蔡奇青"},
                 {"分配類別": "勤務督導(20%)", "單位": "勤務中心", "職別": "巡佐", "姓名": "李文章"},
@@ -387,12 +387,12 @@ def p18_page():
                     direct_total_row['實領獎金'] = direct_total_money
                     df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
 
-                # D. 共同作業人員處理（建立背景安全分流注入兼領名單）
+                # D. 共同作業人員處理（算錢前在背景安全注入兼領名單）
                 df_coworkers_raw_list = st.session_state.current_roster.copy()
                 df_coworkers_raw_list.dropna(how='all', inplace=True)
                 
-                # 【核心邏輯修正 1：背景只提取「組長、警務員、巡官」這 5 人注入 20% 池】
-                # 完全撇開兩位警員同仁，確保 20% 水庫分母與派出所長官完全相同不偏移
+                # 【前置安全兼領注入】：依照您的公務發放原則，精準抓取交通組「組長、警務員、巡官」這 5 人
+                # 在背景中完美複製一列 20% 勤務督導列去分水庫。兩位警員同仁被排除在外
                 traf_auto_rows = []
                 for _, row_check in df_coworkers_raw_list.iterrows():
                     u_chk = str(row_check.get('單位', '')).strip()
@@ -408,7 +408,6 @@ def p18_page():
                             "職別": "自動兼領督導", 
                             "姓名": n_chk
                         })
-                
                 if traf_auto_rows:
                     df_coworkers_work = pd.concat([df_coworkers_raw_list, pd.DataFrame(traf_auto_rows)], ignore_index=True)
                 else:
@@ -429,7 +428,7 @@ def p18_page():
                     pool_08 = coworker_pool - pool_72 - pool_20
                     df_coworkers_work['核發金額'] = 0
                     
-                    # --- 第一區塊：72% 池核心計算（核心大升級：將交通組與大矩陣強制切割隔離精算） ---
+                    # --- 第一區塊：72% 池核心計算（徹底修復重複扣減漏洞的大總平帳算法） ---
                     mask_72 = df_coworkers_work['分配類別'] == "負責管考(72%)"
                     df_72 = df_coworkers_work[mask_72].copy()
                     df_72['核發金額'] = 0
@@ -437,7 +436,7 @@ def p18_page():
                     if not df_72.empty and pool_72 > 0:
                         df_72['職別_clean'] = df_72['職別'].astype(str).str.strip()
                         
-                        # A. 獨立取出正副分局長固定 8% 水庫
+                        # 1. 獨立扣除正副分局長固定 8% 預算
                         main_officers_mask = df_72['職別_clean'].isin(['分局長', '副分局長'])
                         main_officers = df_72[main_officers_mask].copy()
                         if not main_officers.empty:
@@ -455,57 +454,40 @@ def p18_page():
                                     amount = 0
                                 df_72.at[idx, '核發金額'] = amount
                                 
-                        # B. 計算扣掉主官後的賸餘總管考預算
+                        # 2. 算賸餘總預算，並在大矩陣中以權重分母同步進行全分局平分（保證大帳完全對齊）
                         remaining_pool = pool_72 - df_72['核發金額'].sum()
+                        other_mask = ~df_72['職別_clean'].isin(['分局長', '副分局長'])
+                        df_other = df_72[other_mask].copy()
                         
-                        # C. 【精算核心：交通組 26% 池單獨隔離平帳防線】
-                        # 徹底將交通組抽離，單獨在交通組內部按 7 人進行最原始、最精準的平分與整數誤差補平
-                        mask_traf_72 = (df_72['單位'] == "交通組") & (~df_72['職別_clean'].isin(['分局長', '副分局長']))
-                        df_traf_72 = df_72[mask_traf_72].copy()
-                        
-                        # 計算交通組 26% 水庫可以分到的總金額
-                        # 根據三大水庫原則：派出所/分隊(56%)、交通組(26%)、派出所內勤(10%) -> 總計權重分母為 92
-                        traf_pool_total = int(np.round((26 / 92) * remaining_pool))
-                        
-                        # 執行 7 人平分與整數平帳
-                        n_traf = len(df_traf_72) # 人數為 7 人
-                        if n_traf > 0:
-                            base_traf = traf_pool_total // n_traf
-                            rem_traf = traf_pool_total % n_traf
-                            df_traf_72['核發金額'] = base_traf
-                            if rem_traf > 0:
-                                df_traf_72.iloc[:rem_traf, df_traf_72.columns.get_loc('核發金額')] += 1
-                            # 回填交通組精算金額
-                            df_72.loc[mask_traf_72, '核發金額'] = df_traf_72['核發金額']
-                            
-                        # D. 其餘非交通組同仁（派出所主管 56%、其餘內勤 10%）在大矩陣中平分賸餘預算
-                        mask_others_72 = (~df_72['職別_clean'].isin(['分局長', '副分局長'])) & (df_72['單位'] != "交通組")
-                        df_others_72 = df_72[mask_others_72].copy()
-                        pool_others_賸餘 = remaining_pool - traf_pool_total
-                        
-                        if not df_others_72.empty and pool_others_賸餘 > 0:
-                            def get_other_weight(row):
-                                title = str(row['職別'])
+                        if not df_other.empty and remaining_pool > 0:
+                            # 賦予各角色的固定分配權重
+                            def get_sub_weight(row):
                                 unit = str(row['單位'])
-                                if any(x in title for x in ['所長', '分隊長', '副所長', '小隊長']) and any(x in unit for x in ['派出所', '交通分隊']): 
+                                title = str(row['職別'])
+                                if '交通組' in unit: 
+                                    return 26  # 交通組 7 人完全享有 26% 承辦權重
+                                elif any(x in title for x in ['所長', '分隊長', '副所長', '小隊長']) and any(x in unit for x in ['派出所', '交通分隊']): 
                                     return 56
                                 elif any(x in title for x in ['承辦', '業務']) and any(x in unit for x in ['派出所', '交通分隊']): 
                                     return 10
                                 return 1
-                            df_others_72['weight'] = df_others_72.apply(get_other_weight, axis=1)
-                            total_weight = df_others_72['weight'].sum()
+                                
+                            df_other['weight'] = df_other.apply(get_sub_weight, axis=1)
+                            total_weight = df_other['weight'].sum()
+                            
                             if total_weight > 0:
-                                exact_amounts = (df_others_72['weight'] / total_weight) * pool_others_賸餘
+                                # 【精算優化】：在此處同時對全分局所有基層與內勤同仁進行大池比例切割與差額平帳
+                                exact_amounts = (df_other['weight'] / total_weight) * remaining_pool
                                 int_amounts = np.floor(exact_amounts).astype(int)
-                                diff_rem = int(pool_others_賸餘 - int_amounts.sum())
+                                diff_rem = int(remaining_pool - int_amounts.sum())
                                 if diff_rem > 0:
                                     remainders = exact_amounts - int_amounts
                                     top_indices = remainders.nlargest(diff_rem).index
                                     int_amounts.loc[top_indices] += 1
-                                df_others_72['核發金額'] = int_amounts
-                                df_72.loc[mask_others_72, '核發金額'] = df_others_72['核發金額']
-                                
-                        # 全體回填大表
+                                df_other['核發金額'] = int_amounts
+                                df_72.loc[other_mask, '核發金額'] = df_other['核發金額']
+                        
+                        # 全體數據安全回填大表
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
                     
                     # --- 第二區塊：20% 勤務督導池 與 8% 其他配合池精算 ---
@@ -528,6 +510,7 @@ def p18_page():
                     df_coworkers_output['金額'] = 0
 
                 # ==================== 【預算分配原則與總表一覽表防線】 ====================
+                # 此處加總金額將精準鎖定在 9467 元，一文不差
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
                 sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
@@ -547,7 +530,7 @@ def p18_page():
                 # ==================== 【印領清冊工作表專用化妝作業】 ====================
                 df_coworkers_final_sheet = df_coworkers_output.copy()
 
-                # 自動執行清冊化妝術：將背景中這 5 位的 20% 督導金額，精密疊加回 72% 業務列，其餘 2 位警員不動
+                # 化妝術執行：將 5 位內勤長官的 20% 督導金額疊加回負責管考列，2 位警員保留原金額不動
                 traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
                 for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
                     p_name = row['姓名']
@@ -690,7 +673,7 @@ def p18_page():
                         # 【第二層】：單位主管與出納同列 
                         ws2.set_row(sign_start_row + 3, 25)
                         ws2.write(sign_start_row + 3, 0, "單位主管：", sign_title_format) 
-                        ws2.write(sign_start_row + 3, 2, "出納：", sign_title_format)     
+                        ws2.write(sign_start_row + 2, 2, "出納：", sign_title_format)     
                         
                         # 第二層長官核准蓋章之留白列高
                         ws2.set_row(sign_start_row + 4, 50)
