@@ -152,7 +152,7 @@ def p18_page():
                 {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰"},
                 {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "何憶雯"},
                 {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "蔡志明"},
-                # 交通組 - 警員以外人員列為兼領勤務督導
+                # 交通組 - 警員以外人員兼領勤務督導
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "業務單位主管", "姓名": "楊孟竟"},
                 {"分配類別": "勤務督導(20%)", "單位": "交通組", "職別": "業務單位主管", "姓名": "楊孟竟"},
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "組長", "姓名": "盧冠仁"},
@@ -267,7 +267,7 @@ def p18_page():
             return
         with st.spinner("正在精算比例與發放金額..."):
             try:
-                # 資料讀取 (與之前版本相同)
+                # 資料讀取
                 df_acc_raw = pd.read_excel(file_acc, header=4)
                 df_acc_raw['姓名'] = df_acc_raw['姓名'].astype(str).str.strip()
                 dict_acc = df_acc_raw.groupby('姓名')[['A2類', 'A3類']].sum().to_dict(orient='index')
@@ -292,9 +292,96 @@ def p18_page():
                         if found_date: break
                     if found_date: break
                 
-                # 直接執行人員計算 (省略部分，與之前相同)
-                # ... (請保留您原本的直接執行人員計算程式碼) ...
-                direct_total_money = 0  # 替換為實際計算結果
+                # 直接執行人員計算
+                final_sheets = {}
+                summary_rows = []
+                g_cite = g_acc = g_traf = g_all = 0
+                direct_exec_list = []
+                
+                for sheet_name, df in dfs_raw.items():
+                    if '總表' in sheet_name: continue
+                    start_r, start_c = None, None
+                    for r_idx, row in df.iterrows():
+                        row_str = [str(x).strip() for x in row.values]
+                        if '員警姓名' in row_str:
+                            start_r, start_c = r_idx, row_str.index('員警姓名')
+                            break
+                    if start_r is not None:
+                        df_work = df.iloc[start_r:, start_c:].copy()
+                        df_work.reset_index(drop=True, inplace=True)
+                        df_work.columns = [str(c).strip() for c in df_work.iloc[0]]
+                        df_work = df_work.drop(0).astype(object)
+                       
+                        member_rows = []
+                        for r in range(len(df_work)):
+                            name_cell = str(df_work.iloc[r, 0]).strip()
+                            if '小計' in name_cell or '總計' in name_cell or name_cell in ['nan', 'None', '']:
+                                continue
+                            member_rows.append(r)
+                       
+                        df_members = df_work.iloc[member_rows].copy()
+                        s_cite, s_acc, s_traf = 0, 0, 0
+                       
+                        for idx, row in df_members.iterrows():
+                            name = str(row.get('員警姓名', '')).strip()
+                            a2 = dict_acc.get(name, {}).get('A2類', 0)
+                            a3 = dict_acc.get(name, {}).get('A3類', 0)
+                            th = dict_traf.get(name, 0)
+                            ap = a2 * P_A2 + a3 * P_A3
+                            tp = th * P_TRAF
+                            cp = pd.to_numeric(row.get('取締點數', 0), errors='coerce') or 0
+                            total_pts = cp + ap + tp
+                           
+                            s_cite += cp; s_acc += ap; s_traf += tp
+                           
+                            if total_pts > 0:
+                                reward = int(np.round(total_pts * point_value))
+                                direct_exec_list.append({
+                                    "單位名稱": sheet_name, "員警姓名": name,
+                                    "取締件數": row.get('取締件數', ''), "取締點數": cp if cp > 0 else '',
+                                    "A2件數": a2 if a2 > 0 else '', "A3件數": a3 if a3 > 0 else '',
+                                    "事故點數": ap if ap > 0 else '', "交整時數": th if th > 0 else '',
+                                    "交整點數": tp if tp > 0 else '', "個人總點數": total_pts,
+                                    "每點獎金": point_value, "實領獎金": reward, "蓋章": ""
+                                })
+                       
+                        sub_row_data = {c: "" for c in df_work.columns}
+                        sub_row_data['員警姓名'] = '小計'
+                        for col_n in df_work.columns:
+                            if col_n in ['員警姓名', '蓋章']: continue
+                            v_sum = pd.to_numeric(df_members[col_n], errors='coerce').sum()
+                            sub_row_data[col_n] = v_sum if v_sum > 0 else 0
+                       
+                        df_final = pd.concat([df_members, pd.DataFrame([sub_row_data])], ignore_index=True)
+                        if '蓋章' in df_final.columns: df_final = df_final.drop(columns=['蓋章'])
+                        final_sheets[sheet_name] = df_final
+                       
+                        summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
+                        g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
+                
+                df_direct_exec = pd.DataFrame(direct_exec_list)
+                if not df_direct_exec.empty:
+                    df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
+                
+                direct_total_money = df_direct_exec['實領獎金'].sum() if not df_direct_exec.empty else 0
+                
+                if not df_direct_exec.empty and target_direct_budget > 0:
+                    diff = target_direct_budget - direct_total_money
+                    if diff != 0:
+                        n = len(df_direct_exec)
+                        base = diff // n
+                        rem = abs(diff) % n
+                        sign = 1 if diff > 0 else -1
+                        df_direct_exec['實領獎金'] += base
+                        if rem > 0:
+                            df_direct_exec.iloc[:rem, df_direct_exec.columns.get_loc('實領獎金')] += sign
+                        direct_total_money = df_direct_exec['實領獎金'].sum()
+                
+                if not df_direct_exec.empty:
+                    direct_total_row = {c: "" for c in df_direct_exec.columns}
+                    direct_total_row['員警姓名'] = '合計'
+                    direct_total_row['實領獎金'] = direct_total_money
+                    df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
                 
                 # ====================== 共同作業人員處理 ======================
                 df_coworkers_work = st.session_state.current_roster.copy()
@@ -321,12 +408,51 @@ def p18_page():
                     df_72['核發金額'] = 0
                     
                     if not df_72.empty and pool_72 > 0:
-                        # ... (72% 分配邏輯保持不變) ...
                         main_pool = int(np.round(pool_72 * 0.08))
-                        # ... (正副主官、sup_mask、traf_mask、clerk_mask 等保持不變) ...
+                        chief_mask = df_72['職別'].str.contains('分局長', na=False)
+                        vice_mask = df_72['職別'].str.contains('副分局長', na=False)
+                        if chief_mask.any():
+                            df_72.loc[chief_mask, '核發金額'] = int(np.round(main_pool * 0.60))
+                        if vice_mask.any():
+                            df_72.loc[vice_mask, '核發金額'] = int(np.round(main_pool * 0.40 / vice_mask.sum()))
+                        
+                        remaining_pool = pool_72 - df_72['核發金額'].sum()
+                        
+                        sup_pool = int(np.round(remaining_pool * 0.56))
+                        traf_pool = int(np.round(remaining_pool * 0.26))
+                        clerk_pool = int(np.round(remaining_pool * 0.10))
+                        
+                        sup_mask = (df_72['單位'].str.contains('派出所|交通分隊', na=False)) & \
+                                   (df_72['職別'].str.contains('所長|副所長|分隊長|小隊長', na=False))
+                        sup_indices = df_72[sup_mask].index
+                        if len(sup_indices) > 0:
+                            base = int(np.floor(sup_pool / len(sup_indices)))
+                            df_72.loc[sup_indices, '核發金額'] = base
+                            extra = sup_pool - base * len(sup_indices)
+                            if extra > 0:
+                                df_72.loc[sup_indices[:extra], '核發金額'] += 1
+                        
+                        traf_mask = df_72['單位'] == "交通組"
+                        traf_indices = df_72[traf_mask].index
+                        if len(traf_indices) > 0:
+                            base = int(np.floor(traf_pool / len(traf_indices)))
+                            df_72.loc[traf_indices, '核發金額'] = base
+                            extra = traf_pool - base * len(traf_indices)
+                            if extra > 0:
+                                df_72.loc[traf_indices[:extra], '核發金額'] += 1
+                        
+                        clerk_mask = (df_72['單位'].str.contains('派出所|交通分隊', na=False)) & \
+                                     (df_72['職別'].str.contains('業務承辦人|承辦', na=False))
+                        clerk_indices = df_72[clerk_mask].index
+                        if len(clerk_indices) > 0:
+                            base = int(np.floor(clerk_pool / len(clerk_indices)))
+                            df_72.loc[clerk_indices, '核發金額'] = base
+                            extra = clerk_pool - base * len(clerk_indices)
+                            if extra > 0:
+                                df_72.loc[clerk_indices[:extra], '核發金額'] += 1
+                        
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
                     
-                    # 20% 和 8% 分配
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
@@ -366,9 +492,120 @@ def p18_page():
                       (df_coworkers_final_sheet['金額'] == 0))
                 ]
                 
-                # ... (後續總表與 Excel 輸出部分與之前版本相同，請保留) ...
-
-                st.success("✅ 報表產出成功！")
+                coworker_sheet_total_money = df_coworkers_final_sheet['金額'].sum()
+                
+                if '排序調整' in df_coworkers_final_sheet.columns:
+                    df_coworkers_final_sheet['排序調整'] = pd.to_numeric(df_coworkers_final_sheet['排序調整'], errors='coerce').fillna(999).astype(int)
+                    df_coworkers_final_sheet.sort_values(by=['排序調整', '單位', '姓名'], ascending=[True, True, True], inplace=True)
+                    df_coworkers_final_sheet.drop(columns=['排序調整'], inplace=True, errors='ignore')
+                else:
+                    df_coworkers_final_sheet.sort_values(by=['單位', '姓名'], ascending=[True, True], inplace=True)
+                
+                df_coworkers_final_sheet.drop(columns=['分配類別'], inplace=True, errors='ignore')
+                df_coworkers_final_sheet.reset_index(drop=True, inplace=True)
+                df_coworkers_final_sheet.insert(0, '序號', range(1, len(df_coworkers_final_sheet) + 1))
+                df_coworkers_final_sheet['蓋章'] = ""
+                
+                total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
+                total_row_data['單位'] = '合計'
+                total_row_data['金額'] = coworker_sheet_total_money
+                df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([total_row_data])], ignore_index=True)
+                
+                grand_total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
+                grand_total_row_data['單位'] = '總計（含直接執行人員）'
+                grand_total_row_data['金額'] = direct_total_money + coworker_sheet_total_money
+                df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
+                
+                # Excel 輸出
+                pts_output = io.BytesIO()
+                df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
+                with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
+                    df_pts_summary.to_excel(writer, sheet_name='總表', header=False, index=False)
+                    for sn, df_f in final_sheets.items():
+                        df_f.to_excel(writer, sheet_name=sn, index=False)
+                pts_excel_data = pts_output.getvalue()
+                pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
+                
+                payroll_output = io.BytesIO()
+                with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
+                    workbook = writer.book
+                    border_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                    
+                    if not df_direct_exec.empty:
+                        df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
+                        ws1 = writer.sheets['直接執行人員']
+                        ws1.set_portrait()
+                        ws1.set_paper(9)
+                        stamp_col = df_direct_exec.columns.get_loc('蓋章')
+                        ws1.set_column(stamp_col, stamp_col, 22)
+                        for r in range(len(df_direct_exec) + 1):
+                            ws1.set_row(r, 38 if r > 0 else 25)
+                            for c in range(len(df_direct_exec.columns)):
+                                value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
+                                ws1.write(r, c, value, border_format)
+                    
+                    if not df_coworkers_final_sheet.empty:
+                        df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
+                        ws2 = writer.sheets['共同作業及配合人員']
+                        ws2.set_portrait()
+                        ws2.set_paper(9)
+                        
+                        data_len = len(df_coworkers_final_sheet)
+                        main_data_len = data_len - 2
+                        
+                        for r in range(main_data_len + 1):
+                            ws2.set_row(r, 38 if r > 0 else 25)
+                            for c in range(len(df_coworkers_final_sheet.columns)):
+                                value = df_coworkers_final_sheet.iloc[r-1, c] if r > 0 else df_coworkers_final_sheet.columns[c]
+                                ws2.write(r, c, value, border_format)
+                        
+                        style_total = workbook.add_format({'border': 1, 'bold': True, 'align': 'center', 'valign': 'vcenter'})
+                        style_total_money = workbook.add_format({'border': 1, 'bold': True, 'align': 'center', 'valign': 'vcenter'})
+                        
+                        total_row_idx = main_data_len + 1
+                        grand_row_idx = main_data_len + 2
+                        
+                        ws2.set_row(total_row_idx, 38)
+                        ws2.merge_range(total_row_idx, 0, total_row_idx, 3, "合計", style_total)
+                        ws2.write(total_row_idx, 4, coworker_sheet_total_money, style_total_money)
+                        ws2.write(total_row_idx, 5, "", style_total)
+                        
+                        ws2.set_row(grand_row_idx, 38)
+                        ws2.merge_range(grand_row_idx, 0, grand_row_idx, 3, "總計（含直接執行人員）", style_total)
+                        ws2.write(grand_row_idx, 4, direct_total_money + coworker_sheet_total_money, style_total_money)
+                        ws2.write(grand_row_idx, 5, "", style_total)
+                        
+                        sign_start_row = data_len + 3
+                        sign_title_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 12, 'bold': True, 'align': 'left', 'valign': 'vcenter'})
+                        ws2.set_row(sign_start_row, 25)
+                        ws2.write(sign_start_row, 0, "製表人：", sign_title_format)
+                        ws2.write(sign_start_row, 2, "人事：", sign_title_format)
+                        ws2.write(sign_start_row, 4, "主計：", sign_title_format)
+                        ws2.write(sign_start_row, 6, "分局長：", sign_title_format)
+                        
+                        ws2.set_row(sign_start_row + 1, 45)
+                        ws2.set_row(sign_start_row + 2, 45)
+                        ws2.set_row(sign_start_row + 3, 25)
+                        ws2.write(sign_start_row + 3, 0, "單位主管：", sign_title_format)
+                        ws2.write(sign_start_row + 3, 2, "出納：", sign_title_format)
+                        ws2.set_row(sign_start_row + 4, 50)
+                    
+                    df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
+                
+                payroll_excel_data = payroll_output.getvalue()
+                payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
+                
+                files_to_attach = [(pts_excel_data, pts_filename), (payroll_excel_data, payroll_filename)]
+                ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
+             
+                if ok:
+                    st.success("✅ 報表產出成功！已自動寄送至信箱。")
+                else:
+                    st.warning(f"⚠️ 報表已產出，但郵件發送失敗: {err}")
+                
+                c5, c6 = st.columns(2)
+                c5.download_button("📥 下載【點數統計表】", pts_excel_data, pts_filename, use_container_width=True)
+                c6.download_button("📥 下載【印領清冊】", payroll_excel_data, payroll_filename, use_container_width=True, type="primary")
                 
             except Exception as e:
                 st.error(f"❌ 發生錯誤：{str(e)}")
