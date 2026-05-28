@@ -200,7 +200,7 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "龍潭派出所", "職別": "副所長", "姓名": "全楚文"},
                 {"分配類別": "勤務督導(20%)", "單位": "龍潭派出所", "職別": "副所長", "姓名": "劉重言"},
                 {"分配類別": "勤務督導(20%)", "單位": "龍潭派出所", "職別": "業務承辦人", "姓名": "周薇"},
-                {"分配類別": "勤務督導(20%)", "mathbf{單位}": "中興派出所", "職別": "所長", "姓名": "董亦文"},
+                {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "所長", "姓名": "董亦文"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "何昀融"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "林榮裕"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "業務承辦人", "姓名": "鄧雅文"},
@@ -236,7 +236,7 @@ def p18_page():
             df_display = df_display.drop(columns=['金額'])
         col_cfg = {
             "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="修改數字可調整順序", min_value=1, format="%d"),
-            "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
+            "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "開配合(8%)"], required=True)
         }
 
     st.data_editor(df_display, num_rows="dynamic", use_container_width=True, hide_index=True, height=500, column_config=col_cfg, key="co_editor", on_change=on_data_edited)
@@ -390,7 +390,7 @@ def p18_page():
                 df_coworkers_raw_list = st.session_state.current_roster.copy()
                 df_coworkers_raw_list.dropna(how='all', inplace=True)
                 
-                # 【背景兼領注入邏輯】：依據名單狀態，精準篩選交通組「組長、警務員、巡官」這 5 人注入 20% 水庫
+                # 前置安全兼領注入：精準過濾交通組「組長、警務員、巡官」這 5 人
                 traf_auto_rows = []
                 for _, row_check in df_coworkers_raw_list.iterrows():
                     u_chk = str(row_check.get('單位', '')).strip()
@@ -422,7 +422,7 @@ def p18_page():
                     pool_08 = coworker_pool - pool_72 - pool_20
                     df_coworkers_work['核發金額'] = 0
                     
-                    # --- 72% 池精算（【重大數學模型校正】：還原權重乘算，徹底消除稀釋誤差） ---
+                    # --- 第一區塊：72% 池核心計算（採用您優化後的索引迴圈與防重複面具） ---
                     mask_72 = df_coworkers_work['分配類別'] == "負責管考(72%)"
                     df_72 = df_coworkers_work[mask_72].copy()
                     df_72['核發金額'] = 0
@@ -430,7 +430,7 @@ def p18_page():
                     if not df_72.empty and pool_72 > 0:
                         df_72['職別_clean'] = df_72['職別'].astype(str).str.strip()
                         
-                        # 1. 扣除正副主官固定 8%
+                        # 1. 獨立扣除正副主官固定 8%
                         main_officers_mask = df_72['職別_clean'].isin(['分局長', '副分局長'])
                         main_officers = df_72[main_officers_mask].copy()
                         if not main_officers.empty:
@@ -445,66 +445,76 @@ def p18_page():
                                     amount = int(np.floor(sub_pool / sub_count)) if sub_count > 0 else 0
                                 df_72.at[idx, '核發金額'] = amount
                                 
-                        # 2. 算賸餘總預算
+                        # 2. 計算剩餘總預算
                         remaining_pool = pool_72 - df_72['核發金額'].sum()
                         
-                        # 3. 執行【分母乘算平帳】：計算各角色的真正人數，推導出加權後的「總權重分母」
-                        mask_traf = (df_72['單位'] == "交通組") & (~df_72['職別_clean'].isin(['分局長', '副分局長']))
+                        # 3. 【建立您修正後的精準防線面具】
+                        mask_traf = (df_72['單位'] == "交通組") & (~main_officers_mask)
                         mask_shisuo_boss = (df_72['單位'] != "交通組") & (df_72['職別_clean'].str.contains('所長|分隊長|小隊長'))
-                        mask_shisuo_staff = (df_72['單位'] != "交通組") & (~df_72['職別_clean'].str.contains('所長|分隊長|小隊長|分局長'))
+                        # 完美阻絕副分局長的 10% 承辦人過濾防線
+                        mask_shisuo_staff = (df_72['單位'] != "交通組") & (~main_officers_mask) & (~df_72['職別_clean'].str.contains('所長|分隊長|小隊長'))
                         
                         count_traf = mask_traf.sum()          # 應為 7 人
                         count_boss = mask_shisuo_boss.sum()    # 各所/分隊主管人數
-                        count_staff = mask_shisuo_staff.sum()  # 各所承辦人人數
+                        count_staff = mask_shisuo_staff.sum()  # 各所承辦人人數 (副分局長已完全排除)
                         
-                        # 正確公式分母 = (各所主管人數 * 56) + (交通組人數 * 26) + (各所承辦人數 * 10)
+                        # 權重分母計算
                         total_weight_denominator = (count_boss * 56) + (count_traf * 26) + (count_staff * 10)
                         
                         if total_weight_denominator > 0:
-                            # 算出一點權重值多少錢
                             value_per_weight = remaining_pool / total_weight_denominator
                             
-                            # A. 計算交通組 7 人的負責管考總水庫 (應拿足 26% 的比例份額)
+                            # A. 交通組總份額精算
                             traf_pool_exact = (count_traf * 26) * value_per_weight
                             traf_pool_int = int(np.floor(traf_pool_exact))
-                            # 交通組 7 人內部均分此大池並補平小數點誤差
                             base_traf_pay = traf_pool_int // count_traf
                             rem_traf_pay = traf_pool_int % count_traf
                             
-                            # B. 計算派出所主管總水庫 (56%)
+                            # B. 各所主管總份額精算
                             boss_pool_exact = (count_boss * 56) * value_per_weight
                             boss_pool_int = int(np.floor(boss_pool_exact))
                             base_boss_pay = boss_pool_int // count_boss
                             rem_boss_pay = boss_pool_int % count_boss
                             
-                            # C. 計算派出所承辦總水庫 (10%)
+                            # C. 各所內勤承辦總份額精算
                             staff_pool_exact = (count_staff * 10) * value_per_weight
                             staff_pool_int = int(np.floor(staff_pool_exact))
                             base_staff_pay = staff_pool_int // count_staff
                             rem_staff_pay = staff_pool_int % count_staff
                             
-                            # D. 補足全體總平帳的尾數餘額 (系統級別大平帳，確保加總絲毫不差)
+                            # 全分局總大帳精算尾數
                             grand_allocated = df_72['核發金額'].sum() + traf_pool_int + boss_pool_int + staff_pool_int
                             final_diff = pool_72 - grand_allocated
                             
-                            # E. 金額指派與回填
-                            df_72.loc[mask_traf, '核發金額'] = base_traf_pay
-                            if rem_traf_pay > 0:
-                                df_72.loc[mask_traf, '核發金額'][:rem_traf_pay] += 1
+                            # ==========================================================
+                            # 【核心優化：完美採納您提供的 index.tolist() 與 at 迴圈補平方案】
+                            # ==========================================================
+                            
+                            # 交通組金額指定與餘數補平
+                            traf_indices = df_72[mask_traf].index.tolist()
+                            df_72.loc[traf_indices, '核發金額'] = base_traf_pay
+                            for i in range(rem_traf_pay):
+                                df_72.at[traf_indices[i], '核發金額'] += 1
                                 
-                            df_72.loc[mask_shisuo_boss, '核發金額'] = base_boss_pay
-                            if rem_boss_pay > 0:
-                                df_72.loc[mask_shisuo_boss, '核發金額'][:rem_boss_pay] += 1
+                            # 各所主管金額指定與餘數補平
+                            boss_indices = df_72[mask_shisuo_boss].index.tolist()
+                            df_72.loc[boss_indices, '核發金額'] = base_boss_pay
+                            for i in range(rem_boss_pay):
+                                df_72.at[boss_indices[i], '核發金額'] += 1
                                 
-                            df_72.loc[mask_shisuo_staff, '核發金額'] = base_staff_pay
-                            if rem_staff_pay > 0:
-                                df_72.loc[mask_shisuo_staff, '核發金額'][:rem_staff_pay] += 1
+                            # 各所內勤承辦金額指定與餘數補平
+                            staff_indices = df_72[mask_shisuo_staff].index.tolist()
+                            df_72.loc[staff_indices, '核發金額'] = base_staff_pay
+                            for i in range(rem_staff_pay):
+                                df_72.at[staff_indices[i], '核發金額'] += 1
                                 
-                            # 若全分局算完有大池尾數餘額，優先補齊前幾位基層同仁
+                            # 全分局大池差額最終補平（完全避免鏈式切片副本失效）
                             if final_diff > 0:
-                                df_72.loc[mask_shisuo_staff, '核發金額'][:final_diff] += 1
-                                
-                        df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
+                                for i in range(final_diff):
+                                    df_72.at[staff_indices[i], '核發金額'] += 1
+                                    
+                        # 【優化回填】：利用您指定的 df_72.index 進行精準原位回填，全面阻絕錯位風險
+                        df_coworkers_work.loc[df_72.index, '核發金額'] = df_72['核發金額']
                     
                     # --- 20% 與 8% 池精算 ---
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
@@ -640,7 +650,7 @@ def p18_page():
                         ws2.write(grand_row_idx, 4, direct_total_money + coworker_sheet_total_money, style_total_money)
                         ws2.write(grand_row_idx, 5, "", style_total)
                         
-                        # 4. 簽章布局精準位移（修正出納垂直對齊人事）
+                        # 簽章布局精準位移
                         sign_start_row = data_len + 3 
                         sign_title_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 12, 'bold': True, 'align': 'left', 'valign': 'vcenter'})
                         
@@ -655,7 +665,7 @@ def p18_page():
                         
                         ws2.set_row(sign_start_row + 3, 25)
                         ws2.write(sign_start_row + 3, 0, "單位主管：", sign_title_format) 
-                        ws2.write(sign_start_row + 3, 2, "出納：", sign_title_format) # 精準修正對齊欄位 C
+                        ws2.write(sign_start_row + 3, 2, "出納：", sign_title_format)     
                         ws2.set_row(sign_start_row + 4, 50)
 
                     df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
