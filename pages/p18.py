@@ -218,6 +218,11 @@ def p18_page():
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
             ]
             df_init = pd.DataFrame(default_coworkers_data)
+        
+        # 強制修正：所有派出所與交通分隊設為負責管考(72%)
+        mask_station = df_init['單位'].str.contains('派出所|交通分隊', na=False)
+        df_init.loc[mask_station, '分配類別'] = "負責管考(72%)"
+        
         st.session_state.current_roster = sort_coworkers(df_init)
     
     df_display = st.session_state.current_roster.copy()
@@ -409,8 +414,11 @@ def p18_page():
                         traf_pool = int(np.round(remaining_pool * 0.26))
                         clerk_pool = int(np.round(remaining_pool * 0.10))
                         
-                        sup_mask = (df_72['單位'].str.contains('派出所|交通分隊', na=False)) & \
-                                   (df_72['職別'].str.contains('所長|副所長|分隊長|小隊長', na=False))
+                        # 加強版匹配 - 派出所/交通分隊正副主管 56%
+                        sup_mask = (
+                            df_72['單位'].str.contains('派出所|交通分隊', na=False) & 
+                            df_72['職別'].str.contains('所長|副所長|分隊長|小隊長|主管|警備', na=False)
+                        )
                         sup_indices = df_72[sup_mask].index
                         if len(sup_indices) > 0:
                             base = int(np.floor(sup_pool / len(sup_indices)))
@@ -419,6 +427,7 @@ def p18_page():
                             if extra > 0:
                                 df_72.loc[sup_indices[:extra], '核發金額'] += 1
                         
+                        # 交通組 26%
                         traf_mask = df_72['單位'] == "交通組"
                         traf_indices = df_72[traf_mask].index
                         if len(traf_indices) > 0:
@@ -428,8 +437,11 @@ def p18_page():
                             if extra > 0:
                                 df_72.loc[traf_indices[:extra], '核發金額'] += 1
                         
-                        clerk_mask = (df_72['單位'].str.contains('派出所|交通分隊', na=False)) & \
-                                     (df_72['職別'].str.contains('業務承辦人|承辦', na=False))
+                        # 業務承辦人 10%
+                        clerk_mask = (
+                            df_72['單位'].str.contains('派出所|交通分隊', na=False) & 
+                            df_72['職別'].str.contains('業務承辦人|承辦人|承辦', na=False)
+                        )
                         clerk_indices = df_72[clerk_mask].index
                         if len(clerk_indices) > 0:
                             base = int(np.floor(clerk_pool / len(clerk_indices)))
@@ -476,6 +488,7 @@ def p18_page():
                 
                 # 印領清冊最終處理
                 df_coworkers_final_sheet = df_coworkers_output.copy()
+                
                 traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
                 for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
                     p_name = row['姓名']
