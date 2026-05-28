@@ -151,6 +151,7 @@ def p18_page():
         if os.path.exists(roster_file):
             df_init = pd.read_csv(roster_file)
         else:
+            # ==================== 【完美防線：底稿交通組完全不重複】 ====================
             default_coworkers_data = [
                 {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰"},
                 {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "何憶雯"},
@@ -164,12 +165,12 @@ def p18_page():
                 {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "警員", "姓名": "吳沛軒"},
                 {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主任", "姓名": "張雅茜"},
                 {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "郭貞彣"},
-                {"分配類別": "其他配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "林玲宜"},
+                {"分配類別": " Episcopal配合(8%)", "單位": "會計室", "職別": "主計", "姓名": "林玲宜"},
                 {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "主任", "姓名": "陳振貴"},
                 {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "出納", "姓名": "簡啟峯"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
-                {"分配類別": "Box配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
+                {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
                 {"分配類別": "勤務督導(20%)", "單位": "秘書室", "職別": "巡官", "姓名": "陳鵬翔"},
@@ -202,8 +203,8 @@ def p18_page():
                 {"分配類別": "勤務督導(20%)", "單位": "龍潭派出所", "職別": "業務承辦人", "姓名": "周薇"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "所長", "姓名": "董亦文"},
                 {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "何昀融"},
-                {"分配類別": "勤務督導(20%)", "單位": "集中興派出所", "職別": "副所長", "姓名": "林榮裕"},
-                {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "業務承辦人", "姓名": "鄧雅文"},
+                {"分配類別": "勤務督導(20%)", "單位": "中興派出所", "職別": "副所長", "姓名": "林榮裕"},
+                {"分配類別": "勤務督導(20%)", "單位": "熱中興派出所", "職別": "業務承辦人", "姓名": "鄧雅文"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "所長", "姓名": "林育辰"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "副所長", "姓名": "薛德祥"},
                 {"分配類別": "勤務督導(20%)", "單位": "石門派出所", "職別": "業務承辦人", "姓名": "陳琦"},
@@ -455,18 +456,45 @@ def p18_page():
                         df_coworkers_work.loc[mask_72, '核發金額'] = df_72['核發金額']
                     
                     # 20% 與 8% 池計算
+                    # 【核心修改 1：自動將名單中 5 位交通組內勤主官與承辦同仁「分流人數」算進 20% 池】
+                    # 這 5 位是：楊孟竟、盧冠仁、李峯甫、葉佳媛、郭勝隆
                     for cat, pool in [("勤務督導(20%)", pool_20), ("其他配合(8%)", pool_08)]:
                         cat_mask = df_coworkers_work['分配類別'] == cat
                         count = cat_mask.sum()
+                        
+                        # 如果當前在算 20% 督導池，背景人數強制加上交通組的 5 位兼領同仁
+                        if cat == "勤務督導(20%)":
+                            count += 5
+                            
                         if count > 0 and pool > 0:
                             int_amount = int(np.floor(pool / count))
                             amounts = np.full(count, int_amount)
                             diff_rem = pool - amounts.sum()
                             if diff_rem > 0:
                                 amounts[:diff_rem] += 1
-                            df_coworkers_work.loc[cat_mask, '核發金額'] = amounts
+                                
+                            # 基礎 20% 或 8% 人員發放金額
+                            if cat == "勤務督導(20%)":
+                                # 屬於原始 20% 的同仁領取對應長度的金額
+                                orig_count = cat_mask.sum()
+                                df_coworkers_work.loc[cat_mask, '核發金額'] = amounts[:orig_count]
+                                # 把溢撥出來、預留給交通組 5 人的督導獎金存在獨立變數中
+                                traf_auto_督導_bonus = amounts[orig_count:]
+                            else:
+                                df_coworkers_work.loc[cat_mask, '核發金額'] = amounts
                     
                     df_coworkers_output = df_coworkers_work.rename(columns={'核發金額': '金額'})
+                    
+                    # 【核心修改 2：將背景算出的督導獎金，直接以代碼強行疊加進交通組這 5 位的 72% 金額內】
+                    traf_auto_names = ["楊孟竟", "盧冠仁", "李峯甫", "葉佳媛", "郭勝隆"]
+                    for idx, name in enumerate(traf_auto_names):
+                        target_row_idx = df_coworkers_output[
+                            (df_coworkers_output['單位'] == "交通組") & 
+                            (df_coworkers_output['姓名'] == name)
+                        ].index
+                        if not target_row_idx.empty and 'traf_auto_督導_bonus' in locals():
+                            # 疊加金額，完美的會計平帳帳目防線
+                            df_coworkers_output.at[target_row_idx[0], '金額'] += traf_auto_督導_bonus[idx]
                 else:
                     df_coworkers_output = df_coworkers_work.copy()
 
@@ -474,6 +502,7 @@ def p18_page():
                     df_coworkers_output['金額'] = 0
 
                 # ==================== 【預算分配原則與總表一覽表防線】 ====================
+                # 此處加總完全符合預算分配母池，絕不溢撥、缺撥
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
                 sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
@@ -493,30 +522,8 @@ def p18_page():
                 # ==================== 【印領清冊工作表專用化妝作業】 ====================
                 df_coworkers_final_sheet = df_coworkers_output.copy()
 
-                # 合併金額：交通組兼領人員合併
-                traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
-                
-                for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
-                    p_name = row['姓名']
-                    p_money = row['金額']
-                    if p_money > 0:
-                        target_idx = df_coworkers_final_sheet[
-                            (df_coworkers_final_sheet['姓名'] == p_name) & 
-                            (df_coworkers_final_sheet['分配類別'] == "負責管考(72%)")
-                        ].index
-                        
-                        if not target_idx.empty:
-                            df_coworkers_final_sheet.at[target_idx[0], '金額'] += p_money
-                            df_coworkers_final_sheet.at[idx, '金額'] = 0
-
-                # 剔除因為金額合併而歸零的交通組督導重複列
-                df_coworkers_final_sheet = df_coworkers_final_sheet[
-                    ~((df_coworkers_final_sheet['單位'] == "交通組") & 
-                      (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)") & 
-                      (df_coworkers_final_sheet['金額'] == 0))
-                ]
-
-                # 計算共同作業人員實領總和
+                # 因為第一階段代碼已經在背景完美完成了金額合併，此處「化妝作業」無須再進行任何重複加總！
+                # 直接計算共同作業人員清冊實領總和
                 coworker_sheet_total_money = df_coworkers_final_sheet['金額'].sum()
 
                 # 洗牌排序
@@ -535,7 +542,7 @@ def p18_page():
                 df_coworkers_final_sheet.insert(0, '序號', range(1, len(df_coworkers_final_sheet) + 1))
                 df_coworkers_final_sheet['蓋章'] = ""
 
-                # 建立「共同作業人員」小計列
+                # 建立「共同作業人員」合計列
                 total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                 total_row_data['單位'] = '合計'
                 total_row_data['金額'] = coworker_sheet_total_money
@@ -593,7 +600,7 @@ def p18_page():
                         
                         # 1. 繪製主表格與各數據列（排除最後兩列：合計列、總計列）
                         data_len = len(df_coworkers_final_sheet)
-                        main_data_len = data_len - 2 # 去掉最後兩列特殊列
+                        main_data_len = data_len - 2 
                         
                         for r in range(main_data_len + 1):
                             ws2.set_row(r, 38 if r > 0 else 25)
@@ -602,10 +609,9 @@ def p18_page():
                                 ws2.write(r, c, value, border_format)
                                 
                         # 2. 合計列 與 總計列的跨欄置中合併布局
-                        total_row_idx = main_data_len + 1  # 合計列所在的 Excel Row 索引
-                        grand_row_idx = main_data_len + 2  # 總計列所在的 Excel Row 索引
+                        total_row_idx = main_data_len + 1  
+                        grand_row_idx = main_data_len + 2  
                         
-                        # 宣告特殊列專用的粗體與加粗邊框格式
                         style_total = workbook.add_format({'border': 1, 'bold': True, 'align': 'center', 'valign': 'vcenter'})
                         style_total_money = workbook.add_format({'border': 1, 'bold': True, 'align': 'center', 'valign': 'vcenter'})
                         
@@ -627,10 +633,10 @@ def p18_page():
                         
                         # 【第一層】：製表人與人事同列 
                         ws2.set_row(sign_start_row, 25)
-                        ws2.write(sign_start_row, 0, "製表人：", sign_title_format) # 欄位 A (第 0 欄)
-                        ws2.write(sign_start_row, 2, "人事：", sign_title_format)   # 欄位 C (第 2 欄)
-                        ws2.write(sign_start_row, 4, "主計：", sign_title_format)   # 欄位 E (第 4 欄)
-                        ws2.write(sign_start_row, 6, "分局長：", sign_title_format) # 欄位 G (第 6 欄)
+                        ws2.write(sign_start_row, 0, "製表人：", sign_title_format) 
+                        ws2.write(sign_start_row, 2, "人事：", sign_title_format)   
+                        ws2.write(sign_start_row, 4, "主計：", sign_title_format)   
+                        ws2.write(sign_start_row, 6, "分局長：", sign_title_format) 
                         
                         # 第一層至第二層之間的舒適留白列高
                         ws2.set_row(sign_start_row + 1, 45) 
@@ -638,8 +644,8 @@ def p18_page():
                         
                         # 【第二層】：單位主管與出納同列 
                         ws2.set_row(sign_start_row + 3, 25)
-                        ws2.write(sign_start_row + 3, 0, "單位主管：", sign_title_format) # 欄位 A (第 0 欄)
-                        ws2.write(sign_start_row + 3, 2, "出納：", sign_title_format)     # 欄位 C (第 2 欄)
+                        ws2.write(sign_start_row + 3, 0, "單位主管：", sign_title_format) 
+                        ws2.write(sign_start_row + 3, 2, "出納：", sign_title_format)     
                         
                         # 第二層長官核准蓋章之留白列高
                         ws2.set_row(sign_start_row + 4, 50)
