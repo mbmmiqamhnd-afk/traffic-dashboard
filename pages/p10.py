@@ -198,7 +198,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     data_cmd.append([Paragraph(f"<b>{h}</b>", s_th) for h in CMD_COLS])
     for _, row in cmd_clean.iterrows():
         data_cmd.append([c(f"<b>{row.get('職稱','')}</b>"), c(row.get("代號","")), 
-                        c(str(row.get("姓名","")).replace("、","<br/>")), c(row.get("任務",""), s_left)])
+                         c(str(row.get("姓名","")).replace("、","<br/>")), c(row.get("任務",""), s_left)])
     t_cmd = Table(data_cmd, colWidths=[W*0.13, W*0.11, W*0.25, W*0.51], repeatRows=2)
     t_cmd.setStyle(TableStyle([("FONTNAME",(0,0),(-1,-1),font), ("GRID",(0,0),(-1,-1),0.5,colors.black),
                                ("VALIGN",(0,0),(-1,-1),"MIDDLE"), ("SPAN",(0,0),(-1,0)), 
@@ -331,10 +331,16 @@ time_val = col_b.text_input("勤務時間", value=settings.get("time", DEFAULT_T
 fast_cmd = st.text_input("交通快打指揮官", value=settings.get("fast_cmd", DEFAULT_FAST_CMD))
 
 # ========================================================
-# 核心新增：根據「勤務時間」自動連動更新「警力部署」的日期
+# 核心新增：根據「勤務時間」與「指揮官」自動連動更新「警力部署」
 # ========================================================
 date_updated = False
-# 嘗試解析完整的民國年月日格式 (例如: 115年5月25日)
+
+# 1. 自動從「交通快打指揮官」擷取單位名稱 (自動濾除所長、副所長等職稱)
+# 例如："石門所副所長王大明" -> "石門所" ； "龍潭交通分隊小隊長" -> "龍潭交通分隊"
+unit_match = re.search(r"(.+?(所|分隊))", fast_cmd)
+cmd_unit = unit_match.group(1) if unit_match else "該單位"
+
+# 2. 嘗試解析完整的民國年月日格式 (例如: 115年5月25日)
 date_match = re.search(r"(\d+)年(\d+)月(\d+)日", time_val)
 if date_match:
     try:
@@ -356,13 +362,15 @@ if date_match:
             group_name = str(use_ptl.loc[idx, "編組"])
             if "專責警力" in group_name:
                 use_ptl.loc[idx, "勤務時段"] = f"{next_m_str}月{next_d_str}日\n零時至4時"
+                # 自動連動帶入指揮官所屬單位（不帶入所長、副所長等職稱）
+                use_ptl.loc[idx, "編組"] = f"專責警力\n（{cmd_unit}輪值）"
             else:
                 use_ptl.loc[idx, "勤務時段"] = f"{m_str}月{d_str}日\n22時至翌日6時"
         date_updated = True
     except ValueError:
         pass
 
-# 備用方案：若使用者未輸入年份，僅輸入「X月X日」
+# 3. 備用方案：若使用者未輸入年份，僅輸入「X月X日」
 if not date_updated:
     date_match_simple = re.search(r"(\d+)月(\d+)日", time_val)
     if date_match_simple:
@@ -374,6 +382,8 @@ if not date_updated:
             group_name = str(use_ptl.loc[idx, "編組"])
             if "專責警力" in group_name:
                 use_ptl.loc[idx, "勤務時段"] = f"{m_str}月{next_d}日\n零時至4時"
+                # 自動連動帶入指揮官所屬單位（不帶入所長、副所長等職稱）
+                use_ptl.loc[idx, "編組"] = f"專責警力\n（{cmd_unit}輪值）"
             else:
                 use_ptl.loc[idx, "勤務時段"] = f"{m_str}月{d}日\n22時至翌日6時"
 # ========================================================
