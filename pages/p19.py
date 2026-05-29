@@ -546,11 +546,30 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     style_title = ParagraphStyle("Title", fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=12, wordWrap="CJK")
     style_info  = ParagraphStyle("Info",  fontName=font, fontSize=14, leading=22, spaceAfter=1*mm, wordWrap="CJK")
     style_cell  = ParagraphStyle("Cell",  fontName=font, fontSize=14, leading=20, alignment=1, wordWrap="CJK")
+    # 新增長官簽核欄位的樣式
+    style_sig   = ParagraphStyle("Sig",   fontName=font, fontSize=14, leading=20, alignment=0, wordWrap="CJK") 
 
     story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
     date_part = time_str.split(" ")[0] if " " in time_str else "115年3月25日"
     story.append(Paragraph(f"時間：{date_part} {stats['b_time']}", style_info))
     story.append(Paragraph(f"地點：{stats['b_loc']}召開", style_info))
+    
+    story.append(Spacer(1, 5*mm))
+
+    # --- 新增：表格上方的長官簽核欄位 ---
+    sig_data = [[
+        Paragraph("分局長：", style_sig),
+        Paragraph("副分局長：", style_sig),
+        Paragraph("上級督導：", style_sig)
+    ]]
+    t_sig = Table(sig_data, colWidths=[page_width/3.0]*3)
+    t_sig.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        # 不設定 GRID，讓表格無外框，僅作排版使用
+    ]))
+    story.append(t_sig)
+    story.append(Spacer(1, 8*mm))
+    # ------------------------------------
 
     rows = [
         ("交通組",     "聖亭派出所"),
@@ -586,9 +605,16 @@ def generate_attendance_pdf(unit, project, time_str, stats):
         ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
         ("BACKGROUND", (0,0),(3,  0), colors.whitesmoke),
     ]))
-    story.append(Spacer(1, 10*mm))
     story.append(t)
-    doc.build(story)
+    
+    # 頁尾維持不變
+    def add_footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 10)
+        canvas.drawCentredString(A4[0]/2.0, 10*mm, f"-第{canvas.getPageNumber()}頁-")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
 # ─────────────── 郵件發送 ───────────────
