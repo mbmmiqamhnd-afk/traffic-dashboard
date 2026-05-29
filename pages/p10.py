@@ -54,7 +54,7 @@ DEFAULT_CMD = pd.DataFrame([
 ])
 
 DEFAULT_PTL = pd.DataFrame([
-    {"勤務時段": "5月23日\n零時至4時", "代號": "隆安62", "編組": "專責警力\n（龍潭所輪值）", 
+    {"勤務時段": "5月23日\n零時至4時", "代號": "隆安62", "編組": "專責警力\n（龍潭所）", 
      "服勤人員": "00-02時段：\n警員廖怡惠\n警員劉柏延\n02-04時段：\n警員林軒宇\n警員廖怡惠", 
      "任務分工": "「加強防制」勤務，在文化路、中正路三坑段、龍源路及旭日路來回巡邏，隨機攔檢改裝（噪音）車輛（每2小時至責任區域內指定巡簽地點巡簽1次並守望10分鐘，將守望情形拍照上傳LINE「龍潭分局聯絡平臺」群組）"},
     {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安80", "編組": "石門所", 
@@ -335,12 +335,22 @@ fast_cmd = st.text_input("交通快打指揮官", value=settings.get("fast_cmd",
 # ========================================================
 date_updated = False
 
-# 1. 自動從「交通快打指揮官」擷取單位名稱 (自動濾除所長、副所長等職稱)
-# 例如："石門所副所長王大明" -> "石門所" ； "龍潭交通分隊小隊長" -> "龍潭交通分隊"
+# 1. 自動從「交通快打指揮官」擷取單位名稱 (自動濾除帶班幹部、所長等職稱，僅保留單位名稱)
 unit_match = re.search(r"(.+?(所|分隊))", fast_cmd)
 cmd_unit = unit_match.group(1) if unit_match else "該單位"
 
-# 2. 嘗試解析完整的民國年月日格式 (例如: 115年5月25日)
+# 2. 建立各單位「專責警力」的代號對照表
+unit_code_map = {
+    "聖亭所": "隆安52",
+    "龍潭所": "隆安62",
+    "中興所": "隆安72",
+    "石門所": "隆安82",
+    "高平所": "隆安92",
+    "龍潭交通分隊": "隆安992"
+}
+cmd_code = unit_code_map.get(cmd_unit, "請確認代號")
+
+# 3. 嘗試解析完整的民國年月日格式 (例如: 115年5月25日)
 date_match = re.search(r"(\d+)年(\d+)月(\d+)日", time_val)
 if date_match:
     try:
@@ -362,15 +372,16 @@ if date_match:
             group_name = str(use_ptl.loc[idx, "編組"])
             if "專責警力" in group_name:
                 use_ptl.loc[idx, "勤務時段"] = f"{next_m_str}月{next_d_str}日\n零時至4時"
-                # 自動連動帶入指揮官所屬單位（不帶入所長、副所長等職稱）
-                use_ptl.loc[idx, "編組"] = f"專責警力\n（{cmd_unit}輪值）"
+                # 連動編組名稱，僅呈現單位名稱，移除帶班職稱
+                use_ptl.loc[idx, "編組"] = f"專責警力\n（{cmd_unit}）"
+                use_ptl.loc[idx, "代號"] = cmd_code
             else:
                 use_ptl.loc[idx, "勤務時段"] = f"{m_str}月{d_str}日\n22時至翌日6時"
         date_updated = True
     except ValueError:
         pass
 
-# 3. 備用方案：若使用者未輸入年份，僅輸入「X月X日」
+# 4. 備用方案：若使用者未輸入年份，僅輸入「X月X日」
 if not date_updated:
     date_match_simple = re.search(r"(\d+)月(\d+)日", time_val)
     if date_match_simple:
@@ -382,8 +393,8 @@ if not date_updated:
             group_name = str(use_ptl.loc[idx, "編組"])
             if "專責警力" in group_name:
                 use_ptl.loc[idx, "勤務時段"] = f"{m_str}月{next_d}日\n零時至4時"
-                # 自動連動帶入指揮官所屬單位（不帶入所長、副所長等職稱）
-                use_ptl.loc[idx, "編組"] = f"專責警力\n（{cmd_unit}輪值）"
+                use_ptl.loc[idx, "編組"] = f"專責警力\n（{cmd_unit}）"
+                use_ptl.loc[idx, "代號"] = cmd_code
             else:
                 use_ptl.loc[idx, "勤務時段"] = f"{m_str}月{d}日\n22時至翌日6時"
 # ========================================================
