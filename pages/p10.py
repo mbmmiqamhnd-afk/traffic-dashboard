@@ -412,24 +412,31 @@ sign_points = col_c.text_area("巡簽地點", value=settings.get("sign_points", 
 notes = col_d.text_area("備註", value=settings.get("notes", DEFAULT_NOTES), height=160)
 
 st.markdown("---")
-col1, col2, col3 = st.columns(3)
+# 將底部的三個按鈕整併為兩個欄位
+col1, col2 = st.columns(2)
 
 with col1:
-    if st.button("💾 儲存至雲端", use_container_width=True):
+    if st.button("💾 同步雲端並發送郵件", use_container_width=True):
+        # 1. 儲存至雲端
         s = {"project_name": project_name, "time": time_val, "fast_cmd": fast_cmd, "sign_points": sign_points, "notes": notes}
-        if save_data(s, res_cmd, res_ptl):
-            st.success("✅ 已儲存")
+        save_ok = save_data(s, res_cmd, res_ptl)
+        
+        # 2. 生成 PDF 並發送郵件
+        pdf_buf = generate_pdf(time_val, project_name, fast_cmd, res_cmd, res_ptl, sign_points, notes)
+        filename = f"{UNIT_TITLE}執行「{project_name}」規劃表"
+        mail_ok, mail_err = send_email(filename, pdf_buf, filename)
+        
+        # 3. 根據結果顯示提示訊息
+        if save_ok and mail_ok:
+            st.success("✅ 已成功同步至雲端並寄出郵件！")
+        elif save_ok and not mail_ok:
+            st.warning(f"⚠️ 已儲存至雲端，但發送郵件失敗：{mail_err}")
+        elif not save_ok and mail_ok:
+            st.warning("⚠️ 郵件已寄出，但未能儲存至雲端！")
+        else:
+            st.error(f"❌ 儲存與發送均失敗 (發送錯誤：{mail_err})")
 
 with col2:
-    pdf_buf = generate_pdf(time_val, project_name, fast_cmd, res_cmd, res_ptl, sign_points, notes)
-    filename = f"{UNIT_TITLE}執行「{project_name}」規劃表"
-    st.download_button("📄 下載 PDF", data=pdf_buf, file_name=f"{filename}.pdf", mime="application/pdf", use_container_width=True)
-
-with col3:
-    if st.button("📧 發送 Email", use_container_width=True):
-        pdf_buf2 = generate_pdf(time_val, project_name, fast_cmd, res_cmd, res_ptl, sign_points, notes)
-        ok, mail_err = send_email(filename, pdf_buf2, filename)
-        if ok:
-            st.success("✅ 已寄出")
-        else:
-            st.error(f"❌ 發送失敗：{mail_err}")
+    pdf_buf2 = generate_pdf(time_val, project_name, fast_cmd, res_cmd, res_ptl, sign_points, notes)
+    filename2 = f"{UNIT_TITLE}執行「{project_name}」規劃表"
+    st.download_button("📄 下載 PDF", data=pdf_buf2, file_name=f"{filename2}.pdf", mime="application/pdf", use_container_width=True)
