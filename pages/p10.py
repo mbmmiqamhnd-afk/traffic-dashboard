@@ -412,7 +412,19 @@ sign_points = col_c.text_area("巡簽地點", value=settings.get("sign_points", 
 notes = col_d.text_area("備註", value=settings.get("notes", DEFAULT_NOTES), height=160)
 
 st.markdown("---")
-# 將底部的三個按鈕整併為兩個欄位
+
+# ========================================================
+# 提取檔名用的日期（自動抓取「年月日」或「月日」）
+# ========================================================
+file_date_str = ""
+date_match_file = re.search(r"(\d+年)?\d+月\d+日", time_val)
+if date_match_file:
+    file_date_str = f"({date_match_file.group(0)})"
+
+# 動態生成包含日期的檔案名稱
+dynamic_filename = f"{UNIT_TITLE}執行「{project_name}」規劃表{file_date_str}"
+# ========================================================
+
 col1, col2 = st.columns(2)
 
 with col1:
@@ -423,8 +435,7 @@ with col1:
         
         # 2. 生成 PDF 並發送郵件
         pdf_buf = generate_pdf(time_val, project_name, fast_cmd, res_cmd, res_ptl, sign_points, notes)
-        filename = f"{UNIT_TITLE}執行「{project_name}」規劃表"
-        mail_ok, mail_err = send_email(filename, pdf_buf, filename)
+        mail_ok, mail_err = send_email(dynamic_filename, pdf_buf, dynamic_filename)
         
         # 3. 根據結果顯示提示訊息
         if save_ok and mail_ok:
@@ -438,5 +449,4 @@ with col1:
 
 with col2:
     pdf_buf2 = generate_pdf(time_val, project_name, fast_cmd, res_cmd, res_ptl, sign_points, notes)
-    filename2 = f"{UNIT_TITLE}執行「{project_name}」規劃表"
-    st.download_button("📄 下載 PDF", data=pdf_buf2, file_name=f"{filename2}.pdf", mime="application/pdf", use_container_width=True)
+    st.download_button("📄 下載 PDF", data=pdf_buf2, file_name=f"{dynamic_filename}.pdf", mime="application/pdf", use_container_width=True)
