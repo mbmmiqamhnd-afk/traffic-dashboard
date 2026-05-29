@@ -538,12 +538,12 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     doc  = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=15*mm, rightMargin=15*mm,
-        topMargin=15*mm,  bottomMargin=15*mm,
+        topMargin=10*mm,  bottomMargin=10*mm, # 微調邊界，爭取單頁空間
     )
     page_width = A4[0] - 30*mm
     story = []
 
-    style_title = ParagraphStyle("Title", fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=12, wordWrap="CJK")
+    style_title = ParagraphStyle("Title", fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=8, wordWrap="CJK")
     style_info  = ParagraphStyle("Info",  fontName=font, fontSize=14, leading=22, spaceAfter=1*mm, wordWrap="CJK")
     style_cell  = ParagraphStyle("Cell",  fontName=font, fontSize=14, leading=20, alignment=1, wordWrap="CJK")
     # 新增長官簽核欄位的樣式
@@ -554,7 +554,7 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     story.append(Paragraph(f"時間：{date_part} {stats['b_time']}", style_info))
     story.append(Paragraph(f"地點：{stats['b_loc']}召開", style_info))
     
-    story.append(Spacer(1, 5*mm))
+    story.append(Spacer(1, 3*mm)) # 縮小間距
 
     # --- 修改：長官簽核欄位 (分局長與上級督導同一列) ---
     sig_data = [
@@ -564,11 +564,11 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     t_sig = Table(sig_data, colWidths=[page_width/2.0]*2)
     t_sig.setStyle(TableStyle([
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2), # 縮小 padding 以節省空間
         # 不設定 GRID，讓表格無外框，僅作排版使用
     ]))
     story.append(t_sig)
-    story.append(Spacer(1, 8*mm))
+    story.append(Spacer(1, 4*mm)) # 縮小間距
     # ------------------------------------
 
     rows = [
@@ -597,7 +597,8 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     t = Table(
         table_data,
         colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3],
-        rowHeights=[12*mm] + [24*mm]*len(rows),
+        # ▼ 此處縮小列高 (標題列10mm，資料列20mm)，確保能維持單頁產出
+        rowHeights=[10*mm] + [20*mm]*len(rows),
     )
     t.setStyle(TableStyle([
         ("FONTNAME",   (0,0),(-1,-1), font),
