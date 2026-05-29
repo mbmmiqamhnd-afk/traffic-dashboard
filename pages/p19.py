@@ -556,15 +556,15 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     
     story.append(Spacer(1, 5*mm))
 
-    # --- 新增：表格上方的長官簽核欄位 ---
-    sig_data = [[
-        Paragraph("分局長：", style_sig),
-        Paragraph("副分局長：", style_sig),
-        Paragraph("上級督導：", style_sig)
-    ]]
-    t_sig = Table(sig_data, colWidths=[page_width/3.0]*3)
+    # --- 修改：長官簽核欄位 (分局長與上級督導同一列) ---
+    sig_data = [
+        [Paragraph("分局長：", style_sig), Paragraph("上級督導：", style_sig)],
+        [Paragraph("副分局長：", style_sig), ""]
+    ]
+    t_sig = Table(sig_data, colWidths=[page_width/2.0]*2)
     t_sig.setStyle(TableStyle([
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
         # 不設定 GRID，讓表格無外框，僅作排版使用
     ]))
     story.append(t_sig)
