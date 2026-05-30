@@ -437,72 +437,6 @@ def auto_assign_radio_code(df):
             else: df.at[idx, '無線電'] = f"隆安{base_pfx}0"
     return df
 
-def sync_personnel_data(df_ptl, df_cp):
-    df_ptl = clean_df(df_ptl)
-    if df_ptl.empty or df_cp.empty: return df_cp
-    
-    split_pattern = r'[、,，\s/]+'
-    p_dict = {}
-    
-    for _, row in df_ptl.iterrows():
-        unit_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
-        units = [u.strip() for u in re.split(split_pattern, unit_str) if u.strip()]
-        
-        ranks_str = str(row.get('職別', '')).strip()
-        names_str = str(row.get('姓名', '')).strip()
-        current_ranks = [r.strip() for r in re.split(split_pattern, ranks_str) if r.strip()]
-        current_persons = [p.strip() for p in re.split(split_pattern, names_str) if p.strip()]
-        
-        if not units or not current_persons:
-            continue
-            
-        if len(current_ranks) < len(current_persons):
-            current_ranks += [""] * (len(current_persons) - len(current_ranks))
-            
-        for u in units:
-            if u not in p_dict: 
-                p_dict[u] = []
-                
-        if len(units) == 1:
-            u = units[0]
-            for rk, nm in zip(current_ranks, current_persons):
-                if (rk, nm) not in p_dict[u]: p_dict[u].append((rk, nm))
-        else:
-            M, N = len(current_persons), len(units)
-            if M >= N:
-                base, rem, cur_idx = M // N, M % N, 0
-                for i, uk in enumerate(units):
-                    count = base + (1 if i < rem else 0)
-                    for _ in range(count):
-                        if cur_idx < M:
-                            rk = current_ranks[cur_idx]
-                            p = current_persons[cur_idx]
-                            if (rk, p) not in p_dict[uk]: p_dict[uk].append((rk, p))
-                            cur_idx += 1
-            else:
-                for uk in units:
-                    for rk, p in zip(current_ranks, current_persons):
-                        if (rk, p) not in p_dict[uk]: p_dict[uk].append((rk, p))
-
-    df_cp_new = df_cp.copy()
-    for idx, row in df_cp_new.iterrows():
-        u_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
-        u_list = [u.strip() for u in re.split(split_pattern, u_str) if u.strip()]
-        combined_ranks = []
-        combined_names = []
-        for u in u_list:
-            pairs = p_dict.get(u, [])
-            for rk, nm in pairs:
-                if nm not in combined_names: 
-                    combined_ranks.append(rk)
-                    combined_names.append(nm)
-        if combined_names: 
-            df_cp_new.at[idx, '職別'] = "、".join(combined_ranks)
-            df_cp_new.at[idx, '姓名'] = "、".join(combined_names)
-            df_cp_new.at[idx, '無線電'] = "" 
-            
-    return df_cp_new
-
 # --- 3. 主程式介面 ---
 
 if st.sidebar.button("🔄 強制從雲端更新資料"):
@@ -522,7 +456,7 @@ if err:
 df_set = df_set if isinstance(df_set, pd.DataFrame) else pd.DataFrame()
 df_cmd = df_cmd if (isinstance(df_cmd, pd.DataFrame) and not df_cmd.empty) else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
 
-# --- 舊版本試算表欄位轉換與相容機制 (優化支援獨立任務分工欄位) ---
+# --- 舊版本試算表欄位轉換與相容機制 ---
 if isinstance(df_ptl, pd.DataFrame) and not df_ptl.empty:
     if '服勤人員' in df_ptl.columns and '姓名' not in df_ptl.columns:
         df_ptl['姓名'] = df_ptl['服勤人員']
@@ -579,38 +513,14 @@ tab1, tab2 = st.tabs(["📍 第一階段 (巡邏)", "🚧 第二階段 (路檢)"
 
 with tab1:
     st.info(f"當前標題：{phase1_desc}")
-    
-    if st.button("🔄 刷新第一階段代號顯示"):
-        if "ptl_editor" in st.session_state:
-            del st.session_state["ptl_editor"]
-        st.rerun()
-        
     res_ptl = auto_assign_radio_code(
         st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
     ).dropna(how="all").fillna("")
 
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
-    
-    current_cp = st.session_state.get("synced_cp", df_cp)
-    
-    if st.button("🔄 一鍵自動帶入第一階段人員"):
-        new_cp = sync_personnel_data(res_ptl, current_cp)
-        new_cp = auto_assign_radio_code(new_cp)
-        st.session_state["synced_cp"] = new_cp
-        if "cp_editor" in st.session_state:
-            del st.session_state["cp_editor"]
-        st.rerun()
-    
-    if st.button("🔄 刷新第二階段代號顯示"):
-        current_cp = auto_assign_radio_code(current_cp)
-        st.session_state["synced_cp"] = current_cp
-        if "cp_editor" in st.session_state:
-            del st.session_state["cp_editor"]
-        st.rerun()
-        
     res_cp = auto_assign_radio_code(
-        st.data_editor(current_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
+        st.data_editor(df_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     ).dropna(how="all").fillna("")
 
 st.markdown("---")
