@@ -321,7 +321,7 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
     except Exception as e: return False, str(e)
 
 
-# --- 自動指派無線電代號（升級：同編組最上列主導與手動修改智慧連動邏輯） ---
+# --- 自動指派無線電代號（修正：調整檢查順序，避免副所長誤判為所長） ---
 def auto_assign_radio_code(df):
     if df.empty: return df
     
@@ -339,18 +339,16 @@ def auto_assign_radio_code(df):
         base_pfx = next((v for k, v in prefixes.items() if k in unit), "")
         
         if base_pfx:
-            # 智慧判斷是否需要重新計算最上列：
-            # 1. 欄位完全為空
-            # 2. 或是目前的無線電前綴跟單位對不上 (例如換了單位)
-            # 3. 或是目前的無線電代號是系統標準的自動編碼尾數 (隆安X0, 隆安X1, 隆安X2)，代表它是自動產生的，可以隨職別變動
+            # 只有在無線電為空，或是屬於標準自動編碼時，才依據職別重新配發尾數
             if (current_radio == "" or 
                 not current_radio.startswith(f"隆安{base_pfx}") or 
                 current_radio in [f"隆安{base_pfx}0", f"隆安{base_pfx}1", f"隆安{base_pfx}2"]):
                 
-                if "所長" in title or "分隊長" in title:
-                    df.at[idx, '無線電'] = f"隆安{base_pfx}1"
-                elif "副所長" in title or "小隊長" in title:
+                # 💡 【核心修正】必須先檢查包含字數較長的「副所長」與「小隊長」，才不會誤入「所長」區
+                if "副所長" in title or "小隊長" in title:
                     df.at[idx, '無線電'] = f"隆安{base_pfx}2"
+                elif "所長" in title or "分隊長" in title:
+                    df.at[idx, '無線電'] = f"隆安{base_pfx}1"
                 else:
                     df.at[idx, '無線電'] = f"隆安{base_pfx}0"
 
@@ -482,10 +480,10 @@ if "ptl_editable_df" not in st.session_state:
 # 渲染表格編輯器
 res_ptl_raw = st.data_editor(st.session_state.ptl_editable_df, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
 
-# 💡 核心改良點：將無線電分配改到這裡！計算完後，比對是否需要觸發網頁更新
+# 呼叫配發無線電代號函數
 res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
 
-# 核心連動重新整理：若計算出的資料與原本暫存不同，代表有新資料或手動變更，立刻覆蓋暫存並 rerun 重繪網頁
+# 核心連動重繪：如果計算完的結果與畫面暫存不同，立刻更新並 rerun 刷新畫面
 if not res_ptl.equals(st.session_state.ptl_editable_df):
     st.session_state.ptl_editable_df = res_ptl.copy()
     st.rerun()
