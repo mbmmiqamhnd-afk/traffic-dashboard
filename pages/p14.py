@@ -110,7 +110,8 @@ def get_client():
         st.error(f"Google 授權失敗：{e}")
         return None
 
-@st.cache_data(ttl=10)
+# 👇 主要修正的地方：將 ttl 改為 600 秒 (10 分鐘)
+@st.cache_data(ttl=600)
 def load_data():
     try:
         client = get_client()
