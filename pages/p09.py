@@ -204,12 +204,13 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]]
     
     if not df_ptl.empty:
+        # 💡 【核心修改點】無線電與單位使用 dict.fromkeys 保留順序並進行去重合併；職別姓名任務分工則不進行去重合併
         grouped_ptl = df_ptl.groupby("編組", sort=False).agg({
-            "無線電": lambda x: "\n".join(x.astype(str)), 
-            "單位": lambda x: "\n".join(x.astype(str)),   
-            "職別": lambda x: "\n".join(x.astype(str)),
-            "姓名": lambda x: "\n".join(x.astype(str)),
-            "任務分工": lambda x: "\n".join(x.astype(str)),
+            "無線電": lambda x: "\n".join(list(dict.fromkeys(x.astype(str).str.strip()))), 
+            "單位": lambda x: "\n".join(list(dict.fromkeys(x.astype(str).str.strip()))),   
+            "職別": lambda x: "\n".join(x.astype(str).str.strip()),
+            "姓名": lambda x: "\n".join(x.astype(str).str.strip()),
+            "任務分工": lambda x: "\n".join(x.astype(str).str.strip()),
             "巡邏路段": lambda x: x.astype(str).iloc[0] 
         }).reset_index()
         
@@ -321,7 +322,7 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
     except Exception as e: return False, str(e)
 
 
-# --- 自動指派無線電代號（修正：調整檢查順序，避免副所長誤判為所長） ---
+# --- 自動指派無線電代號 ---
 def auto_assign_radio_code(df):
     if df.empty: return df
     
@@ -339,12 +340,10 @@ def auto_assign_radio_code(df):
         base_pfx = next((v for k, v in prefixes.items() if k in unit), "")
         
         if base_pfx:
-            # 只有在無線電為空，或是屬於標準自動編碼時，才依據職別重新配發尾數
             if (current_radio == "" or 
                 not current_radio.startswith(f"隆安{base_pfx}") or 
                 current_radio in [f"隆安{base_pfx}0", f"隆安{base_pfx}1", f"隆安{base_pfx}2"]):
                 
-                # 💡 【核心修正】必須先檢查包含字數較長的「副所長」與「小隊長」，才不會誤入「所長」區
                 if "副所長" in title or "小隊長" in title:
                     df.at[idx, '無線電'] = f"隆安{base_pfx}2"
                 elif "所長" in title or "分隊長" in title:
@@ -410,12 +409,10 @@ b_info, s_info = st.text_area("📢 勤前教育", b, height=70), st.text_area("
 
 st.subheader("2. 巡邏編組")
 
-# --- 【名冊快速貼上功能】智慧型雙模辨識模式 ---
 with st.expander("📋 點此打開【今日出勤名冊快速貼上區】", expanded=False):
     st.markdown("""
     **💡 智慧辨識貼上說明（3欄、4欄皆通用）：**
     * **【模式 A：一般同單位模式】** 直接貼 **3 個資料** 👉 `單位 職別 姓名`
-      * *效果：* 系統會自動將同單位的人打包在同一個編組。
     * **【模式 B：跨單位聯合模式】** 貼上 **4 個資料** 👉 `編組名稱 單位 職別 姓名`
     """)
     
@@ -473,17 +470,13 @@ with st.expander("📋 點此打開【今日出勤名冊快速貼上區】", exp
             else:
                 st.error("❌ 無法解析文字，請確認每行輸入是否包含最少 3 個或 4 個空白隔開的資料。")
 
-# 透過 session_state 管理網頁表格
 if "ptl_editable_df" not in st.session_state:
     st.session_state.ptl_editable_df = df_ptl if df_ptl is not None and not df_ptl.empty else DEFAULT_PTL.copy()
 
-# 渲染表格編輯器
 res_ptl_raw = st.data_editor(st.session_state.ptl_editable_df, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
 
-# 呼叫配發無線電代號函數
 res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
 
-# 核心連動重繪：如果計算完的結果與畫面暫存不同，立刻更新並 rerun 刷新畫面
 if not res_ptl.equals(st.session_state.ptl_editable_df):
     st.session_state.ptl_editable_df = res_ptl.copy()
     st.rerun()
