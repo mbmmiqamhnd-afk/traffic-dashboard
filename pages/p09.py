@@ -43,14 +43,14 @@ DEFAULT_BRIEF   = "19時30分於分局二樓會議室召開"
 DEFAULT_STATION = "時間:20時至23時\n地點:桃園市龍潭區中正路269號(龍星國民小學)大門口"
 
 DEFAULT_CMD = pd.DataFrame([
-    {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長施宇峰", "任務": "核定本勤務執行並重點機動督導"},
-    {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-    {"職稱": "副指揮官", "代號": "隆安3", "姓名": "副分局長蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-    {"職稱": "上級督導官", "代號": "建興", "姓名": "駐區督察 孫三陽", "任務": "重點機動督導"},
-    {"職稱": "督導組", "代號": "隆安6", "姓名": "督察組組長黃長旗\n督察組督察員 黃中彥\n督察組警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律"},
-    {"職稱": "指導組", "代號": "隆安684", "姓名": "督察組教官郭文義", "任務": "指導各編組勤務執行及狀況處置"},
-    {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "交通組組長 楊孟竟\n交通組警務員盧冠仁\n交通組警務員李峯甫\n交通組巡官郭胜隆\n交通組巡官羅千金\n交通組警員吳享運\n勤指中心警員張庭溱\n(代理人:巡官陳鵬翔)", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
-    {"職稱": "通訊組", "代號": "隆安", "姓名": "行政組警務佐曾威仁\n人事室警員陳明祥\n主任蔡奇青\n執勤官李文章\n執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜"},
+    {"職稱": "指揮官", "代號": "隆安1", "負責人員": "分局長施宇峰", "任務": "核定本勤務執行並重點機動督導"},
+    {"職稱": "副指揮官", "代號": "隆安2", "負責人員": "副分局長何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
+    {"職稱": "副指揮官", "代號": "隆安3", "負責人員": "副分局長蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
+    {"職稱": "上級督導官", "代號": "建興", "負責人員": "駐區督察 孫三陽", "任務": "重點機動督導"},
+    {"職稱": "督導組", "代號": "隆安6", "負責人員": "督察組組長黃長旗\n督察組督察員 黃中彥\n督察組警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律"},
+    {"職稱": "指導組", "代號": "隆安684", "負責人員": "督察組教官郭文義", "任務": "指導各編組勤務執行及狀況處置"},
+    {"職稱": "作業及督巡組", "代號": "隆安13", "負責人員": "交通組組長 楊孟竟\n交通組警務員盧冠仁\n交通組警務員李峯甫\n交通組巡官郭勝隆\n交通組巡官羅千金\n交通組警員吳享運\n勤指中心警員張庭溱\n(代理人:巡官陳鵬翔)", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
+    {"職稱": "通訊組", "代號": "隆安", "負責人員": "行政組警務佐曾威仁\n人事室警員陳明祥\n主任蔡奇青\n執勤官李文章\n執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜"},
 ])
 
 DEFAULT_PTL = pd.DataFrame([
@@ -95,7 +95,7 @@ def init_sheets():
         sh = client.open_by_key(SHEET_ID)
         headers = {
             WS_MAP["set"]: [["Key", "Value"]],
-            WS_MAP["cmd"]: [["職稱", "代號", "姓名", "任務"]],
+            WS_MAP["cmd"]: [["職稱", "代號", "負責人員", "任務"]], # 欄位修改
             WS_MAP["ptl"]: [["編組", "無線電", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]
         }
         for ws_name, head in headers.items():
@@ -174,12 +174,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     def clean(t): return str(t).replace("\n", "<br/>").replace("、", "<br/>")
 
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
-                [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "姓名", "任務"]]]
+                [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "負責人員", "任務"]]] # 標頭修改
     for _, r in df_cmd.iterrows():
         data_cmd.append([
             Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell),
             Paragraph(clean(r.get('代號','')), style_cell),
-            Paragraph(clean(r.get('姓名','')), style_cell),
+            Paragraph(clean(r.get('負責人員','')), style_cell), # 取值修改
             Paragraph(clean(r.get('任務','')), style_cell_left)
         ])
 
@@ -215,11 +215,9 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     
     if not df_ptl.empty:
         current_row = 1
-        # 依據「編組」群組化
         for g_name, g_df in df_ptl.groupby("編組", sort=False):
             start_row = current_row
             
-            # 每個人維持獨立的一列資料加入 Table
             for _, r in g_df.iterrows():
                 task_route = f"{r.get('巡邏路段','')}<br/><font color='blue' size='11'>*雨備方案：各治安要點巡邏。</font>"
                 data_ptl.append([
@@ -234,13 +232,10 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                 current_row += 1
             end_row = current_row - 1
             
-            # 如果同組內有多人，動態計算並加入 SPAN 合併儲存格指令
             if start_row < end_row:
-                # 1. 毫無疑問，「編組」與「巡邏路段」全組完全合併
                 t2_styles.append(('SPAN', (0, start_row), (0, end_row)))
                 t2_styles.append(('SPAN', (6, start_row), (6, end_row)))
                 
-                # 2. 「代號 (無線電)」：連續相同數值才做合併儲存格
                 sub_start_rad = start_row
                 for r_idx in range(start_row + 1, end_row + 1):
                     prev_val = str(g_df.iloc[sub_start_rad - start_row]['無線電']).strip()
@@ -252,7 +247,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                 if sub_start_rad < end_row:
                     t2_styles.append(('SPAN', (1, sub_start_rad), (1, end_row)))
                     
-                # 3. 「單位」：連續相同單位才做合併儲存格
                 sub_start_uni = start_row
                 for r_idx in range(start_row + 1, end_row + 1):
                     prev_val = str(g_df.iloc[sub_start_uni - start_row]['單位']).strip()
@@ -263,8 +257,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                         sub_start_uni = r_idx
                 if sub_start_uni < end_row:
                     t2_styles.append(('SPAN', (2, sub_start_uni), (2, end_row)))
-                
-                # 💡 註：職別(3)、姓名(4)、任務分工(5) 完全不執行 SPAN 動作，保持獨立列線條對齊
 
     t2 = Table(data_ptl, colWidths=[page_width*0.11, page_width*0.11, page_width*0.12, page_width*0.10, page_width*0.12, page_width*0.13, page_width*0.31], repeatRows=1)
     t2.setStyle(TableStyle(t2_styles))
@@ -361,10 +353,8 @@ def auto_assign_radio_code(df):
     
     prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
     
-    # 步驟 1: 找出每個編組的「最上面那一列」的索引 (Index)
     first_row_indices = df.groupby("編組", sort=False).head(1).index
     
-    # 步驟 2: 先計算或更新所有「最上列」的無線電預設值
     for idx in first_row_indices:
         unit = str(df.at[idx, '單位'])
         title = str(df.at[idx, '職別']).strip()
@@ -384,7 +374,6 @@ def auto_assign_radio_code(df):
                 else:
                     df.at[idx, '無線電'] = f"隆安{base_pfx}0"
 
-    # 步驟 3: 建立對照表，強制讓同編組的所有其他列同步複製該編組「最上列」的無線電數值
     radio_map = dict(zip(df.loc[first_row_indices, "編組"], df.loc[first_row_indices, "無線電"]))
     
     for idx, row in df.iterrows():
