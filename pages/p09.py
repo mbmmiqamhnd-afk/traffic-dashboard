@@ -53,12 +53,11 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "通訊組", "代號": "隆安", "姓名": "行政組警務佐曾威仁\n人事室警員陳明祥\n主任蔡奇青\n執勤官李文章\n執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜"},
 ])
 
-# 預設巡邏組改為一人一列格式
 DEFAULT_PTL = pd.DataFrame([
     {"編組": "聖亭組1", "無線電": "隆安52", "單位": "聖亭所", "職別": "副所長", "姓名": "邱品淳", "任務分工": "機動巡查", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "聖亭組2", "無線電": "隆安50", "單位": "聖亭所", "職別": "警員", "姓名": "傅維強", "任務分工": "安全維護", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "龍潭組1", "無線電": "隆安61", "單位": "龍潭所", "職別": "所長", "姓名": "孫祥愷", "任務分工": "改裝車查緝", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "龍潭組2", "無線電": "隆安60", "單位": "龍潭所", "職別": "警員", "姓名": "沈庭禾", "任務分工": "周邊攔檢", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "聖亭組1", "無線電": "隆安52", "單位": "聖亭所", "職別": "警員", "姓名": "傅維強", "任務分工": "安全維護", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "聯合組1", "無線電": "隆安61", "單位": "龍潭所", "職別": "所長", "姓名": "孫祥愷", "任務分工": "改裝車查緝", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "聯合組1", "無線電": "隆安70", "單位": "中興所", "職別": "警員", "姓名": "蔡震東", "任務分工": "跨區聯合稽查", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。"},
 ])
 
 # --- 2. 輔助函數 ---
@@ -202,19 +201,30 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story.append(Paragraph(str(station).strip().replace('\n', '<br/>'), style_middle_block))
     story.append(Spacer(1, 6*mm))
 
-    # 一人一列的表格抬頭
+    # PDF 生成時，只要「編組」名稱相同，無論是不是跨單位，都會自動完美對齊並合併在一個框內
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]]
-    for _, r in df_ptl.iterrows():
-        task_route = f"{r.get('巡邏路段','')}<br/><font color='blue' size='11'>*雨備方案：各治安要點巡邏。</font>"
-        data_ptl.append([
-            Paragraph(clean(r.get('編組','')), style_cell),
-            Paragraph(clean(r.get('無線電','')), style_cell),
-            Paragraph(clean(r.get('單位','')), style_cell),
-            Paragraph(clean(r.get('職別','')), style_cell),
-            Paragraph(clean(r.get('姓名','')), style_cell),
-            Paragraph(clean(r.get('任務分工','')), style_cell),
-            Paragraph(task_route, style_cell_left)
-        ])
+    
+    if not df_ptl.empty:
+        grouped_ptl = df_ptl.groupby("編組", sort=False).agg({
+            "無線電": lambda x: "\n".join(x.astype(str)), 
+            "單位": lambda x: "\n".join(x.astype(str)),   
+            "職別": lambda x: "\n".join(x.astype(str)),
+            "姓名": lambda x: "\n".join(x.astype(str)),
+            "任務分工": lambda x: "\n".join(x.astype(str)),
+            "巡邏路段": lambda x: x.astype(str).iloc[0] 
+        }).reset_index()
+        
+        for _, r in grouped_ptl.iterrows():
+            task_route = f"{r.get('巡邏路段','')}<br/><font color='blue' size='11'>*雨備方案：各治安要點巡邏。</font>"
+            data_ptl.append([
+                Paragraph(clean(r.get('編組','')), style_cell),
+                Paragraph(clean(r.get('無線電','')), style_cell),
+                Paragraph(clean(r.get('單位','')), style_cell),
+                Paragraph(clean(r.get('職別','')), style_cell),
+                Paragraph(clean(r.get('姓名','')), style_cell),
+                Paragraph(clean(r.get('任務分工','')), style_cell),
+                Paragraph(task_route, style_cell_left)
+            ])
 
     t2 = Table(data_ptl, colWidths=[page_width*0.11, page_width*0.11, page_width*0.12, page_width*0.10, page_width*0.12, page_width*0.13, page_width*0.31], repeatRows=1)
     t2.setStyle(TableStyle([
@@ -358,24 +368,32 @@ b_info, s_info = st.text_area("📢 勤前教育", b, height=70), st.text_area("
 
 st.subheader("2. 巡邏編組")
 
-# --- 【文字框直接貼上名冊功能】改為「一人一列」專用邏輯 ---
+# --- 【名冊快速貼上功能】智慧型雙模辨識模式 ---
 with st.expander("📋 點此打開【今日出勤名冊快速貼上區】", expanded=False):
     st.markdown("""
-    **💡 一人一列貼上說明：** 請將收到的流水帳名冊直接貼在下方輸入框。
-    * 每行只能有一筆資料，格式為：`單位 職別 姓名`（可用空白、逗號、或 Tab 鍵隔開）。
-    * 系統會將每個人獨立拆分為一列，並自動編號與設定無線電。
+    **💡 智慧辨識貼上說明（3欄、4欄皆通用）：**
+    * **【模式 A：一般同單位模式】** 直接貼 **3 個資料** 👉 `單位 職別 姓名`
+      * *範例：*
+        ```text
+        聖亭所 副所長 邱品淳
+        聖亭所 警員 傅維強
+        ```
+      * *效果：* 系統會自動將同單位的人打包在同一個編組。
+    * **【模式 B：跨單位聯合模式】** 貼上 **4 個資料** 👉 `編組名稱 單位 職別 姓名`
+      * *範例：*
+        ```text
+        聯合組1 聖亭所 副所長 邱品淳
+        聯合組1 龍潭所 警員 沈庭禾
+        ```
     """)
     
-    paste_placeholder = "聖亭所 副所長 邱品淳\n聖亭所 警員 傅維強\n龍潭所 所長 孫祥愷\n龍潭所 警員 沈庭禾"
+    paste_placeholder = "聖亭所 副所長 邱品淳\n聖亭所 警員 傅維強\n聯合組1 龍潭所 所長 孫祥愷\n聯合組1 中興所 警員 蔡震東"
     raw_paste = st.text_area("請在此貼上名冊文字：", value="", placeholder=paste_placeholder, height=200)
     
     if st.button("⚡ 解析名冊並匯入下方表格", use_container_width=True):
         if raw_paste.strip():
             lines = raw_paste.strip().split("\n")
             parsed_ptl = []
-            
-            # 用來計算各單位出現次數，以便自動產生編組名稱 (例如: 龍潭組1, 龍潭組2)
-            unit_counters = {}
             
             route_map = {
                 "聖亭": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
@@ -390,54 +408,58 @@ with st.expander("📋 點此打開【今日出勤名冊快速貼上區】", exp
             for line in lines:
                 if not line.strip(): continue
                 tokens = re.split(r'[\s,\t]+', line.strip())
-                if len(tokens) >= 3:
+                
+                # 模式 A：只輸入 3 個欄位 (單位 職別 姓名)
+                if len(tokens) == 3:
                     u_name = tokens[0].strip()
-                    title = tokens[1].strip()
-                    name = tokens[2].strip()
+                    title  = tokens[1].strip()
+                    name   = tokens[2].strip()
+                    # 智慧推導編組名稱：直接把 "聖亭所" 改成 "聖亭組"
+                    g_name = u_name.replace("派出所", "組").replace("所", "組").replace("分隊", "組")
+                
+                # 模式 B：輸入 4 個或以上欄位 (編組名稱 單位 職別 姓名)
+                elif len(tokens) >= 4:
+                    g_name = tokens[0].strip()
+                    u_name = tokens[1].strip()
+                    title  = tokens[2].strip()
+                    name   = tokens[3].strip()
+                else:
+                    continue # 格式不符則跳過
                     
-                    # 擷取簡短地名作為編組前綴 (例如: "聖亭所" -> "聖亭")
-                    short_u = u_name.replace("派出所", "").replace("所", "").replace("分隊", "")
-                    
-                    # 計算該單位的序號
-                    unit_counters[short_u] = unit_counters.get(short_u, 0) + 1
-                    group_name = f"{short_u}組{unit_counters[short_u]}"
-                    
-                    default_route = next((v for k, v in route_map.items() if k in u_name), "於轄區內易有噪音車輛滋擾路段巡邏。")
-                    
-                    # 一人一列加入資料結構
-                    parsed_ptl.append({
-                        "編組": group_name,
-                        "無線電": "", # 下方自動配無線電函數會處理
-                        "單位": u_name,
-                        "職別": title,
-                        "姓名": name,
-                        "任務分工": "機動巡查" if "警員" in title else "安全維護及督導",
-                        "巡邏路段": default_route
-                    })
+                default_route = next((v for k, v in route_map.items() if k in u_name), "於轄區內易有噪音車輛滋擾路段巡邏。")
+                
+                parsed_ptl.append({
+                    "編組": g_name,
+                    "無線電": "", # 由下方自動指派無線電處理
+                    "單位": u_name,
+                    "職別": title,
+                    "姓名": name,
+                    "任務分工": "機動巡查" if "警員" in title else "安全維護及督導",
+                    "巡邏路段": default_route
+                })
             
             if parsed_ptl:
                 st.session_state.ptl_editable_df = pd.DataFrame(parsed_ptl)
-                st.success("🎉 名冊解析成功！已將所有人獨立分列載入下方表格。")
+                st.success("🎉 名冊智慧解析成功！已載入下方表格。")
                 st.rerun()
             else:
-                st.error("❌ 無法解析文字，請確保格式為『單位 職別 姓名』並用空格隔開。")
+                st.error("❌ 無法解析文字，請確認每行輸入是否包含最少 3 個或 4 個空白隔開的資料。")
 
-# 透過 session_state 管理表格狀態
+# 透過 session_state 管理網頁表格
 if "ptl_editable_df" not in st.session_state:
     st.session_state.ptl_editable_df = df_ptl if df_ptl is not None and not df_ptl.empty else DEFAULT_PTL.copy()
 
 res_ptl_raw = st.data_editor(st.session_state.ptl_editable_df, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
 st.session_state.ptl_editable_df = res_ptl_raw.copy()
 
-# 自動指派無線電代號 (改為精準抓取單一列的職別欄)
+# 無線電自動配發功能：依據個人「單位」智慧抓取對應代號
 def auto_assign_radio_code(df):
     prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
     for idx, row in df.iterrows():
         unit, title = str(row.get('單位', '')), str(row.get('職別', '')).strip()
         current_radio = str(row.get('無線電', '')).strip()
         
-        first_unit = re.split(r'[\n、 ]', unit.strip())[0]
-        base_pfx = next((v for k, v in prefixes.items() if k in first_unit), "")
+        base_pfx = next((v for k, v in prefixes.items() if k in unit), "")
         
         if base_pfx:
             if current_radio.startswith(f"隆安{base_pfx}"):
