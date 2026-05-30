@@ -49,7 +49,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "上級督導官", "代號": "建興", "姓名": "駐區督察 孫三陽", "任務": "重點機動督導"},
     {"職稱": "督導組", "代號": "隆安6", "姓名": "督察組組長黃長旗\n督察組督察員 黃中彥\n督察組警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律"},
     {"職稱": "指導組", "代號": "隆安684", "姓名": "督察組教官郭文義", "任務": "指導各編組勤務執行及狀況處置"},
-    {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "交通組組長 楊孟竟\n交通組警務員盧冠仁\n交通組警務員李峯甫\n交通組巡官郭勝隆\n交通組巡官羅千金\n交通組警員吳享運\n勤指中心警員張庭溱\n(代理人:巡官陳鵬翔)", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
+    {"職稱": "作業及督巡組", "代號": "隆安13", "姓名": "交通組組長 楊孟竟\n交通組警務員盧冠仁\n交通組警務員李峯甫\n交通組巡官郭胜隆\n交通組巡官羅千金\n交通組警員吳享運\n勤指中心警員張庭溱\n(代理人:巡官陳鵬翔)", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
     {"職稱": "通訊組", "代號": "隆安", "姓名": "行政組警務佐曾威仁\n人事室警員陳明祥\n主任蔡奇青\n執勤官李文章\n執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜"},
 ])
 
@@ -201,40 +201,73 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story.append(Paragraph(str(station).strip().replace('\n', '<br/>'), style_middle_block))
     story.append(Spacer(1, 6*mm))
 
-    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]]
-    
-    if not df_ptl.empty:
-        # 💡 【核心修改點】無線電與單位使用 dict.fromkeys 保留順序並進行去重合併；職別姓名任務分工則不進行去重合併
-        grouped_ptl = df_ptl.groupby("編組", sort=False).agg({
-            "無線電": lambda x: "\n".join(list(dict.fromkeys(x.astype(str).str.strip()))), 
-            "單位": lambda x: "\n".join(list(dict.fromkeys(x.astype(str).str.strip()))),   
-            "職別": lambda x: "\n".join(x.astype(str).str.strip()),
-            "姓名": lambda x: "\n".join(x.astype(str).str.strip()),
-            "任務分工": lambda x: "\n".join(x.astype(str).str.strip()),
-            "巡邏路段": lambda x: x.astype(str).iloc[0] 
-        }).reset_index()
-        
-        for _, r in grouped_ptl.iterrows():
-            task_route = f"{r.get('巡邏路段','')}<br/><font color='blue' size='11'>*雨備方案：各治安要點巡邏。</font>"
-            data_ptl.append([
-                Paragraph(clean(r.get('編組','')), style_cell),
-                Paragraph(clean(r.get('無線電','')), style_cell),
-                Paragraph(clean(r.get('單位','')), style_cell),
-                Paragraph(clean(r.get('職別','')), style_cell),
-                Paragraph(clean(r.get('姓名','')), style_cell),
-                Paragraph(clean(r.get('任務分工','')), style_cell),
-                Paragraph(task_route, style_cell_left)
-            ])
-
-    t2 = Table(data_ptl, colWidths=[page_width*0.11, page_width*0.11, page_width*0.12, page_width*0.10, page_width*0.12, page_width*0.13, page_width*0.31], repeatRows=1)
-    t2.setStyle(TableStyle([
+    # --- 巡邏編組表格：真正的跨列合併儲存格邏輯 ---
+    t2_styles = [
         ('FONTNAME',   (0,0), (-1,-1), font),
         ('FONTSIZE',   (0,0), (-1,-1), 13),
         ('ALIGN',      (0,1), (5,-1),  'CENTER'),
         ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
         ('BACKGROUND', (0,0), (-1,0),  colors.HexColor('#f2f2f2')),
         ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
-    ]))
+    ]
+    
+    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]]
+    
+    if not df_ptl.empty:
+        current_row = 1
+        # 依據「編組」群組化
+        for g_name, g_df in df_ptl.groupby("編組", sort=False):
+            start_row = current_row
+            
+            # 每個人維持獨立的一列資料加入 Table
+            for _, r in g_df.iterrows():
+                task_route = f"{r.get('巡邏路段','')}<br/><font color='blue' size='11'>*雨備方案：各治安要點巡邏。</font>"
+                data_ptl.append([
+                    Paragraph(clean(r.get('編組','')), style_cell),
+                    Paragraph(clean(r.get('無線電','')), style_cell),
+                    Paragraph(clean(r.get('單位','')), style_cell),
+                    Paragraph(clean(r.get('職別','')), style_cell),
+                    Paragraph(clean(r.get('姓名','')), style_cell),
+                    Paragraph(clean(r.get('任務分工','')), style_cell),
+                    Paragraph(task_route, style_cell_left)
+                ])
+                current_row += 1
+            end_row = current_row - 1
+            
+            # 如果同組內有多人，動態計算並加入 SPAN 合併儲存格指令
+            if start_row < end_row:
+                # 1. 毫無疑問，「編組」與「巡邏路段」全組完全合併
+                t2_styles.append(('SPAN', (0, start_row), (0, end_row)))
+                t2_styles.append(('SPAN', (6, start_row), (6, end_row)))
+                
+                # 2. 「代號 (無線電)」：連續相同數值才做合併儲存格
+                sub_start_rad = start_row
+                for r_idx in range(start_row + 1, end_row + 1):
+                    prev_val = str(g_df.iloc[sub_start_rad - start_row]['無線電']).strip()
+                    curr_val = str(g_df.iloc[r_idx - start_row]['無線電']).strip()
+                    if prev_val != curr_val:
+                        if sub_start_rad < r_idx - 1:
+                            t2_styles.append(('SPAN', (1, sub_start_rad), (1, r_idx - 1)))
+                        sub_start_rad = r_idx
+                if sub_start_rad < end_row:
+                    t2_styles.append(('SPAN', (1, sub_start_rad), (1, end_row)))
+                    
+                # 3. 「單位」：連續相同單位才做合併儲存格
+                sub_start_uni = start_row
+                for r_idx in range(start_row + 1, end_row + 1):
+                    prev_val = str(g_df.iloc[sub_start_uni - start_row]['單位']).strip()
+                    curr_val = str(g_df.iloc[r_idx - start_row]['單位']).strip()
+                    if prev_val != curr_val:
+                        if sub_start_uni < r_idx - 1:
+                            t2_styles.append(('SPAN', (2, sub_start_uni), (2, r_idx - 1)))
+                        sub_start_uni = r_idx
+                if sub_start_uni < end_row:
+                    t2_styles.append(('SPAN', (2, sub_start_uni), (2, end_row)))
+                
+                # 💡 註：職別(3)、姓名(4)、任務分工(5) 完全不執行 SPAN 動作，保持獨立列線條對齊
+
+    t2 = Table(data_ptl, colWidths=[page_width*0.11, page_width*0.11, page_width*0.12, page_width*0.10, page_width*0.12, page_width*0.13, page_width*0.31], repeatRows=1)
+    t2.setStyle(TableStyle(t2_styles))
     story.append(t2)
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     return buf.getvalue()
