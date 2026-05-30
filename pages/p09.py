@@ -403,7 +403,7 @@ p = d.get("project_name", DEFAULT_PROJ)
 b = d.get("briefing_info", DEFAULT_BRIEF)
 s = d.get("check_station", DEFAULT_STATION)
 
-st.title("🚓 聯合稽查勤務規劃 management系統")
+st.title("🚓 聯合稽查勤務規劃管理系統")
 c1, c2 = st.columns(2)
 
 p_time = c2.text_input("勤務時間", value=t)
