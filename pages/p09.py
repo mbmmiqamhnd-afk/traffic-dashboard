@@ -203,7 +203,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story.append(Paragraph(str(station).strip().replace('\n', '<br/>'), style_middle_block))
     story.append(Spacer(1, 6*mm))
 
-    # 在此新增「任務分工」欄位抬頭
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]]
     for _, r in df_ptl.iterrows():
         task_route = f"{r.get('巡邏路段','')}<br/><font color='blue' size='12'>*雨備方案：各治安要點巡邏。</font>"
@@ -213,16 +212,15 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
             Paragraph(clean(r.get('單位','')), style_cell),
             Paragraph(clean(r.get('職別','')), style_cell),
             Paragraph(clean(r.get('姓名','')), style_cell),
-            Paragraph(clean(r.get('任務分工','')), style_cell), # 新增的內容欄位
+            Paragraph(clean(r.get('任務分工','')), style_cell),
             Paragraph(task_route, style_cell_left)
         ])
 
-    # 重新微調 7 欄的欄位寬度比例 (總和為 1.0)
     t2 = Table(data_ptl, colWidths=[page_width*0.11, page_width*0.11, page_width*0.12, page_width*0.10, page_width*0.12, page_width*0.13, page_width*0.31], repeatRows=1)
     t2.setStyle(TableStyle([
         ('FONTNAME',   (0,0), (-1,-1), font),
         ('FONTSIZE',   (0,0), (-1,-1), 14),
-        ('ALIGN',      (0,1), (5,-1),  'CENTER'), # 前 6 欄置中
+        ('ALIGN',      (0,1), (5,-1),  'CENTER'),
         ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
         ('BACKGROUND', (0,0), (-1,0),  colors.HexColor('#f2f2f2')),
         ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
@@ -319,6 +317,7 @@ if st.sidebar.button("初始化/檢查雲端分頁"): init_sheets()
 if st.sidebar.button("⚠️ 強制重置為最新專案資料 (覆蓋雲端)"):
     with st.spinner("重置中..."):
         save_data(DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF, DEFAULT_STATION, DEFAULT_CMD, DEFAULT_PTL)
+        if "ptl_editable_df" in st.session_state: del st.session_state.ptl_editable_df
         st.cache_data.clear()
         st.rerun()
 
@@ -356,9 +355,82 @@ st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(df_cmd if df_cmd is not None and not df_cmd.empty else DEFAULT_CMD.copy(), num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
 b_info, s_info = st.text_area("📢 勤前教育", b, height=70), st.text_area("🚧 環保局臨時檢驗站開設", s, height=70)
 
-st.subheader("2. 巡邏編組")
-res_ptl_raw = st.data_editor(df_ptl if df_ptl is not None and not df_ptl.empty else DEFAULT_PTL.copy(), num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
 
+st.subheader("2. 巡邏編組")
+
+# --- 【方式二：文字框直接貼上名冊】新增的區塊 ---
+with st.expander("📋 點此打開【今日出勤名冊快速貼上區】", expanded=False):
+    st.markdown("""
+    **💡 貼上說明：** 請將收到的流水帳名冊直接貼在下方輸入框。
+    * 每行一筆資料，格式為：`單位 職別 姓名`（可用空白、逗號、或Tab鍵隔開）。
+    * 系統會自動把**相同單位**的人合併到同一組中，並自動換行。
+    """)
+    
+    paste_placeholder = "聖亭所 副所長 邱品淳\n聖亭所 警員 傅維強\n龍潭所 所長 孫祥愷\n龍潭所 警員 沈庭禾"
+    raw_paste = st.text_area("請在此貼上名冊文字：", value="", placeholder=paste_placeholder, height=200)
+    
+    if st.button("⚡ 解析名冊並匯入下方表格", use_container_width=True):
+        if raw_paste.strip():
+            lines = raw_paste.strip().split("\n")
+            raw_list = []
+            
+            for line in lines:
+                if not line.strip(): continue
+                # 利用正則表達式切分 逗號、空格、或Tab
+                tokens = re.split(r'[\s,\t]+', line.strip())
+                if len(tokens) >= 3:
+                    raw_list.append({
+                        "單位": tokens[0].strip(),
+                        "職別": tokens[1].strip(),
+                        "姓名": tokens[2].strip()
+                    })
+            
+            if raw_list:
+                df_parsed = pd.DataFrame(raw_list)
+                # 依單位群組，把職別、姓名用 \n 串接起來
+                grouped = df_parsed.groupby("單位", sort=False).agg({
+                    "職別": lambda x: "\n".join(x),
+                    "姓名": lambda x: "\n".join(x)
+                }).reset_index()
+                
+                route_map = {
+                    "聖亭": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
+                    "龍潭": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。",
+                    "中興": "於龍新路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
+                    "石門": "於神龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
+                    "高平": "於東龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
+                    "三和": "於東龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
+                    "交通": "於中豐路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"
+                }
+                
+                parsed_ptl = []
+                for i, row in grouped.iterrows():
+                    u_name = row["單位"]
+                    default_route = next((v for k, v in route_map.items() if k in u_name), "於轄區內易有噪音車輛滋擾路段巡邏。")
+                    parsed_ptl.append({
+                        "編組": f"第{i+1}巡邏組",
+                        "無線電": "", # 下方自動配發無線電函數會處理
+                        "單位": u_name,
+                        "職別": row["職別"],
+                        "姓名": row["姓名"],
+                        "任務分工": "機動巡查\n安全維護",
+                        "巡邏路段": default_route
+                    })
+                
+                st.session_state.ptl_editable_df = pd.DataFrame(parsed_ptl)
+                st.success("🎉 名冊解析成功！已依單位自動打包並載入下方表格。")
+                st.rerun()
+            else:
+                st.error("❌ 無法解析文字，請確保格式為『單位 職別 姓名』並用空格隔開。")
+
+# 透過 session_state 管理表格狀態
+if "ptl_editable_df" not in st.session_state:
+    st.session_state.ptl_editable_df = df_ptl if df_ptl is not None and not df_ptl.empty else DEFAULT_PTL.copy()
+
+res_ptl_raw = st.data_editor(st.session_state.ptl_editable_df, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
+st.session_state.ptl_editable_df = res_ptl_raw.copy()
+
+# 自動指派無線電代號
 def auto_assign_radio_code(df):
     prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
     for idx, row in df.iterrows():
@@ -394,5 +466,8 @@ if st.button("💾 同步雲端並發送備份郵件", use_container_width=True)
     with st.spinner("處理中..."):
         save_data(u, p_time, p_name, b_info, s_info, res_cmd, res_ptl)
         ok, m_err = send_report_email(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
-        if ok: st.success("✅ 同步與郵件發送成功！")
+        if ok: 
+            st.success("✅ 同步與郵件發送成功！")
+            if "ptl_editable_df" in st.session_state: del st.session_state.ptl_editable_df
+            st.rerun()
         else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {m_err}")
