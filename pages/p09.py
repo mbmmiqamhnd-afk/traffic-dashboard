@@ -54,12 +54,12 @@ DEFAULT_CMD = pd.DataFrame([
 ])
 
 DEFAULT_PTL = pd.DataFrame([
-    {"編組": "第一巡邏組", "無線電": "隆安52", "單位": "聖亭所", "服勤人員": "副所長邱品淳\n警員傅維強", "任務分工": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第二巡邏組", "無線電": "隆安61", "單位": "龍潭所", "服勤人員": "所長孫祥愷\n警員沈庭禾\n警員周浚豪\n警員黃子軒", "任務分工": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第三巡邏組", "無線電": "隆安71", "單位": "中興所", "服勤人員": "所長董亦文\n警員徐毓汶\n警員蔡震東", "任務分工": "於龍新路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第四巡邏組", "無線電": "隆安83", "單位": "石門所", "服勤人員": "巡佐林偉政\n警員鄒詠如", "任務分工": "於神龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第五巡邏組", "無線電": "隆安93", "單位": "高平所\n三和所", "服勤人員": "警員邱春松\n警員唐銘聰", "任務分工": "於東龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第六巡邏組", "無線電": "隆安993", "單位": "龍潭交通分隊", "服勤人員": "小隊長林振生\n警員張登冠", "任務分工": "於中豐路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第一巡邏組", "無線電": "隆安52", "單位": "聖亭所", "職別": "副所長\n警員", "姓名": "邱品淳\n傅維強", "任務分工": "機動巡查\n安全維護", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第二巡邏組", "無線電": "隆安61", "單位": "龍潭所", "職別": "所長\n警員\n警員\n警員", "姓名": "孫祥愷\n沈庭禾\n周浚豪\n黃子軒", "任務分工": "改裝車查緝\n周邊攔檢", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第三巡邏組", "無線電": "隆安71", "單位": "中興所", "職別": "所長\n警員\n警員", "姓名": "董亦文\n徐毓汶\n蔡震東", "任務分工": "噪音車抽查\n路口守望", "巡邏路段": "於龍新路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第四巡邏組", "無線電": "隆安83", "單位": "石門所", "職別": "巡佐\n警員", "姓名": "林偉政\n鄒詠如", "任務分工": "機動巡查\n治安盤查", "巡邏路段": "於神龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第五巡邏組", "無線電": "隆安93", "單位": "高平所\n三和所", "職別": "警員\n警員", "姓名": "邱春松\n唐銘聰", "任務分工": "區域巡邏\n交通疏導", "巡邏路段": "於東龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第六巡邏組", "無線電": "隆安993", "單位": "龍潭交通分隊", "職別": "小隊長\n警員", "姓名": "林振生\n張登冠", "任務分工": "改裝(噪音)車\n聯合稽查", "巡邏路段": "於中豐路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
 ])
 
 # --- 2. 輔助函數 ---
@@ -98,7 +98,7 @@ def init_sheets():
         headers = {
             WS_MAP["set"]: [["Key", "Value"]],
             WS_MAP["cmd"]: [["職稱", "代號", "姓名", "任務"]],
-            WS_MAP["ptl"]: [["編組", "無線電", "單位", "服勤人員", "任務分工"]]
+            WS_MAP["ptl"]: [["編組", "無線電", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]
         }
         for ws_name, head in headers.items():
             try:
@@ -203,22 +203,26 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story.append(Paragraph(str(station).strip().replace('\n', '<br/>'), style_middle_block))
     story.append(Spacer(1, 6*mm))
 
-    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
+    # 在此新增「任務分工」欄位抬頭
+    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]]
     for _, r in df_ptl.iterrows():
-        task = f"{r.get('任務分工','')}<br/><font color='blue' size='12'>*雨備方案：各治安要點巡邏。</font>"
+        task_route = f"{r.get('巡邏路段','')}<br/><font color='blue' size='12'>*雨備方案：各治安要點巡邏。</font>"
         data_ptl.append([
             Paragraph(clean(r.get('編組','')), style_cell),
             Paragraph(clean(r.get('無線電','')), style_cell),
             Paragraph(clean(r.get('單位','')), style_cell),
-            Paragraph(clean(r.get('服勤人員','')), style_cell),
-            Paragraph(task, style_cell_left)
+            Paragraph(clean(r.get('職別','')), style_cell),
+            Paragraph(clean(r.get('姓名','')), style_cell),
+            Paragraph(clean(r.get('任務分工','')), style_cell), # 新增的內容欄位
+            Paragraph(task_route, style_cell_left)
         ])
 
-    t2 = Table(data_ptl, colWidths=[page_width*0.14, page_width*0.14, page_width*0.16, page_width*0.20, page_width*0.36], repeatRows=1)
+    # 重新微調 7 欄的欄位寬度比例 (總和為 1.0)
+    t2 = Table(data_ptl, colWidths=[page_width*0.11, page_width*0.11, page_width*0.12, page_width*0.10, page_width*0.12, page_width*0.13, page_width*0.31], repeatRows=1)
     t2.setStyle(TableStyle([
         ('FONTNAME',   (0,0), (-1,-1), font),
         ('FONTSIZE',   (0,0), (-1,-1), 14),
-        ('ALIGN',      (0,1), (1,-1),  'CENTER'),
+        ('ALIGN',      (0,1), (5,-1),  'CENTER'), # 前 6 欄置中
         ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
         ('BACKGROUND', (0,0), (-1,0),  colors.HexColor('#f2f2f2')),
         ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
@@ -255,7 +259,6 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
         [Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]
     ]
     
-    # --- 調整後的單位順序：督察組在上，勤指中心在下 ---
     rows = [
         ("交通組", "中興派出所"), 
         ("督察組", "石門派出所"), 
@@ -327,22 +330,17 @@ p = d.get("project_name", DEFAULT_PROJ)
 b = d.get("briefing_info", DEFAULT_BRIEF)
 s = d.get("check_station", DEFAULT_STATION)
 
-# 將標題修改為「聯合稽查」
 st.title("🚓 聯合稽查勤務規劃管理系統")
 c1, c2 = st.columns(2)
 
-# 1. 先渲染勤務時間，取得最新的時間輸入值
 p_time = c2.text_input("勤務時間", value=t)
 
-# 2. 自動擷取勤務時間的月、日，產生 4 碼前綴
 match = re.search(r"(\d+)月(\d+)日", p_time)
 new_prefix = f"{str(match.group(1)).zfill(2)}{str(match.group(2)).zfill(2)}" if match else ""
 
-# 3. 初始化專案名稱的 session_state (若剛載入則套用預設值 p)
 if "p_name_input" not in st.session_state:
     st.session_state.p_name_input = p
 
-# 4. 判斷並連動更新狀態：如果時間改變了，立刻抽換專案名稱前 4 碼
 current_p = st.session_state.p_name_input
 if new_prefix:
     if re.match(r"^\d{4}", current_p):
@@ -351,7 +349,6 @@ if new_prefix:
     else:
         st.session_state.p_name_input = f"{new_prefix}{current_p}"
 
-# 5. 渲染專案名稱於左側欄，直接綁定 key 來連動畫面的文字框
 p_name = c1.text_input("專案名稱", key="p_name_input")
 
 
@@ -365,7 +362,7 @@ res_ptl_raw = st.data_editor(df_ptl if df_ptl is not None and not df_ptl.empty e
 def auto_assign_radio_code(df):
     prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
     for idx, row in df.iterrows():
-        unit, person = str(row.get('單位', '')), str(row.get('服勤人員', ''))
+        unit, title = str(row.get('單位', '')), str(row.get('職別', ''))
         current_radio = str(row.get('無線電', '')).strip()
         
         first_unit = re.split(r'[\n、 ]', unit.strip())[0]
@@ -375,9 +372,9 @@ def auto_assign_radio_code(df):
             if current_radio.startswith(f"隆安{base_pfx}"):
                 continue 
             
-            if "副所長" in person: 
+            if "副所長" in title: 
                 df.at[idx, '無線電'] = f"隆安{base_pfx}2"
-            elif "所長" in person: 
+            elif "所長" in title: 
                 df.at[idx, '無線電'] = f"隆安{base_pfx}1"
             else: 
                 df.at[idx, '無線電'] = f"隆安{base_pfx}0"
