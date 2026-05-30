@@ -49,6 +49,10 @@ DEFAULT_BRIEF   = "20時30分於分局二樓會議室召開"
 DEFAULT_P1_DESC = "第一階段：21時至22時30分，機動巡邏"
 DEFAULT_P2_DESC = "第二階段：22時30分至24時，定點路檢及機動攔檢"
 
+# 新增「任務分工」欄位於姓名欄右方
+EXPECTED_PTL_COLS = ["編組", "無線電", "單位", "職別", "姓名", "任務分工", "巡邏路段"]
+EXPECTED_CP_COLS  = ["編組", "無線電", "單位", "職別", "姓名", "任務分工", "路檢地點"]
+
 # --- 2. 輔助函數 ---
 def _get_font():
     fname = "kaiu"
@@ -98,7 +102,7 @@ def draw_page_number(canvas, doc):
     canvas.setFont(_get_font(), 10)
     canvas.drawCentredString(105 * mm, 10 * mm, text)
 
-# --- Google 授權（修正 private_key 換行問題）---
+# --- Google 授權 ---
 @st.cache_resource
 def get_client():
     try:
@@ -110,7 +114,6 @@ def get_client():
         st.error(f"Google 授權失敗：{e}")
         return None
 
-# 👇 主要修正的地方：將 ttl 改為 600 秒 (10 分鐘)
 @st.cache_data(ttl=600)
 def load_data():
     try:
@@ -245,18 +248,21 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph(f"{clean_text_only(briefing)}", style_middle_block))
     story.append(Spacer(1, 6*mm))
 
+    # --- 第一階段：巡邏組 (調整為 7 欄位寬度比例) ---
     df_ptl = clean_df(df_ptl)
     story.append(Paragraph(f"<b>{p1_desc}</b>", style_middle_block))
-    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
+    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in EXPECTED_PTL_COLS]]
     for _, r in df_ptl.iterrows():
         data_ptl.append([
             Paragraph(clean_text_only(r.get('編組')), style_cell),
             Paragraph(clean_text_only(r.get('無線電')), style_cell),
             Paragraph(clean_p(r.get('單位')), style_cell),
-            Paragraph(clean_p(r.get('服勤人員')), style_cell),
-            Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)
+            Paragraph(clean_p(r.get('職別')), style_cell),
+            Paragraph(clean_p(r.get('姓名')), style_cell),
+            Paragraph(clean_p(r.get('任務分工')), style_cell),
+            Paragraph(clean_text_only(r.get('巡邏路段')), style_cell_left)
         ])
-    t2 = Table(data_ptl, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
+    t2 = Table(data_ptl, colWidths=[page_width*0.10, page_width*0.12, page_width*0.12, page_width*0.10, page_width*0.14, page_width*0.14, page_width*0.28])
     t2.setStyle(TableStyle([
         ('FONTNAME',(0,0),(-1,-1),font),
         ('GRID',(0,0),(-1,-1),0.5,colors.black),
@@ -267,18 +273,21 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
 
     story.append(Spacer(1, 8*mm))
 
+    # --- 第二階段：路檢組 (調整為 7 欄位寬度比例) ---
     df_cp = clean_df(df_cp)
     story.append(Paragraph(f"<b>{p2_desc}</b>", style_middle_block))
-    data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "服勤人員", "任務分工"]]]
+    data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in EXPECTED_CP_COLS]]
     for _, r in df_cp.iterrows():
         data_cp.append([
             Paragraph(clean_text_only(r.get('編組')), style_cell),
             Paragraph(clean_text_only(r.get('無線電')), style_cell),
             Paragraph(clean_p(r.get('單位')), style_cell),
-            Paragraph(clean_p(r.get('服勤人員')), style_cell),
-            Paragraph(clean_text_only(r.get('任務分工')), style_cell_left)
+            Paragraph(clean_p(r.get('職別')), style_cell),
+            Paragraph(clean_p(r.get('姓名')), style_cell),
+            Paragraph(clean_p(r.get('任務分工')), style_cell),
+            Paragraph(clean_text_only(r.get('路檢地點')), style_cell_left)
         ])
-    t3 = Table(data_cp, colWidths=[page_width*0.15, page_width*0.12, page_width*0.13, page_width*0.20, page_width*0.40])
+    t3 = Table(data_cp, colWidths=[page_width*0.10, page_width*0.12, page_width*0.12, page_width*0.10, page_width*0.14, page_width*0.14, page_width*0.28])
     t3.setStyle(TableStyle([
         ('FONTNAME',(0,0),(-1,-1),font),
         ('GRID',(0,0),(-1,-1),0.5,colors.black),
@@ -369,14 +378,14 @@ def auto_assign_radio_code(df):
     if df is None or df.empty: return df
     base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
     for idx, row in df.iterrows():
-        unit, person, current_radio = safe_str(row.get('單位')), safe_str(row.get('服勤人員')), safe_str(row.get('無線電'))
+        unit, person, rank, current_radio = safe_str(row.get('單位')), safe_str(row.get('姓名')), safe_str(row.get('職別')), safe_str(row.get('無線電'))
         if current_radio != "": continue
         if not unit: continue
         first_unit = re.split(r'[\n、 ]', unit.strip())[0]
         base_pfx = next((v for k, v in base_prefixes.items() if k in first_unit), "")
         if base_pfx:
-            if "副所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}2"
-            elif "所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}1"
+            if "副所長" in rank or "副所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}2"
+            elif "所長" in rank or "所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}1"
             else: df.at[idx, '無線電'] = f"隆安{base_pfx}0"
     return df
 
@@ -390,11 +399,17 @@ def sync_personnel_data(df_ptl, df_cp):
     for _, row in df_ptl.iterrows():
         unit_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
         units = [u.strip() for u in re.split(split_pattern, unit_str) if u.strip()]
-        persons_str = str(row.get('服勤人員', '')).strip()
-        current_persons = [p.strip() for p in re.split(split_pattern, persons_str) if p.strip()]
+        
+        ranks_str = str(row.get('職別', '')).strip()
+        names_str = str(row.get('姓名', '')).strip()
+        current_ranks = [r.strip() for r in re.split(split_pattern, ranks_str) if r.strip()]
+        current_persons = [p.strip() for p in re.split(split_pattern, names_str) if p.strip()]
         
         if not units or not current_persons:
             continue
+            
+        if len(current_ranks) < len(current_persons):
+            current_ranks += [""] * (len(current_persons) - len(current_ranks))
             
         for u in units:
             if u not in p_dict: 
@@ -402,8 +417,8 @@ def sync_personnel_data(df_ptl, df_cp):
                 
         if len(units) == 1:
             u = units[0]
-            for p in current_persons:
-                if p not in p_dict[u]: p_dict[u].append(p)
+            for rk, nm in zip(current_ranks, current_persons):
+                if (rk, nm) not in p_dict[u]: p_dict[u].append((rk, nm))
         else:
             M, N = len(current_persons), len(units)
             if M >= N:
@@ -412,25 +427,30 @@ def sync_personnel_data(df_ptl, df_cp):
                     count = base + (1 if i < rem else 0)
                     for _ in range(count):
                         if cur_idx < M:
+                            rk = current_ranks[cur_idx]
                             p = current_persons[cur_idx]
-                            if p not in p_dict[uk]: p_dict[uk].append(p)
+                            if (rk, p) not in p_dict[uk]: p_dict[uk].append((rk, p))
                             cur_idx += 1
             else:
                 for uk in units:
-                    for p in current_persons:
-                        if p not in p_dict[uk]: p_dict[uk].append(p)
+                    for rk, p in zip(current_ranks, current_persons):
+                        if (rk, p) not in p_dict[uk]: p_dict[uk].append((rk, p))
 
     df_cp_new = df_cp.copy()
     for idx, row in df_cp_new.iterrows():
         u_str = str(row.get('單位', '')).replace('龍潭交通分隊', '交通分隊')
         u_list = [u.strip() for u in re.split(split_pattern, u_str) if u.strip()]
-        combined = []
+        combined_ranks = []
+        combined_names = []
         for u in u_list:
-            persons_from_dict = p_dict.get(u, [])
-            for p in persons_from_dict:
-                if p not in combined: combined.append(p)
-        if combined: 
-            df_cp_new.at[idx, '服勤人員'] = "、".join(combined)
+            pairs = p_dict.get(u, [])
+            for rk, nm in pairs:
+                if nm not in combined_names: 
+                    combined_ranks.append(rk)
+                    combined_names.append(nm)
+        if combined_names: 
+            df_cp_new.at[idx, '職別'] = "、".join(combined_ranks)
+            df_cp_new.at[idx, '姓名'] = "、".join(combined_names)
             df_cp_new.at[idx, '無線電'] = "" 
             
     return df_cp_new
@@ -453,8 +473,31 @@ if err:
 
 df_set = df_set if isinstance(df_set, pd.DataFrame) else pd.DataFrame()
 df_cmd = df_cmd if (isinstance(df_cmd, pd.DataFrame) and not df_cmd.empty) else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
-df_ptl = df_ptl if (isinstance(df_ptl, pd.DataFrame) and not df_ptl.empty) else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
-df_cp  = df_cp  if (isinstance(df_cp,  pd.DataFrame) and not df_cp.empty)  else pd.DataFrame(columns=["編組", "無線電", "單位", "服勤人員", "任務分工"])
+
+# --- 舊版本試算表欄位轉換與相容機制 (優化支援獨立任務分工欄位) ---
+if isinstance(df_ptl, pd.DataFrame) and not df_ptl.empty:
+    if '服勤人員' in df_ptl.columns and '姓名' not in df_ptl.columns:
+        df_ptl['姓名'] = df_ptl['服勤人員']
+    if '任務分工' in df_ptl.columns and '巡邏路段' not in df_ptl.columns:
+        df_ptl['巡邏路段'] = df_ptl['任務分工']
+        df_ptl['任務分工'] = "" # 清空舊格式，保留給新欄位使用
+    for c in EXPECTED_PTL_COLS:
+        if c not in df_ptl.columns: df_ptl[c] = ""
+    df_ptl = df_ptl[EXPECTED_PTL_COLS]
+else:
+    df_ptl = pd.DataFrame(columns=EXPECTED_PTL_COLS)
+
+if isinstance(df_cp, pd.DataFrame) and not df_cp.empty:
+    if '服勤人員' in df_cp.columns and '姓名' not in df_cp.columns:
+        df_cp['姓名'] = df_cp['服勤人員']
+    if '任務分工' in df_cp.columns and '路檢地點' not in df_cp.columns:
+        df_cp['路檢地點'] = df_cp['任務分工']
+        df_cp['任務分工'] = "" # 清空舊格式，保留給新欄位使用
+    for c in EXPECTED_CP_COLS:
+        if c not in df_cp.columns: df_cp[c] = ""
+    df_cp = df_cp[EXPECTED_CP_COLS]
+else:
+    df_cp = pd.DataFrame(columns=EXPECTED_CP_COLS)
 
 d = dict(zip(df_set.iloc[:, 0].astype(str), df_set.iloc[:, 1].astype(str))) if not df_set.empty else {}
 
@@ -484,7 +527,7 @@ res_cmd = st.data_editor(df_cmd, num_rows="dynamic", use_container_width=True).d
 b_info  = st.text_area("📢 勤前教育", b, height=70)
 
 st.subheader("2. 勤務編組")
-tab1, tab2 = st.tabs(["📍 第一階段", "🚧 第二階段"])
+tab1, tab2 = st.tabs(["📍 第一階段 (巡邏)", "🚧 第二階段 (路檢)"])
 
 with tab1:
     st.info(f"當前標題：{phase1_desc}")
