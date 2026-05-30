@@ -57,7 +57,7 @@ DEFAULT_PTL = pd.DataFrame([
     {"編組": "聖亭組1", "無線電": "隆安52", "單位": "聖亭所", "職別": "副所長", "姓名": "邱品淳", "任務分工": "機動巡查", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
     {"編組": "聖亭組1", "無線電": "隆安52", "單位": "聖亭所", "職別": "警員", "姓名": "傅維強", "任務分工": "安全維護", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
     {"編組": "聯合組1", "無線電": "隆安61", "單位": "龍潭所", "職別": "所長", "姓名": "孫祥愷", "任務分工": "改裝車查緝", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "聯合組1", "無線電": "隆安70", "單位": "中興所", "職別": "警員", "姓名": "蔡震東", "任務分工": "跨區聯合稽查", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "聯合組1", "無線電": "隆安61", "單位": "中興所", "職別": "警員", "姓名": "蔡震東", "任務分工": "跨區聯合稽查", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。"},
 ])
 
 # --- 2. 輔助函數 ---
@@ -301,9 +301,9 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
 def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
-        msg = MIMEMultipart()
-        msg["From"], msg["To"], msg["Subject"] = sender, sender, f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
-        msg.attach(MIMEText("附件為最新的勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
+        max_msg = MIMEMultipart()
+        max_msg["From"], max_msg["To"], max_msg["Subject"] = sender, sender, f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
+        max_msg.attach(MIMEText("附件為最新的勤務規劃表與人員簽到表 PDF。", "plain", "utf-8"))
         
         plan_filename = f"{unit}{project}勤務規劃表.pdf"
         
@@ -314,10 +314,10 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
             part.set_payload(data)
             encoders.encode_base64(part)
             part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(name)}")
-            msg.attach(part)
+            max_msg.attach(part)
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
-            server.sendmail(sender, sender, msg.as_string())
+            server.sendmail(sender, sender, max_msg.as_string())
         return True, None
     except Exception as e: return False, str(e)
 
@@ -414,7 +414,6 @@ with st.expander("📋 點此打開【今日出勤名冊快速貼上區】", exp
                     u_name = tokens[0].strip()
                     title  = tokens[1].strip()
                     name   = tokens[2].strip()
-                    # 智慧推導編組名稱：直接把 "聖亭所" 改成 "聖亭組"
                     g_name = u_name.replace("派出所", "組").replace("所", "組").replace("分隊", "組")
                 
                 # 模式 B：輸入 4 個或以上欄位 (編組名稱 單位 職別 姓名)
@@ -424,13 +423,13 @@ with st.expander("📋 點此打開【今日出勤名冊快速貼上區】", exp
                     title  = tokens[2].strip()
                     name   = tokens[3].strip()
                 else:
-                    continue # 格式不符則跳過
+                    continue 
                     
                 default_route = next((v for k, v in route_map.items() if k in u_name), "於轄區內易有噪音車輛滋擾路段巡邏。")
                 
                 parsed_ptl.append({
                     "編組": g_name,
-                    "無線電": "", # 由下方自動指派無線電處理
+                    "無線電": "", 
                     "單位": u_name,
                     "職別": title,
                     "姓名": name,
@@ -452,25 +451,42 @@ if "ptl_editable_df" not in st.session_state:
 res_ptl_raw = st.data_editor(st.session_state.ptl_editable_df, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
 st.session_state.ptl_editable_df = res_ptl_raw.copy()
 
-# 無線電自動配發功能：依據個人「單位」智慧抓取對應代號
+
+# --- 自動指派無線電代號（升級：同編組最上列主導與手動修改智慧連動邏輯） ---
 def auto_assign_radio_code(df):
+    if df.empty: return df
+    
     prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
-    for idx, row in df.iterrows():
-        unit, title = str(row.get('單位', '')), str(row.get('職別', '')).strip()
-        current_radio = str(row.get('無線電', '')).strip()
+    
+    # 步驟 1: 找出每個編組的「最上面那一列」的索引 (Index)
+    first_row_indices = df.groupby("編組", sort=False).head(1).index
+    
+    # 步驟 2: 先計算或更新所有「最上列」的無線電預設值
+    for idx in first_row_indices:
+        unit = str(df.at[idx, '單位'])
+        title = str(df.at[idx, '職別']).strip()
+        current_radio = str(df.at[idx, '無線電']).strip()
         
         base_pfx = next((v for k, v in prefixes.items() if k in unit), "")
         
         if base_pfx:
-            if current_radio.startswith(f"隆安{base_pfx}"):
-                continue 
+            # 只有在無線電為空，或是等於系統標準預設樣式時，才自動依據職別覆蓋尾數
+            if current_radio == "" or current_radio in [f"隆安{base_pfx}0", f"隆安{base_pfx}1", f"隆安{base_pfx}2"]:
+                if "所長" in title or "分隊長" in title:
+                    df.at[idx, '無線電'] = f"隆安{base_pfx}1"
+                elif "副所長" in title or "小隊長" in title:
+                    df.at[idx, '無線電'] = f"隆安{base_pfx}2"
+                else:
+                    df.at[idx, '無線電'] = f"隆安{base_pfx}0"
+
+    # 步驟 3: 建立對照表，強制讓同編組的所有其他列同步複製「最上列」的值
+    radio_map = dict(zip(df.loc[first_row_indices, "編組"], df.loc[first_row_indices, "無線電"]))
+    
+    for idx, row in df.iterrows():
+        g_name = row.get("編組")
+        if g_name in radio_map:
+            df.at[idx, '無線電'] = radio_map[g_name]
             
-            if "副所長" in title: 
-                df.at[idx, '無線電'] = f"隆安{base_pfx}2"
-            elif "所長" in title: 
-                df.at[idx, '無線電'] = f"隆安{base_pfx}1"
-            else: 
-                df.at[idx, '無線電'] = f"隆安{base_pfx}0"
     return df
 
 res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
@@ -486,9 +502,9 @@ col_dl2.download_button("🖋️ 下載 2.人員簽到表", data=generate_attend
 if st.button("💾 同步雲端並發送備份郵件", use_container_width=True):
     with st.spinner("處理中..."):
         save_data(u, p_time, p_name, b_info, s_info, res_cmd, res_ptl)
-        ok, m_err = send_report_email(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
+        ok, max_err = send_report_email(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
         if ok: 
             st.success("✅ 同步與郵件發送成功！")
             if "ptl_editable_df" in st.session_state: del st.session_state.ptl_editable_df
             st.rerun()
-        else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {m_err}")
+        else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {max_err}")
