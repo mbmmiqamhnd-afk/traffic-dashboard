@@ -26,7 +26,7 @@ st.set_page_config(page_title="聯合稽查勤務規劃系統", layout="wide", p
 # 呼叫側邊欄
 show_sidebar()
 
-# --- 常數與設定 ---
+# --- 常幕與設定 ---
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
@@ -43,14 +43,14 @@ DEFAULT_BRIEF   = "19時30分於分局二樓會議室召開"
 DEFAULT_STATION = "時間:20時至23時\n地點:桃園市龍潭區中正路269號(龍星國民小學)大門口"
 
 DEFAULT_CMD = pd.DataFrame([
-    {"職稱": "指揮官", "代號": "隆安1", "負責人員": "分局長施宇峰", "任務": "核定本勤務執行並重點機動督導"},
-    {"職稱": "副指揮官", "代號": "隆安2", "負責人員": "副分局長何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-    {"職稱": "副指揮官", "代號": "隆安3", "負責人員": "副分局長蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
-    {"職稱": "上級督導官", "代號": "建興", "負責人員": "駐區督察 孫三陽", "任務": "重點機動督導"},
-    {"職稱": "督導組", "代號": "隆安6", "負責人員": "督察組組長黃長旗\n督察組督察員 黃中彥\n督察組警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律"},
-    {"職稱": "指導組", "代號": "隆安684", "負責人員": "督察組教官郭文義", "任務": "指導各編組勤務執行及狀況處置"},
-    {"職稱": "作業及督巡組", "代號": "隆安13", "負責人員": "交通組組長 楊孟竟\n交通組警務員盧冠仁\n交通組警務員李峯甫\n交通組巡官郭勝隆\n交通組巡官羅千金\n交通組警員吳享運\n勤指中心警員張庭溱\n(代理人:巡官陳鵬翔)", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
-    {"職稱": "通訊組", "代號": "隆安", "負責人員": "行政組警務佐曾威仁\n人事室警員陳明祥\n主任蔡奇青\n執勤官李文章\n執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜"},
+    {"職稱": "指揮官", "無線電代號": "隆安1", "負責人員": "分局長施宇峰", "任務": "核定本勤務執行並重點機動督導"},
+    {"職稱": "副指揮官", "無線電代號": "隆安2", "負責人員": "副分局長何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
+    {"職稱": "副指揮官", "無線電代號": "隆安3", "負責人員": "副分局長蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
+    {"職稱": "上級督導官", "無線電代號": "建興", "負責人員": "駐區督察 孫三陽", "任務": "重點機動督導"},
+    {"職稱": "督導組", "無線電代號": "隆安6", "負責人員": "督察組組長黃長旗\n督察組督察員 黃中彥\n督察組警務員 陳冠彰", "任務": "督導各編組服儀裝備及勤務紀律"},
+    {"職稱": "指導組", "無線電代號": "隆安684", "負責人員": "督察組教官郭文義", "任務": "指導各編組勤務執行及狀況處置"},
+    {"職稱": "作業及督巡組", "無線電代號": "隆安13", "負責人員": "交通組組長 楊孟竟\n交通組警務員盧冠仁\n交通組警務員李峯甫\n交通組巡官郭勝隆\n交通組巡官羅千金\n交通組警員吳享運\n勤指中心警員張庭溱\n(代理人:巡官陳鵬翔)", "任務": "負責規劃本勤務、重點機動督導、轄區巡守及回報警察局本日執行績效。"},
+    {"職稱": "通訊組", "無線電代號": "隆安", "負責人員": "行政組警務佐曾威仁\n人事室警員陳明祥\n主任蔡奇青\n執勤官李文章\n執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜"},
 ])
 
 DEFAULT_PTL = pd.DataFrame([
@@ -95,7 +95,7 @@ def init_sheets():
         sh = client.open_by_key(SHEET_ID)
         headers = {
             WS_MAP["set"]: [["Key", "Value"]],
-            WS_MAP["cmd"]: [["職稱", "代號", "負責人員", "任務"]], # 欄位修改
+            WS_MAP["cmd"]: [["職稱", "無線電代號", "負責人員", "任務"]], # 欄位修改
             WS_MAP["ptl"]: [["編組", "無線電", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]
         }
         for ws_name, head in headers.items():
@@ -174,12 +174,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     def clean(t): return str(t).replace("\n", "<br/>").replace("、", "<br/>")
 
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
-                [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "代號", "負責人員", "任務"]]] # 標頭修改
+                [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "無線電代號", "負責人員", "任務"]]] # PDF表頭修改
     for _, r in df_cmd.iterrows():
         data_cmd.append([
             Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell),
-            Paragraph(clean(r.get('代號','')), style_cell),
-            Paragraph(clean(r.get('負責人員','')), style_cell), # 取值修改
+            Paragraph(clean(r.get('無線電代號','')), style_cell), # 取值修改
+            Paragraph(clean(r.get('負責人員','')), style_cell),
             Paragraph(clean(r.get('任務','')), style_cell_left)
         ])
 
@@ -201,19 +201,19 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story.append(Paragraph(str(station).strip().replace('\n', '<br/>'), style_middle_block))
     story.append(Spacer(1, 6*mm))
 
-    # --- 巡邏編組表格：真正的跨列合併儲存格邏輯 ---
-    t2_styles = [
-        ('FONTNAME',   (0,0), (-1,-1), font),
-        ('FONTSIZE',   (0,0), (-1,-1), 13),
-        ('ALIGN',      (0,1), (5,-1),  'CENTER'),
-        ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
-        ('BACKGROUND', (0,0), (-1,0),  colors.HexColor('#f2f2f2')),
-        ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
-    ]
-    
-    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]]
+    # PDF巡邏編組抬頭修改為「無線電代號」
+    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]]
     
     if not df_ptl.empty:
+        t2_styles = [
+            ('FONTNAME',   (0,0), (-1,-1), font),
+            ('FONTSIZE',   (0,0), (-1,-1), 13),
+            ('ALIGN',      (0,1), (5,-1),  'CENTER'),
+            ('GRID',       (0,0), (-1,-1), 0.5, colors.black),
+            ('BACKGROUND', (0,0), (-1,0),  colors.HexColor('#f2f2f2')),
+            ('VALIGN',     (0,0), (-1,-1), 'MIDDLE'),
+        ]
+        
         current_row = 1
         for g_name, g_df in df_ptl.groupby("編組", sort=False):
             start_row = current_row
@@ -258,9 +258,10 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                 if sub_start_uni < end_row:
                     t2_styles.append(('SPAN', (2, sub_start_uni), (2, end_row)))
 
-    t2 = Table(data_ptl, colWidths=[page_width*0.11, page_width*0.11, page_width*0.12, page_width*0.10, page_width*0.12, page_width*0.13, page_width*0.31], repeatRows=1)
-    t2.setStyle(TableStyle(t2_styles))
-    story.append(t2)
+        t2 = Table(data_ptl, colWidths=[page_width*0.11, page_width*0.11, page_width*0.12, page_width*0.10, page_width*0.12, page_width*0.13, page_width*0.31], repeatRows=1)
+        t2.setStyle(TableStyle(t2_styles))
+        story.append(t2)
+        
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     return buf.getvalue()
 
@@ -402,7 +403,7 @@ p = d.get("project_name", DEFAULT_PROJ)
 b = d.get("briefing_info", DEFAULT_BRIEF)
 s = d.get("check_station", DEFAULT_STATION)
 
-st.title("🚓 聯合稽查勤務規劃管理系統")
+st.title("🚓 聯合稽查勤務規劃 management系統")
 c1, c2 = st.columns(2)
 
 p_time = c2.text_input("勤務時間", value=t)
