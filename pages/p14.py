@@ -49,7 +49,6 @@ DEFAULT_BRIEF   = "20時30分於分局二樓會議室召開"
 DEFAULT_P1_DESC = "第一階段：21時至22時30分，機動巡邏"
 DEFAULT_P2_DESC = "第二階段：22時30分至24時，定點路檢及機動攔檢"
 
-# 新增「任務分工」欄位於姓名欄右方
 EXPECTED_PTL_COLS = ["編組", "無線電", "單位", "職別", "姓名", "任務分工", "巡邏路段"]
 EXPECTED_CP_COLS  = ["編組", "無線電", "單位", "職別", "姓名", "任務分工", "路檢地點"]
 
@@ -101,6 +100,43 @@ def draw_page_number(canvas, doc):
     text = f"- 第 {page_num} 頁 -"
     canvas.setFont(_get_font(), 10)
     canvas.drawCentredString(105 * mm, 10 * mm, text)
+
+# 計算 PDF 表格需要合併的儲存格 (SPAN)
+def get_merge_styles(df, merge_cols):
+    span_styles = []
+    if df.empty: return span_styles
+    
+    cols_list = df.columns.tolist()
+    for col_name in merge_cols:
+        if col_name not in cols_list:
+            continue
+        c_idx = cols_list.index(col_name)
+        
+        start_idx = 0
+        while start_idx < len(df):
+            val = str(df.iloc[start_idx][col_name]).strip()
+            # 若為空白不執行合併
+            if not val: 
+                start_idx += 1
+                continue
+                
+            end_idx = start_idx
+            # 往下比對連續相同內容
+            while end_idx + 1 < len(df):
+                next_val = str(df.iloc[end_idx + 1][col_name]).strip()
+                if next_val == val:
+                    end_idx += 1
+                else:
+                    break
+                    
+            if end_idx > start_idx:
+                # TableStyle 的座標格式：(起始欄, 起始列), (結束欄, 結束列)
+                # 列索引需 +1，因為索引 0 是表頭
+                span_styles.append(('SPAN', (c_idx, start_idx + 1), (c_idx, end_idx + 1)))
+            
+            start_idx = end_idx + 1
+            
+    return span_styles
 
 # --- Google 授權 ---
 @st.cache_resource
@@ -248,9 +284,13 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph(f"{clean_text_only(briefing)}", style_middle_block))
     story.append(Spacer(1, 6*mm))
 
-    # --- 第一階段：巡邏組 (調整為 7 欄位寬度比例) ---
+    # --- 第一階段：巡邏組 ---
     df_ptl = clean_df(df_ptl)
     story.append(Paragraph(f"<b>{p1_desc}</b>", style_middle_block))
+    
+    # 計算巡邏組合併儲存格樣式
+    span_styles_ptl = get_merge_styles(df_ptl, ["編組", "無線電", "單位", "巡邏路段"])
+    
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in EXPECTED_PTL_COLS]]
     for _, r in df_ptl.iterrows():
         data_ptl.append([
@@ -263,19 +303,25 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             Paragraph(clean_text_only(r.get('巡邏路段')), style_cell_left)
         ])
     t2 = Table(data_ptl, colWidths=[page_width*0.10, page_width*0.12, page_width*0.12, page_width*0.10, page_width*0.14, page_width*0.14, page_width*0.28])
-    t2.setStyle(TableStyle([
+    base_style_ptl = [
         ('FONTNAME',(0,0),(-1,-1),font),
         ('GRID',(0,0),(-1,-1),0.5,colors.black),
         ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
         ('VALIGN',(0,0),(-1,-1),'MIDDLE')
-    ]))
+    ]
+    # 套用基礎樣式與合併樣式
+    t2.setStyle(TableStyle(base_style_ptl + span_styles_ptl))
     story.append(t2)
 
     story.append(Spacer(1, 8*mm))
 
-    # --- 第二階段：路檢組 (調整為 7 欄位寬度比例) ---
+    # --- 第二階段：路檢組 ---
     df_cp = clean_df(df_cp)
     story.append(Paragraph(f"<b>{p2_desc}</b>", style_middle_block))
+    
+    # 計算路檢組合併儲存格樣式
+    span_styles_cp = get_merge_styles(df_cp, ["編組", "無線電", "單位", "路檢地點"])
+    
     data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in EXPECTED_CP_COLS]]
     for _, r in df_cp.iterrows():
         data_cp.append([
@@ -288,12 +334,14 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             Paragraph(clean_text_only(r.get('路檢地點')), style_cell_left)
         ])
     t3 = Table(data_cp, colWidths=[page_width*0.10, page_width*0.12, page_width*0.12, page_width*0.10, page_width*0.14, page_width*0.14, page_width*0.28])
-    t3.setStyle(TableStyle([
+    base_style_cp = [
         ('FONTNAME',(0,0),(-1,-1),font),
         ('GRID',(0,0),(-1,-1),0.5,colors.black),
         ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),
         ('VALIGN',(0,0),(-1,-1),'MIDDLE')
-    ]))
+    ]
+    # 套用基礎樣式與合併樣式
+    t3.setStyle(TableStyle(base_style_cp + span_styles_cp))
     story.append(t3)
 
     doc.build(story, onFirstPage=draw_page_number, onLaterPages=draw_page_number)
