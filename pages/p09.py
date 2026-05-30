@@ -201,7 +201,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story.append(Paragraph(str(station).strip().replace('\n', '<br/>'), style_middle_block))
     story.append(Spacer(1, 6*mm))
 
-    # PDF 生成時，只要「編組」名稱相同，無論是不是跨單位，都會自動完美對齊並合併在一個框內
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]]
     
     if not df_ptl.empty:
@@ -321,6 +320,51 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
         return True, None
     except Exception as e: return False, str(e)
 
+
+# --- 自動指派無線電代號（升級：同編組最上列主導與手動修改智慧連動邏輯） ---
+def auto_assign_radio_code(df):
+    if df.empty: return df
+    
+    prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
+    
+    # 步驟 1: 找出每個編組的「最上面那一列」的索引 (Index)
+    first_row_indices = df.groupby("編組", sort=False).head(1).index
+    
+    # 步驟 2: 先計算或更新所有「最上列」的無線電預設值
+    for idx in first_row_indices:
+        unit = str(df.at[idx, '單位'])
+        title = str(df.at[idx, '職別']).strip()
+        current_radio = str(df.at[idx, '無線電']).strip()
+        
+        base_pfx = next((v for k, v in prefixes.items() if k in unit), "")
+        
+        if base_pfx:
+            # 智慧判斷是否需要重新計算最上列：
+            # 1. 欄位完全為空
+            # 2. 或是目前的無線電前綴跟單位對不上 (例如換了單位)
+            # 3. 或是目前的無線電代號是系統標準的自動編碼尾數 (隆安X0, 隆安X1, 隆安X2)，代表它是自動產生的，可以隨職別變動
+            if (current_radio == "" or 
+                not current_radio.startswith(f"隆安{base_pfx}") or 
+                current_radio in [f"隆安{base_pfx}0", f"隆安{base_pfx}1", f"隆安{base_pfx}2"]):
+                
+                if "所長" in title or "分隊長" in title:
+                    df.at[idx, '無線電'] = f"隆安{base_pfx}1"
+                elif "副所長" in title or "小隊長" in title:
+                    df.at[idx, '無線電'] = f"隆安{base_pfx}2"
+                else:
+                    df.at[idx, '無線電'] = f"隆安{base_pfx}0"
+
+    # 步驟 3: 建立對照表，強制讓同編組的所有其他列同步複製該編組「最上列」的無線電數值
+    radio_map = dict(zip(df.loc[first_row_indices, "編組"], df.loc[first_row_indices, "無線電"]))
+    
+    for idx, row in df.iterrows():
+        g_name = row.get("編組")
+        if g_name in radio_map:
+            df.at[idx, '無線電'] = radio_map[g_name]
+            
+    return df
+
+
 # --- 5. 主介面 ---
 st.sidebar.title("🛠️ 雲端設定")
 if st.sidebar.button("初始化/檢查雲端分頁"): init_sheets()
@@ -373,18 +417,8 @@ with st.expander("📋 點此打開【今日出勤名冊快速貼上區】", exp
     st.markdown("""
     **💡 智慧辨識貼上說明（3欄、4欄皆通用）：**
     * **【模式 A：一般同單位模式】** 直接貼 **3 個資料** 👉 `單位 職別 姓名`
-      * *範例：*
-        ```text
-        聖亭所 副所長 邱品淳
-        聖亭所 警員 傅維強
-        ```
       * *效果：* 系統會自動將同單位的人打包在同一個編組。
     * **【模式 B：跨單位聯合模式】** 貼上 **4 個資料** 👉 `編組名稱 單位 職別 姓名`
-      * *範例：*
-        ```text
-        聯合組1 聖亭所 副所長 邱品淳
-        聯合組1 龍潭所 警員 沈庭禾
-        ```
     """)
     
     paste_placeholder = "聖亭所 副所長 邱品淳\n聖亭所 警員 傅維強\n聯合組1 龍潭所 所長 孫祥愷\n聯合組1 中興所 警員 蔡震東"
@@ -409,14 +443,11 @@ with st.expander("📋 點此打開【今日出勤名冊快速貼上區】", exp
                 if not line.strip(): continue
                 tokens = re.split(r'[\s,\t]+', line.strip())
                 
-                # 模式 A：只輸入 3 個欄位 (單位 職別 姓名)
                 if len(tokens) == 3:
                     u_name = tokens[0].strip()
                     title  = tokens[1].strip()
                     name   = tokens[2].strip()
                     g_name = u_name.replace("派出所", "組").replace("所", "組").replace("分隊", "組")
-                
-                # 模式 B：輸入 4 個或以上欄位 (編組名稱 單位 職別 姓名)
                 elif len(tokens) >= 4:
                     g_name = tokens[0].strip()
                     u_name = tokens[1].strip()
@@ -448,48 +479,16 @@ with st.expander("📋 點此打開【今日出勤名冊快速貼上區】", exp
 if "ptl_editable_df" not in st.session_state:
     st.session_state.ptl_editable_df = df_ptl if df_ptl is not None and not df_ptl.empty else DEFAULT_PTL.copy()
 
+# 渲染表格編輯器
 res_ptl_raw = st.data_editor(st.session_state.ptl_editable_df, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
-st.session_state.ptl_editable_df = res_ptl_raw.copy()
 
-
-# --- 自動指派無線電代號（升級：同編組最上列主導與手動修改智慧連動邏輯） ---
-def auto_assign_radio_code(df):
-    if df.empty: return df
-    
-    prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
-    
-    # 步驟 1: 找出每個編組的「最上面那一列」的索引 (Index)
-    first_row_indices = df.groupby("編組", sort=False).head(1).index
-    
-    # 步驟 2: 先計算或更新所有「最上列」的無線電預設值
-    for idx in first_row_indices:
-        unit = str(df.at[idx, '單位'])
-        title = str(df.at[idx, '職別']).strip()
-        current_radio = str(df.at[idx, '無線電']).strip()
-        
-        base_pfx = next((v for k, v in prefixes.items() if k in unit), "")
-        
-        if base_pfx:
-            # 只有在無線電為空，或是等於系統標準預設樣式時，才自動依據職別覆蓋尾數
-            if current_radio == "" or current_radio in [f"隆安{base_pfx}0", f"隆安{base_pfx}1", f"隆安{base_pfx}2"]:
-                if "所長" in title or "分隊長" in title:
-                    df.at[idx, '無線電'] = f"隆安{base_pfx}1"
-                elif "副所長" in title or "小隊長" in title:
-                    df.at[idx, '無線電'] = f"隆安{base_pfx}2"
-                else:
-                    df.at[idx, '無線電'] = f"隆安{base_pfx}0"
-
-    # 步驟 3: 建立對照表，強制讓同編組的所有其他列同步複製「最上列」的值
-    radio_map = dict(zip(df.loc[first_row_indices, "編組"], df.loc[first_row_indices, "無線電"]))
-    
-    for idx, row in df.iterrows():
-        g_name = row.get("編組")
-        if g_name in radio_map:
-            df.at[idx, '無線電'] = radio_map[g_name]
-            
-    return df
-
+# 💡 核心改良點：將無線電分配改到這裡！計算完後，比對是否需要觸發網頁更新
 res_ptl = auto_assign_radio_code(res_ptl_raw.copy())
+
+# 核心連動重新整理：若計算出的資料與原本暫存不同，代表有新資料或手動變更，立刻覆蓋暫存並 rerun 重繪網頁
+if not res_ptl.equals(st.session_state.ptl_editable_df):
+    st.session_state.ptl_editable_df = res_ptl.copy()
+    st.rerun()
 
 st.markdown("---")
 col_dl1, col_dl2 = st.columns(2)
