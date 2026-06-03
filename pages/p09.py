@@ -26,7 +26,7 @@ st.set_page_config(page_title="聯合稽查勤務規劃系統", layout="wide", p
 # 呼叫側邊欄
 show_sidebar()
 
-# --- 常幕與設定 ---
+# --- 常數與設定 ---
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
@@ -53,11 +53,12 @@ DEFAULT_CMD = pd.DataFrame([
     {"職稱": "通訊組", "無線電代號": "隆安", "負責人員": "行政組警務佐曾威仁\n人事室警員陳明祥\n主任蔡奇青\n執勤官李文章\n執勤員 黃文興", "任務": "指揮、調度及通報本勤務事宜"},
 ])
 
+# 修正：第三巡邏組預設值錯誤（更新為龍新路與正確代號）
 DEFAULT_PTL = pd.DataFrame([
     {"編組": "第一巡邏組", "無線電": "隆安52", "單位": "聖亭所", "職別": "副所長", "姓名": "邱品淳", "任務分工": "機動巡查", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
     {"編組": "第一巡邏組", "無線電": "隆安52", "單位": "聖亭所", "職別": "警員", "姓名": "傅維強", "任務分工": "安全維護", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
     {"編組": "第二巡邏組", "無線電": "隆安62", "單位": "龍潭所", "職別": "所長", "姓名": "孫祥愷", "任務分工": "改裝車查緝", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第三巡邏組", "無線電": "隆安72", "單位": "中興所", "職別": "副所長", "姓名": "何昀融", "任務分工": "跨區聯合稽查", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第三巡邏組", "無線電": "隆安70", "單位": "中興所", "職別": "警員", "姓名": "蔡震東", "任務分工": "跨區聯合稽查", "巡邏路段": "於龍新路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
 ])
 
 # --- 2. 輔助函數 ---
@@ -95,7 +96,7 @@ def init_sheets():
         sh = client.open_by_key(SHEET_ID)
         headers = {
             WS_MAP["set"]: [["Key", "Value"]],
-            WS_MAP["cmd"]: [["職稱", "無線電代號", "負責人員", "任務"]], # 欄位修改
+            WS_MAP["cmd"]: [["職稱", "無線電代號", "負責人員", "任務"]],
             WS_MAP["ptl"]: [["編組", "無線電", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]
         }
         for ws_name, head in headers.items():
@@ -174,11 +175,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     def clean(t): return str(t).replace("\n", "<br/>").replace("、", "<br/>")
 
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", style_table_title), '', '', ''],
-                [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "無線電代號", "負責人員", "任務"]]] # PDF表頭修改
+                [Paragraph(f"<b>{h}</b>", style_cell) for h in ["職稱", "無線電代號", "負責人員", "任務"]]]
     for _, r in df_cmd.iterrows():
         data_cmd.append([
             Paragraph(f"<b>{r.get('職稱','')}</b>", style_cell),
-            Paragraph(clean(r.get('無線電代號','')), style_cell), # 取值修改
+            Paragraph(clean(r.get('無線電代號','')), style_cell),
             Paragraph(clean(r.get('負責人員','')), style_cell),
             Paragraph(clean(r.get('任務','')), style_cell_left)
         ])
@@ -201,7 +202,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story.append(Paragraph(str(station).strip().replace('\n', '<br/>'), style_middle_block))
     story.append(Spacer(1, 6*mm))
 
-    # PDF巡邏編組抬頭修改為「無線電代號」
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]]
     
     if not df_ptl.empty:
@@ -234,8 +234,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
             
             if start_row < end_row:
                 t2_styles.append(('SPAN', (0, start_row), (0, end_row)))
-                t2_styles.append(('SPAN', (6, start_row), (6, end_row)))
                 
+                # 合併無線電代號
                 sub_start_rad = start_row
                 for r_idx in range(start_row + 1, end_row + 1):
                     prev_val = str(g_df.iloc[sub_start_rad - start_row]['無線電']).strip()
@@ -247,6 +247,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                 if sub_start_rad < end_row:
                     t2_styles.append(('SPAN', (1, sub_start_rad), (1, end_row)))
                     
+                # 合併單位
                 sub_start_uni = start_row
                 for r_idx in range(start_row + 1, end_row + 1):
                     prev_val = str(g_df.iloc[sub_start_uni - start_row]['單位']).strip()
@@ -257,6 +258,18 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                         sub_start_uni = r_idx
                 if sub_start_uni < end_row:
                     t2_styles.append(('SPAN', (2, sub_start_uni), (2, end_row)))
+
+                # 修正：條件式合併巡邏路段 (欄位索引 6)
+                sub_start_route = start_row
+                for r_idx in range(start_row + 1, end_row + 1):
+                    prev_val = str(g_df.iloc[sub_start_route - start_row]['巡邏路段']).strip()
+                    curr_val = str(g_df.iloc[r_idx - start_row]['巡邏路段']).strip()
+                    if prev_val != curr_val:
+                        if sub_start_route < r_idx - 1:
+                            t2_styles.append(('SPAN', (6, sub_start_route), (6, r_idx - 1)))
+                        sub_start_route = r_idx
+                if sub_start_route < end_row:
+                    t2_styles.append(('SPAN', (6, sub_start_route), (6, end_row)))
 
         t2 = Table(data_ptl, colWidths=[page_width*0.11, page_width*0.11, page_width*0.12, page_width*0.10, page_width*0.12, page_width*0.13, page_width*0.31], repeatRows=1)
         t2.setStyle(TableStyle(t2_styles))
