@@ -117,7 +117,7 @@ def p18_page():
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
     st.subheader("📂 1. 當月原始資料上傳")
     c1, c2 = st.columns(2)
-    file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xlsx'])
+    file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xls', 'xlsx'])
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
     file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xlsx'], accept_multiple_files=True)
 
