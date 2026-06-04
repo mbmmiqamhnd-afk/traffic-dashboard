@@ -118,7 +118,6 @@ def p18_page():
     st.subheader("📂 1. 當月原始資料上傳")
     c1, c2 = st.columns(2)
     
-    # 【修改】支援 xls 與 xlsx
     file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xls', 'xlsx'])
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
     file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xls', 'xlsx'], accept_multiple_files=True)
@@ -530,7 +529,7 @@ def p18_page():
                 df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
                 
                 # ==============================================================
-                # Excel 輸出與排版優化區塊 (已加入橫向、縮邊界與加大列高)
+                # Excel 輸出與排版優化區塊 (縱向印表 + 縮減邊界 + 大幅加大列高)
                 # ==============================================================
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
@@ -550,8 +549,9 @@ def p18_page():
                         df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                         ws1 = writer.sheets['直接執行人員']
                         
-                        # 【排版優化】設定橫向與邊界
-                        ws1.set_landscape()
+                        # 【修改點】改回縱向 (Portrait)
+                        ws1.set_portrait()
+                        # 【重要】保留窄邊界，為縱向紙張爭取最大水平空間，減輕縮放壓力
                         ws1.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
                         ws1.set_paper(9) # A4
                         
@@ -559,7 +559,7 @@ def p18_page():
                         ws1.set_column(stamp_col, stamp_col, 22)
                         
                         for r in range(len(df_direct_exec) + 1):
-                            # 【排版優化】加大列高到 45
+                            # 【重要】列高維持加高至 45，確保被縮小後印章還是蓋得下去
                             ws1.set_row(r, 45 if r > 0 else 25) 
                             for c in range(len(df_direct_exec.columns)):
                                 value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
@@ -569,8 +569,8 @@ def p18_page():
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
                         
-                        # 【排版優化】設定橫向與邊界
-                        ws2.set_landscape()
+                        # 【修改點】改回縱向 (Portrait)
+                        ws2.set_portrait()
                         ws2.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
                         ws2.set_paper(9) # A4
                         
@@ -578,7 +578,6 @@ def p18_page():
                         main_data_len = data_len - 2
                         
                         for r in range(main_data_len + 1):
-                            # 【排版優化】加大列高到 45
                             ws2.set_row(r, 45 if r > 0 else 25)
                             for c in range(len(df_coworkers_final_sheet.columns)):
                                 value = df_coworkers_final_sheet.iloc[r-1, c] if r > 0 else df_coworkers_final_sheet.columns[c]
@@ -590,7 +589,6 @@ def p18_page():
                         total_row_idx = main_data_len + 1
                         grand_row_idx = main_data_len + 2
                         
-                        # 【排版優化】合計列也加大高度
                         ws2.set_row(total_row_idx, 45)
                         ws2.merge_range(total_row_idx, 0, total_row_idx, 3, "合計", style_total)
                         ws2.write(total_row_idx, 4, coworker_sheet_total_money, style_total_money)
