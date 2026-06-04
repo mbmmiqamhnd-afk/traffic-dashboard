@@ -138,6 +138,12 @@ def load_data():
         ptl_df = pd.DataFrame(sh.worksheet(WS_MAP["ptl"]).get_all_records()).fillna("")
         
         if not ptl_df.empty:
+            # ==========================================
+            # 自動偵測並把舊的「任務分工」替換成「巡邏路段」
+            # ==========================================
+            if "任務分工" in ptl_df.columns:
+                ptl_df = ptl_df.rename(columns={"任務分工": "巡邏路段"})
+            
             ptl_df = ptl_df.reindex(columns=PTL_COLS, fill_value="")
             ptl_df = ptl_df[ptl_df["勤務時段"].astype(str).str.strip() != ""].reset_index(drop=True)
         
@@ -332,7 +338,7 @@ time_val = col_b.text_input("勤務時間", value=settings.get("time", DEFAULT_T
 fast_cmd = st.text_input("交通快打指揮官", value=settings.get("fast_cmd", DEFAULT_FAST_CMD))
 
 # ========================================================
-# 核心新增：根據「勤務時間」與「指揮官」自動連動更新「警力部署」
+# 根據「勤務時間」與「指揮官」自動連動更新「警力部署」
 # ========================================================
 date_updated = False
 
