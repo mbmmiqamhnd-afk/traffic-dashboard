@@ -30,9 +30,11 @@ def send_report_email_auto(files, year, month):
         msg = MIMEMultipart()
         msg['From'] = sender
         msg['To'] = sender
-        msg['Subject'] = f"【系統備份】龍潭分局 {year}年{month}月 獎勵金點數統計表暨印領清冊"
+        # 【修改】Email 主旨加上「處理道路交通安全人員」
+        msg['Subject'] = f"【系統備份】龍潭分局 {year}年{month}月 處理道路交通安全人員獎勵金點數統計表暨印領清冊"
         
-        body = f"同仁您好：\n\n系統已自動完成 {year}年{month}月份的獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共兩份 Excel 檔案，請查收。"
+        # 【修改】Email 內文加上「處理道路交通安全人員」並加回「郭同仁」
+        body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的處理道路交通安全人員獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共兩份 Excel 檔案，請查收。"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
         for file_data, filename in files:
@@ -111,14 +113,16 @@ def on_data_edited():
 
 def p18_page():
     show_sidebar()
-    st.title("💰 龍潭分局 - 獎勵金點數統計表暨印領清冊產生器")
+    # 【修改】頁面大標題
+    st.title("💰 龍潭分局 - 處理道路交通安全人員獎勵金點數統計表暨印領清冊產生器")
     st.info("💡 挪移順序教學：表格最左側「排序調整」欄位可手動調整順序")
     
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
     st.subheader("📂 1. 當月原始資料上傳")
     c1, c2 = st.columns(2)
     
-    file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xls', 'xlsx'])
+    # 【修改】上傳提示文字
+    file_template = c1.file_uploader("1. 上傳當月【處理道路交通安全人員獎勵金點數統計表】", type=['xls', 'xlsx'])
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
     file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xls', 'xlsx'], accept_multiple_files=True)
 
@@ -139,7 +143,7 @@ def p18_page():
         else:
             budget_input = st.number_input("💰 輸入【全分局】核撥總預算 (元)", value=50000, step=100)
     else:
-        st.info("💡 手動模式：請於表格內自行填寫實際金額。")
+        st.info("💡 手提模式：請於表格內自行填寫實際金額。")
         budget_input = 0
         budget_type = ""
     
@@ -538,7 +542,7 @@ def p18_page():
                     for sn, df_f in final_sheets.items():
                         df_f.to_excel(writer, sheet_name=sn, index=False)
                 pts_excel_data = pts_output.getvalue()
-                pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_點數統計表.xlsx"
+                pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_處理道路交通安全人員獎勵金點數統計表.xlsx"
                 
                 payroll_output = io.BytesIO()
                 with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
@@ -549,9 +553,7 @@ def p18_page():
                         df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                         ws1 = writer.sheets['直接執行人員']
                         
-                        # 【修改點】改回縱向 (Portrait)
                         ws1.set_portrait()
-                        # 【重要】保留窄邊界，為縱向紙張爭取最大水平空間，減輕縮放壓力
                         ws1.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
                         ws1.set_paper(9) # A4
                         
@@ -559,7 +561,6 @@ def p18_page():
                         ws1.set_column(stamp_col, stamp_col, 22)
                         
                         for r in range(len(df_direct_exec) + 1):
-                            # 【重要】列高維持加高至 45，確保被縮小後印章還是蓋得下去
                             ws1.set_row(r, 45 if r > 0 else 25) 
                             for c in range(len(df_direct_exec.columns)):
                                 value = df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c]
@@ -569,7 +570,6 @@ def p18_page():
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
                         
-                        # 【修改點】改回縱向 (Portrait)
                         ws2.set_portrait()
                         ws2.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
                         ws2.set_paper(9) # A4
@@ -614,10 +614,12 @@ def p18_page():
                         ws2.write(sign_start_row + 3, 2, "出納：", sign_title_format)
                         ws2.set_row(sign_start_row + 4, 50)
                     
-                    df_payroll_summary.to_excel(writer, sheet_name='獎勵金支領一覽表', index=False)
+                    # 【修改】工作表名稱
+                    df_payroll_summary.to_excel(writer, sheet_name='處理道路交通安全人員獎勵金支領一覽表', index=False)
                 
                 payroll_excel_data = payroll_output.getvalue()
-                payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_獎勵金印領清冊.xlsx"
+                # 【修改】印領清冊匯出檔名
+                payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_處理道路交通安全人員獎勵金印領清冊.xlsx"
                 
                 files_to_attach = [(pts_excel_data, pts_filename), (payroll_excel_data, payroll_filename)]
                 ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month)
