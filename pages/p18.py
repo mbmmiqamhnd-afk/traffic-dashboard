@@ -32,7 +32,7 @@ def send_report_email_auto(files, year, month):
         msg['To'] = sender
         msg['Subject'] = f"【系統備份】龍潭分局 {year}年{month}月 獎勵金點數統計表暨印領清冊"
         
-        body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共兩份 Excel 檔案，請查收。"
+        body = f"同仁您好：\n\n系統已自動完成 {year}年{month}月份的獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共兩份 Excel 檔案，請查收。"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
         for file_data, filename in files:
@@ -88,7 +88,7 @@ def sort_coworkers(df):
     df['職級權重'] = df['職別'].apply(get_rank_weight)
     
     df.sort_values(by=['排序調整', '分配類別', '單位', '職級權重', '姓名'],
-                    ascending=[True, True, True, True, True], inplace=True)
+                   ascending=[True, True, True, True, True], inplace=True)
     
     df.drop(columns=['職級權重'], inplace=True, errors='ignore')
     df.reset_index(drop=True, inplace=True)
@@ -117,9 +117,13 @@ def p18_page():
     P_A2, P_A3, P_TRAF = 10.0, 5.0, 5.0
     st.subheader("📂 1. 當月原始資料上傳")
     c1, c2 = st.columns(2)
+    
+    # 這裡加上 'xls' 支援
     file_template = c1.file_uploader("1. 上傳當月【獎勵金點數統計表】", type=['xls', 'xlsx'])
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
-    file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xlsx'], accept_multiple_files=True)
+    
+    # 這裡也加上 'xls' 支援
+    file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xls', 'xlsx'], accept_multiple_files=True)
 
     st.subheader("📝 2. 印領清冊與獎金分配設定")
     point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
