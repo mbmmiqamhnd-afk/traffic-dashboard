@@ -126,7 +126,7 @@ def init_sheets():
     st.cache_data.clear()
     st.rerun()
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=600)
 def load_data():
     try:
         client = get_client()
