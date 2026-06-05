@@ -118,29 +118,31 @@ def on_data_edited():
 def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 處理道路交通安全人員獎勵金點數統計表暨印領清冊產生器")
+    st.markdown("---")
     
-    # --- 運作模式精準分流 ---
-    st.markdown("### 🛠️ 請選擇本月執行功能模式")
-    op_mode = st.radio(
-        "選擇功能：",
-        ["📊 保留底稿取締數據，自動填入事故與交整時數並單獨產生【點數統計表】", "💰 完整產出【點數統計表 ＋ 獎金印領清冊】(全面稽核與自動平帳)"],
-        horizontal=True
-    )
-    is_only_pts = "單獨產生【點數統計表】" in op_mode
+    # --- 區塊 A：三大原始資料上傳 (固定置頂，版面最乾淨) ---
+    st.subheader("📂 1. 原始資料與核銷底稿上傳")
+    
+    file_template = st.file_uploader("① 上傳當月【處理道路交通安全人員獎勵金點數統計表】原始取締底稿", type=['xls', 'xlsx'])
+    c1, c2 = st.columns(2)
+    file_acc = c1.file_uploader("② 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
+    file_traf_list = c2.file_uploader("③ 上傳當月【各單位_交通疏導統計】(可多選，或單選全分局總表)", type=['xls', 'xlsx'], accept_multiple_files=True)
     
     st.divider()
 
-    st.subheader("📂 1. 原始資料與核銷底稿上傳")
-    st.info("💡 說明：無論哪種模式，系統皆必須同時讀取 3 種檔案（底稿、事故表、疏導表）來進行精準自動填空。")
+    # --- 區塊 B：功能模式選擇 (置於中段，決定下方控制面板是否展示) ---
+    st.subheader("🎯 2. 請選擇執行目標模式")
+    op_mode = st.radio(
+        "執行目標：",
+        ["📊 保留底稿取締數據，自動填入事故與交整時數並「單獨產生點數表」", "💰 產出點數表 ＋ 自動計算分配「獎金印領清冊」"],
+        horizontal=True
+    )
+    is_only_pts = "單獨產生點數表" in op_mode
     
-    file_template = st.file_uploader("1. 上傳當月【處理道路交通安全人員獎勵金點數統計表】原始取締底稿 (必填 🌟)", type=['xls', 'xlsx'])
-    c1, c2 = st.columns(2)
-    file_acc = c1.file_uploader("2. 上傳當月【處理交通事故案件統計表】(必填 🌟)", type=['xls', 'xlsx'])
-    file_traf_list = c2.file_uploader("3. 上傳當月【各單位_交通疏導統計】(必填 🌟，可單選全分局總表)", type=['xls', 'xlsx'], accept_multiple_files=True)
-
-    # 綜合核銷模式下，才展示獎金分配與名單編輯
+    # --- 區塊 C：獎金配置面板 (僅在完整印領清冊模式下展示，智慧縮收) ---
     if not is_only_pts:
-        st.subheader("📝 2. 印領清冊與獎金分配設定")
+        st.markdown("---")
+        st.subheader("📝 3. 印領清冊與獎金分配設定")
         point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
         target_direct_budget = st.number_input("🎯 警察局核撥【直接執行人員】總獎金目標 (元) *若為 0 則不啟動自動平帳", value=0, step=1)
 
@@ -162,6 +164,7 @@ def p18_page():
             budget_type = ""
         
         st.markdown("**共同作業名單**")
+        st.caption("💡 挪移順序教學：表格最左側「排序調整」欄位可手動調整數字來改變順序")
         roster_file = 'coworkers_roster.csv'
         if 'current_roster' not in st.session_state:
             if os.path.exists(roster_file):
@@ -225,17 +228,16 @@ def p18_page():
             st.success("✅ 名單已永久儲存！")
             st.rerun()
 
-        st.markdown("---")
-    
-    # 執行按鈕文字連動
-    btn_label = "🚀 一鍵自動填入並生成【點數統計表】" if is_only_pts else "🚀 執行彙整、計算獎金與發送報表"
+    # --- 區塊 D：動態按鈕區 (始終在網頁最下方) ---
+    st.markdown("---")
+    btn_label = "🚀 一鍵自動填入並生成【點數統計表】" if is_only_pts else "🚀 執行三表彙整、精算獎金與產出清冊"
     if st.button(btn_label, type="primary", use_container_width=True):
         
         if not (file_template and file_acc and file_traf_list):
             st.error("⚠️ 請確保上方三項必填檔案（底稿、事故統計、疏導統計）皆已成功選取並上傳！")
             return
             
-        with st.spinner("正在讀取取締底稿並自動對接、回填事故與交整點數..."):
+        with st.spinner("正在讀取核銷底稿並全自動對接填報中..."):
             try:
                 mode_label = "底稿回填點數生成" if is_only_pts else "綜合點數印領清冊"
 
@@ -261,7 +263,7 @@ def p18_page():
                 time_col_name = time_col[0] if time_col else '總計尖峰時數'
                 dict_traf = df_traf_all.groupby('姓名')[time_col_name].sum().to_dict()
                 
-                # 3. 日期與檔名資訊偵測 (從底稿抓取)
+                # 3. 日期資訊偵測 (從底稿抓取)
                 xls_template = pd.ExcelFile(file_template)
                 template_sheets = xls_template.sheet_names
                 
@@ -312,33 +314,25 @@ def p18_page():
                         
                         for idx in df_members.index:
                             name = str(df_members.at[idx, '員警姓名']).strip()
-                            
-                            # 原地保留底稿原有數據
                             cp = pd.to_numeric(df_members.at[idx, '取締點數'], errors='coerce') or 0
                             
-                            # 連動填入事故
                             a2 = dict_acc.get(name, {}).get('A2類', 0)
                             a3 = dict_acc.get(name, {}).get('A3類', 0)
                             ap = a2 * P_A2 + a3 * P_A3
                             
-                            # 連動填入交通疏導
                             th = dict_traf.get(name, 0)
                             tp = th * P_TRAF
                             
-                            # 智慧回填至 DataFrame 各欄位
                             if 'A2件數' in df_members.columns: df_members.at[idx, 'A2件數'] = int(a2) if a2 > 0 else 0
                             if 'A3件數' in df_members.columns: df_members.at[idx, 'A3件數'] = int(a3) if a3 > 0 else 0
                             if '事故點數' in df_members.columns: df_members.at[idx, '事故點數'] = int(ap) if ap > 0 else 0
                             if '交整時數' in df_members.columns: df_members.at[idx, '交整時數'] = int(th) if th > 0 else 0
                             if '交整點數' in df_members.columns: df_members.at[idx, '交整點數'] = int(tp) if tp > 0 else 0
                             
-                            # 全新橫向相加
                             total_pts = cp + ap + tp
                             df_members.at[idx, '個人總點數'] = int(total_pts)
                             
-                            s_cite += cp
-                            s_acc += ap
-                            s_traf += tp
+                            s_cite += cp; s_acc += ap; s_traf += tp
                             
                             if total_pts > 0:
                                 direct_exec_list.append({
@@ -349,7 +343,6 @@ def p18_page():
                                     "交整點數": tp if tp > 0 else 0, "個人總點數": total_pts, "蓋章": ""
                                 })
                         
-                        # 重新縱向刷新小計列
                         sub_row_data = {c: "" for c in df_members.columns}
                         sub_row_data['員警姓名'] = '小計'
                         for col_n in df_members.columns:
@@ -367,7 +360,6 @@ def p18_page():
                 # 5. 格式化建立首頁「總表」
                 df_pts_summary_final = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', int(g_cite), int(g_acc), int(g_traf), int(g_all)]])
                 
-                # 寫入 Excel
                 pts_output = io.BytesIO()
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
                     df_pts_summary_final.to_excel(writer, sheet_name='總表', header=False, index=False)
@@ -381,7 +373,7 @@ def p18_page():
                     files_to_attach = [(pts_excel_data, pts_filename)]
                     ok, err = send_report_email_auto(files_to_attach, ext_year, ext_month, mode_label)
                     
-                    if ok: st.success(f"✅ 成功連動三表！已完成 {ext_month} 月份全分局事故、疏導點數回填，小計與總表重算完畢，已寄送備份信箱。")
+                    if ok: st.success(f"✅ 填報成功！已完成 {ext_month} 月份全分局事故、疏導點數回填重算，並自動寄送備份信箱。")
                     else: st.warning(f"⚠️ 點數表已產出，但郵件發送失敗: {err}")
                     
                     st.download_button("📥 下載【處理道路交通安全人員獎勵金點數統計表】(完美回填版)", pts_excel_data, pts_filename, use_container_width=True, type="primary")
