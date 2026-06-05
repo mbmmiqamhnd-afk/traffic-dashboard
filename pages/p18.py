@@ -30,10 +30,10 @@ def send_report_email_auto(files, year, month):
         msg = MIMEMultipart()
         msg['From'] = sender
         msg['To'] = sender
-        # 【修改】Email 主旨加上「處理道路交通安全人員」
+        # 【官方標準主旨】
         msg['Subject'] = f"【系統備份】龍潭分局 {year}年{month}月 處理道路交通安全人員獎勵金點數統計表暨印領清冊"
         
-        # 【修改】Email 內文加上「處理道路交通安全人員」並加回「郭同仁」
+        # 【郭同仁問候語內文】
         body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的處理道路交通安全人員獎勵金點數彙整與印領清冊產出。\n本次附件包含「點數統計表」與「印領清冊」共兩份 Excel 檔案，請查收。"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
@@ -113,7 +113,7 @@ def on_data_edited():
 
 def p18_page():
     show_sidebar()
-    # 【修改】頁面大標題
+    # 【官方標準標題】
     st.title("💰 龍潭分局 - 處理道路交通安全人員獎勵金點數統計表暨印領清冊產生器")
     st.info("💡 挪移順序教學：表格最左側「排序調整」欄位可手動調整順序")
     
@@ -121,10 +121,11 @@ def p18_page():
     st.subheader("📂 1. 當月原始資料上傳")
     c1, c2 = st.columns(2)
     
-    # 【修改】上傳提示文字
     file_template = c1.file_uploader("1. 上傳當月【處理道路交通安全人員獎勵金點數統計表】", type=['xls', 'xlsx'])
     file_acc = c2.file_uploader("2. 上傳當月【處理交通事故案件統計表】", type=['xls', 'xlsx'])
-    file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可多選)", type=['xls', 'xlsx'], accept_multiple_files=True)
+    
+    # 修改提示文字，明確告知可以同時支援單一總表與多選
+    file_traf_list = st.file_uploader("3. 上傳當月【各單位_交通疏導統計】(可單選「全分局總表」或「多選派出所個別表」)", type=['xls', 'xlsx'], accept_multiple_files=True)
 
     st.subheader("📝 2. 印領清冊與獎金分配設定")
     point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
@@ -222,14 +223,13 @@ def p18_page():
                 {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "出納", "姓名": "簡啟峯"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
-                {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
+                {"分配類別": "Twitter配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
                 {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
             ]
             df_init = pd.DataFrame(default_coworkers_data)
         
         df_init.loc[df_init['單位'].str.contains('派出所|交通分隊', na=False), '分配類別'] = "負責管考(72%)"
-        
         st.session_state.current_roster = sort_coworkers(df_init)
     
     df_display = st.session_state.current_roster.copy()
@@ -264,18 +264,41 @@ def p18_page():
         if not (file_template and file_acc and file_traf_list):
             st.error("⚠️ 請確保上方 3 種檔案皆已上傳！")
             return
-        with st.spinner("正在精算比例與發放金額..."):
+        with St.spinner("正在精算比例與發放金額..."):
             try:
-                # 資料讀取
+                # 1. 資料讀取 (事故案件)
                 df_acc_raw = pd.read_excel(file_acc, header=4)
                 df_acc_raw['姓名'] = df_acc_raw['姓名'].astype(str).str.strip()
                 dict_acc = df_acc_raw.groupby('姓名')[['A2類', 'A3類']].sum().to_dict(orient='index')
                 
-                df_traf_all = pd.concat([pd.read_excel(f, sheet_name='月彙整總表') for f in file_traf_list])
+                # --- 【核心大優化：智慧相容頁籤與時數欄位】 ---
+                traffic_dfs = []
+                for f in file_traf_list:
+                    xl = pd.ExcelFile(f)
+                    sheet_names = xl.sheet_names
+                    
+                    # 優先對準 P17 新產出的頁籤，找不到就往下遞補防呆
+                    if '分局月彙整總表' in sheet_names:
+                        target_sheet = '分局月彙整總表'
+                    elif '月彙整總表' in sheet_names:
+                        target_sheet = '月彙整總表'
+                    else:
+                        target_sheet = sheet_names[0]
+                        
+                    df_single = pd.read_excel(f, sheet_name=target_sheet)
+                    traffic_dfs.append(df_single)
+                    
+                df_traf_all = pd.concat(traffic_dfs)
                 df_traf_all['姓名'] = df_traf_all['姓名'].astype(str).str.strip()
-                dict_traf = df_traf_all.groupby('姓名')['總計尖峰時數'].sum().to_dict()
                 
-                # 日期偵測
+                # 自動搜尋名稱內含有「時數」的欄位（如：總計疏導時數 或 總計尖峰時數）
+                time_col = [c for c in df_traf_all.columns if '時數' in c]
+                time_col_name = time_col[0] if time_col else '總計尖峰時數'
+                
+                dict_traf = df_traf_all.groupby('姓名')[time_col_name].sum().to_dict()
+                # --------------------------------------------------
+                
+                # 2. 日期偵測
                 dfs_raw = pd.read_excel(file_template, sheet_name=None, header=None)
                 ext_year, ext_month = "115", "4"
                 found_date = False
@@ -291,7 +314,7 @@ def p18_page():
                         if found_date: break
                     if found_date: break
                 
-                # 直接執行人員計算
+                # 3. 直接執行人員計算
                 final_sheets = {}
                 summary_rows = []
                 g_cite = g_acc = g_traf = g_all = 0
@@ -382,7 +405,7 @@ def p18_page():
                     direct_total_row['實領獎金'] = direct_total_money
                     df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
                 
-                # ====================== 共同作業人員處理 ======================
+                # 4. 共同作業人員處理
                 df_coworkers_work = st.session_state.current_roster.copy()
                 df_coworkers_work = sort_coworkers(df_coworkers_work)
                 
@@ -471,7 +494,7 @@ def p18_page():
                 if '金額' not in df_coworkers_output.columns:
                     df_coworkers_output['金額'] = 0
                 
-                # 總表數據
+                # 5. 總表加總數據
                 sub_72 = df_coworkers_output[df_coworkers_output['分配類別'] == "負責管考(72%)"]['金額'].sum()
                 sub_20 = df_coworkers_output[df_coworkers_output['分配類別'] == "勤務督導(20%)"]['金額'].sum()
                 sub_08 = df_coworkers_output[df_coworkers_output['分配類別'] == "其他配合(8%)"]['金額'].sum()
@@ -488,7 +511,7 @@ def p18_page():
                 ]
                 df_payroll_summary = pd.DataFrame(summary_data)
                 
-                # 印領清冊最終處理
+                # 6. 印領清冊整合處理
                 df_coworkers_final_sheet = df_coworkers_output.copy()
                 traf_督導_mask = (df_coworkers_final_sheet['單位'] == "交通組") & (df_coworkers_final_sheet['分配類別'] == "勤務督導(20%)")
                 for idx, row in df_coworkers_final_sheet[traf_督導_mask].iterrows():
@@ -534,7 +557,7 @@ def p18_page():
                 df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
                 
                 # ==============================================================
-                # Excel 輸出與排版優化區塊 (縱向印表 + 縮減邊界 + 大幅加大列高)
+                # 7. Excel 輸出與排版優化區塊 (高質感縱向印表)
                 # ==============================================================
                 pts_output = io.BytesIO()
                 df_pts_summary = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
@@ -543,6 +566,7 @@ def p18_page():
                     for sn, df_f in final_sheets.items():
                         df_f.to_excel(writer, sheet_name=sn, index=False)
                 pts_excel_data = pts_output.getvalue()
+                # 【標準名稱檔名】
                 pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_處理道路交通安全人員獎勵金點數統計表.xlsx"
                 
                 payroll_output = io.BytesIO()
@@ -553,7 +577,6 @@ def p18_page():
                     if not df_direct_exec.empty:
                         df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                         ws1 = writer.sheets['直接執行人員']
-                        
                         ws1.set_portrait()
                         ws1.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
                         ws1.set_paper(9) # A4
@@ -570,7 +593,6 @@ def p18_page():
                     if not df_coworkers_final_sheet.empty:
                         df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                         ws2 = writer.sheets['共同作業及配合人員']
-                        
                         ws2.set_portrait()
                         ws2.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
                         ws2.set_paper(9) # A4
@@ -615,11 +637,11 @@ def p18_page():
                         ws2.write(sign_start_row + 3, 2, "出納：", sign_title_format)
                         ws2.set_row(sign_start_row + 4, 50)
                     
-                    # 【修改】工作表名稱
+                    # 【標準名稱工作表頁籤】
                     df_payroll_summary.to_excel(writer, sheet_name='處理道路交通安全人員獎勵金支領一覽表', index=False)
                 
                 payroll_excel_data = payroll_output.getvalue()
-                # 【修改】印領清冊匯出檔名
+                # 【標準名稱印領清冊匯出檔名】
                 payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_處理道路交通安全人員獎勵金印領清冊.xlsx"
                 
                 files_to_attach = [(pts_excel_data, pts_filename), (payroll_excel_data, payroll_filename)]
