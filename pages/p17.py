@@ -26,10 +26,11 @@ def send_stats_email(filename, summary_df, detail_df, report_prefix):
         password = st.secrets["email"]["password"]
         
         msg = MIMEMultipart()
-        msg["From"], msg["To"] = sender, sender
+        msg["From"] = sender
+        msg["To"] = sender
         msg["Subject"] = f"【系統備份】{filename.replace('.xlsx', '')}"
         
-        body = f"您好：\n\n附件為{report_prefix}通過「分單位獨立課表過濾」後產出的交通疏導統計報表。\n發送時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        body = f"您好：\n\n附件為{report_prefix}通過「人事總處平假日定義分流 + 分單位獨立課表」後產出的交通疏導統計報表。\n發送時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         msg.attach(MIMEText(body, "plain", "utf-8"))
         
         output = io.BytesIO()
@@ -45,14 +46,14 @@ def send_stats_email(filename, summary_df, detail_df, report_prefix):
         
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, password)
-            server.sendmail(sender, sender, msg.as_string())
+            server.send_message(msg)
         return True, None
     except Exception as e:
         return False, str(e)
 
 # --- 3. 主程式邏輯 ---
 def run_app():
-    st.title("⏱️ 交通疏導勤務時數彙整系統 (分單位獨立課表版)")
+    st.title("⏱️ 交通疏導勤務時數彙整系統 (人事總處行事曆相容版)")
     st.markdown("---")
 
     # A. 檔案上傳區
@@ -60,7 +61,6 @@ def run_app():
 
     # B. 分單位規則矩陣表
     st.subheader("🎯 1. 分單位精準核銷規則矩陣")
-    st.info("💡 說明：每個單位都有自己的專屬規則！如果某單位假日不排交通崗，請直接把該單位的「假日核銷時段」內容清空，系統就會自動忽略該所假日的守望。")
     
     # 建立預設的分局各單位規則表
     default_rules = pd.DataFrame([
@@ -75,6 +75,19 @@ def run_app():
 
     edited_rules_df = st.data_editor(default_rules, use_container_width=True, hide_index=True, key="rules_editor")
     
+    # --- 【全新功能：人事總處辦公日曆定義變更區】 ---
+    st.markdown("##### 📅 行政院人事行政總處 - 特殊放假/補班變更設定")
+    c_hol, c_work = st.columns(2)
+    with c_hol:
+        # 平日變假日：國定假日、彈性放假日
+        holidays_input = st.text_input("填入當月【國定假日/彈性放假】日期 (四碼，多筆用逗號隔開)", value="0501", help="例如：5月1日勞動節請填 0501。當天系統會自動改用『假日規則』計算")
+    with c_work:
+        # 假日變平日：週六日需要補行上班日
+        makeups_input = st.text_input("填入當月【週六日補行上班】日期 (四碼，多筆用逗號隔開)", value="", placeholder="例如：0207")
+
+    custom_holidays = [d.strip() for d in holidays_input.split(',') if d.strip()]
+    custom_makeups = [d.strip() for d in makeups_input.split(',') if d.strip()]
+
     st.divider()
     
     exclude_input = st.text_input("🛑 全域番號黑名單 (只要是這些番號的守望，各單位一律剔除)", value="A, B, C, XA, XB")
@@ -109,14 +122,23 @@ def run_app():
                 date_digits = "".join(re.findall(r'\d+', file.name))
                 is_weekend = False
                 current_date_str = ""
+                md_str = ""
                 
                 if len(date_digits) >= 4:
                     try:
-                        md = date_digits[-4:]
-                        dt = datetime.strptime(f"2026{md}", "%Y%m%d")
+                        md_str = date_digits[-4:] # 抓取月日四碼，例如 0504
+                        dt = datetime.strptime(f"2026{md_str}", "%Y%m%d")
                         current_date_str = dt.strftime("%m月%d日")
+                        
+                        # 先判定標準星期幾
                         if dt.weekday() in [5, 6]: 
                             is_weekend = True
+                            
+                        # --- 【核心突破：對照中華民國人事總處辦公日曆表修正】 ---
+                        if md_str in custom_holidays:
+                            is_weekend = True  # 平日變例假日 (放假)
+                        elif md_str in custom_makeups:
+                            is_weekend = False # 例假日變平常日 (補班)
                     except:
                         pass
                 
@@ -133,14 +155,15 @@ def run_app():
                 we_whitelist = [t.strip().replace(' ', '') for t in we_str.split(',') if t.strip()]
                 in_list = [i.strip().upper() for i in in_str.split(',') if i.strip()]
 
+                # 依據人事總處最終修正後的平假日，決定當前檔案要使用的專屬白名單
                 if is_weekend:
                     active_whitelist = we_whitelist
                     is_whitelisted_empty = (len(we_str.strip()) == 0)
-                    day_type_label = "🔴 假日崗哨"
+                    day_type_label = "🔴 國定例假日崗哨"
                 else:
                     active_whitelist = wd_whitelist
                     is_whitelisted_empty = (len(wd_str.strip()) == 0)
-                    day_type_label = "🔵 平日崗哨"
+                    day_type_label = "🔵 平常日補班崗哨"
 
                 # 定位結構起點
                 header_row_idx = 0
@@ -232,18 +255,17 @@ def run_app():
                     with col_action:
                         today = datetime.now().strftime('%m%d')
                         
-                        # --- 【動態命名邏輯】自動判斷目前畫面上處理了幾個單位 ---
                         unique_units = summary['單位'].unique()
                         if len(unique_units) == 1:
-                            report_prefix = unique_units[0] # 如果只有1家，字首為該單位名稱 (例: 聖亭派出所)
+                            report_prefix = unique_units[0]
                         else:
-                            report_prefix = "全分局" # 如果大於1家，字首自動變為全分局
+                            report_prefix = "全分局"
                             
                         fname = f"{report_prefix}_交通疏導彙整統計_{today}.xlsx"
                         
                         output = io.BytesIO()
                         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            summary.to_excel(writer, index=False, sheet_name='月彙整總表')
+                            summary.to_excel(writer, index=False, sheet_name='分局月彙整總表')
                             edited_df.to_excel(writer, index=False, sheet_name='人員明細')
                         
                         st.write("### 📥 輸出報表")
@@ -258,7 +280,7 @@ def run_app():
                 else:
                     st.warning("⚠️ 明細已被全數刪除。")
         else:
-            st.warning("⚠️ 依目前配置規則，未偵測到任何符合規定的守望紀錄。")
+            st.warning("⚠️ 依目前配置規則與人事總處行事曆定義，未偵測到任何符合規定的守望紀錄。")
 
 if __name__ == "__main__":
     run_app()
