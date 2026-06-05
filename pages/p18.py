@@ -128,16 +128,16 @@ def p18_page():
     
     st.divider()
 
-    # --- 2. 模式選擇分流開關 ---
+    # --- 2. 模式選擇分流開關 (修正拼字盲區，達成精準二進位制流轉) ---
     st.subheader("🎯 2. 請選擇本次執行目標模式")
     op_mode = st.radio(
         "執行目標：",
-        ["📊 模式一：連動三表數據，單獨產生【點數統計表】(不計算獎金與清冊)", "💰 模式二：連動三表數據，單獨產生【獎金印領清冊】(自動平帳且不夾帶點數表)"],
+        ["📊 輸出模式 A：僅單獨產生【點數統計表】(不計獎金)", "💰 輸出模式 B：僅單獨產生【獎金印領清冊】(全面平帳)"],
         horizontal=True
     )
-    is_only_pts = "單獨產生" in op_mode
+    is_only_pts = "模式 A" in op_mode
     
-    # --- 3. 模式二專屬：金流配置控制面板 (智慧摺疊縮放) ---
+    # --- 3. 模式二專屬：金流配置控制面板 ---
     if not is_only_pts:
         st.markdown("---")
         st.subheader("📝 3. 獎金核發與印領清冊分配設定")
@@ -275,7 +275,7 @@ def p18_page():
                             ext_year, ext_month = m.group(1), m.group(2)
                             break
                 
-                # 4. 核心邏輯：逐個分頁讀取底稿，並將數據智慧回填、重算
+                # 4. 核心填空大迴圈
                 final_sheets = {}
                 summary_rows = []
                 g_cite = g_acc = g_traf = g_all = 0
@@ -332,6 +332,7 @@ def p18_page():
                             
                             s_cite += cp; s_acc += ap; s_traf += tp
                             
+                            # --- 【大優化回填】將回填更新後的總點數完美捕捉進名單，供模式二精算獎金 ---
                             if total_pts > 0:
                                 direct_exec_list.append({
                                     "單位名稱": sheet_name, "員警姓名": name,
@@ -355,7 +356,7 @@ def p18_page():
                         summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
                         g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
 
-                # --- 【分流分支 A】模式一：單獨輸出填空好的點數統計表 ---
+                # --- 【完美分流 A】模式一：單獨輸出填空好的點數統計表 ---
                 if is_only_pts:
                     df_pts_summary_final = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', int(g_cite), int(g_acc), int(g_traf), int(g_all)]])
                     
@@ -376,11 +377,11 @@ def p18_page():
                     
                     st.download_button("📥 下載【處理道路交通安全人員獎勵金點數統計表】(完美回填版)", pts_excel_data, pts_filename, use_container_width=True, type="primary")
                 
-                # --- 【分流分支 B】模式二：單獨產生獎金印領清冊 (Bug 已排除，黃金代碼全面復活復活) ---
+                # --- 【完美分流 B】模式二：單獨產生獎金印領清冊 (攔截死結已解開！全代碼全速運作) ---
                 else:
                     df_direct_exec = pd.DataFrame(direct_exec_list)
                     if df_direct_exec.empty:
-                        st.error("⚠️ 原始資料中未偵測到任何有效的點數紀錄，無法產出印領清冊。")
+                        st.error("⚠️ 原始資料與底稿交叉對碰後未偵測到任何有效的點數紀錄，無法產出印領清冊。")
                         return
                         
                     df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
@@ -388,7 +389,7 @@ def p18_page():
                     df_direct_exec['實領獎金'] = (df_direct_exec['個人總點數'] * point_value).round().astype(int)
                     direct_total_money = df_direct_exec['實領獎金'].sum()
                     
-                    # 自動平帳分配
+                    # 智慧多退少補平帳
                     if target_direct_budget > 0:
                         diff = target_direct_budget - direct_total_money
                         if diff != 0:
@@ -401,7 +402,7 @@ def p18_page():
                                 df_direct_exec.iloc[:rem, df_direct_exec.columns.get_loc('實領獎金')] += sign
                             direct_total_money = df_direct_exec['實領獎金'].sum()
                     
-                    # 蓋章欄位強制靠右
+                    # 簽章欄靠右歸戶
                     df_direct_exec['蓋章'] = "" 
                     
                     direct_total_row = {c: "" for c in df_direct_exec.columns}
@@ -515,7 +516,7 @@ def p18_page():
                     df_coworkers_final_sheet.reset_index(drop=True, inplace=True)
                     df_coworkers_final_sheet.insert(0, '序號', range(1, len(df_coworkers_final_sheet) + 1))
                     
-                    # 共同作業清冊：蓋章靠右
+                    # 共同人員清冊：蓋章靠右
                     df_coworkers_final_sheet['蓋章'] = ""
                     
                     total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
@@ -530,6 +531,7 @@ def p18_page():
                     grand_total_row_data['蓋章'] = ""
                     df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
                     
+                    # 僅產生印領清冊 
                     payroll_output = io.BytesIO()
                     with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                         workbook = writer.book
