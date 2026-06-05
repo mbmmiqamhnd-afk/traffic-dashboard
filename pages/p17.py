@@ -29,7 +29,7 @@ def send_stats_email(filename, summary_df, detail_df):
         msg["From"], msg["To"] = sender, sender
         msg["Subject"] = f"【全分局時數總彙整備份】{filename.replace('.xlsx', '')}"
         
-        body = f"您好：\n\n附件為全分局通過「平假日尖峰時段 + 番號精準雙重過濾」後產出的交通疏導統計總報表。\n發送時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        body = f"您好：\n\n附件為全分局通過「動態結構辨識 + 平假日尖峰時則過濾」後產出的交通疏導統計總報表。\n發送時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         msg.attach(MIMEText(body, "plain", "utf-8"))
         
         output = io.BytesIO()
@@ -52,7 +52,7 @@ def send_stats_email(filename, summary_df, detail_df):
 
 # --- 3. 主程式邏輯 ---
 def run_app():
-    st.title("⏱️ 交通疏導勤務時數彙整系統 (平假日尖峰+番號雙重精準過濾版)")
+    st.title("⏱️ 交通疏導勤務時數彙整系統 (動態結構修正版)")
     st.markdown("---")
 
     # A. 檔案上傳區
@@ -60,20 +60,18 @@ def run_app():
 
     if uploaded_files:
         st.subheader("🎯 1. 交通疏導核銷與過濾條件設定")
-        st.info("💡 說明：為了精準剔除同時段「非交通疏導」的守望，除了時間之外，您可以利用【番號白名單】指定只有哪些勤務代號算疏導時數；或利用【番號黑名單】排除無效守望。")
+        st.info("💡 說明：系統會自動跳過明細表上方的重複大標題列，自動搜尋時間欄位。")
         
         col_wd, col_we = st.columns(2)
         with col_wd:
-            wd_input = st.text_input("平常日(週一至五)核銷時段關鍵字", value="06-08, 07-09, 16-18, 17-19")
+            wd_input = st.text_input("平常日(週一至五)核銷時段關鍵字", value="06-08, 07-09, 16-18, 17-19, 06:30, 16:30")
         with col_we:
             we_input = st.text_input("例假日(週六、日)核銷時段關鍵字", value="10-12, 16-18, 15-17, 11-13")
             
         col_white, col_black = st.columns(2)
         with col_white:
-            # 白名單：如果派出所交通崗有固定番號，填在這裡 (若留空則代表不限制，全部番號都檢查)
-            include_input = st.text_input("番號白名單 (只有這些番號才算交通疏導，留空代表不限制番號)", value="", placeholder="例如: 01, 02, 03")
+            include_input = st.text_input("番號白名單 (留空代表不限制番號)", value="", placeholder="例如: 01, 02")
         with col_black:
-            # 黑名單：明確知道不是交通疏導的番號填在這裡
             exclude_input = st.text_input("番號黑名單 (這些番號的守望一律自動剔除)", value="A, B, C, XA, XB")
             
         wd_whitelist = [t.strip() for t in wd_input.split(',') if t.strip()]
@@ -124,34 +122,44 @@ def run_app():
                 active_whitelist = we_whitelist if is_weekend else wd_whitelist
                 day_type_label = "🔴 假日崗哨" if is_weekend else "🔵 平日崗哨"
 
-                # 智慧定位時段欄位索引
-                target_columns = []
-                for r in [0, 1, 2]:
-                    if r < len(df):
-                        header_row = df.iloc[r].astype(str).tolist()
-                        for c_idx, cell in enumerate(header_row):
-                            cell_clean = cell.replace(' ', '').replace('\n', '')
-                            if any(t in cell_clean for t in time_whitelist):
-                                if c_idx not in target_columns:
-                                    target_columns.append(c_idx)
+                # --- 【核心修正：動態標題與資料列定位】 ---
+                header_row_idx = 0
+                data_start_idx = 2
                 
+                # 自動往下找，直到看到某行包含「姓名」或包含時間格式（如：包含減號或冒號）
+                for i in range(len(df)):
+                    row_str = "".join(df.iloc[i].astype(str).tolist())
+                    if "姓名" in row_str or "-" in row_str or ":" in row_str:
+                        header_row_idx = i
+                        data_start_idx = i + 1
+                        break
+
+                # 定位符合該日核銷時間的 欄位索引
+                target_columns = []
+                header_row_list = df.iloc[header_row_idx].astype(str).tolist()
+                for c_idx, cell in enumerate(header_row_list):
+                    cell_clean = cell.replace(' ', '').replace('\n', '')
+                    if any(t in cell_clean for t in active_whitelist):
+                        if c_idx not in target_columns:
+                            target_columns.append(c_idx)
+                
+                # 如果完全沒對到時間標題，預設防呆設定第2與12欄
                 if not target_columns:
                     target_columns = [2, 12]
 
-                # 讀取每位同仁當天的勤務內容
-                for r_idx in range(2, len(df)):
+                # 從智慧定位的資料起點開始讀取
+                for r_idx in range(data_start_idx, len(df)):
                     row = df.iloc[r_idx]
+                    
+                    # 避免讀到空行或表格尾端的合計行
+                    if pd.isna(row[0]) or pd.isna(row[1]): continue
+                    
                     s_code = str(row[0]).strip().upper()
-                    
-                    # --- 【過濾核心 1：番號黑名單過濾】 ---
                     if s_code in ex_list: continue 
-                    
-                    # --- 【過濾核心 2：番號白名單限制】 ---
-                    # 如果有設定白名單，且該員番號不在白名單內，直接跳過不抓
                     if in_list and (s_code not in in_list): continue
 
                     name = str(row[1]).replace('\n', '').replace(' ', '')
-                    if name in ['nan', 'None', '', '姓名', '合計', '總計']: continue
+                    if name in ['nan', 'None', '', '姓名', '合計', '總計', '重疊']: continue
                     
                     h_count = 0
                     for c_idx in target_columns:
@@ -165,13 +173,14 @@ def run_app():
                             "單位": u_name, 
                             "日期": current_date_str if current_date_str else "未識別",
                             "類型": day_type_label,
+                            "番號": s_code,
                             "姓名": name, 
                             "核銷時數": h_count,
-                            "番號": s_code,
                             "原始檔名": file.name
                         })
-            except:
-                st.error(f"檔案 {file.name} 讀取失敗")
+            except Exception as e:
+                # 即使出錯也列出詳細錯誤訊息，方便 debug
+                st.error(f"檔案 {file.name} 解析失敗，原因: {str(e)}")
 
         # D. 成果輸出與校對區
         if all_processed_records:
@@ -182,9 +191,8 @@ def run_app():
             
             with tab2:
                 st.subheader("📝 全分局每日尖峰交通疏導明細")
-                st.warning("⚠️ 提示：若發現同時間有非交通疏導的同仁被抓進來，請點選該列最左側的序號，直接按鍵盤 `Delete` 鍵整列刪除，第一頁的月總表會即時扣除時數！")
+                st.warning("⚠️ 提示：若發現同時間有非交通疏導的同仁被抓進來，請點選該列最左側的序號，直接按鍵盤 `Delete` 鍵整列刪除，總表會即時扣除時數！")
                 
-                # 重新排列明細欄位方便承辦人肉眼對帳
                 detail_display_df = full_raw_df[["單位", "日期", "類型", "番號", "姓名", "核銷時數", "原始檔名"]]
                 edited_df = st.data_editor(detail_display_df, use_container_width=True, num_rows="dynamic", key="global_data_editor")
 
@@ -195,7 +203,6 @@ def run_app():
                     summary = edited_df.groupby(['單位', '姓名'])['核銷時數'].sum().reset_index()
                     summary.columns = ['單位', '姓名', '總計疏導時數']
                     
-                    # 依單位筆畫、姓名筆畫排序 A 到 Z
                     summary = summary.sort_values(
                         by=['單位', '姓名'], 
                         ascending=[True, True],
