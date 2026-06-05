@@ -29,7 +29,7 @@ def send_stats_email(filename, summary_df, detail_df):
         msg["From"], msg["To"] = sender, sender
         msg["Subject"] = f"【全分局時數總彙整備份】{filename.replace('.xlsx', '')}"
         
-        body = f"您好：\n\n附件為全分局通過「動態結構辨識 + 平假日尖峰時則過濾」後產出的交通疏導統計總報表。\n發送時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        body = f"您好：\n\n附件為全分局通過「分單位獨立課表過濾」後產出的交通疏導統計總報表。\n發送時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         msg.attach(MIMEText(body, "plain", "utf-8"))
         
         output = io.BytesIO()
@@ -52,35 +52,41 @@ def send_stats_email(filename, summary_df, detail_df):
 
 # --- 3. 主程式邏輯 ---
 def run_app():
-    st.title("⏱️ 交通疏導勤務時數彙整系統 (多欄位精準加總版)")
+    st.title("⏱️ 交通疏導勤務時數彙整系統 (分單位獨立課表版)")
     st.markdown("---")
 
     # A. 檔案上傳區
     uploaded_files = st.file_uploader("📂 請一次選取並上傳『全分局所有單位』的當月勤務明細表", accept_multiple_files=True, type=['csv', 'xlsx'])
 
-    if uploaded_files:
-        st.subheader("🎯 1. 交通疏導核銷與過濾條件設定")
-        st.info("💡 說明：表格為1小時一欄時，請將連續時段全部填入（如：16-17, 17-18, 18-19），系統將會精準橫向加總多個欄位的守望時數！")
-        
-        col_wd, col_we = st.columns(2)
-        with col_wd:
-            wd_input = st.text_input("平常日(週一至五)核銷時段關鍵字", value="06-07, 07-08, 08-09, 16-17, 17-18, 18-19")
-        with col_we:
-            we_input = st.text_input("例假日(週六、日)核銷時段關鍵字", value="10-11, 11-12, 16-17, 17-18")
-            
-        col_white, col_black = st.columns(2)
-        with col_white:
-            include_input = st.text_input("番號白名單 (留空代表不限制番號)", value="", placeholder="例如: 01, 02")
-        with col_black:
-            exclude_input = st.text_input("番號黑名單 (這些番號的守望一律自動剔除)", value="A, B, C, XA, XB")
-            
-        # 統一處理：將使用者輸入的關鍵字徹底去除空格與多餘符號
-        wd_whitelist = [t.strip().replace(' ', '') for t in wd_input.split(',') if t.strip()]
-        we_whitelist = [t.strip().replace(' ', '') for t in we_input.split(',') if t.strip()]
-        in_list = [i.strip().upper() for i in include_input.split(',') if i.strip()]
-        ex_list = [i.strip().upper() for i in exclude_input.split(',') if i.strip()]
+    # B. 分單位規則矩陣表
+    st.subheader("🎯 1. 分單位精準核銷規則矩陣")
+    st.info("💡 說明：每個單位都有自己的專屬規則！如果某單位假日不排交通崗，請直接把該單位的「假日核銷時段」內容清空，系統就會自動忽略該所假日的守望。")
+    
+    # 建立預設的分局各單位規則表
+    default_rules = pd.DataFrame([
+        {"單位": "龍潭派出所", "平日核銷時段": "06-07, 07-08, 16-17, 17-18", "假日核銷時段": "10-11, 11-12, 16-17, 17-18", "專屬番號(白名單)": ""},
+        {"單位": "中興派出所", "平日核銷時段": "06-07, 07-08, 16-17, 17-18", "假日核銷時段": "10-11, 11-12, 16-17, 17-18", "專屬番號(白名單)": ""},
+        {"單位": "聖亭派出所", "平日核銷時段": "06-07, 07-08, 16-17, 17-18", "假日核銷時段": "", "專屬番號(白名單)": ""},
+        {"單位": "石門派出所", "平日核銷時段": "06-07, 07-08, 16-17, 17-18", "假日核銷時段": "10-11, 11-12, 16-17, 17-18", "專屬番號(白名單)": ""},
+        {"單位": "高平派出所", "平日核銷時段": "06-07, 07-08, 16-17, 17-18", "假日核銷時段": "10-11, 11-12, 16-17, 17-18", "專屬番號(白名單)": ""},
+        {"單位": "三和派出所", "平日核銷時段": "06-07, 07-08, 16-17, 17-18", "假日核銷時段": "", "專屬番號(白名單)": ""},
+        {"單位": "交通分隊",   "平日核銷時段": "06-07, 07-08, 16-17, 17-18", "假日核銷時段": "10-11, 11-12, 16-17, 17-18", "專屬番號(白名單)": ""}
+    ])
 
+    # 讓使用者可以在網頁上直接編輯這個表格
+    edited_rules_df = st.data_editor(default_rules, use_container_width=True, hide_index=True, key="rules_editor")
+    
+    st.divider()
+    
+    # 全域黑名單 (不分單位，只要遇到這番號一律踢除)
+    exclude_input = st.text_input("🛑 全域番號黑名單 (只要是這些番號的守望，各單位一律剔除)", value="A, B, C, XA, XB")
+    ex_list = [i.strip().upper() for i in exclude_input.split(',') if i.strip()]
+
+    if uploaded_files:
         all_processed_records = []
+
+        # 將編輯後的規則表轉換成字典，方便快速查詢
+        rules_dict = edited_rules_df.set_index('單位').to_dict('index')
 
         # 批次循環處理上傳檔案
         for file in uploaded_files:
@@ -93,7 +99,7 @@ def run_app():
                 else:
                     df = pd.read_excel(file, header=None)
                 
-                # 單位名稱精準辨識
+                # 1. 單位名稱精準辨識
                 match = re.search(r'(龍潭|中興|石門|高平|三和|聖亭|交通)(派出所|分隊|所)?', file.name)
                 if match:
                     base_name = match.group(1)
@@ -104,7 +110,7 @@ def run_app():
                     u_name = temp.strip(' _-()（）')
                     if not u_name: u_name = "未知單位"
 
-                # 智慧動態判定該檔案日期為平常日還是假日
+                # 2. 智慧動態判定日期與平假日
                 date_digits = "".join(re.findall(r'\d+', file.name))
                 is_weekend = False
                 current_date_str = ""
@@ -119,16 +125,33 @@ def run_app():
                     except:
                         pass
                 
+                # --- 【核心突破：調用該單位的專屬規則】 ---
+                unit_rule = rules_dict.get(u_name)
+                
+                if unit_rule:
+                    wd_str = str(unit_rule['平日核銷時段']) if pd.notna(unit_rule['平日核銷時段']) else ""
+                    we_str = str(unit_rule['假日核銷時段']) if pd.notna(unit_rule['假日核銷時段']) else ""
+                    in_str = str(unit_rule['專屬番號(白名單)']) if pd.notna(unit_rule['專屬番號(白名單)']) else ""
+                else:
+                    # 如果有奇怪的單位檔名，預設不給時數以策安全
+                    wd_str, we_str, in_str = "", "", ""
+
+                # 去除空白，建立最終比對清單
+                wd_whitelist = [t.strip().replace(' ', '') for t in wd_str.split(',') if t.strip()]
+                we_whitelist = [t.strip().replace(' ', '') for t in we_str.split(',') if t.strip()]
+                in_list = [i.strip().upper() for i in in_str.split(',') if i.strip()]
+
+                # 根據平假日，決定當前檔案要使用的專屬白名單
                 if is_weekend:
                     active_whitelist = we_whitelist
-                    is_whitelisted_empty = (len(we_input.strip()) == 0)
+                    is_whitelisted_empty = (len(we_str.strip()) == 0)
                     day_type_label = "🔴 假日崗哨"
                 else:
                     active_whitelist = wd_whitelist
-                    is_whitelisted_empty = (len(wd_input.strip()) == 0)
+                    is_whitelisted_empty = (len(wd_str.strip()) == 0)
                     day_type_label = "🔵 平日崗哨"
 
-                # 定位結構起點
+                # 3. 定位結構起點
                 header_row_idx = 0
                 data_start_idx = 2
                 for i in range(len(df)):
@@ -140,12 +163,11 @@ def run_app():
 
                 target_columns = []
                 
-                # 如果使用者刻意清空，不抓任何欄位
+                # 4. 如果該單位該時段的規則被清空，就不抓任何欄位
                 if not is_whitelisted_empty:
                     header_row_list = df.iloc[header_row_idx].astype(str).tolist()
                     for c_idx, cell in enumerate(header_row_list):
-                        # --- 【破案關鍵：全面清洗符號】 ---
-                        # 將派出所常用的直管線 |、波浪號 ~ 全部強制轉換為減號 -
+                        # 徹底清洗 Excel 儲存格內的所有空格與換行、直管線
                         cell_clean = cell.replace(' ', '').replace('\n', '').replace('\r', '')
                         cell_clean = cell_clean.replace('|', '-').replace('~', '-').replace('～', '-').strip()
                         
@@ -154,25 +176,26 @@ def run_app():
                             if c_idx not in target_columns:
                                 target_columns.append(c_idx)
                     
-                    # 只有在輸入框「有填字」但「在 Excel 裡完全對不到字」時，才啟動兜底防呆 [2, 12]
+                    # 只有在「規則有填字」但「Excel 對不到字」時，才啟動兜底防呆 [2, 12]
                     if not target_columns and len(active_whitelist) > 0:
                         target_columns = [2, 12]
                 else:
                     pass
 
-                # 從智慧定位的資料起點開始讀取
+                # 5. 從智慧定位的資料起點開始讀取
                 for r_idx in range(data_start_idx, len(df)):
                     row = df.iloc[r_idx]
                     if pd.isna(row[0]) or pd.isna(row[1]): continue
                     
                     s_code = str(row[0]).strip().upper()
                     if s_code in ex_list: continue 
+                    # 專屬白名單驗證
                     if in_list and (s_code not in in_list): continue
 
                     name = str(row[1]).replace('\n', '').replace(' ', '')
                     if name in ['nan', 'None', '', '姓名', '合計', '總計', '重疊']: continue
                     
-                    # --- 橫向精準多欄位加總 ---
+                    # 橫向精準多欄位加總
                     h_count = 0
                     for c_idx in target_columns:
                         if c_idx < len(row):
@@ -244,7 +267,7 @@ def run_app():
                 else:
                     st.warning("⚠️ 明細已被全數刪除。")
         else:
-            st.warning("⚠️ 依目前平假日尖峰與番號規則，未偵測到任何符合規定的守望紀錄。")
+            st.warning("⚠️ 依目前配置規則，未偵測到任何符合規定的守望紀錄。")
 
 if __name__ == "__main__":
     run_app()
