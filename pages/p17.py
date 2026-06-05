@@ -18,7 +18,7 @@ st.set_page_config(page_title="交通疏導時數彙整", page_icon="⏱️", la
 show_sidebar()
 
 # --- 2. 郵件發送功能 ---
-def send_stats_email(filename, summary_df, detail_df):
+def send_stats_email(filename, summary_df, detail_df, report_prefix):
     try:
         if "email" not in st.secrets:
             return False, "未偵測到郵件設定"
@@ -27,14 +27,14 @@ def send_stats_email(filename, summary_df, detail_df):
         
         msg = MIMEMultipart()
         msg["From"], msg["To"] = sender, sender
-        msg["Subject"] = f"【全分局時數總彙整備份】{filename.replace('.xlsx', '')}"
+        msg["Subject"] = f"【系統備份】{filename.replace('.xlsx', '')}"
         
-        body = f"您好：\n\n附件為全分局通過「分單位獨立課表過濾」後產出的交通疏導統計總報表。\n發送時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        body = f"您好：\n\n附件為{report_prefix}通過「分單位獨立課表過濾」後產出的交通疏導統計報表。\n發送時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         msg.attach(MIMEText(body, "plain", "utf-8"))
         
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            summary_df.to_excel(writer, index=False, sheet_name='分局月彙整總表')
+            summary_df.to_excel(writer, index=False, sheet_name='月彙整總表')
             detail_df.to_excel(writer, index=False, sheet_name='人員核銷明細')
         
         part = MIMEBase("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -56,7 +56,7 @@ def run_app():
     st.markdown("---")
 
     # A. 檔案上傳區
-    uploaded_files = st.file_uploader("📂 請一次選取並上傳『全分局所有單位』的當月勤務明細表", accept_multiple_files=True, type=['csv', 'xlsx'])
+    uploaded_files = st.file_uploader("📂 請一次選取並上傳勤務明細檔 (可單一單位，也可全分局批次)", accept_multiple_files=True, type=['csv', 'xlsx'])
 
     # B. 分單位規則矩陣表
     st.subheader("🎯 1. 分單位精準核銷規則矩陣")
@@ -73,22 +73,17 @@ def run_app():
         {"單位": "交通分隊",   "平日核銷時段": "06-07, 07-08, 16-17, 17-18", "假日核銷時段": "10-11, 11-12, 16-17, 17-18", "專屬番號(白名單)": ""}
     ])
 
-    # 讓使用者可以在網頁上直接編輯這個表格
     edited_rules_df = st.data_editor(default_rules, use_container_width=True, hide_index=True, key="rules_editor")
     
     st.divider()
     
-    # 全域黑名單 (不分單位，只要遇到這番號一律踢除)
     exclude_input = st.text_input("🛑 全域番號黑名單 (只要是這些番號的守望，各單位一律剔除)", value="A, B, C, XA, XB")
     ex_list = [i.strip().upper() for i in exclude_input.split(',') if i.strip()]
 
     if uploaded_files:
         all_processed_records = []
-
-        # 將編輯後的規則表轉換成字典，方便快速查詢
         rules_dict = edited_rules_df.set_index('單位').to_dict('index')
 
-        # 批次循環處理上傳檔案
         for file in uploaded_files:
             try:
                 if file.name.endswith('.csv'):
@@ -99,7 +94,7 @@ def run_app():
                 else:
                     df = pd.read_excel(file, header=None)
                 
-                # 1. 單位名稱精準辨識
+                # 單位名稱精準辨識
                 match = re.search(r'(龍潭|中興|石門|高平|三和|聖亭|交通)(派出所|分隊|所)?', file.name)
                 if match:
                     base_name = match.group(1)
@@ -110,7 +105,7 @@ def run_app():
                     u_name = temp.strip(' _-()（）')
                     if not u_name: u_name = "未知單位"
 
-                # 2. 智慧動態判定日期與平假日
+                # 智慧動態判定日期與平假日
                 date_digits = "".join(re.findall(r'\d+', file.name))
                 is_weekend = False
                 current_date_str = ""
@@ -125,23 +120,19 @@ def run_app():
                     except:
                         pass
                 
-                # --- 【核心突破：調用該單位的專屬規則】 ---
+                # 調用該單位的專屬規則
                 unit_rule = rules_dict.get(u_name)
-                
                 if unit_rule:
                     wd_str = str(unit_rule['平日核銷時段']) if pd.notna(unit_rule['平日核銷時段']) else ""
                     we_str = str(unit_rule['假日核銷時段']) if pd.notna(unit_rule['假日核銷時段']) else ""
                     in_str = str(unit_rule['專屬番號(白名單)']) if pd.notna(unit_rule['專屬番號(白名單)']) else ""
                 else:
-                    # 如果有奇怪的單位檔名，預設不給時數以策安全
                     wd_str, we_str, in_str = "", "", ""
 
-                # 去除空白，建立最終比對清單
                 wd_whitelist = [t.strip().replace(' ', '') for t in wd_str.split(',') if t.strip()]
                 we_whitelist = [t.strip().replace(' ', '') for t in we_str.split(',') if t.strip()]
                 in_list = [i.strip().upper() for i in in_str.split(',') if i.strip()]
 
-                # 根據平假日，決定當前檔案要使用的專屬白名單
                 if is_weekend:
                     active_whitelist = we_whitelist
                     is_whitelisted_empty = (len(we_str.strip()) == 0)
@@ -151,7 +142,7 @@ def run_app():
                     is_whitelisted_empty = (len(wd_str.strip()) == 0)
                     day_type_label = "🔵 平日崗哨"
 
-                # 3. 定位結構起點
+                # 定位結構起點
                 header_row_idx = 0
                 data_start_idx = 2
                 for i in range(len(df)):
@@ -163,39 +154,32 @@ def run_app():
 
                 target_columns = []
                 
-                # 4. 如果該單位該時段的規則被清空，就不抓任何欄位
                 if not is_whitelisted_empty:
                     header_row_list = df.iloc[header_row_idx].astype(str).tolist()
                     for c_idx, cell in enumerate(header_row_list):
-                        # 徹底清洗 Excel 儲存格內的所有空格與換行、直管線
                         cell_clean = cell.replace(' ', '').replace('\n', '').replace('\r', '')
                         cell_clean = cell_clean.replace('|', '-').replace('~', '-').replace('～', '-').strip()
                         
-                        # 進行精準的時間白名單包含比對
                         if any(t in cell_clean for t in active_whitelist):
                             if c_idx not in target_columns:
                                 target_columns.append(c_idx)
                     
-                    # 只有在「規則有填字」但「Excel 對不到字」時，才啟動兜底防呆 [2, 12]
                     if not target_columns and len(active_whitelist) > 0:
                         target_columns = [2, 12]
                 else:
                     pass
 
-                # 5. 從智慧定位的資料起點開始讀取
                 for r_idx in range(data_start_idx, len(df)):
                     row = df.iloc[r_idx]
                     if pd.isna(row[0]) or pd.isna(row[1]): continue
                     
                     s_code = str(row[0]).strip().upper()
                     if s_code in ex_list: continue 
-                    # 專屬白名單驗證
                     if in_list and (s_code not in in_list): continue
 
                     name = str(row[1]).replace('\n', '').replace(' ', '')
                     if name in ['nan', 'None', '', '姓名', '合計', '總計', '重疊']: continue
                     
-                    # 橫向精準多欄位加總
                     h_count = 0
                     for c_idx in target_columns:
                         if c_idx < len(row):
@@ -216,15 +200,14 @@ def run_app():
             except Exception as e:
                 st.error(f"檔案 {file.name} 解析失敗，原因: {str(e)}")
 
-        # D. 成果輸出與校對區
         if all_processed_records:
             full_raw_df = pd.DataFrame(all_processed_records)
             
             st.divider()
-            tab1, tab2 = st.tabs(["🏆 全分局月彙整總表 (造冊專用)", "📝 每日審核明細區 (可手動剔除雜訊)"])
+            tab1, tab2 = st.tabs(["🏆 月彙整總表 (造冊專用)", "📝 每日審核明細區 (可手動剔除雜訊)"])
             
             with tab2:
-                st.subheader("📝 全分局每日尖峰交通疏導明細")
+                st.subheader("📝 每日尖峰交通疏導明細")
                 detail_display_df = full_raw_df[["單位", "日期", "類型", "番號", "姓名", "核銷時數", "原始檔名"]]
                 edited_df = st.data_editor(detail_display_df, use_container_width=True, num_rows="dynamic", key="global_data_editor")
 
@@ -248,21 +231,29 @@ def run_app():
 
                     with col_action:
                         today = datetime.now().strftime('%m%d')
-                        fname = f"分局交通疏導總彙整統計_{today}.xlsx"
+                        
+                        # --- 【動態命名邏輯】自動判斷目前畫面上處理了幾個單位 ---
+                        unique_units = summary['單位'].unique()
+                        if len(unique_units) == 1:
+                            report_prefix = unique_units[0] # 如果只有1家，字首為該單位名稱 (例: 聖亭派出所)
+                        else:
+                            report_prefix = "全分局" # 如果大於1家，字首自動變為全分局
+                            
+                        fname = f"{report_prefix}_交通疏導彙整統計_{today}.xlsx"
                         
                         output = io.BytesIO()
                         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            summary.to_excel(writer, index=False, sheet_name='分局月彙整總表')
+                            summary.to_excel(writer, index=False, sheet_name='月彙整總表')
                             edited_df.to_excel(writer, index=False, sheet_name='人員明細')
                         
                         st.write("### 📥 輸出報表")
-                        st.download_button("📥 下載分局月彙整總表 Excel", output.getvalue(), fname, use_container_width=True)
+                        st.download_button(f"📥 下載 {report_prefix} 總表 Excel", output.getvalue(), fname, use_container_width=True)
                         
                         st.write("---")
-                        if st.button("📧 寄送審核結果至我的信箱", use_container_width=True):
+                        if st.button(f"📧 寄送 {report_prefix} 報表至信箱", use_container_width=True):
                             with st.spinner("報表發送中..."):
-                                ok, err = send_stats_email(fname, summary, edited_df)
-                                if ok: st.success("✅ 全分局精準核銷總表已送達信箱！")
+                                ok, err = send_stats_email(fname, summary, edited_df, report_prefix)
+                                if ok: st.success(f"✅ {report_prefix} 精準核銷總表已送達信箱！")
                                 else: st.error(f"❌ 寄送失敗: {err}")
                 else:
                     st.warning("⚠️ 明細已被全數刪除。")
