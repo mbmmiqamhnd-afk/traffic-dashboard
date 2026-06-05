@@ -47,7 +47,8 @@ def send_report_email_auto(files, year, month, msg_subject, body_text):
             part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(filename)}")
             msg.attach(part)
         
-        with smtplib.SMTP_SSL("smtp.gmail.com", 46Code5) as server:
+        # --- 【Bug 徹底修復點】修正先前不小心打錯的 46Code5 埠號，回復為正確的 465 數字 ---
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
             server.send_message(msg)
         return True, None
@@ -284,6 +285,7 @@ def p18_page():
                         continue
                         
                     df_sheet = pd.read_excel(file_template, sheet_name=sheet_name, header=None)
+                    
                     start_r, start_c = None, None
                     for r_idx, row in df_sheet.iterrows():
                         row_str = [str(x).strip() for x in row.values]
@@ -519,7 +521,6 @@ def p18_page():
                     grand_total_row_data['金額'] = direct_total_money + coworker_sheet_total_money
                     df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
                     
-                    # 僅產生印領清冊的 Excel (完全剔除點數統計分頁)
                     payroll_output = io.BytesIO()
                     with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                         workbook = writer.book
