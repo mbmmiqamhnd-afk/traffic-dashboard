@@ -47,7 +47,6 @@ def send_report_email_auto(files, year, month, msg_subject, body_text):
             part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(filename)}")
             msg.attach(part)
         
-        # 修正埠號為 465
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
             server.send_message(msg)
@@ -120,7 +119,7 @@ def p18_page():
     st.title("💰 龍潭分局 - 處理道路交通安全人員獎勵金核銷自動化產生器")
     st.markdown("---")
     
-    # --- 1. 原始資料上傳區 (介面置頂極簡) ---
+    # --- 1. 原始資料上傳區 (永久置頂) ---
     st.subheader("📂 1. 原始資料與核銷底稿上傳")
     file_template = st.file_uploader("① 上傳當月【處理道路交通安全人員獎勵金點數統計表】原始取締底稿", type=['xls', 'xlsx'])
     c1, c2 = st.columns(2)
@@ -138,7 +137,7 @@ def p18_page():
     )
     is_only_pts = "單獨產生" in op_mode
     
-    # --- 3. 模式二專屬：金流配置控制面板 ---
+    # --- 3. 模式二專屬：金流配置控制面板 (智慧摺疊縮放) ---
     if not is_only_pts:
         st.markdown("---")
         st.subheader("📝 3. 獎金核發與印領清冊分配設定")
@@ -238,6 +237,8 @@ def p18_page():
             
         with st.spinner("系統正在全力加速運算處理中..."):
             try:
+                mode_label = "底稿回填點數生成" if is_only_pts else "綜合點數印領清冊"
+
                 # 1. 讀取交通事故表
                 df_acc_raw = pd.read_excel(file_acc, header=4)
                 df_acc_raw['姓名'] = df_acc_raw['姓名'].astype(str).str.strip()
@@ -375,7 +376,7 @@ def p18_page():
                     
                     st.download_button("📥 下載【處理道路交通安全人員獎勵金點數統計表】(完美回填版)", pts_excel_data, pts_filename, use_container_width=True, type="primary")
                 
-                # --- 【分流分支 B】模式二：單獨產生獎金印領清冊 (簽章欄強制居右) ---
+                # --- 【分流分支 B】模式二：單獨產生獎金印領清冊 (Bug 已排除，黃金代碼全面復活復活) ---
                 else:
                     df_direct_exec = pd.DataFrame(direct_exec_list)
                     if df_direct_exec.empty:
@@ -400,8 +401,8 @@ def p18_page():
                                 df_direct_exec.iloc[:rem, df_direct_exec.columns.get_loc('實領獎金')] += sign
                             direct_total_money = df_direct_exec['實領獎金'].sum()
                     
-                    # --- 【修正排版關鍵一】直接執行人員清冊：將「蓋章」設定於字典最末端，並緊隨合計行 ---
-                    df_direct_exec['蓋章'] = "" # 強制出現在最右側
+                    # 蓋章欄位強制靠右
+                    df_direct_exec['蓋章'] = "" 
                     
                     direct_total_row = {c: "" for c in df_direct_exec.columns}
                     direct_total_row['員警姓名'] = '合計'
@@ -514,7 +515,7 @@ def p18_page():
                     df_coworkers_final_sheet.reset_index(drop=True, inplace=True)
                     df_coworkers_final_sheet.insert(0, '序號', range(1, len(df_coworkers_final_sheet) + 1))
                     
-                    # --- 【修正排版關鍵二】共同作業清冊：將「蓋章」欄位追填至最右側一欄 ---
+                    # 共同作業清冊：蓋章靠右
                     df_coworkers_final_sheet['蓋章'] = ""
                     
                     total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
@@ -529,7 +530,6 @@ def p18_page():
                     grand_total_row_data['蓋章'] = ""
                     df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
                     
-                    # 建立印領清冊檔案 
                     payroll_output = io.BytesIO()
                     with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                         workbook = writer.book
@@ -542,7 +542,6 @@ def p18_page():
                             ws1.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
                             ws1.set_paper(9)
                             
-                            # 動態抓取最後一欄「蓋章」的索引，拉寬為大方格
                             stamp_col1 = df_direct_exec.columns.get_loc('蓋章')
                             ws1.set_column(stamp_col1, stamp_col1, 22)
                             
@@ -562,7 +561,6 @@ def p18_page():
                             data_len = len(df_coworkers_final_sheet)
                             main_data_len = data_len - 2
                             
-                            # 共同作業大方格寬度
                             stamp_col2 = df_coworkers_final_sheet.columns.get_loc('蓋章')
                             ws2.set_column(stamp_col2, stamp_col2, 22)
                             
