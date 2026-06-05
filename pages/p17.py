@@ -52,7 +52,7 @@ def send_stats_email(filename, summary_df, detail_df):
 
 # --- 3. 主程式邏輯 ---
 def run_app():
-    st.title("⏱️ 交通疏導勤務時數彙整系統 (精準控制版)")
+    st.title("⏱️ 交通疏導勤務時數彙整系統 (多欄位精準加總版)")
     st.markdown("---")
 
     # A. 檔案上傳區
@@ -60,13 +60,13 @@ def run_app():
 
     if uploaded_files:
         st.subheader("🎯 1. 交通疏導核銷與過濾條件設定")
-        st.info("💡 說明：若清空下方的時段關鍵字，系統將判定不核銷該類別之所有時數（結果會歸零）。")
+        st.info("💡 說明：表格為1小時一欄時，請將連續時段全部填入（如：16-17, 17-18, 18-19），系統將會精準橫向加總多個欄位的守望時數！")
         
         col_wd, col_we = st.columns(2)
         with col_wd:
-            wd_input = st.text_input("平常日(週一至五)核銷時段關鍵字", value="06-08, 07-09, 16-18, 17-19, 06:30, 16:30")
+            wd_input = st.text_input("平常日(週一至五)核銷時段關鍵字", value="06-07, 07-08, 08-09, 16-17, 17-18, 18-19")
         with col_we:
-            we_input = st.text_input("例假日(週六、日)核銷時段關鍵字", value="10-12, 16-18, 15-17, 11-13")
+            we_input = st.text_input("例假日(週六、日)核銷時段關鍵字", value="10-11, 11-12, 16-17, 17-18")
             
         col_white, col_black = st.columns(2)
         with col_white:
@@ -74,8 +74,9 @@ def run_app():
         with col_black:
             exclude_input = st.text_input("番號黑名單 (這些番號的守望一律自動剔除)", value="A, B, C, XA, XB")
             
-        wd_whitelist = [t.strip() for t in wd_input.split(',') if t.strip()]
-        we_whitelist = [t.strip() for t in we_input.split(',') if t.strip()]
+        # 統一處理：將使用者輸入的關鍵字徹底去除空格與多餘符號
+        wd_whitelist = [t.strip().replace(' ', '') for t in wd_input.split(',') if t.strip()]
+        we_whitelist = [t.strip().replace(' ', '') for t in we_input.split(',') if t.strip()]
         in_list = [i.strip().upper() for i in include_input.split(',') if i.strip()]
         ex_list = [i.strip().upper() for i in exclude_input.split(',') if i.strip()]
 
@@ -111,15 +112,13 @@ def run_app():
                 if len(date_digits) >= 4:
                     try:
                         md = date_digits[-4:]
-                        # 強制鎖定為民國115年（2026年）進行週幾計算
                         dt = datetime.strptime(f"2026{md}", "%Y%m%d")
                         current_date_str = dt.strftime("%m月%d日")
-                        if dt.weekday() in [5, 6]: # 5是週六，6是週日
+                        if dt.weekday() in [5, 6]: 
                             is_weekend = True
                     except:
                         pass
                 
-                # 決定當前檔案要使用的白名單與是否已被使用者「刻意清空」
                 if is_weekend:
                     active_whitelist = we_whitelist
                     is_whitelisted_empty = (len(we_input.strip()) == 0)
@@ -134,28 +133,31 @@ def run_app():
                 data_start_idx = 2
                 for i in range(len(df)):
                     row_str = "".join(df.iloc[i].astype(str).tolist())
-                    if "姓名" in row_str or "-" in row_str or ":" in row_str:
+                    if "姓名" in row_str or "-" in row_str or ":" in row_str or "|" in row_str:
                         header_row_idx = i
                         data_start_idx = i + 1
                         break
 
                 target_columns = []
                 
-                # --- 【關鍵優化邏輯】 ---
-                # 如果使用者「刻意清空」了對應的輸入框，我們直接讓 target_columns 保持為空（不抓任何欄位）
+                # 如果使用者刻意清空，不抓任何欄位
                 if not is_whitelisted_empty:
                     header_row_list = df.iloc[header_row_idx].astype(str).tolist()
                     for c_idx, cell in enumerate(header_row_list):
-                        cell_clean = cell.replace(' ', '').replace('\n', '')
+                        # --- 【破案關鍵：全面清洗符號】 ---
+                        # 將派出所常用的直管線 |、波浪號 ~ 全部強制轉換為減號 -
+                        cell_clean = cell.replace(' ', '').replace('\n', '').replace('\r', '')
+                        cell_clean = cell_clean.replace('|', '-').replace('~', '-').replace('～', '-').strip()
+                        
+                        # 進行精準的時間白名單包含比對
                         if any(t in cell_clean for t in active_whitelist):
                             if c_idx not in target_columns:
-                                        target_columns.append(c_idx)
+                                target_columns.append(c_idx)
                     
-                    # 只有在輸入框「有填字」但「在 Excel 裡找不到對應字眼」時，才觸發防呆回退 [2, 12]
-                    if not target_columns:
+                    # 只有在輸入框「有填字」但「在 Excel 裡完全對不到字」時，才啟動兜底防呆 [2, 12]
+                    if not target_columns and len(active_whitelist) > 0:
                         target_columns = [2, 12]
                 else:
-                    # 如果被清空了，target_columns 就是空的，下方迴圈將不會執行任何統計（時數成功歸零）
                     pass
 
                 # 從智慧定位的資料起點開始讀取
@@ -170,6 +172,7 @@ def run_app():
                     name = str(row[1]).replace('\n', '').replace(' ', '')
                     if name in ['nan', 'None', '', '姓名', '合計', '總計', '重疊']: continue
                     
+                    # --- 橫向精準多欄位加總 ---
                     h_count = 0
                     for c_idx in target_columns:
                         if c_idx < len(row):
