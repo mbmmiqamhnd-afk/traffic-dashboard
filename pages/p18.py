@@ -11,6 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
+from datetime import datetime  # 👈 【核心修正】補回關鍵的 datetime 匯入
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 try:
@@ -19,7 +20,7 @@ except ImportError:
     def show_sidebar():
         pass
 
-# --- 【修正關鍵】將點數權重常數提升為全域變數，防止 NameError ---
+# --- 點數權重全域常數 ---
 P_A2 = 10.0   # A2類交通事故點數
 P_A3 = 5.0    # A3類交通事故點數
 P_TRAF = 5.0  # 交通疏導(交整)每小時點數
@@ -37,7 +38,7 @@ def send_report_email_auto(files, year, month, mode_label):
         msg['To'] = sender
         msg['Subject'] = f"【系統備份】龍潭分局 {year}年{month}月 處理道路交通安全人員獎勵金點數統計表({mode_label})"
         
-        body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的處理道路交通安全人員獎勵金點數統計表彙整。\n本次作業採【{mode_label}】模式執行，附件請查收。"
+        body = f"郭同仁您好：\n\n系統已自動完成 {year}年{month}月份的處理道路交通安全人員獎勵金點數統計表彙整任务。\n本次作業採【{mode_label}】模式執行，附件請查收。"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
         for file_data, filename in files:
@@ -118,7 +119,7 @@ def p18_page():
     show_sidebar()
     st.title("💰 龍潭分局 - 處理道路交通安全人員獎勵金點數統計表暨印領清冊產生器")
     
-    # --- 【運作模式精準分流】 ---
+    # --- 運作模式精準分流 ---
     st.markdown("### 🛠️ 請選擇本月執行功能模式")
     op_mode = st.radio(
         "選擇功能：",
@@ -219,7 +220,6 @@ def p18_page():
         
         df_display = st.session_state.current_roster.copy()
         
-        # 修正變數，將變數指引至全域設定中
         col_cfg = {
             "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="修改數字可調整順序", min_value=1, format="%d"),
             "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
@@ -299,7 +299,6 @@ def p18_page():
                     a3 = dict_acc.get(name, {}).get('A3類', 0)
                     th = dict_traf.get(name, 0)
                     
-                    # 這裡將完美讀取全域範圍的 P_A2、P_A3、P_TRAF
                     ap = a2 * P_A2 + a3 * P_A3
                     tp = th * P_TRAF
                     cp = 0
