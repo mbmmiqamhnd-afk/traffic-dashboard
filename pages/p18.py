@@ -19,6 +19,11 @@ except ImportError:
     def show_sidebar():
         pass
 
+# --- 【修正關鍵】將點數權重常數提升為全域變數，防止 NameError ---
+P_A2 = 10.0   # A2類交通事故點數
+P_A3 = 5.0    # A3類交通事故點數
+P_TRAF = 5.0  # 交通疏導(交整)每小時點數
+
 
 def send_report_email_auto(files, year, month, mode_label):
     try:
@@ -131,7 +136,7 @@ def p18_page():
         c1, c2 = st.columns(2)
         file_acc = c1.file_uploader("1. 上傳當月【處理交通事故案件統計表】(必填 🌟)", type=['xls', 'xlsx'])
         file_traf_list = c2.file_uploader("2. 上傳當月【各單位_交通疏導統計】(必填 🌟，可單選全分局總表)", type=['xls', 'xlsx'], accept_multiple_files=True)
-        file_template = None # 點數統計原始空白表在此模式下由系統自動依照單位生成，免上傳
+        file_template = None 
     else:
         file_template = st.file_uploader("1. 上傳當月【處理道路交通安全人員獎勵金點數統計表】原始底稿(必填)", type=['xls', 'xlsx'])
         c1, c2 = st.columns(2)
@@ -213,14 +218,26 @@ def p18_page():
             st.session_state.current_roster = sort_coworkers(df_init)
         
         df_display = st.session_state.current_roster.copy()
+        
+        # 修正變數，將變數指引至全域設定中
+        col_cfg = {
+            "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="修改數字可調整順序", min_value=1, format="%d"),
+            "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
+        }
         st.data_editor(df_display, num_rows="dynamic", use_container_width=True, hide_index=True, height=350, 
                        column_config=col_cfg, key="co_editor", on_change=on_data_edited)
+        
+        if st.button("💾 儲存最新名單為預設值", use_container_width=True, type="secondary"):
+            st.session_state.current_roster.to_csv(roster_file, index=False, encoding='utf-8-sig')
+            st.success("✅ 名單已永久儲存！")
+            st.rerun()
 
+        st.markdown("---")
+    
     # 執行按鈕文字連動
     btn_label = "🚀 一鍵生成【點數統計表】" if is_only_pts else "🚀 執行彙整、計算獎金與發送報表"
     if st.button(btn_label, type="primary", use_container_width=True):
         
-        # 模式檔案防卡關驗證
         if is_only_pts and not (file_acc and file_traf_list):
             st.error("⚠️ 請確保已成功上傳【交通事故案件統計表】與【交通疏導統計】兩份檔案！")
             return
@@ -256,13 +273,12 @@ def p18_page():
                 time_col_name = time_col[0] if time_col else '總計尖峰時數'
                 dict_traf = df_traf_all.groupby('姓名')[time_col_name].sum().to_dict()
                 
-                # 3. 動態建立人員清冊名單 (將事故表與交整表的所有出現同仁自動聯集)
+                # 3. 動態建立人員清冊名單
                 all_names = set(df_acc_raw['姓名'].unique()) | set(df_traf_all['姓名'].unique())
                 all_names.discard('nan')
                 all_names.discard('None')
                 all_names.discard('')
                 
-                # 建立姓名到單位的映射字典
                 name_to_unit = {}
                 for _, row in df_acc_raw.iterrows():
                     if str(row['姓名']).strip() and str(row['姓名']).strip() != 'nan':
@@ -273,7 +289,7 @@ def p18_page():
 
                 # 4. 核心點數大計算
                 direct_exec_list = []
-                unit_summary_dict = {} # 用於統計總表小計
+                unit_summary_dict = {} 
                 
                 for name in all_names:
                     u_name = name_to_unit.get(name, "未知單位")
@@ -283,14 +299,10 @@ def p18_page():
                     a3 = dict_acc.get(name, {}).get('A3類', 0)
                     th = dict_traf.get(name, 0)
                     
+                    # 這裡將完美讀取全域範圍的 P_A2、P_A3、P_TRAF
                     ap = a2 * P_A2 + a3 * P_A3
                     tp = th * P_TRAF
-                    
-                    # 取締點數處理：若為純生成模式，因無原始表，取締預設為0；若為綜合模式，則去原始表抓取
                     cp = 0
-                    if not is_only_pts and file_template:
-                        # 綜合模式下在底稿中匹配該員的取締點數(此處邏輯與原底稿整合維持不變)
-                        pass 
                     
                     total_pts = cp + ap + tp
                     
@@ -305,7 +317,6 @@ def p18_page():
                         }
                         direct_exec_list.append(rec)
                         
-                        # 同步加總至總表小計
                         if u_name not in unit_summary_dict:
                             unit_summary_dict[u_name] = {'cp': 0, 'ap': 0, 'tp': 0, 'total': 0}
                         unit_summary_dict[u_name]['cp'] += cp
@@ -313,35 +324,30 @@ def p18_page():
                         unit_summary_dict[u_name]['tp'] += tp
                         unit_summary_dict[u_name]['total'] += total_pts
 
-                # 5. 格式化輸出各單位分頁 (Sheet) 與大總表
+                # 5. 格式化輸出各單位分頁與大總表
                 final_sheets = {}
                 summary_rows = []
                 g_cite = g_acc = g_traf = g_all = 0
                 
                 df_all_members = pd.DataFrame(direct_exec_list)
                 if not df_all_members.empty:
-                    # 按單位分拆分頁
                     for u_sub in df_all_members['單位名稱'].unique():
                         df_sub = df_all_members[df_all_members['單位名稱'] == u_sub].copy()
-                        # 建立該單位小計列
                         sums = unit_summary_dict[u_sub]
                         sub_row = {
                             "單位名稱": u_sub, "員警姓名": "小計", "取締件數": "", "取締點數": sums['cp'],
                             "A2件數": "", "A3件數": "", "事故點數": sums['ap'], "交整時數": "",
                             "交整點數": sums['tp'], "個人總點數": sums['total'], "蓋章": ""
                         }
-                        # 移除內部表格的單位名稱欄位以符合官方底稿樣式
                         df_sub_clean = df_sub.drop(columns=['單位名稱'])
                         df_sub_final = pd.concat([df_sub_clean, pd.DataFrame([sub_row]).drop(columns=['單位名稱'])], ignore_index=True)
                         final_sheets[u_sub] = df_sub_final
                         
-                        # 填充總表行
                         summary_rows.append([u_sub, sums['cp'], sums['ap'], sums['tp'], sums['total']])
                         g_cite += sums['cp']; g_acc += sums['ap']; g_traf += sums['tp']; g_all += sums['total']
 
                 df_pts_summary_final = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', g_cite, g_acc, g_traf, g_all]])
                 
-                # 建立點數統計表 Excel 二進位制數據
                 pts_output = io.BytesIO()
                 with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
                     df_pts_summary_final.to_excel(writer, sheet_name='總表', header=False, index=False)
@@ -349,7 +355,7 @@ def p18_page():
                         df_f.to_excel(writer, sheet_name=sn, index=False)
                 pts_excel_data = pts_output.getvalue()
                 
-                ext_year = datetime.now().strftime('%Y') # 預設今年2026年
+                ext_year = datetime.now().strftime('%Y') 
                 ext_month = datetime.now().strftime('%m')
                 pts_filename = f"龍潭分局{int(ext_year)-1911}年{ext_month}月份_處理道路交通安全人員獎勵金點數統計表.xlsx"
 
@@ -363,9 +369,8 @@ def p18_page():
                     
                     st.download_button("📥 下載【處理道路交通安全人員獎勵金點數統計表】", pts_excel_data, pts_filename, use_container_width=True, type="primary")
                 
-                # 7. 【分流分支 B】繼續往下執行高難度的清冊算錢與平帳發放
+                # 7. 【分流分支 B】完整平帳清冊模式
                 else:
-                    # 讀取原本底稿的取締數據疊加(此處維持原本P18的健全多表計算及平帳大邏輯)
                     st.error("完整模式需要結合點數底稿，請切換至正確模式或確保底稿正確。")
                     
             except Exception as e:
