@@ -52,7 +52,7 @@ def send_stats_email(filename, summary_df, detail_df):
 
 # --- 3. 主程式邏輯 ---
 def run_app():
-    st.title("⏱️ 交通疏導勤務時數彙整系統 (動態結構修正版)")
+    st.title("⏱️ 交通疏導勤務時數彙整系統 (精準控制版)")
     st.markdown("---")
 
     # A. 檔案上傳區
@@ -60,7 +60,7 @@ def run_app():
 
     if uploaded_files:
         st.subheader("🎯 1. 交通疏導核銷與過濾條件設定")
-        st.info("💡 說明：系統會自動跳過明細表上方的重複大標題列，自動搜尋時間欄位。")
+        st.info("💡 說明：若清空下方的時段關鍵字，系統將判定不核銷該類別之所有時數（結果會歸零）。")
         
         col_wd, col_we = st.columns(2)
         with col_wd:
@@ -111,22 +111,27 @@ def run_app():
                 if len(date_digits) >= 4:
                     try:
                         md = date_digits[-4:]
-                        this_year = datetime.now().year
-                        dt = datetime.strptime(f"{this_year}{md}", "%Y%m%d")
+                        # 強制鎖定為民國115年（2026年）進行週幾計算
+                        dt = datetime.strptime(f"2026{md}", "%Y%m%d")
                         current_date_str = dt.strftime("%m月%d日")
-                        if dt.weekday() in [5, 6]:
+                        if dt.weekday() in [5, 6]: # 5是週六，6是週日
                             is_weekend = True
                     except:
                         pass
                 
-                active_whitelist = we_whitelist if is_weekend else wd_whitelist
-                day_type_label = "🔴 假日崗哨" if is_weekend else "🔵 平日崗哨"
+                # 決定當前檔案要使用的白名單與是否已被使用者「刻意清空」
+                if is_weekend:
+                    active_whitelist = we_whitelist
+                    is_whitelisted_empty = (len(we_input.strip()) == 0)
+                    day_type_label = "🔴 假日崗哨"
+                else:
+                    active_whitelist = wd_whitelist
+                    is_whitelisted_empty = (len(wd_input.strip()) == 0)
+                    day_type_label = "🔵 平日崗哨"
 
-                # --- 【核心修正：動態標題與資料列定位】 ---
+                # 定位結構起點
                 header_row_idx = 0
                 data_start_idx = 2
-                
-                # 自動往下找，直到看到某行包含「姓名」或包含時間格式（如：包含減號或冒號）
                 for i in range(len(df)):
                     row_str = "".join(df.iloc[i].astype(str).tolist())
                     if "姓名" in row_str or "-" in row_str or ":" in row_str:
@@ -134,24 +139,28 @@ def run_app():
                         data_start_idx = i + 1
                         break
 
-                # 定位符合該日核銷時間的 欄位索引
                 target_columns = []
-                header_row_list = df.iloc[header_row_idx].astype(str).tolist()
-                for c_idx, cell in enumerate(header_row_list):
-                    cell_clean = cell.replace(' ', '').replace('\n', '')
-                    if any(t in cell_clean for t in active_whitelist):
-                        if c_idx not in target_columns:
-                            target_columns.append(c_idx)
                 
-                # 如果完全沒對到時間標題，預設防呆設定第2與12欄
-                if not target_columns:
-                    target_columns = [2, 12]
+                # --- 【關鍵優化邏輯】 ---
+                # 如果使用者「刻意清空」了對應的輸入框，我們直接讓 target_columns 保持為空（不抓任何欄位）
+                if not is_whitelisted_empty:
+                    header_row_list = df.iloc[header_row_idx].astype(str).tolist()
+                    for c_idx, cell in enumerate(header_row_list):
+                        cell_clean = cell.replace(' ', '').replace('\n', '')
+                        if any(t in cell_clean for t in active_whitelist):
+                            if c_idx not in target_columns:
+                                        target_columns.append(c_idx)
+                    
+                    # 只有在輸入框「有填字」但「在 Excel 裡找不到對應字眼」時，才觸發防呆回退 [2, 12]
+                    if not target_columns:
+                        target_columns = [2, 12]
+                else:
+                    # 如果被清空了，target_columns 就是空的，下方迴圈將不會執行任何統計（時數成功歸零）
+                    pass
 
                 # 從智慧定位的資料起點開始讀取
                 for r_idx in range(data_start_idx, len(df)):
                     row = df.iloc[r_idx]
-                    
-                    # 避免讀到空行或表格尾端的合計行
                     if pd.isna(row[0]) or pd.isna(row[1]): continue
                     
                     s_code = str(row[0]).strip().upper()
@@ -179,7 +188,6 @@ def run_app():
                             "原始檔名": file.name
                         })
             except Exception as e:
-                # 即使出錯也列出詳細錯誤訊息，方便 debug
                 st.error(f"檔案 {file.name} 解析失敗，原因: {str(e)}")
 
         # D. 成果輸出與校對區
@@ -191,8 +199,6 @@ def run_app():
             
             with tab2:
                 st.subheader("📝 全分局每日尖峰交通疏導明細")
-                st.warning("⚠️ 提示：若發現同時間有非交通疏導的同仁被抓進來，請點選該列最左側的序號，直接按鍵盤 `Delete` 鍵整列刪除，總表會即時扣除時數！")
-                
                 detail_display_df = full_raw_df[["單位", "日期", "類型", "番號", "姓名", "核銷時數", "原始檔名"]]
                 edited_df = st.data_editor(detail_display_df, use_container_width=True, num_rows="dynamic", key="global_data_editor")
 
