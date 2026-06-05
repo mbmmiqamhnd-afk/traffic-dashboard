@@ -29,7 +29,7 @@ P_TRAF = 5.0  # 交通疏導(交整)每小時點數
 def send_report_email_auto(files, year, month, msg_subject, body_text):
     try:
         if "email" not in st.secrets:
-            return False, "找不到 st.secrets 中的 email 設定"
+            return False, "未偵測到 email 設定"
         sender = st.secrets["email"]["user"]
         pwd = st.secrets["email"]["password"]
         
@@ -47,7 +47,7 @@ def send_report_email_auto(files, year, month, msg_subject, body_text):
             part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(filename)}")
             msg.attach(part)
         
-        # --- 【Bug 徹底修復點】修正先前不小心打錯的 46Code5 埠號，回復為正確的 465 數字 ---
+        # 修正埠號為 465
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
             server.send_message(msg)
@@ -120,7 +120,7 @@ def p18_page():
     st.title("💰 龍潭分局 - 處理道路交通安全人員獎勵金核銷自動化產生器")
     st.markdown("---")
     
-    # --- 1. 原始資料上傳區 (介面最頂端，維持永久清爽) ---
+    # --- 1. 原始資料上傳區 (介面置頂極簡) ---
     st.subheader("📂 1. 原始資料與核銷底稿上傳")
     file_template = st.file_uploader("① 上傳當月【處理道路交通安全人員獎勵金點數統計表】原始取締底稿", type=['xls', 'xlsx'])
     c1, c2 = st.columns(2)
@@ -129,16 +129,16 @@ def p18_page():
     
     st.divider()
 
-    # --- 2. 模式選擇分流開關 (一鍵完美收合下方版面) ---
+    # --- 2. 模式選擇分流開關 ---
     st.subheader("🎯 2. 請選擇本次執行目標模式")
     op_mode = st.radio(
         "執行目標：",
         ["📊 模式一：連動三表數據，單獨產生【點數統計表】(不計算獎金與清冊)", "💰 模式二：連動三表數據，單獨產生【獎金印領清冊】(自動平帳且不夾帶點數表)"],
         horizontal=True
     )
-    is_only_pts = "單獨產生【點數統計表】" in op_mode or "單獨產生點數表" in op_mode
+    is_only_pts = "單獨產生" in op_mode
     
-    # --- 3. 模式二專屬：金流配置控制面板 (智慧摺疊縮放) ---
+    # --- 3. 模式二專屬：金流配置控制面板 ---
     if not is_only_pts:
         st.markdown("---")
         st.subheader("📝 3. 獎金核發與印領清冊分配設定")
@@ -227,7 +227,7 @@ def p18_page():
             st.success("✅ 名單已永久儲存！")
             st.rerun()
 
-    # --- 4. 終端按鈕區 (始終位於底部) ---
+    # --- 4. 終端按鈕區 ---
     st.markdown("---")
     btn_label = "📊 一鍵自動填入並生成【點數統計表】" if is_only_pts else "🚀 一鍵自動計算並產出【獎金印領清冊】"
     if st.button(btn_label, type="primary", use_container_width=True):
@@ -337,7 +337,7 @@ def p18_page():
                                     "取締件數": df_members.at[idx, '取締件數'] if '取締件數' in df_members.columns else '',
                                     "取締點數": cp if cp > 0 else 0, "A2件數": a2 if a2 > 0 else 0, "A3件數": a3 if a3 > 0 else 0,
                                     "事故點數": ap if ap > 0 else 0, "交整時數": th if th > 0 else 0,
-                                    "交整點數": tp if tp > 0 else 0, "個人總點數": total_pts, "蓋章": ""
+                                    "交整點數": tp if tp > 0 else 0, "個人總點數": total_pts
                                 })
                         
                         sub_row_data = {c: "" for c in df_members.columns}
@@ -354,7 +354,7 @@ def p18_page():
                         summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
                         g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
 
-                # --- 分流輸出點區 A：【模式一：只輸出點數表】 ---
+                # --- 【分流分支 A】模式一：單獨輸出填空好的點數統計表 ---
                 if is_only_pts:
                     df_pts_summary_final = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', int(g_cite), int(g_acc), int(g_traf), int(g_all)]])
                     
@@ -375,7 +375,7 @@ def p18_page():
                     
                     st.download_button("📥 下載【處理道路交通安全人員獎勵金點數統計表】(完美回填版)", pts_excel_data, pts_filename, use_container_width=True, type="primary")
                 
-                # --- 分流輸出點區 B：【模式二：只輸出印領清冊（絕不夾帶點數表）】 ---
+                # --- 【分流分支 B】模式二：單獨產生獎金印領清冊 (簽章欄強制居右) ---
                 else:
                     df_direct_exec = pd.DataFrame(direct_exec_list)
                     if df_direct_exec.empty:
@@ -400,9 +400,13 @@ def p18_page():
                                 df_direct_exec.iloc[:rem, df_direct_exec.columns.get_loc('實領獎金')] += sign
                             direct_total_money = df_direct_exec['實領獎金'].sum()
                     
+                    # --- 【修正排版關鍵一】直接執行人員清冊：將「蓋章」設定於字典最末端，並緊隨合計行 ---
+                    df_direct_exec['蓋章'] = "" # 強制出現在最右側
+                    
                     direct_total_row = {c: "" for c in df_direct_exec.columns}
                     direct_total_row['員警姓名'] = '合計'
                     direct_total_row['實領獎金'] = direct_total_money
+                    direct_total_row['蓋章'] = ""
                     df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
                     
                     # 共同作業處理
@@ -509,18 +513,23 @@ def p18_page():
                     df_coworkers_final_sheet.drop(columns=['分配類別'], inplace=True, errors='ignore')
                     df_coworkers_final_sheet.reset_index(drop=True, inplace=True)
                     df_coworkers_final_sheet.insert(0, '序號', range(1, len(df_coworkers_final_sheet) + 1))
+                    
+                    # --- 【修正排版關鍵二】共同作業清冊：將「蓋章」欄位追填至最右側一欄 ---
                     df_coworkers_final_sheet['蓋章'] = ""
                     
                     total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                     total_row_data['單位'] = '合計'
                     total_row_data['金額'] = coworker_sheet_total_money
+                    total_row_data['蓋章'] = ""
                     df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([total_row_data])], ignore_index=True)
                     
                     grand_total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                     grand_total_row_data['單位'] = '總計（含直接執行人員）'
                     grand_total_row_data['金額'] = direct_total_money + coworker_sheet_total_money
+                    grand_total_row_data['蓋章'] = ""
                     df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
                     
+                    # 建立印領清冊檔案 
                     payroll_output = io.BytesIO()
                     with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                         workbook = writer.book
@@ -532,8 +541,11 @@ def p18_page():
                             ws1.set_portrait()
                             ws1.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
                             ws1.set_paper(9)
-                            stamp_col = df_direct_exec.columns.get_loc('蓋章')
-                            ws1.set_column(stamp_col, stamp_col, 22)
+                            
+                            # 動態抓取最後一欄「蓋章」的索引，拉寬為大方格
+                            stamp_col1 = df_direct_exec.columns.get_loc('蓋章')
+                            ws1.set_column(stamp_col1, stamp_col1, 22)
+                            
                             for r in range(len(df_direct_exec) + 1):
                                 ws1.set_row(r, 45 if r > 0 else 25)
                                 for c in range(len(df_direct_exec.columns)):
@@ -549,6 +561,11 @@ def p18_page():
                             
                             data_len = len(df_coworkers_final_sheet)
                             main_data_len = data_len - 2
+                            
+                            # 共同作業大方格寬度
+                            stamp_col2 = df_coworkers_final_sheet.columns.get_loc('蓋章')
+                            ws2.set_column(stamp_col2, stamp_col2, 22)
+                            
                             for r in range(main_data_len + 1):
                                 ws2.set_row(r, 45 if r > 0 else 25)
                                 for c in range(len(df_coworkers_final_sheet.columns)):
@@ -593,7 +610,7 @@ def p18_page():
                     body_txt = f"郭同仁您好：\n\n系統已自動完成 {ext_year}年{ext_month}月份的處理道路交通安全人員獎勵金獎金核算與自動平帳作業。\n本次產出【僅印領清冊】，不含點數表，可直接送交代會計室、人事室核銷辦理。"
                     
                     ok, err = send_report_email_auto([(payroll_excel_data, payroll_filename)], ext_year, ext_month, sub_title, body_txt)
-                    if ok: st.success(f"✅ 獎金精算成功！已單獨產出 {ext_month} 月份合規【獎金印領清冊】，並發送備份信箱。")
+                    if ok: st.success(f"✅ 獎金精算成功！已單獨產出 {ext_month} 月份合規【獎金印領清冊】（蓋章欄位已強制置於最右側），並發送備份信箱。")
                     else: st.warning(f"⚠️ 清冊已產出，但郵件發送失敗: {err}")
                     
                     st.download_button("📥 下載【處理道路交通安全人員獎勵金印領清冊】(官方核銷版)", payroll_excel_data, payroll_filename, use_container_width=True, type="primary")
