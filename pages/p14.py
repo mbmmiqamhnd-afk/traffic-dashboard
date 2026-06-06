@@ -115,13 +115,11 @@ def get_merge_styles(df, merge_cols):
         start_idx = 0
         while start_idx < len(df):
             val = str(df.iloc[start_idx][col_name]).strip()
-            # 若為空白不執行合併
             if not val: 
                 start_idx += 1
                 continue
                 
             end_idx = start_idx
-            # 往下比對連續相同內容
             while end_idx + 1 < len(df):
                 next_val = str(df.iloc[end_idx + 1][col_name]).strip()
                 if next_val == val:
@@ -130,8 +128,6 @@ def get_merge_styles(df, merge_cols):
                     break
                     
             if end_idx > start_idx:
-                # TableStyle 的座標格式：(起始欄, 起始列), (結束欄, 結束列)
-                # 列索引需 +1，因為索引 0 是表頭
                 span_styles.append(('SPAN', (c_idx, start_idx + 1), (c_idx, end_idx + 1)))
             
             start_idx = end_idx + 1
@@ -288,7 +284,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     df_ptl = clean_df(df_ptl)
     story.append(Paragraph(f"<b>{p1_desc}</b>", style_middle_block))
     
-    # 計算巡邏組合併儲存格樣式
     span_styles_ptl = get_merge_styles(df_ptl, ["編組", "無線電", "單位", "巡邏路段"])
     
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in EXPECTED_PTL_COLS]]
@@ -309,7 +304,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),
         ('VALIGN',(0,0),(-1,-1),'MIDDLE')
     ]
-    # 套用基礎樣式與合併樣式
     t2.setStyle(TableStyle(base_style_ptl + span_styles_ptl))
     story.append(t2)
 
@@ -319,7 +313,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     df_cp = clean_df(df_cp)
     story.append(Paragraph(f"<b>{p2_desc}</b>", style_middle_block))
     
-    # 計算路檢組合併儲存格樣式
     span_styles_cp = get_merge_styles(df_cp, ["編組", "無線電", "單位", "路檢地點"])
     
     data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in EXPECTED_CP_COLS]]
@@ -340,7 +333,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),
         ('VALIGN',(0,0),(-1,-1),'MIDDLE')
     ]
-    # 套用基礎樣式與合併樣式
     t3.setStyle(TableStyle(base_style_cp + span_styles_cp))
     story.append(t3)
 
@@ -424,18 +416,19 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 # --- 核心邏輯區 ---
 def auto_assign_radio_code(df):
     if df is None or df.empty: return df
+    df_copy = df.copy()
     base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
-    for idx, row in df.iterrows():
+    for idx, row in df_copy.iterrows():
         unit, person, rank, current_radio = safe_str(row.get('單位')), safe_str(row.get('姓名')), safe_str(row.get('職別')), safe_str(row.get('無線電'))
         if current_radio != "": continue
         if not unit: continue
         first_unit = re.split(r'[\n、 ]', unit.strip())[0]
         base_pfx = next((v for k, v in base_prefixes.items() if k in first_unit), "")
         if base_pfx:
-            if "副所長" in rank or "副所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}2"
-            elif "所長" in rank or "所長" in person: df.at[idx, '無線電'] = f"隆安{base_pfx}1"
-            else: df.at[idx, '無線電'] = f"隆安{base_pfx}0"
-    return df
+            if "副所長" in rank or "副所長" in person: df_copy.at[idx, '無線電'] = f"隆安{base_pfx}2"
+            elif "所長" in rank or "所長" in person: df_copy.at[idx, '無線電'] = f"隆安{base_pfx}1"
+            else: df_copy.at[idx, '無線電'] = f"隆安{base_pfx}0"
+    return df_copy
 
 # --- 3. 主程式介面 ---
 
@@ -462,7 +455,7 @@ if isinstance(df_ptl, pd.DataFrame) and not df_ptl.empty:
         df_ptl['姓名'] = df_ptl['服勤人員']
     if '任務分工' in df_ptl.columns and '巡邏路段' not in df_ptl.columns:
         df_ptl['巡邏路段'] = df_ptl['任務分工']
-        df_ptl['任務分工'] = "" # 清空舊格式，保留給新欄位使用
+        df_ptl['任務分工'] = ""
     for c in EXPECTED_PTL_COLS:
         if c not in df_ptl.columns: df_ptl[c] = ""
     df_ptl = df_ptl[EXPECTED_PTL_COLS]
@@ -474,7 +467,7 @@ if isinstance(df_cp, pd.DataFrame) and not df_cp.empty:
         df_cp['姓名'] = df_cp['服勤人員']
     if '任務分工' in df_cp.columns and '路檢地點' not in df_cp.columns:
         df_cp['路檢地點'] = df_cp['任務分工']
-        df_cp['任務分工'] = "" # 清空舊格式，保留給新欄位使用
+        df_cp['任務分工'] = ""
     for c in EXPECTED_CP_COLS:
         if c not in df_cp.columns: df_cp[c] = ""
     df_cp = df_cp[EXPECTED_CP_COLS]
@@ -513,22 +506,22 @@ tab1, tab2 = st.tabs(["📍 第一階段 (巡邏)", "🚧 第二階段 (路檢)"
 
 with tab1:
     st.info(f"當前標題：{phase1_desc}")
-    res_ptl = auto_assign_radio_code(
-        st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
-    ).dropna(how="all").fillna("")
+    raw_ptl = st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
+    res_ptl = auto_assign_radio_code(raw_ptl).dropna(how="all").fillna("")
 
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
-    res_cp = auto_assign_radio_code(
-        st.data_editor(df_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
-    ).dropna(how="all").fillna("")
+    raw_cp = st.data_editor(df_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
+    res_cp = auto_assign_radio_code(raw_cp).dropna(how="all").fillna("")
 
 st.markdown("---")
+
+# 輸出最終 PDF 報表（此處已包含自動配發的呼叫碼）
 pdf_plan       = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
 pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
 
 col_dl1, col_dl2 = st.columns(2)
-col_dl1.download_button("📝 下載規劃表", data=pdf_plan,        file_name=f"{u}執行{p_name}勤務規劃表.pdf", use_container_width=True)
+col_dl1.download_button("📝 下載規劃表", data=pdf_plan,       file_name=f"{u}執行{p_name}勤務規劃表.pdf", use_container_width=True)
 col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_name=f"{u}執行{p_name}勤務簽到表.pdf", use_container_width=True)
 
 if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True):
@@ -538,5 +531,6 @@ if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True
                 ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
             if ok:
                 st.success(f"✅ 同步與發信成功！已在後台為專案自動補上「{date_code}」代碼。")
+                st.rerun()  # 同步成功後重整，讓前端編輯器同步顯示最新配發的無線電代碼
             else:
                 st.error(f"❌ 發信失敗: {mail_err}")
