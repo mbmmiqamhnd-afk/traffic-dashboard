@@ -195,6 +195,7 @@ def assign_cp_groups(df):
         if g_text == "第2臨檢組": return 20
         if u_text in ["中興所", "龍潭所"] or (u_text == "偵查隊" and current_idx < 5): return 11
         return 21
+
     res["_sort_score"] = [get_sort_score(r, idx) for idx, r in res.iterrows()]
     res = res.sort_values(by=["_sort_score"]).reset_index(drop=True)
     group_ids_cp = []
@@ -207,10 +208,12 @@ def assign_cp_groups(df):
         if u_str:
             unit_counters[u_str] = unit_counters.get(u_str, 0) + (1 if row['職別'] not in ["所長", "分隊長", "隊長", "副所長", "小隊長"] else 0)
             res.loc[i, '無線電代號'] = generate_police_radio_code(u_str, row['職別'], unit_counters[u_str])
+            
     res["編組"] = group_ids_cp
     for g_name in res['編組'].unique():
         sub_idx = res[res['編組'] == g_name].index
-        if len(sub_idx) > 0: res.loc[sub_idx, '無線電代號'] = res.loc[sub_idx[0], '無線電代號']
+        if len(sub_idx) > 0:
+            res.loc[sub_idx, '無線電代號'] = res.loc[sub_idx[0], '無線電代號']
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]]
 
 def calculate_table_spans(data_list, columns_to_merge):
@@ -228,7 +231,7 @@ def calculate_table_spans(data_list, columns_to_merge):
                 start_row = r_idx
     return spans
 
-# --- 3. 【核心修正補回】PDF 生成功能宣告 ---
+# --- 3. PDF 生成功能 ---
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     font = _get_font()
     buf = io.BytesIO()
@@ -257,6 +260,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(t_basic)
     
     story.append(Paragraph("<b>貳、 警力統計及地點統計</b>", style_section))
+    # 【技術安全修補點】PDF內部渲染精準連結新架構變數（stats['ptl_机动'] 與 stats['ptl_场所']）
     data_stats = [[Paragraph("督導組", style_cell), Paragraph("機動攔檢組", style_cell), Paragraph("場所臨檢組", style_cell), Paragraph("偵訊組", style_cell), Paragraph("小計", style_cell), Paragraph("民力", style_cell), Paragraph("總計", style_cell)], 
                   [Paragraph(str(stats['cmd']), style_cell), Paragraph(str(stats['ptl_机动']), style_cell), Paragraph(str(stats['ptl_场所']), style_cell), Paragraph(str(stats['inv']), style_cell), Paragraph(str(stats['cmd'] + stats['ptl_机动'] + stats['ptl_场所'] + stats['inv']), style_cell), Paragraph(str(stats['civ']), style_cell), Paragraph(str(stats['total']), style_cell)]]
     t_stats = Table(data_stats, colWidths=[page_width*0.14]*7)
@@ -271,15 +275,14 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
     
+    # 肆、第一階段
     story.append(Paragraph("<b>肆、【第一階段】機動攔查任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text)) 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]]
-    
     pdf_ptl_df = df_ptl.copy()
     for g_name in pdf_ptl_df['編組'].unique():
         sub = pdf_ptl_df[pdf_ptl_df['編組'] == g_name]
-        if not sub.empty:
-            pdf_ptl_df.loc[pdf_ptl_df['編組'] == g_name, '無線電代號'] = sub.iloc[0]['無線電代號']
+        if not sub.empty: pdf_ptl_df.loc[pdf_ptl_df['編組'] == g_name, '無線電代號'] = sub.iloc[0]['無線電代號']
 
     for _, r in pdf_ptl_df.iterrows():
         data_ptl.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('攜行裝備')), style_cell_left), Paragraph(clean(r.get('巡邏路段')), style_cell_longtext)])
@@ -291,6 +294,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_ptl.setStyle(TableStyle(t_ptl_style))
     story.append(t_ptl)
 
+    # 伍、第二階段
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     if df_cp is not None and not df_cp.empty:
@@ -298,8 +302,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         pdf_cp_df = df_cp.copy()
         for g_name in pdf_cp_df['編組'].unique():
             sub = pdf_cp_df[pdf_cp_df['編組'] == g_name]
-            if not sub.empty:
-                pdf_cp_df.loc[pdf_cp_df['編組'] == g_name, '無線電代號'] = sub.iloc[0]['無線電代號']
+            if not sub.empty: pdf_cp_df.loc[pdf_cp_df['編組'] == g_name, '無線電代號'] = sub.iloc[0]['無線電代號']
 
         for _, r in pdf_cp_df.iterrows():
             data_cp.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('臨檢目標場所')), style_cell_longtext)])
@@ -321,6 +324,29 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         canvas.drawCentredString(A4[0]/2.0, 10*mm, f"-第{canvas.getPageNumber()}頁-")
         canvas.restoreState()
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
+    return buf.getvalue()
+
+def generate_attendance_pdf(unit, project, time_str, stats):
+    font = _get_font()
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    page_width = A4[0] - 30*mm
+    story = []
+    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=12, wordWrap='CJK')
+    style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=22, spaceAfter=1*mm, wordWrap='CJK')
+    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
+    story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
+    date_part = time_str.split(' ')[0] if ' ' in time_str else "115年4月10日"
+    story.append(Paragraph(f"時間:{date_part}{stats['b_time']}", style_info))
+    story.append(Paragraph(f"地點:{stats['b_loc']}召開", style_info))
+    table_data = [[Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
+    rows = [("交通組", "聖亭派出所"), ("督察組", "龍潭派出所"), ("行政組", "中興派出所"), ("保安民防組", "石門派出所"), ("勤務指揮中心", "高平派出所"), ("偵查隊", "三和派出所"), ("", "龍潭交通分隊")]
+    for l, r in rows: table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[12*mm] + [24*mm]*len(rows))
+    t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (3,0), colors.whitesmoke)]))
+    story.append(Spacer(1, 10*mm))
+    story.append(t)
+    doc.build(story)
     return buf.getvalue()
 
 @st.cache_resource
@@ -353,7 +379,11 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         sh = client.open_by_key(SHEET_ID)
         ws_set = sh.worksheet("三合一_設定")
         ws_set.clear()
-        ws_set.update([["Key", "Value"], ["unit_name", unit], ["plan_full_time", time_str], ["project_name", project], ["briefing_info", briefing]])
+        ws_set.update([
+            ["Key", "Value"], ["unit_name", unit], ["plan_full_time", time_str], ["project_name", project], 
+            ["briefing_info", briefing], ["stats_cmd", str(stats['cmd'])], ["stats_ptl_机动", str(stats['ptl_机动'])],
+            ["stats_ptl_场所", str(stats['ptl_场所'])], ["stats_inv", str(stats['inv'])], ["stats_total", str(stats['total'])]
+        ])
         for name, df in [("三合一_指揮組", df_cmd), ("三合一_巡邏組", df_ptl), ("三合一_擴大臨檢組", df_cp)]:
             ws = sh.worksheet(name)
             ws.clear()
@@ -363,53 +393,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         st.cache_data.clear()
         return True
     except: return False
-
-def generate_attendance_pdf(unit, project, time_str, stats):
-    font = _get_font()
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
-    page_width = A4[0] - 30*mm
-    story = []
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=12, wordWrap='CJK')
-    style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=22, spaceAfter=1*mm, wordWrap='CJK')
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
-    story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
-    date_part = time_str.split(' ')[0] if ' ' in time_str else "115年4月10日"
-    story.append(Paragraph(f"時間:{date_part}{stats['b_time']}", style_info))
-    story.append(Paragraph(f"地點:{stats['b_loc']}召開", style_info))
-    table_data = [[Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
-    rows = [("交通組", "聖亭派出所"), ("督察組", "龍潭派出所"), ("行政組", "中興派出所"), ("保安民防組", "石門派出所"), ("勤務指揮中心", "高平派出所"), ("偵查隊", "三和派出所"), ("", "龍潭交通分隊")]
-    for l, r in rows: table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[12*mm] + [24*mm]*len(rows))
-    t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (3,0), colors.whitesmoke)]))
-    story.append(Spacer(1, 10*mm))
-    story.append(t)
-    doc.build(story)
-    return buf.getvalue()
-
-def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
-    try:
-        sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
-        msg = MIMEMultipart()
-        msg["From"], msg["To"], msg["Subject"] = sender, sender, f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
-        msg.attach(MIMEText("附件為最新版本勤務規劃表。", "plain"))
-        pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f)
-        part1 = MIMEBase("application", "pdf")
-        part1.set_payload(pdf1)
-        encoders.encode_base64(part1)
-        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(f'{unit}規劃表.pdf')}")
-        msg.attach(part1)
-        pdf2 = generate_attendance_pdf(unit, project, time_str, stats)
-        part2 = MIMEBase("application", "pdf")
-        part2.set_payload(pdf2)
-        encoders.encode_base64(part2)
-        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(f'{unit}簽到表.pdf')}")
-        msg.attach(part2)
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender, pwd)
-            server.sendmail(sender, sender, msg.as_string())
-        return True, None
-    except Exception as e: return False, str(e)
 
 # --- 4. Session State 狀態防護與主介面渲染 ---
 if "initialized" not in st.session_state:
@@ -434,7 +417,7 @@ with col_proj:
 
 p_name = f"{mmdd_code}{input_proj_body}"
 
-# 隨時更新最精準的動態統計數值
+# 動態高精密警力計人頭
 live_stats = calculate_dynamic_stats(st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp)
 st.session_state.stats_data.update(live_stats)
 
@@ -478,11 +461,16 @@ st.markdown("---")
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
     with st.spinner("⏳ 正在寫入雲端並寄送郵件，請稍候..."):
+        # 【技術安全修補點】完整打包分流統計變數包，精準拋接給郵件與雲端函數
         stats_to_send = {
             'cmd': st.session_state.stats_data['cmd'],
-            'ptl': st.session_state.stats_data['ptl_机动'] + st.session_state.stats_data['ptl_场所'],
-            'inv': st.session_state.stats_data['inv'], 'civ': st.session_state.stats_data['civ'],
-            'total': st.session_state.stats_data['total'], 'b_time': '19時30分至20時00分', 'b_loc': '分局二樓會議室'
+            'ptl_机动': st.session_state.stats_data['ptl_机动'],
+            'ptl_场所': st.session_state.stats_data['ptl_场所'],
+            'inv': st.session_state.stats_data['inv'], 
+            'civ': st.session_state.stats_data['civ'],
+            'total': st.session_state.stats_data['total'], 
+            'b_time': '19時30分至20時00分', 
+            'b_loc': '分局二樓會議室'
         }
         if save_data(DEFAULT_UNIT, st.session_state.p_time, p_name, st.session_state.b_info, st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp, stats_to_send, DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS):
             ok, mail_err = send_report_email(DEFAULT_UNIT, p_name, st.session_state.p_time, st.session_state.b_info, st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp, stats_to_send, DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS)
