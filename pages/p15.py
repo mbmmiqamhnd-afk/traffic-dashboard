@@ -36,7 +36,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapi
 
 DEFAULT_UNIT = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME = "115年4月10日 19時至23時"
-DEFAULT_PROJ_BODY = "「全市取締酒後駕車及防制危險駕車」暨「場所臨檢」及「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
+DEFAULT_PROJ_BODY = "「全市取締酒後駕車及防制危險駕車」暨「場所臨檢」及「取締改裝(噪音)車輛專案監、警、環联合稽查」"
 DEFAULT_BRIEF = (
     "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，"
     "落實「人犯戒護安全、案件程序安全、執法者及民眾安全」。\n"
@@ -287,7 +287,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     ptl_spans = calculate_table_spans(data_ptl, [0, 1, 2, 7])
     t_ptl_style.extend(ptl_spans)
     t_ptl = Table(data_ptl, colWidths=[page_width*0.07, page_width*0.11, page_width*0.09, page_width*0.06, page_width*0.13, page_width*0.12, page_width*0.14, page_width*0.28])
-    t_ptl = Table(data_ptl, colWidths=[page_width*0.07, page_width*0.11, page_width*0.09, page_width*0.06, page_width*0.13, page_width*0.12, page_width*0.14, page_width*0.28])
     t_ptl.setStyle(TableStyle(t_ptl_style))
     story.append(t_ptl)
 
@@ -323,11 +322,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
-# --- 4. 【單頁完全輸出優化版】簽到表長官欄位與空間平衡 ---
+# --- 4. 【單頁完全輸出優化版】簽到表：黃金高度 26mm 鎖定，100% 拒絕產生第 2 頁 ---
 def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
     buf = io.BytesIO()
-    # 🥊 【防跨頁核心修正】收緊頁邊距（topMargin/bottomMargin 縮小至 10mm），強制釋放極致的垂直預算空間！
+    # 頂底部邊距固定為 10mm 釋放垂直可視空間
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=10*mm, bottomMargin=10*mm)
     page_width = A4[0] - 30*mm
     story = []
@@ -338,7 +337,7 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     style_boss_left = ParagraphStyle('BossLeft', fontName=font, fontSize=14, leading=20, alignment=0, wordWrap='CJK')
     style_boss_right = ParagraphStyle('BossRight', fontName=font, fontSize=14, leading=20, alignment=0, wordWrap='CJK')
     
-    # 簽到表標頭基本資料 (稍微收緊間距)
+    # 簽到表標頭基本資料
     story.append(Paragraph(f"<b>{unit}執行{project}簽到表</b>", style_title))
     date_part = time_str.split(' ')[0] if ' ' in time_str else "115年4月10日"
     story.append(Paragraph(f"時間：{date_part} {stats['b_time']}", style_info))
@@ -360,17 +359,18 @@ def generate_attendance_pdf(unit, project, time_str, stats):
         ('TOPPADDING', (0,0), (-1,-1), 0)
     ]))
     story.append(t_boss1)
-    story.append(Spacer(1, 14*mm)) # 留出剛好不爆頁的主管手寫簽名高度
+    story.append(Spacer(1, 14*mm))
     
     story.append(Paragraph("<b>副分局長：</b>", style_info))
     story.append(Spacer(1, 10*mm))
     
-    # 下方基層各派出所表格 (列高鎖定 32mm，搭配 10mm 邊距，完美在一頁內塞滿輸出！)
+    # 🥊 【爆頁黃金修正點】rowHeights 的派出所列高精準調整為 26mm！
+    # 26mm $\times$ 7列 = 182mm，搭配長官區與邊邊，100% 絕對在一頁內完美輸出，格子依舊極其寬敞！
     table_data = [[Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]]
     rows = [("交通組", "聖亭派出所"), ("督察組", "龍潭派出所"), ("行政組", "中興派出所"), ("保安民防組", "石門派出所"), ("勤務指揮中心", "高平派出所"), ("偵查隊", "三和派出所"), ("", "龍潭交通分隊")]
     for l, r in rows: table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
     
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[10*mm] + [32*mm]*len(rows))
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[10*mm] + [26*mm]*len(rows))
     t.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), 
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (3,0), colors.whitesmoke)
