@@ -322,7 +322,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
-# --- 4. 簽到表：分局長與上級督導拉開距離、副分局長在下列之完美版 ---
+# --- 4. 簽到表：分局長與上級督導拉開、副分局長在下列之完美版 ---
 def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
     buf = io.BytesIO()
@@ -333,6 +333,8 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=6, wordWrap='CJK')
     style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=20, spaceAfter=1*mm, wordWrap='CJK')
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
+    style_boss_left = ParagraphStyle('BossLeft', fontName=font, fontSize=14, leading=20, alignment=0, wordWrap='CJK')
+    style_boss_mid = ParagraphStyle('BossMid', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
     
     # 標頭
     story.append(Paragraph(f"<b>{unit}執行{project}簽到表</b>", style_title))
@@ -341,15 +343,26 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     story.append(Paragraph(f"地點：{stats['b_loc']}", style_info))
     story.append(Spacer(1, 4*mm))
     
-    # 🥊 長官排版核心：分開分局長與上級督導，中間插入大量全形空格以拉開距離
-    story.append(Paragraph("<b>分局長：</b>            <b>上級督導：</b>", style_info))
+    # 🥊 【長官欄位大拉開】：使用三欄位 Table 達到完美置中效果
+    # 左：分局長，中：上級督導 (置中)，右：留空平衡
+    boss_data = [
+        [Paragraph("<b>分局長：</b>", style_boss_left), Paragraph("<b>上級督導：</b>", style_boss_mid), ""]
+    ]
+    t_boss = Table(boss_data, colWidths=[page_width * 0.3, page_width * 0.4, page_width * 0.3])
+    t_boss.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), font),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+    ]))
+    story.append(t_boss)
+    story.append(Spacer(1, 12*mm))
+    
+    # 副分局長
+    story.append(Paragraph("<b>副分局長：</b>", style_info))
     story.append(Spacer(1, 10*mm))
     
-    # 第二列副分局長
-    story.append(Paragraph("<b>副分局長：</b>", style_info))
-    story.append(Spacer(1, 8*mm))
-    
-    # 基層表格 (列高 26mm 保證一頁輸出且簽名舒適)
+    # 基層表格 (列高維持 26mm 確保一頁輸出)
     table_data = [[Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]]
     rows = [("交通組", "聖亭派出所"), ("督察組", "龍潭派出所"), ("行政組", "中興派出所"), ("保安民防組", "石門派出所"), ("勤務指揮中心", "高平派出所"), ("偵查隊", "三和派出所"), ("", "龍潭交通分隊")]
     for l, r in rows: table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
