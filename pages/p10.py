@@ -432,28 +432,21 @@ if date_match_file:
 dynamic_filename = f"{UNIT_TITLE}執行「{project_name}」規劃表{file_date_str}"
 # ========================================================
 
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("💾 同步雲端並發送郵件", use_container_width=True):
-        # 1. 儲存至雲端
-        s = {"project_name": project_name, "time": time_val, "fast_cmd": fast_cmd, "sign_points": sign_points, "notes": notes}
-        save_ok = save_data(s, res_cmd, res_ptl)
-        
-        # 2. 生成 PDF 並發送郵件
-        pdf_buf = generate_pdf(time_val, project_name, fast_cmd, res_cmd, res_ptl, sign_points, notes)
-        mail_ok, mail_err = send_email(dynamic_filename, pdf_buf, dynamic_filename)
-        
-        # 3. 根據結果顯示提示訊息
-        if save_ok and mail_ok:
-            st.success("✅ 已成功同步至雲端並寄出郵件！")
-        elif save_ok and not mail_ok:
-            st.warning(f"⚠️ 已儲存至雲端，但發送郵件失敗：{mail_err}")
-        elif not save_ok and mail_ok:
-            st.warning("⚠️ 郵件已寄出，但未能儲存至雲端！")
-        else:
-            st.error(f"❌ 儲存與發送均失敗 (發送錯誤：{mail_err})")
-
-with col2:
-    pdf_buf2 = generate_pdf(time_val, project_name, fast_cmd, res_cmd, res_ptl, sign_points, notes)
-    st.download_button("📄 下載 PDF", data=pdf_buf2, file_name=f"{dynamic_filename}.pdf", mime="application/pdf", use_container_width=True)
+if st.button("💾 同步雲端並發送郵件", use_container_width=True):
+    # 1. 儲存至雲端
+    s = {"project_name": project_name, "time": time_val, "fast_cmd": fast_cmd, "sign_points": sign_points, "notes": notes}
+    save_ok = save_data(s, res_cmd, res_ptl)
+    
+    # 2. 生成 PDF 並發送郵件
+    pdf_buf = generate_pdf(time_val, project_name, fast_cmd, res_cmd, res_ptl, sign_points, notes)
+    mail_ok, mail_err = send_email(dynamic_filename, pdf_buf, dynamic_filename)
+    
+    # 3. 根據結果顯示提示訊息
+    if save_ok and mail_ok:
+        st.success("✅ 已成功同步至雲端並寄出郵件！")
+    elif save_ok and not mail_ok:
+        st.warning(f"⚠️ 已儲存至雲端，但發送郵件失敗：{mail_err}")
+    elif not save_ok and mail_ok:
+        st.warning("⚠️ 郵件已寄出，但未能儲存至雲端！")
+    else:
+        st.error(f"❌ 儲存與發送均失敗 (發送錯誤：{mail_err})")
