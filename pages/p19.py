@@ -153,6 +153,7 @@ def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     res = df.copy().reset_index(drop=True)
+    res["無線電代號"] = res["無線電代號"].astype(str).replace({"nan": "", "None": ""}) if "無線電代號" in res.columns else ""
     res["_ord"] = res["單位"].map(lambda x: PTL_UNIT_ORDER.get(str(x).strip(), 99))
     res = res.sort_values("_ord").drop(columns=["_ord"]).reset_index(drop=True)
 
@@ -184,6 +185,7 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     res = df.copy().reset_index(drop=True)
+    res["無線電代號"] = res["無線電代號"].astype(str).replace({"nan": "", "None": ""}) if "無線電代號" in res.columns else ""
 
     def _group(row):
         existing = str(row.get("編組", "")).strip()
