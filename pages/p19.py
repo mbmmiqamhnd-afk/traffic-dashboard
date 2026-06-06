@@ -37,7 +37,7 @@ SCOPES   = ["https://www.googleapis.com/auth/spreadsheets",
 
 DEFAULT_UNIT     = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME     = "115年4月10日 19時至23時"
-DEFAULT_PROJ_BODY = "「全市取締酒後駕車及防制危險駕車」暨「擴大臨檢」及「取締改裝(噪音)車輛專案監、警、環联合稽查」"
+DEFAULT_PROJ_BODY = "「全市取締酒後駕車及防制危險駕車」暨「場所臨檢」及「取締改裝(噪音)車輛專案監、警、環联合稽查」"
 DEFAULT_BRIEF = (
     "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，"
     "落實「人犯戒護安全、案件程序安全、執法者及民眾安全」。\n"
@@ -343,7 +343,7 @@ def generate_main_pdf(unit, project, time_str, briefing,
         [_header_row(["實施日期","勤務時間","指揮官","勤務編組","聯合稽查站地點"], S["cell"]),
          [Paragraph(date_part, S["cell"]), Paragraph(time_part, S["cell"]),
           Paragraph("分局長 施宇峰", S["cell"]), Paragraph("如任務編組表", S["cell"]),
-          Paragraph("龍潭區警政聯合辦公大樓廣場", S["cell"])]],
+          Paragraph("分局廣場", S["cell"])]],
         colWidths=[PW*.14, PW*.18, PW*.32, PW*.14, PW*.22])
     t.setStyle(_base_table_style(font))
     story.append(t)
