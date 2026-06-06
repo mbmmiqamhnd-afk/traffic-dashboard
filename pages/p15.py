@@ -58,7 +58,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "副指揮官", "通訊代號": "隆安3號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 蔡志明", "共同執行人員": "警員陳明祥"},
     {"項目": "行政組", "通訊代號": "隆安5號", "任務目標": "督導擴大臨檢威力掃蕩第一臨檢組", "負責人員": "組長 周金柱", "共同執行人員": "巡官蕭凱文"},
     {"項目": "督察組", "通訊代號": "隆安6號", "任務目標": "機動督導各單位勤務紀律", "負責人員": "組長黃長旗", "共同執行人員": "警務員 陳冠彰"},
-    {"項目": "保安民防組", "通訊代號": "隆安9號", "任務目標": "督導擴大臨檢威力掃蕩第二臨檢組", "負責人員": "組長林良鍾", "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
+    {"項目": "保安民防組", "通訊代號": "隆安9號", "任務目標": "督導擴大臨檢威力掃蕩第二臨檢組", "負責人員": "組長林良鍾", "共同執行人員": "警務員曾盛鉉、警務佐裝裕、警務佐劉俊德"},
     {"項目": "交通組", "通訊代號": "隆安 13號", "任務目標": "督導第一階段機動攔查", "負責人員": "組長 楊孟竟", "共同執行人員": "巡官郭勝隆、警務員李峯甫、警務員盧冠仁"},
     {"項目": "聯絡組", "通訊代號": "隆安", "任務目標": "擔任通訊聯絡、指揮管制事宜", "負責人員": "勤務指揮中心 主任蔡奇青", "共同執行人員": "執勤官李文章、執勤員黃文興、警員吳享運"},
     {"項目": "偵訊組", "通訊代號": "隆安10號", "任務目標": "負責按捺指紋、照相及移送", "負責人員": "偵查隊隊長 柯志賢", "共同執行人員": "偵查隊值日小隊"},
@@ -71,7 +71,7 @@ DEFAULT_PTL = pd.DataFrame([
     {"單位": "聖亭所", "無線電代號": "", "職別": "警員", "姓名": "劉憬霖", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "聖亭所", "無線電代號": "", "職別": "警員", "姓名": "謝伯昇", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "張家維", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "警員", "無線電代號": "", "職別": "警員", "姓名": "王采蘋", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "王采蘋", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "中興所", "無線電代號": "", "職別": "所長", "姓名": "董亦文", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "中興所", "無線電代號": "", "職別": "警員", "姓名": "羅俊傑", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "石門所", "無線電代號": "", "職別": "所長", "姓名": "林育辰", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
@@ -322,10 +322,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
+# --- 4. 【核心重大更新】簽到表長官欄完全回歸正本無格子、純文字留白排版 ---
 def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=12*mm, bottomMargin=15*mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
     page_width = A4[0] - 30*mm
     story = []
     
@@ -333,30 +334,32 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=22, spaceAfter=1*mm, wordWrap='CJK')
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
     
-    story.append(Paragraph(f"<b>{unit}執行{project}簽到表</b>", style_title))
+    # 簽到表開頭基本資料 [cite: 36, 37]
+    story.append(Paragraph(f"<b>{unit}執行{project}簽到表</b>", style_title)) [cite: 36]
     date_part = time_str.split(' ')[0] if ' ' in time_str else "115年4月10日"
-    story.append(Paragraph(f"時間：{date_part} {stats['b_time']}", style_info))
-    story.append(Paragraph(f"地點：{stats['b_loc']} 召開", style_info))
-    story.append(Spacer(1, 4*mm))
-    
-    boss_data = [
-        [Paragraph("<b>職稱</b>", style_cell), Paragraph("<b>分局長</b>", style_cell), Paragraph("<b>上級指導官</b>", style_cell), Paragraph("<b>副分局長</b>", style_cell)],
-        [Paragraph("<b>簽名</b>", style_cell), "", "", ""]
-    ]
-    t_boss = Table(boss_data, colWidths=[page_width*0.15, page_width*0.28, page_width*0.29, page_width*0.28], rowHeights=[10*mm, 20*mm])
-    t_boss.setStyle(TableStyle([
-        ('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f2f2f2'))
-    ]))
-    story.append(t_boss)
+    story.append(Paragraph(f"時間：{date_part} {stats['b_time']}", style_info)) [cite: 34]
+    story.append(Paragraph(f"地點：{stats['b_loc']} 召開", style_info)) [cite: 34]
     story.append(Spacer(1, 6*mm))
     
+    # 🥊 【正本還原：純文字留白排版】
+    # 第一列：分局長與上級指導官並列 [cite: 38, 41]
+    story.append(Paragraph("分局長：            上級督導：", style_info)) [cite: 38, 41]
+    story.append(Spacer(1, 12*mm)) # 留出足夠的手寫簽名高度
+    
+    # 第二列：副分局長在下列單獨留白 [cite: 39]
+    story.append(Paragraph("副分局長：", style_info)) [cite: 39]
+    story.append(Spacer(1, 10*mm))
+    
+    # 基層各派出所與內勤單位簽到表格 [cite: 40]
     table_data = [[Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]]
     rows = [("交通組", "聖亭派出所"), ("督察組", "龍潭派出所"), ("行政組", "中興派出所"), ("保安民防組", "石門派出所"), ("勤務指揮中心", "高平派出所"), ("偵查隊", "三和派出所"), ("", "龍潭交通分隊")]
     for l, r in rows: table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
     
     t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[10*mm] + [20*mm]*len(rows))
-    t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (3,0), colors.whitesmoke)]))
+    t.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), 
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (3,0), colors.whitesmoke)
+    ]))
     story.append(t)
     
     doc.build(story)
@@ -449,7 +452,6 @@ with col_time:
 
 mmdd_code = extract_mmdd(p_time)
 with col_proj:
-    # 【核心修正點】100% 解決 AttributeError，將原本錯誤的 st.session_body 改回正確的 st.session_state.proj_body 綁定
     input_proj_body = st.text_input(f"專案名稱 (目前連動代碼: {mmdd_code})", value=st.session_state.proj_body, key="input_proj_body")
     st.session_state.proj_body = input_proj_body
 
