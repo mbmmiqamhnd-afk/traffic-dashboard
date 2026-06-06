@@ -88,7 +88,7 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"單位": "中興所", "無線電代號": "", "職別": "警員", "姓名": "羅俊傑", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "張家維", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "王采蘋", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
-    {"單位": "偵查隊", "無線電代號": "", "職別": "警員", "姓名": "許家洋", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
+    {"單位": "偵查隊", "無線電代號": "", "職別": "警員", "姓名": "許家洋", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會 Graves, C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     
     {"單位": "石門所", "無線電代號": "", "職別": "所長", "姓名": "林育辰", "任務分工": "帶班", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nF. 憤怒鳥網咖\nG. 真情男女養生館\nH. 萬紫千紅舒壓館\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
     {"單位": "聖亭所", "無線電代號": "", "職別": "副所長", "姓名": "邱品淳", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
@@ -195,7 +195,6 @@ def assign_cp_groups(df):
         if g_text == "第2臨檢組": return 20
         if u_text in ["中興所", "龍潭所"] or (u_text == "偵查隊" and current_idx < 5): return 11
         return 21
-
     res["_sort_score"] = [get_sort_score(r, idx) for idx, r in res.iterrows()]
     res = res.sort_values(by=["_sort_score"]).reset_index(drop=True)
     group_ids_cp = []
@@ -208,12 +207,10 @@ def assign_cp_groups(df):
         if u_str:
             unit_counters[u_str] = unit_counters.get(u_str, 0) + (1 if row['職別'] not in ["所長", "分隊長", "隊長", "副所長", "小隊長"] else 0)
             res.loc[i, '無線電代號'] = generate_police_radio_code(u_str, row['職別'], unit_counters[u_str])
-            
     res["編組"] = group_ids_cp
     for g_name in res['編組'].unique():
         sub_idx = res[res['編組'] == g_name].index
-        if len(sub_idx) > 0:
-            res.loc[sub_idx, '無線電代號'] = res.loc[sub_idx[0], '無線電代號']
+        if len(sub_idx) > 0: res.loc[sub_idx, '無線電代號'] = res.loc[sub_idx[0], '無線電代號']
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]]
 
 def calculate_table_spans(data_list, columns_to_merge):
@@ -260,7 +257,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(t_basic)
     
     story.append(Paragraph("<b>貳、 警力統計及地點統計</b>", style_section))
-    # 【技術安全修補點】PDF內部渲染精準連結新架構變數（stats['ptl_机动'] 與 stats['ptl_场所']）
     data_stats = [[Paragraph("督導組", style_cell), Paragraph("機動攔檢組", style_cell), Paragraph("場所臨檢組", style_cell), Paragraph("偵訊組", style_cell), Paragraph("小計", style_cell), Paragraph("民力", style_cell), Paragraph("總計", style_cell)], 
                   [Paragraph(str(stats['cmd']), style_cell), Paragraph(str(stats['ptl_机动']), style_cell), Paragraph(str(stats['ptl_场所']), style_cell), Paragraph(str(stats['inv']), style_cell), Paragraph(str(stats['cmd'] + stats['ptl_机动'] + stats['ptl_场所'] + stats['inv']), style_cell), Paragraph(str(stats['civ']), style_cell), Paragraph(str(stats['total']), style_cell)]]
     t_stats = Table(data_stats, colWidths=[page_width*0.14]*7)
@@ -322,7 +318,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         canvas.saveState()
         canvas.setFont(font, 10)
         canvas.drawCentredString(A4[0]/2.0, 10*mm, f"-第{canvas.getPageNumber()}頁-")
-        canvas.restoreState()
+        canvas.saveState()
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
@@ -348,6 +344,31 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     story.append(t)
     doc.build(story)
     return buf.getvalue()
+
+# 【核心功能修正】完全對齊接收參數，全面接收傳遞過來的 stats 數據字典
+def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
+    try:
+        sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
+        msg = MIMEMultipart()
+        msg["From"], msg["To"], msg["Subject"] = sender, sender, f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
+        msg.attach(MIMEText("附件為最新版本勤務規劃表。", "plain"))
+        pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f)
+        part1 = MIMEBase("application", "pdf")
+        part1.set_payload(pdf1)
+        encoders.encode_base64(part1)
+        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(f'{unit}規劃表.pdf')}")
+        msg.attach(part1)
+        pdf2 = generate_attendance_pdf(unit, project, time_str, stats)
+        part2 = MIMEBase("application", "pdf")
+        part2.set_payload(pdf2)
+        encoders.encode_base64(part2)
+        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(f'{unit}簽到表.pdf')}")
+        msg.attach(part2)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, pwd)
+            server.sendmail(sender, sender, msg.as_string())
+        return True, None
+    except Exception as e: return False, str(e)
 
 @st.cache_resource
 def get_client():
@@ -394,7 +415,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         return True
     except: return False
 
-# --- 4. Session State 狀態防護與主介面渲染 ---
+# --- 5. Session State 狀態防護與主介面渲染 ---
 if "initialized" not in st.session_state:
     st.session_state.p_time = DEFAULT_TIME
     st.session_state.proj_body = DEFAULT_PROJ_BODY
@@ -417,7 +438,7 @@ with col_proj:
 
 p_name = f"{mmdd_code}{input_proj_body}"
 
-# 動態高精密警力計人頭
+# 隨時更新最精準的動態統計數值
 live_stats = calculate_dynamic_stats(st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp)
 st.session_state.stats_data.update(live_stats)
 
@@ -461,7 +482,7 @@ st.markdown("---")
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
     with st.spinner("⏳ 正在寫入雲端並寄送郵件，請稍候..."):
-        # 【技術安全修補點】完整打包分流統計變數包，精準拋接給郵件與雲端函數
+        # 【技術重大更新】完全傳遞繁體中文的 Key 變數集，防止傳送字典時 KeyError 崩潰
         stats_to_send = {
             'cmd': st.session_state.stats_data['cmd'],
             'ptl_机动': st.session_state.stats_data['ptl_机动'],
