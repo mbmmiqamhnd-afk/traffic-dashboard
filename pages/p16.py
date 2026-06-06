@@ -56,14 +56,17 @@ safety_settings = [
 # ==========================================
 # 2. 寄信功能
 # ==========================================
-def send_gmail(subject, body, receiver_email):
+def send_gmail(subject, body):
     try:
         sender_email = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
+        receiver_email = st.secrets["email"]["receiver"]  # 直接從 secrets 讀取預設收件人
+        
         msg = MIMEText(body, 'plain', 'utf-8')
         msg['Subject'] = Header(subject, 'utf-8')
         msg['From'] = f"督導助手 <{sender_email}>"
         msg['To'] = receiver_email
+        
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender_email, password)
             server.sendmail(sender_email, receiver_email, msg.as_string())
@@ -162,7 +165,6 @@ def extract_duty_v2(d_file, hour):
         'is_guard_unit': False, 'roster': []
     }
     try:
-        # 確保檔案指標在開頭
         d_file.seek(0)
         df = pd.read_excel(d_file, header=None, dtype=str).fillna('')
 
@@ -412,7 +414,7 @@ def extract_equip_v2(e_file):
         return None
 
 # ==========================================
-# 6. Gemini 2.5 Vision 強效刑案單辨識核心 (強制 JSON 輸出)
+# 6. Gemini 2.5 Vision 強效刑案單辨識核心
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
     if model is None:
@@ -434,7 +436,6 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
         try:
             st.info(f"單位 {unit_idx+1} 🚀 AI 正在辨識刑案單第 {i+1}/{total_pages} 頁...")
             
-            # 使用 response_mime_type 強制模型輸出純 JSON，完全免去正則或字串裁剪
             response = model.generate_content(
                 contents=[prompt, img],
                 safety_settings=safety_settings,
@@ -545,12 +546,12 @@ def build_report(duty_info: dict, equip: dict, crimes: list, time_str: str, sup_
 
 
 # ==========================================
-# 8. Streamlit UI (使用 Form 優化體驗)
+# 8. Streamlit UI
 # ==========================================
 show_sidebar()
 
 st.title("🚓 勤務督導報告自動生成系統")
-st.markdown("上傳各單位勤務表、交接簿（選填）、刑案單（選填），自動生成督導報告。")
+st.markdown("上傳各單位勤務表、交接簿（選填）、刑案單（選填），自動生成並發送督導報告。")
 
 # --- 基本資訊 ---
 with st.expander("📋 督導基本資訊", expanded=True):
@@ -563,7 +564,6 @@ st.subheader("📁 上傳單位資料")
 
 num_units = st.number_input("本次督導單位數量", min_value=1, max_value=10, value=1, step=1)
 
-# 使用 st.form 包裹上傳與時間選取元件，避免每傳一個檔案頁面就自動 Re-run 影響體驗
 with st.form("supervision_data_form"):
     unit_inputs = []
     for i in range(num_units):
@@ -595,7 +595,6 @@ if submit_btn:
     for i, (u_time, d_file, e_file, p_file) in enumerate(unit_inputs):
         with st.spinner(f"正在處理第 {i+1} 個單位..."):
             
-            # 使用 BytesIO 包裝，並在外部確實呼叫 seek(0) 確保檔案指標正確
             d_file.seek(0)
             duty_info = extract_duty_v2(io.BytesIO(d_file.read()), u_time.hour)
 
@@ -623,7 +622,7 @@ if submit_btn:
 
     st.success(f"✅ 已完成 {num_units} 個單位的報告生成！")
 
-# --- 報告預覽與下載 (留在 Form 外，生成後即可編輯) ---
+# --- 報告預覽與編輯 ---
 if st.session_state.unit_reports:
     st.markdown("---")
     st.subheader("📄 報告預覽")
@@ -640,38 +639,17 @@ if st.session_state.unit_reports:
             )
             st.session_state.unit_reports[idx]['report'] = edited
 
-            st.download_button(
-                label="⬇️ 下載此單位報告 (.txt)",
-                data=edited.encode('utf-8-sig'),
-                file_name=f"{data['unit_name']}_督導報告_{sup_date_str}.txt",
-                mime="text/plain",
-                key=f"dl_{idx}"
-            )
-
-    # --- 總匯整 ---
+    # --- 總彙整與立即寄出處理 ---
     st.markdown("---")
-    st.subheader("📦 總匯整處理 (合併所有單位報告)")
+    st.subheader("📧 報告彙整立即寄出")
     
+    # 組合全部報告內容
     all_text = "\n\n────────────────────────────────────────\n\n".join(
         [v['report'] for v in st.session_state.unit_reports.values()]
     )
     
-    col_all_dl, col_all_mail = st.columns(2)
-    with col_all_dl:
-        st.download_button(
-            label="⬇️ 下載全部報告（合併）",
-            data=all_text.encode('utf-8-sig'),
-            file_name=f"督導報告_全部_{sup_date_str}.txt",
-            mime="text/plain",
-            use_container_width=True
-        )
-    with col_all_mail:
-        receiver_all = st.text_input("收件人 Email (發送合併報告)", key="mail_all")
-        if st.button("📧 一次寄送全部報告", type="primary", use_container_width=True):
-            if receiver_all:
-                subject_all = f"【勤務督導報告彙整】{sup_date_str}"
-                with st.spinner("正在寄送合併報告..."):
-                    if send_gmail(subject_all, all_text, receiver_all):
-                        st.success("✅ 合併報告已成功寄出！")
-            else:
-                st.warning("⚠️ 請填寫收件人 Email。")
+    if st.button("📧 立即寄送全部報告", type="primary", use_container_width=True):
+        subject_all = f"【勤務督導報告彙整】{sup_date_str}"
+        with st.spinner("正在寄送彙整報告至預設信箱..."):
+            if send_gmail(subject_all, all_text):
+                st.success(f"✅ 報告已成功寄送至預設收件人信箱！")
