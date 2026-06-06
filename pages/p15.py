@@ -216,19 +216,20 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
 
     res["_g"] = res.apply(_group, axis=1)
 
-    # 組內排序：幹部（所長/副所長/小隊長等）排最前，同單位人員跟在後面
-    CP_UNIT_ORDER = {"中興所": 1, "龍潭所": 2, "偵查隊": 3,
-                     "石門所": 4, "聖亭所": 5, "三和所": 6, "高平所": 7}
-    res["_unit_ord"] = res["單位"].map(lambda x: CP_UNIT_ORDER.get(str(x).strip(), 99))
+    # 組內排序：幹部優先，同單位跟在後面；偵查隊固定排最後
     res["_is_senior"] = res["職別"].apply(lambda x: 0 if str(x).strip() in SENIOR_RANKS else 1)
-    res = res.sort_values(["_g", "_unit_ord", "_is_senior"]).drop(
-        columns=["_unit_ord", "_is_senior"]).reset_index(drop=True)
+    res["_is_invest"] = res["單位"].apply(lambda x: 1 if str(x).strip() == "偵查隊" else 0)
+    # 組內以「原始列順序」為次排序，確保同單位人員維持原順序
+    res["_orig_idx"] = res.index
+    res = res.sort_values(["_g", "_is_invest", "_is_senior", "_orig_idx"]).drop(
+        columns=["_is_senior", "_is_invest", "_orig_idx"]).reset_index(drop=True)
 
     group_ids, radio_codes, unit_officer_count = [], [], {}
     for i, row in res.iterrows():
         group_ids.append("第1臨檢組" if row["_g"] == 1 else "第2臨檢組")
         unit = str(row.get("單位", "")).strip()
 
+        # 無線電代號：各人獨立計算，不統一蓋成同一號
         existing = str(row.get("無線電代號", "")).strip()
         if existing and existing not in ("nan", "None", "0"):
             radio_codes.append(existing)
@@ -240,9 +241,10 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
             radio_codes.append("")
 
     res["編組"]      = group_ids
-    res["無線電代號"] = radio_codes          # 整欄一次賦值
+    res["無線電代號"] = radio_codes
     res = res.drop(columns=["_g"])
 
+    # 整組統一用第一列（帶班所長）的無線電代號
     for g in res["編組"].unique():
         mask = res["編組"] == g
         first_radio = res.loc[mask, "無線電代號"].iloc[0]
