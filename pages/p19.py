@@ -102,7 +102,7 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",                     "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（死中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "劉柏延", "任務分工": "盤查兼蒐證",                       "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",   "姓名": "林宸緯", "任務分工": "盤查兼蒐證",                       "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",   "姓名": "黃丞穎", "任務分工": "大門警(車)戒兼蒐證",               "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",   "姓名": "黃丞穎", "任務分工": "大門警(車)戒兼蒐證",               "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（心中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "偵查佐", "姓名": "賴享宏", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（Play館）（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "張峻銨", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（心中正路506號）IA318"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "副所長", "姓名": "林榮裕", "任務分工": "帶班",                             "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
@@ -141,7 +141,7 @@ def safe_str(val):
 def clean_df_to_list(df):
     return df.astype(str).values.tolist()
 
-# 💡 動態獲取指揮官姓名
+# 動態獲取指揮官姓名
 def get_commander_name(df_cmd):
     if not df_cmd.empty and "項目" in df_cmd.columns and "負責人員" in df_cmd.columns:
         cmd_row = df_cmd[df_cmd["項目"].str.contains("指揮官", na=False)]
@@ -274,6 +274,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
 # ─────────────── PDF 生成：規劃表 ───────────────
 
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
+    # 💡 移除內部的 import re，完全交給檔頭的全域 re 處理，修復 UnboundLocalError
     font = _get_font()
     buf  = io.BytesIO()
     doc  = SimpleDocTemplate(
@@ -556,10 +557,10 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
     
     story.append(Spacer(1, 3*mm))
 
-    # 💡 串接全動態職稱：動態提取分局長/副分局長名銜
+    # 串接全動態職稱：動態提取分局長/副分局長名銜
     commander_title = get_commander_name(df_cmd)
     if " " in commander_title:
-        commander_title = commander_title.split(" ")[0] # 取得 "分局長" 職稱
+        commander_title = commander_title.split(" ")[0]
 
     sig_data = [
         [Paragraph(f"{commander_title}：", style_sig), Paragraph("上級督導：", style_sig)],
@@ -707,7 +708,7 @@ st.title("二合一專案勤務規劃系統 🚓")
 if err:
     st.warning(f"⚠️ 無法連線 Google Sheets（{err}），顯示預設資料。")
 
-# ── 壹、基本資訊區塊 (優化：欄位排版與動態時間整合)
+# ── 壹、基本資訊區塊 
 st.subheader("壹、 勤務基本資料")
 col_b1, col_b2 = st.columns(2)
 with col_b1:
@@ -716,7 +717,6 @@ with col_b2:
     display_project_name = re.sub(r'^\d{4}「?', '', p)
     p_input = st.text_input("專案名稱", display_project_name)
 
-# 💡 勤前教育時間地點交互編輯優化
 col_b3, col_b4 = st.columns(2)
 with col_b3:
     input_b_time = st.text_input("勤前教育時間", default_stats["b_time"])
@@ -798,7 +798,7 @@ if not res_cp.empty and "姓名" in res_cp.columns:
     cp_series = res_cp["姓名"].astype(str).str.strip()
     ptl_cp_count = int(cp_series[(cp_series != "") & (cp_series.str.lower() != "nan")].count())
 
-# ── 貳、警力統計與地點統計顯示區塊 (優化：使用高級 Metric 卡片視覺化) ──
+# ── 貳、警力統計與地點統計顯示區塊 ──
 st.subheader("貳、 警力統計及地點統計")
 
 # 非自動計算項目保留微調空間
@@ -823,7 +823,7 @@ current_stats = {
     "loc_3":    default_stats["loc_3"],
 }
 
-# 💡 警力儀表板卡片
+# 警力儀表板卡片
 st.markdown("##### 📊 本次編組警力一覽")
 m_col1, m_col2, m_col3, m_col4, m_col5, m_col6 = st.columns(6)
 m_col1.metric("總警力 (總計)", f"{current_stats['total']} 人")
