@@ -58,7 +58,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "副指揮官", "通訊代號": "隆安3號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 蔡志明", "共同執行人員": "警員陳明祥"},
     {"項目": "行政組", "通訊代號": "隆安5號", "任務目標": "督導擴大臨檢威力掃蕩第一臨檢組", "負責人員": "組長 周金柱", "共同執行人員": "巡官蕭凱文"},
     {"項目": "督察組", "通訊代號": "隆安6號", "任務目標": "機動督導各單位勤務紀律", "負責人員": "組長黃長旗", "共同執行人員": "警務員 陳冠彰"},
-    {"項目": "保安民防組", "通訊代號": "隆安9號", "任務目標": "督導擴大臨檢威力掃蕩第二臨檢組", "負責人員": "組長林良鍾", "共同執行人員": "警務員曾盛鉉、警務佐許裕、警務佐劉俊德"},
+    {"項目": "保安民防組", "通訊代號": "隆安9號", "任務目標": "督導擴大臨檢威力掃蕩第二臨檢組", "負責人員": "組長林良鍾", "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
     {"項目": "交通組", "通訊代號": "隆安 13號", "任務目標": "督導第一階段機動攔查", "負責人員": "組長 楊孟竟", "共同執行人員": "巡官郭勝隆、警務員李峯甫、警務員盧冠仁"},
     {"項目": "聯絡組", "通訊代號": "隆安", "任務目標": "擔任通訊聯絡、指揮管制事宜", "負責人員": "勤務指揮中心 主任蔡奇青", "共同執行人員": "執勤官李文章、執勤員黃文興、警員吳享運"},
     {"項目": "偵訊組", "通訊代號": "隆安10號", "任務目標": "負責按捺指紋、照相及移送", "負責人員": "偵查隊隊長 柯志賢", "共同執行人員": "偵查隊值日小隊"},
@@ -124,7 +124,6 @@ def extract_mmdd(time_text):
         pass
     return datetime.now().strftime("%m%d")
 
-# 警政無線電呼號預設自動生成算法（維持2碼或3碼，非主管尾數改為3起跳遞增）
 def generate_police_radio_code(unit, rank, idx_in_unit=1):
     unit_map = {
         "聖亭所": "50", "龍潭所": "60", "中興所": "70", 
@@ -143,7 +142,6 @@ def generate_police_radio_code(unit, rank, idx_in_unit=1):
         start_suffix = 3 + (idx_in_unit - 1)
         return f"{base[:-1]}{start_suffix}"
 
-# 動態處理巡邏組
 def assign_ptl_groups(df):
     if df.empty: return df
     res = df.copy()
@@ -171,7 +169,6 @@ def assign_ptl_groups(df):
             
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]
 
-# 動態處理臨檢組
 def assign_cp_groups(df):
     if df.empty: return df
     res = df.copy()
@@ -197,7 +194,6 @@ def assign_cp_groups(df):
             
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]]
 
-# 計算 ReportLab 表格垂直合併區間
 def calculate_table_spans(data_list, columns_to_merge):
     spans = []
     if len(data_list) <= 1: return spans
@@ -302,7 +298,8 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     font = _get_font()
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=10*mm, rightMargin=10*mm, topMargin=12*mm, bottomMargin=15*mm)
+    # 【安全優化修正】放寬上下邊距（topMargin/bottomMargin 縮小至 8mm），釋放更多垂直排版容留空間
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=10*mm, rightMargin=10*mm, topMargin=8*mm, bottomMargin=8*mm)
     page_width = A4[0] - 20*mm
     story = []
     
@@ -312,11 +309,14 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=20, alignment=0, wordWrap='CJK')
     
+    # 【關鍵修正】特別收緊臨檢場所、巡邏路段合併儲存格的文字緊湊度（fontSize 11, leading 15），阻止合併儲存格高度炸開
+    style_cell_longtext = ParagraphStyle('CellLongText', fontName=font, fontSize=11, leading=15, alignment=0, wordWrap='CJK')
+    
     def clean(t): return safe_str(t).replace("\n", "<br/>")
 
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", style_title))
     
-    # 壹、基本資料【優化修正：大幅調寬指揮官欄位(0.24 $\rightarrow$ 0.32)，確保完美容納 7 個中文字不換行】
+    # 壹、基本資料
     story.append(Paragraph("<b>壹、 勤務基本資料</b>", style_section))
     date_str = clean(time_str.split(" ")[0] if " " in time_str else "115年4月10日")
     time_str_only = clean(time_str.split(" ")[1] if " " in time_str else "19時至23時")
@@ -326,6 +326,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_basic.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_basic)
     
+    # 貳、警力統計
     story.append(Paragraph("<b>貳、 警力統計及地點統計</b>", style_section))
     data_stats = [[Paragraph("督導組", style_cell), Paragraph("攔臨組", style_cell), Paragraph("偵訊組", style_cell), Paragraph("小計", style_cell), Paragraph("民力", style_cell), Paragraph("總計", style_cell)], 
                   [Paragraph(str(stats['cmd']), style_cell), Paragraph(str(stats['ptl']), style_cell), Paragraph(str(stats['inv']), style_cell), Paragraph(str(stats['cmd']+stats['ptl']+stats['inv']), style_cell), Paragraph(str(stats['civ']), style_cell), Paragraph(str(stats['total']), style_cell)]]
@@ -333,6 +334,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_stats.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_stats)
 
+    # 參、指導與督導組
     story.append(Paragraph("<b>參、 督導及其他任務編組表</b>", style_section))
     data_cmd = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["項目", "通訊代號", "任務目標", "負責人員", "共同人員"]]]
     for _, r in df_cmd.iterrows():
@@ -341,7 +343,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
     
-    # 肆、【優化修正：調寬姓名欄位(0.09 $\rightarrow$ 0.13)，滿足完美容納 3 個中文字寬度需求】
+    # 肆、【第一階段】機動攔查
     story.append(Paragraph("<b>肆、【第一階段】機動攔查任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text)) 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]]
@@ -354,9 +356,10 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             pdf_ptl_df.loc[pdf_ptl_df['編組'] == g_name, '無線電代號'] = first_code
 
     for _, r in pdf_ptl_df.iterrows():
-        data_ptl.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('攜行裝備')), style_cell_left), Paragraph(clean(r.get('巡邏路段')), style_cell_left)])
+        data_ptl.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('攜行裝備')), style_cell_left), Paragraph(clean(r.get('巡邏路段')), style_cell_longtext)])
     
-    t_ptl_style = [('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]
+    # 【核心修正】增加 VALIGN TOP 靠上對齊，可使合併單元格在分頁渲染時擁有最高容錯率
+    t_ptl_style = [('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'TOP')]
     ptl_spans = calculate_table_spans(data_ptl, [0, 1, 2, 7])
     t_ptl_style.extend(ptl_spans)
     
@@ -364,7 +367,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_ptl.setStyle(TableStyle(t_ptl_style))
     story.append(t_ptl)
 
-    # 伍、【優化修正：調寬姓名欄位(0.09 $\rightarrow$ 0.13)，滿足完美容納 3 個中文字寬度需求】
+    # 伍、【第二階段】擴大臨檢（解決 Flowable too large 崩潰處）
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     if df_cp is not None and not df_cp.empty:
@@ -378,9 +381,10 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
                 pdf_cp_df.loc[pdf_cp_df['編組'] == g_name, '無線電代號'] = first_code
 
         for _, r in pdf_cp_df.iterrows():
-            data_cp.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('臨檢目標場所')), style_cell_left)])
+            data_cp.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('臨檢目標場所')), style_cell_longtext)])
         
-        t_cp_style = [('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]
+        # 【核心修正】加入 VALIGN TOP 靠上對齊，排除合併 6 行的超大格子在 Later Frame 中算高失敗的崩潰 Bug
+        t_cp_style = [('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'TOP')]
         cp_spans = calculate_table_spans(data_cp, [0, 1, 2, 6])
         t_cp_style.extend(cp_spans)
         
@@ -388,6 +392,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         t_cp.setStyle(TableStyle(t_cp_style))
         story.append(t_cp)
     
+    # 陸、工作重點
     story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
     for line in str(briefing).split('\n'):
         if line.strip(): story.append(Paragraph(clean(line), style_text))
@@ -522,7 +527,6 @@ with tab1:
             group_ids.append(f"第{g_idx}巡邏組")
         res_ptl["編組"] = group_ids
         
-        # 網頁端即時連動：非第一列人員的呼號若被手動清空，自動遞補對齊首列同仁呼號
         for g_name in res_ptl['編組'].unique():
             sub_idx = res_ptl[res_ptl['編組'] == g_name].index
             if len(sub_idx) > 0:
@@ -547,7 +551,6 @@ with tab2:
             else: group_ids_cp.append("第2臨檢組")
         res_cp["編組"] = group_ids_cp
         
-        # 網頁端即時連動：非第一列人員的呼號若被手動清空，自動遞補對齊首列同仁呼號
         for g_name in res_cp['編組'].unique():
             sub_idx = res_cp[res_cp['編組'] == g_name].index
             if len(sub_idx) > 0:
