@@ -35,29 +35,64 @@ SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
-DEFAULT_TIME    = "115年4月11日 19時至23時"
-DEFAULT_PROJ_BODY = "取締酒後駕車與防制危險駕車及噪音車輛專案"
-DEFAULT_BRIEF   = "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，落實「人犯戒護安全、案件程序安全、執法者及民眾安全」。\n二、 臨檢合法性：依《警察職權行使法》第6條辦理。\n三、 攔停規範：依《警察職權行使法》第8條辦理。\n四、 全程蒐證：務必全程連續錄音或錄影。\n五、 異議處理：依《警察職權行使法》第29條製作紀錄。"
+# 【更新】配合 PDF 實際勤務時間 [cite: 3]
+DEFAULT_TIME    = "115年5月29日 20時至24時"
+# 【更新】配合 PDF 實際專案名稱主體（隱去前方數字，交由網頁連動可編輯） [cite: 1]
+DEFAULT_PROJ_BODY = "「全國同步擴大取締酒後駕車及防制危險駕車」暨「擴大臨檢」"
+# 【更新】配合 PDF 工作重點與法令宣導文字 
+DEFAULT_BRIEF   = "一、 工作重點任務提示：同仁執行盤查、臨檢及路檢勤務過程中，應強化敵情觀念，提高危機意識，並特別注意人犯戒護，落實「人犯戒護安全、案件程序安全、執法者及民眾安全」之「三安」要求。\n二、 行動要領：除法律另有規定外，局察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所、交通工具或公共場所為之。\n三、 盤查規範：確實依司法院大法官釋字第535號解釋及「警察職權行使法」對於盤查人、車以及實施臨檢之相關規定，應注意遵守比例原則及考量民眾觀感，不得逾越必要程度。\n四、 全程蒐證：執行各項干涉、取締、處理糾紛及爭議性勤務，務必全程連續錄音或錄影，以避免因案件招致物議。\n五、 異議處理：民眾對警察行使職權表示異議，認為無理由者得繼續執行，但經請求時應將異議之理由製作紀錄交付之。"
 
-DEFAULT_PTL_FOCUS = "取消定點路檢，採取全面機動巡邏。針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。"
-DEFAULT_CP_FOCUS = "由第一階段之第1至第4組機動警力，會合偵查隊專案人員，於21時30分準時進入目標場所執行威力掃蕩。"
+DEFAULT_PTL_FOCUS = "採取定點路檢，針對酒駕熱點攔停盤查。[cite: 12]"
+DEFAULT_CP_FOCUS = "由第一階段之第1至第2組定點路檢警力，會合偵查隊專案人員，於22時20分前集結完畢，22時30分準時進入目標場所執行威力掃蕩。[cite: 21]"
 
+# 【全新重組】PDF 參、督導及其他任務編組表 (共12筆完整資料) 
 DEFAULT_CMD = pd.DataFrame([
-    {"項目": "指揮官", "通訊代號": "隆安 1 號", "任務目標": "勤務核定並重點機動督導", "負責人員": "分局長 施宇峰", "共同執行人員": "巡官 郭勝隆"},
-    {"項目": "副指揮官", "通訊代號": "隆安 2 號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 何憶雯", "共同執行人員": "警務佐 曾威仁"},
-    {"項目": "副指揮官", "通訊代號": "隆安 3 號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 蔡志明", "共同執行人員": "警員 陳明祥"},
-    {"項目": "行政組", "通訊代號": "隆安 5 號", "任務目標": "督導第二階段臨檢勤務", "負責人員": "組長 周金柱", "共同執行人員": "巡官 蕭凱文"},
-    {"項目": "督察組", "通訊代號": "隆安 6 號", "任務目標": "機動督導各單位勤務紀律", "負責人員": "督察組長 黃長旗", "共同執行人員": "警務員 陳冠彰"},
-    {"項目": "交通組", "通訊代號": "隆安 13號", "任務目標": "機動督導第一階段攔檢組", "負責人員": "交通組長 楊孟竟", "共同執行人員": "警務員 盧冠仁"},
+    {"項目": "指揮官", "通訊代號": "隆安1號", "任務目標": "重點機動督導", "負責人員": "分局長 施宇峰", "共同執行人員": "秘書陳鵬翔、警員張庭溱"},
+    {"項目": "副指揮官", "通訊代號": "隆安2號", "任務目標": "重點機動督導", "負責人員": "副分局長何憶雯", "共同執行人員": "警務佐曾威仁"},
+    {"項目": "副指揮官", "通訊代號": "隆安3號", "任務目標": "重點機動督導", "負責人員": "副分局長蔡志明", "共同執行人員": "警員陳明祥"},
+    {"項目": "上級督導官", "通訊代號": "建興", "任務目標": "重點機動督導", "負責人員": "督察孫三陽", "共同執行人員": ""},
+    {"項目": "偵查隊", "通訊代號": "隆安11號", "任務目標": "在隊督辦刑案", "負責人員": "隊長柯志賢", "共同執行人員": "偵查員 施明輝"},
+    {"項目": "行政組", "通訊代號": "隆安5號", "任務目標": "督導第一階段臨檢組", "負責人員": "組長 周金柱", "共同執行人員": "巡官蕭凱文、警務佐曾威仁、警員謝明展"},
+    {"項目": "督察組", "通訊代號": "隆安6號", "任務目標": "機動督導第二階段臨檢組", "負責人員": "組長 黃長旗", "共同執行人員": "警務員 陳冠彰"},
+    {"項目": "保安民防組", "通訊代號": "隆安9號", "任務目標": "機動督導第一階段臨檢組；機動督導第二階段路檢組", "負責人員": "組長林良鍾", "共同執行人員": "巡官古家杰"},
+    {"項目": "交通組", "通訊代號": "隆安13號", "任務目標": "機動督導第一階段路檢組", "負責人員": "組長 楊孟竟", "共同執行人員": "巡官郭勝隆"},
+    {"項目": "勤務指導", "通訊代號": "隆安 685號", "任務目標": "指導各路檢點、攔檢點，指導各檢查組勤務執行及狀況處置", "負責人員": "教官郭文義", "共同執行人員": "勤務指導人員"},
+    {"項目": "聯絡組", "通訊代號": "隆安", "任務目標": "擔任通訊聯絡、指揮管制事宜", "負責人員": "勤指主任蔡奇青", "共同執行人員": "執勤官江文頌、值勤員曾嘉偉 (18-20時)"},
+    {"項目": "偵訊組", "通訊代號": "隆安10號", "任務目標": "負責按捺指紋、照相及移送案件相關事宜", "負責人員": "偵查佐賴享宏", "共同執行人員": "警員張峻銨 (在隊待命受理移送案件)"},
+    {"項目": "作業組", "通訊代號": "", "任務目標": "負責勤務後勤、勤教場地布置相關事宜", "負責人員": "警員葉俊宏", "共同執行人員": "警務員曾盛鉉、巡官吳國棟、巡佐許榮裕、呂紹臺、警員"}
 ])
 
+# 【全新重組】PDF 肆、第一階段機動攔查 (11組巡邏編組) 
 DEFAULT_PTL = pd.DataFrame([
-    {"單位": "聖亭所", "服勤人員": "所長 鄭榮捷\n警員 詹宗澤", "任務分工": "帶班\n盤查兼警戒", "攜行裝備": "槍彈、無線電", "巡邏與攔查責任區": "中正路周邊機動攔查"},
-    {"單位": "龍潭所", "服勤人員": "所長 孫祥愷\n警員 沈庭禾", "任務分工": "盤查兼警戒", "攜行裝備": "槍彈、無線電", "巡邏與攔查責任區": "北龍路周邊機動攔查"},
+    {"單位": "分局規劃", "服勤人員": "待派同仁", "任務分工": "帶班兼管制", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "各指定路段/熱點"},
+    {"單位": "分局規劃", "服勤人員": "待派同仁", "任務分工": "指揮管制", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "各指定路段/熱點"},
+    {"單位": "分局規劃", "服勤人員": "待派同仁", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "各指定路段/熱點"},
+    {"單位": "分局規劃", "服勤人員": "待派同仁", "任務分工": "攔檢盤查", "攜行裝備": "小電腦、密錄器", "巡邏與攔查責任區": "各指定路段/熱點"},
+    {"單位": "分局規劃", "服勤人員": "待派同仁", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "各指定路段/熱點"},
+    {"單位": "分局規劃", "服勤人員": "待派同仁", "任務分工": "帶班兼管制", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "各指定路段/熱點"},
+    {"單位": "分局規劃", "服勤人員": "待派同仁", "任務分工": "指揮管制", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "各指定路段/熱點"},
+    {"單位": "分局規劃", "服勤人員": "待派同仁", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "各指定路段/熱點"},
+    {"單位": "分局規劃", "服勤人員": "待派同仁", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "各指定路段/熱點"},
+    {"單位": "分局規劃", "服勤人員": "待派同仁", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "各指定路段/熱點"},
+    {"單位": "分局規劃", "服勤人員": "待派同仁", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "各指定路段/熱點"}
 ])
 
+# 【全新重組】PDF 伍、第二階段擴大臨檢 (14組臨檢編組與目標場所對齊) 
 DEFAULT_CHECKPOINT = pd.DataFrame([
-    {"單位": "聖亭所\n龍潭所", "服勤人員": "所長 鄭榮捷\n所長 孫祥愷", "任務分工": "帶班 製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館\nB. 台灣麻將協會"},
+    {"單位": "臨檢編組", "服勤人員": "待派同仁", "任務分工": "帶班", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、C.丹陽泰養生館、D.溫馨汽車旅館、E.凱虹汽車旅館"},
+    {"單位": "臨檢編組", "服勤人員": "待派同仁", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、C.丹陽泰養生館、D.溫馨汽車旅館、E.凱虹汽車旅館"},
+    {"單位": "臨檢編組", "服勤人員": "待派同仁", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、C.丹陽泰養生館、D.溫馨汽車旅館、E.凱虹汽車旅館"},
+    {"單位": "臨檢編組", "服勤人員": "待派同仁", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、C.丹陽泰養生館、D.溫馨汽車旅館、E.凱虹汽車旅館"},
+    {"單位": "臨檢編組", "服勤人員": "待派同仁", "任務分工": "大門警(車)戒兼蒐證", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、C.丹陽泰養生館、D.溫馨汽車旅館、E.凱虹汽車旅館"},
+    {"單位": "偵查隊", "服勤人員": "專案同仁", "任務分工": "刑案偵防、社維法案件處理及移送", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、C.丹陽泰養生館、D.溫馨汽車旅館、E.凱虹汽車旅館"},
+    {"單位": "偵查隊", "服勤人員": "專案同仁", "任務分工": "刑案偵防、社維法案件處理及移送", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、C.丹陽泰養生館、D.溫馨汽車旅館、E.凱虹汽車旅館"},
+    {"單位": "臨檢編組", "服勤人員": "待派同仁", "任務分工": "帶班", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、F.憤怒鳥網咖、G.真情男女養生館、H.萬紫千紅舒壓館"},
+    {"單位": "臨檢編組", "服勤人員": "待派同仁", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、F.憤怒鳥網咖、G.真情男女養生館、H.萬紫千紅舒壓館"},
+    {"單位": "臨檢編組", "服勤人員": "待派同仁", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、F.憤怒鳥網咖、G.真情男女養生館、H.萬紫千紅舒壓館"},
+    {"單位": "臨檢編組", "服勤人員": "待派同仁", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、F.憤怒鳥網咖、G.真情男女養生館、H.萬紫千紅舒壓館"},
+    {"單位": "臨檢編組", "服勤人員": "待派同仁", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、F.憤怒鳥網咖、G.真情男女養生館、H.萬紫千紅舒壓館"},
+    {"單位": "臨檢編組", "服勤人員": "待派同仁", "任務分工": "大門警(車)戒兼蒐證", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、F.憤怒鳥網咖、G.真情男女養生館、H.萬紫千紅舒壓館"},
+    {"單位": "偵查隊", "服勤人員": "專案同仁", "任務分工": "刑案偵防、社維法案件處理及移送", "臨檢目標場所": "A.鉅大撞球館、B.台灣麻將協會、F.憤怒鳥網咖、G.真情男女養生館、H.萬紫千紅舒壓館"}
 ])
 
 # --- 2. 輔助函數 ---
@@ -76,7 +111,6 @@ def safe_str(val):
     return str(val)
 
 def extract_mmdd(time_text):
-    """從勤務時間文字中解析出4碼月日數字 (例如 '115年4月11日' -> '0411')"""
     try:
         match = re.search(r'(\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日', time_text)
         if match:
@@ -138,7 +172,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         if client is None: return False
         sh = client.open_by_key(SHEET_ID)
         
-        # 設定頁
         try: ws_set = sh.worksheet("三合一_設定")
         except: ws_set = sh.add_worksheet(title="三合一_設定", rows="50", cols="5")
         ws_set.clear()
@@ -150,7 +183,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
             ["loc_3", str(stats['loc_3'])], ["ptl_focus", ptl_f], ["cp_focus", cp_f]
         ])
         
-        # 指揮/巡邏/臨檢 頁
         for ws_name, df in [("三合一_指揮組", df_cmd), ("三合一_巡邏組", df_ptl), ("三合一_擴大臨檢組", df_cp)]:
             if df is None: continue
             try: ws = sh.worksheet(ws_name)
@@ -188,17 +220,15 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
 
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", style_title))
     
-    # 1. 基本資料
     story.append(Paragraph("<b>壹、 勤務基本資料</b>", style_section))
-    date_str = clean(time_str.split(" ")[0] if " " in time_str else "115年4月11日")
-    time_str_only = clean(time_str.split(" ")[1] if " " in time_str else "19時至23時")
+    date_str = clean(time_str.split(" ")[0] if " " in time_str else "115年5月29日")
+    time_str_only = clean(time_str.split(" ")[1] if " " in time_str else "20時至24時")
     data_basic = [[Paragraph("<b>實施日期</b>", style_cell), Paragraph("<b>勤務時間</b>", style_cell), Paragraph("<b>指揮官</b>", style_cell), Paragraph("<b>勤務編組</b>", style_cell), Paragraph("<b>聯合稽查站地點</b>", style_cell)], 
                   [Paragraph(date_str, style_cell), Paragraph(time_str_only, style_cell), Paragraph("分局長 施宇峰", style_cell), Paragraph("如任務編組表", style_cell), Paragraph("本局廣場", style_cell)]]
     t_basic = Table(data_basic, colWidths=[page_width*0.18, page_width*0.2, page_width*0.18, page_width*0.18, page_width*0.26])
     t_basic.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_basic)
     
-    # 2. 統計表
     story.append(Paragraph("<b>貳、 警力統計及地點統計</b>", style_section))
     data_stats = [[Paragraph("督導組", style_cell), Paragraph("攔臨組", style_cell), Paragraph("偵訊組", style_cell), Paragraph("小計", style_cell), Paragraph("民力", style_cell), Paragraph("總計", style_cell)], 
                   [Paragraph(str(stats['cmd']), style_cell), Paragraph(str(stats['ptl']), style_cell), Paragraph(str(stats['inv']), style_cell), Paragraph(str(stats['cmd']+stats['ptl']+stats['inv']), style_cell), Paragraph(str(stats['civ']), style_cell), Paragraph(str(stats['total']), style_cell)]]
@@ -206,18 +236,16 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_stats.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_stats)
 
-    # 3. 指揮組
     story.append(Paragraph("<b>參、 督導及其他任務編組表</b>", style_section))
     data_cmd = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["項目", "通訊代號", "任務目標", "負責人員", "共同人員"]]]
     for _, r in df_cmd.iterrows():
         data_cmd.append([Paragraph(clean(r.get('項目')), style_cell), Paragraph(clean(r.get('通訊代號')), style_cell), Paragraph(clean(r.get('任務目標')), style_cell_left), Paragraph(clean(r.get('負責人員')), style_cell), Paragraph(clean(r.get('共同執行人員')), style_cell)])
     
-    # 負責人員擴大寬度 (0.26)，確保容納 8 個中文字
+    # 擴大負責人員寬度 (0.26)，滿足可完整容納 8 個中文字需求
     t_cmd = Table(data_cmd, colWidths=[page_width*0.12, page_width*0.14, page_width*0.28, page_width*0.26, page_width*0.2])
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
     
-    # 4. 第一階段
     story.append(Paragraph("<b>肆、【第一階段】機動攔查任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text)) 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["組別", "單位", "服勤人員", "任務分工", "攜行裝備", "責任區"]]]
@@ -227,7 +255,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_ptl.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_ptl)
 
-    # 5. 第二階段
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     if df_cp is not None and not df_cp.empty:
@@ -238,7 +265,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         t_cp.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
         story.append(t_cp)
     
-    # 6. 宣導
     story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
     for line in str(briefing).split('\n'):
         if line.strip(): story.append(Paragraph(clean(line), style_text))
@@ -264,7 +290,7 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
     
     story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
-    date_part = time_str.split(' ')[0] if ' ' in time_str else "115年4月11日"
+    date_part = time_str.split(' ')[0] if ' ' in time_str else "115年5月29日"
     story.append(Paragraph(f"時間:{date_part}{stats['b_time']}", style_info))
     story.append(Paragraph(f"地點:{stats['b_loc']}召開", style_info))
     
@@ -310,10 +336,8 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 
 # --- Streamlit 介面 ---
 df_set, df_cmd, df_ptl, df_cp, err = load_data()
-default_stats = {'cmd': 6, 'ptl': 31, 'inv': 2, 'civ': 0, 'b_time': '18時30分至19時00分', 'b_loc': '分局二樓會議室', 'loc_1': 8, 'loc_2': 6, 'loc_3': 0}
-
-if err:
-    st.error(f"⚠️ 雲端資料載入異常：{err}")
+# 【更新】初始統計數據完全對齊 PDF 的實務警力配置 [cite: 5]
+default_stats = {'cmd': 7, 'ptl': 16, 'inv': 3, 'civ': 0, 'b_time': '19時30分至20時00分', 'b_loc': '分局二樓會議室', 'loc_1': 0, 'loc_2': 0, 'loc_3': 0}
 
 if df_set is None or df_set.empty:
     u, t, b = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_BRIEF
@@ -325,36 +349,32 @@ else:
     u, t, b = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("briefing_info", DEFAULT_BRIEF)
     p_ptl_focus, p_cp_focus = d.get("ptl_focus", DEFAULT_PTL_FOCUS), d.get("cp_focus", DEFAULT_CP_FOCUS)
     
-    # 讀取雲端舊名稱時，自動過濾掉最前面的4碼數字
     raw_proj = d.get("project_name", DEFAULT_PROJ_BODY)
     proj_body = re.sub(r'^\d{4}', '', raw_proj)
     
-    default_stats.update({'cmd': int(d.get("stats_cmd", 6) or 6), 'ptl': int(d.get("stats_ptl", 31) or 31), 'inv': int(d.get("stats_inv", 2) or 2), 'civ': int(d.get("stats_civ", 0) or 0), 'b_time': d.get("briefing_time", "18時30分至19時00分"), 'b_loc': d.get("briefing_loc", "分局二樓會議室"), 'loc_1': int(d.get("loc_1", 8) or 8), 'loc_2': int(d.get("loc_2", 6) or 6), 'loc_3': int(d.get("loc_3", 0) or 0)})
+    default_stats.update({'cmd': int(d.get("stats_cmd", 7) or 7), 'ptl': int(d.get("stats_ptl", 16) or 16), 'inv': int(d.get("stats_inv", 3) or 3), 'civ': int(d.get("stats_civ", 0) or 0), 'b_time': d.get("briefing_time", "19時30分至20時00分"), 'b_loc': d.get("briefing_loc", "分局二樓會議室")})
     ed_cmd = df_cmd if not df_cmd.empty else DEFAULT_CMD.copy()
     ed_ptl = df_ptl.drop(columns=["組別"]) if not df_ptl.empty and "組別" in df_ptl.columns else (df_ptl if not df_ptl.empty else DEFAULT_PTL.copy())
     ed_cp = df_cp.drop(columns=["組別"]) if df_cp is not None and not df_cp.empty and "組別" in df_cp.columns else (df_cp if df_cp is not None and not df_cp.empty else DEFAULT_CHECKPOINT.copy())
 
 st.title("🚓 專案勤務規劃系統")
 
-# 版面排版優化：時間與名稱並列
 col_time, col_proj = st.columns([1, 2])
 with col_time:
     p_time = st.text_input("勤務時間", t)
 
-# 背景自動即時擷取 4 碼數字
+# 自動擷取 4 碼（此例會正確抓出 0529）
 mmdd_code = extract_mmdd(p_time)
 
 with col_proj:
-    # 【核心修正】顯示在網頁供您自由編輯「專案名稱主體」，且前方會以灰色小字提示當前連動數字
     input_proj_body = st.text_input(f"專案名稱 (目前連動代碼: {mmdd_code})", proj_body)
 
-# 在背景將數字與您的自訂名稱文字拼接，這就是最終產製 PDF 與存入資料庫的完整專案名
 p_name = f"{mmdd_code}{input_proj_body}"
 
 st.subheader("貳、 警力統計及地點統計")
 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
 c_cmd, c_ptl, c_inv, c_civ = col_s1.number_input("督導組", value=default_stats['cmd']), col_s2.number_input("攔臨組", value=default_stats['ptl']), col_s3.number_input("偵訊組", value=default_stats['inv']), col_s4.number_input("民力", value=default_stats['civ'])
-current_stats = {'cmd': c_cmd, 'ptl': c_ptl, 'inv': c_inv, 'civ': c_civ, 'total': c_cmd+c_ptl+c_inv+c_civ, 'b_time': default_stats['b_time'], 'b_loc': default_stats['b_loc'], 'loc_1': default_stats['loc_1'], 'loc_2': default_stats['loc_2'], 'loc_3': default_stats['loc_3']}
+current_stats = {'cmd': c_cmd, 'ptl': c_ptl, 'inv': c_inv, 'civ': c_civ, 'total': c_cmd+c_ptl+c_inv+c_civ, 'b_time': default_stats['b_time'], 'b_loc': default_stats['b_loc']}
 
 st.subheader("參、 指導編組與重點宣導")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
@@ -388,7 +408,7 @@ if st.button("💾 同步雲端並發送郵件", use_container_width=True):
         if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, current_stats, p_ptl_focus, p_cp_focus):
             ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, current_stats, p_ptl_focus, p_cp_focus)
             if ok: 
-                st.success(f"✅ 資料已同步！產出專案完整名稱為：「{p_name}」，郵件已成功寄出！")
+                st.success(f"✅ 資料已同步！動態生成專案名稱為「{p_name}」，郵件已成功寄出！")
                 st.rerun()
             else: 
-                st.error(f"❌ 雲端同步成功，但寄送郵件失敗！錯誤細節：{mail_err}\n（請檢查 email 應用程式密碼設定是否過期或有誤）")
+                st.error(f"❌ 雲端同步成功，但寄送郵件失敗！錯誤細節：{mail_err}")
