@@ -72,7 +72,6 @@ DEFAULT_NOTES = """壹、警察局規劃3月份「行人及護老交通安全專
 @st.cache_resource
 def get_client():
     try:
-        # 關鍵修正：將 secrets 轉換為字典並替換換行符號
         creds_dict = dict(st.secrets["gcp_service_account"])
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
@@ -269,29 +268,10 @@ ed_notes = st.text_area("編輯備註內容", value=current_notes, height=250)
 
 full_header_name = f"{UNIT}{c_month}執行「行人及護老交通安全」專案勤務規劃表"
 
-# --- 8. HTML 預覽 ---
-def get_html(notes_content):
-    parts = ["<style>body{font-family:'標楷體';padding:10px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid black;padding:8px;text-align:center;} th{background:#f2f2f2;font-size:16pt;} .note{font-size:12pt;margin-top:10px;line-height:1.6;}</style>"]
-    parts.append(f"<html><body><h2 style='text-align:center;'>{full_header_name}</h2>")
-    parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>")
-    for _, r in ed_cmd.iterrows():
-        parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
-    parts.append("</table><br><table><tr><th colspan='3'>警 力 佈 署</th></tr><tr><th>勤務日期</th><th>單位</th><th>路段</th></tr>")
-    for _, r in ed_sch.iterrows():
-        parts.append(f"<tr><td>{str(r.get('日期（6時至10時、16時至20時）','')).replace('\n','<br>')}</td><td>{r.get('單位','')}</td><td style='text-align:left'>{str(r.get('路段','')).replace('\n','<br>')}</td></tr>")
-    parts.append("</table><div class='note'><b>備註：</b><br>")
-    for line in notes_content.split('\n'):
-        if line.strip(): parts.append(f"{line}<br>")
-    parts.append("</div></body></html>")
-    return "".join(parts)
-
 st.markdown("---")
-st.components.v1.html(get_html(ed_notes), height=600, scrolling=True)
 
-colA, colB = st.columns(2)
-
-# --- 兩階段載入提示按鈕區 ---
-if colA.button("💾 同步雲端並發送電子郵件備份", type="primary", use_container_width=True):
+# --- 兩階段載入提示按鈕區 (已移除預覽與下載按鈕，改為滿版整欄按鈕) ---
+if st.button("💾 同步雲端並發送電子郵件備份", type="primary", use_container_width=True):
     with st.spinner("同步中，請稍候…"):
         if save_data(c_month, ed_cmd, ed_sch, ed_notes):
             with st.spinner("同步成功，正在寄送郵件…"):
@@ -302,13 +282,3 @@ if colA.button("💾 同步雲端並發送電子郵件備份", type="primary", u
                 st.error(f"❌ 雲端已更新，但寄信失敗：{mail_err}")
         else:
             st.error("❌ 雲端同步失敗，請檢查網路、Secrets 金鑰或試算表權限。")
-
-# 產生 PDF 資料流並單獨提供下載按鈕
-pdf_out = generate_pdf(c_month, ed_cmd, ed_sch, ed_notes)
-colB.download_button(
-    label="📥 下載規劃表 PDF 檔案", 
-    data=pdf_out, 
-    file_name=f"{full_header_name}.pdf",
-    mime="application/pdf",
-    use_container_width=True
-)
