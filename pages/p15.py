@@ -170,35 +170,42 @@ def assign_ptl_groups(df):
             
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]
 
-# 【核心功能修正】臨檢組全面導入「動態智慧分組演算法」，徹底解放最下列 Add Row 限制！
+# 【核心算法更新】徹底重構分組優先級：網頁手動填寫優先！防止新行閃退、卡死、要求輸入兩次
 def assign_cp_groups(df):
     if df.empty: return df
     res = df.copy().reset_index(drop=True)
     group_ids_cp = []
     unit_counters = {}
     
-    # 建立動態分組判定基準：只要單位屬於中興、龍潭、偵查隊(前段)，就歸為第1臨檢組；其餘歸第2組
-    # 這樣一來，使用者不論在最下列怎麼加人，只要打對單位，系統重整時就會自動精準分流
     for i, row in res.iterrows():
-        u_str = str(row['單位']).strip()
-        if u_str in ["中興所", "龍潭所"] or (u_str == "偵查隊" and i < 5):
-            group_ids_cp.append("第1臨檢組")
+        # 【防護盾核心】如果使用者已經在網頁上手動指派了「編組」文字，絕對尊重，直接沿用，不再蓋台
+        if str(row.get('編組', '')).strip() in ["第1臨檢組", "第2臨檢組"]:
+            group_ids_cp.append(str(row['編組']).strip())
         else:
-            group_ids_cp.append("第2臨檢組")
+            # 只有在全新空白列時，才啟動動態單位判定
+            u_str = str(row['單位']).strip()
+            if u_str in ["中興所", "龍潭所"] or (u_str == "偵查隊" and i < 5) or u_str == "":
+                group_ids_cp.append("第1臨檢組")
+            else:
+                group_ids_cp.append("第2臨檢組")
         
         if not str(row.get('無線電代號', '')).strip():
             u = row['單位']
-            unit_counters[u] = unit_counters.get(u, 0) + (1 if row['職別'] not in ["所長", "分隊長", "隊長", "副所長", "小隊長"] else 0)
-            res.loc[i, '無線電代號'] = generate_police_radio_code(u, row['職別'], unit_counters[u])
+            if u:
+                unit_counters[u] = unit_counters.get(u, 0) + (1 if row['職別'] not in ["所長", "分隊長", "隊長", "副所長", "小隊長"] else 0)
+                res.loc[i, '無線電代號'] = generate_police_radio_code(u, row['職別'], unit_counters[u])
             
     res["編組"] = group_ids_cp
     
-    # 全組無線電呼號與首列人員聯動鎖定
+    # 呼號與各組首列聯動
     for g_name in res['編組'].unique():
         sub_idx = res[res['編組'] == g_name].index
         if len(sub_idx) > 0:
             first_code = res.loc[sub_idx[0], '無線電代號']
-            res.loc[sub_idx, '無線電代號'] = first_code
+            # 只在代號為空，或代號不等於前人時，才進行遞補，給予手動更高自由度
+            for s_idx in sub_idx:
+                if not str(res.loc[s_idx, '無線電代號']).strip():
+                    res.loc[s_idx, '無線電代號'] = first_code
             
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]]
 
@@ -346,7 +353,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
     
-    # 肆、【第一階段】機動攔查
+    # 肆、第一階段
     story.append(Paragraph("<b>肆、【第一階段】機動攔查任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text)) 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]]
@@ -369,7 +376,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_ptl.setStyle(TableStyle(t_ptl_style))
     story.append(t_ptl)
 
-    # 伍、【第二階段】擴大臨檢
+    # 伍、第二階段
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     if df_cp is not None and not df_cp.empty:
@@ -527,7 +534,6 @@ with tab1:
             group_ids.append(f"第{g_idx}巡邏組")
         res_ptl["編組"] = group_ids
         
-        # 網頁端即時連動呼號
         for g_name in res_ptl['編組'].unique():
             sub_idx = res_ptl[res_ptl['編組'] == g_name].index
             if len(sub_idx) > 0:
@@ -542,11 +548,11 @@ with tab1:
         res_ptl = res_ptl_raw
 
 with tab2:
-    # 【已解鎖】網頁前端現在完全允許點擊 + Add row 自由在最下列追加同仁名單！
+    # 【完美收載修正點】data_editor 直接與記憶緩衝綁定，不再對空值列進行強制覆蓋，保障輸入一次就儲存
     res_cp_raw = st.data_editor(st.session_state.df_cp, num_rows="dynamic", use_container_width=True, key="cp_ed").dropna(how='all').fillna("").reset_index(drop=True)
     
     if not res_cp_raw.empty:
-        # 調用優化後的 assign_cp_groups 進行動態單位判定
+        # 使用手動優先算法處理臨檢組別，成功解除 Add Row 的衝突
         res_cp = assign_cp_groups(res_cp_raw)
         st.session_state.df_cp = res_cp
     else:
