@@ -57,7 +57,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "副指揮官", "通訊代號": "隆安2號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 何憶雯", "共同執行人員": "警務佐曾威仁"},
     {"項目": "副指揮官", "通訊代號": "隆安3號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 蔡志明", "共同執行人員": "警員陳明祥"},
     {"項目": "行政組", "通訊代號": "隆安5號", "任務目標": "督導擴大臨檢威力掃蕩第一臨檢組", "負責人員": "組長 周金柱", "共同執行人員": "巡官蕭凱文"},
-    {"項目": "督察組", "通訊代號": "隆安6號", "任務目標": "機動督導各單位勤務紀律", "負責人員": "組長黃長旗", "共同執行人員": "警務員 陳冠彰"},
+    {"項目": "督察組", "通訊代號": "隆安6號", "任務目標": "機動督導各單位勤務紀律", "負責人員": "組长黃長旗", "共同執行人員": "警務員 陳冠彰"},
     {"項目": "保安民防組", "通訊代號": "隆安9號", "任務目標": "督導擴大臨檢威力掃蕩第二臨檢組", "負責人員": "組長林良鍾", "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
     {"項目": "交通組", "通訊代號": "隆安 13號", "任務目標": "督導第一階段機動攔查", "負責人員": "組長 楊孟竟", "共同執行人員": "巡官郭勝隆、警務員李峯甫、警務員盧冠仁"},
     {"項目": "聯絡組", "通訊代號": "隆安", "任務目標": "擔任通訊聯絡、指揮管制事宜", "負責人員": "勤務指揮中心 主任蔡奇青", "共同執行人員": "執勤官李文章、執勤員黃文興、警員吳享運"},
@@ -65,21 +65,21 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "聯合稽查站", "通訊代號": "隆安1382", "任務目標": "配合環保局及監理站稽查車輛", "負責人員": "交通組巡官 郭勝隆", "共同執行人員": "環保局及監理站人員"}
 ])
 
-# 肆、第一階段機動攔查底稿
+# 肆、【正名修正】第一階段機動攔查底稿（欄位名改為「巡邏路段」）
 DEFAULT_PTL = pd.DataFrame([
-    {"單位": "聖亭所", "無線電代號": "聖亭分台", "職別": "副所長", "姓名": "邱品淳", "任務分工": "帶班", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "聖亭所", "無線電代號": "聖亭機動", "職別": "警員", "姓名": "劉憬霖", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "聖亭所", "無線電代號": "聖亭警戒", "職別": "警員", "姓名": "謝伯昇", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "龍潭所", "無線電代號": "龍潭帶班", "職別": "警員", "姓名": "張家維", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "龍潭所", "無線電代號": "龍潭機動", "職別": "警員", "姓名": "王采蘋", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "中興所", "無線電代號": "中興帶班", "職別": "所長", "姓名": "董亦文", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "中興所", "無線電代號": "中興機動", "職別": "警員", "姓名": "羅俊傑", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "石門所", "無線電代號": "石門帶班", "職別": "所長", "姓名": "林育辰", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "三和所", "無線電代號": "三和機動", "職別": "警員", "姓名": "童霈晟", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "石門所", "無線電代號": "分局巡佐", "職別": "巡佐", "姓名": "林偉政", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中興路、龍新路沿線及治安要點機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "高平所", "無線電代號": "高平機動", "職別": "警員", "姓名": "葉雲翔", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中興路、龍新路沿線及治安要點機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "龍潭交分隊", "無線電代號": "交通交01", "職別": "警員", "姓名": "林家豪", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "轄內易發生危駕路段、各聯外道路機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "龍潭交分隊", "無線電代號": "交通交02", "職別": "警員", "姓名": "吳沛軒", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "轄內易發生危駕路段、各聯外道路機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"}
+    {"單位": "聖亭所", "無線電代號": "聖亭分台", "職別": "副所長", "姓名": "邱品淳", "任務分工": "帶班", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "聖亭所", "無線電代號": "聖亭機動", "職別": "警員", "姓名": "劉憬霖", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "聖亭所", "無線電代號": "聖亭警戒", "職別": "警員", "姓名": "謝伯昇", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "龍潭所", "無線電代號": "龍潭帶班", "職別": "警員", "姓名": "張家維", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "龍潭所", "無線電代號": "龍潭機動", "職別": "警員", "姓名": "王采蘋", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "中興所", "無線電代號": "中興帶班", "職別": "所長", "姓名": "董亦文", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "中興所", "無線電代號": "中興機動", "職別": "警員", "姓名": "羅俊傑", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "石門所", "無線電代號": "石門帶班", "職別": "所長", "姓名": "林育辰", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "三和所", "無線電代號": "三和機動", "職別": "警員", "姓名": "童霈晟", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "石門所", "無線電代號": "分局巡佐", "職別": "巡佐", "姓名": "林偉政", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中興路、龍新路沿線及治安要點機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "高平所", "無線電代號": "高平機動", "職別": "警員", "姓名": "葉雲翔", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中興路、龍新路沿線及治安要點機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "龍潭交分隊", "無線電代號": "交通交01", "職別": "警員", "姓名": "林家豪", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "轄內易發生危駕路段、各聯外道路機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "龍潭交分隊", "無線電代號": "交通交02", "職別": "警員", "姓名": "吳沛軒", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "轄內易發生危駕路段、各聯外道路機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"}
 ])
 
 # 伍、第二階段擴大臨檢底稿
@@ -124,7 +124,7 @@ def extract_mmdd(time_text):
         pass
     return datetime.now().strftime("%m%d")
 
-# 動態依連續單位分配「巡邏編組」名稱
+# 動態分配巡邏編組名稱
 def assign_ptl_groups(df):
     if df.empty: return df
     res = df.copy()
@@ -135,9 +135,9 @@ def assign_ptl_groups(df):
             g_idx += 1
         group_ids.append(f"第{g_idx}巡邏組")
     res["編組"] = group_ids
-    return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏與攔查責任區"]]
+    return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]
 
-# 動態分配「臨檢編組」名稱（前5列為第1組，其餘為第2組）
+# 動態分配臨檢編組名稱
 def assign_cp_groups(df):
     if df.empty: return df
     res = df.copy()
@@ -147,6 +147,27 @@ def assign_cp_groups(df):
         else: group_ids_cp.append("第2臨檢組")
     res["編組"] = group_ids_cp
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]]
+
+# 【核心算法優化】動態計算 ReportLab 表格中哪些列內容相同，並產出 SPAN 合併指令
+def calculate_table_spans(data_list, columns_to_merge):
+    spans = []
+    if len(data_list) <= 1: return spans
+    
+    for col_idx in columns_to_merge:
+        start_row = 1
+        for r_idx in range(2, len(data_list)):
+            # 比對文字內容是否相同 (這裡的 data_list[r_idx][col_idx] 已經是 Paragraph 物件或純文字，需做安全文本提取)
+            curr_text = data_list[r_idx][col_idx].text if hasattr(data_list[r_idx][col_idx], 'text') else str(data_list[r_idx][col_idx])
+            prev_text = data_list[r_idx-1][col_idx].text if hasattr(data_list[r_idx-1][col_idx], 'text') else str(data_list[r_idx-1][col_idx])
+            
+            if curr_text == prev_text and curr_text.strip() != "":
+                if r_idx == len(data_list) - 1: # 到底了，關閉最後一組合併
+                    spans.append(('SPAN', (col_idx, start_row), (col_idx, r_idx)))
+            else:
+                if r_idx - 1 > start_row:
+                    spans.append(('SPAN', (col_idx, start_row), (col_idx, r_idx-1)))
+                start_row = r_idx
+    return spans
 
 @st.cache_resource
 def get_client():
@@ -217,7 +238,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
             ws.clear()
             
             clean_df = df.dropna(how='all').fillna("")
-            # 雲端資料庫去耦合：儲存前安全移除「編組」動態生成欄位
             if "編組" in clean_df.columns:
                 clean_df = clean_df.drop(columns=["編組"])
                 
@@ -272,25 +292,37 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
     
-    # 肆、第一階段（PDF 比例完美調配）
+    # 肆、【核心優化】第一階段機動攔查（動態合併編組、無線電呼號、單位、巡邏路段）
     story.append(Paragraph("<b>肆、【第一階段】機動攔查任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text)) 
-    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "責任區"]]]
+    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]]
     for _, r in df_ptl.iterrows():
-        data_ptl.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('攜行裝備')), style_cell_left), Paragraph(clean(r.get('巡邏與攔查責任區')), style_cell_left)])
+        data_ptl.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('攜行裝備')), style_cell_left), Paragraph(clean(r.get('巡邏路段')), style_cell_left)])
+    
+    t_ptl_style = [('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]
+    # 欄位索引：0=編組, 1=無線電代號, 2=單位, 7=巡邏路段
+    ptl_spans = calculate_table_spans(data_ptl, [0, 1, 2, 7])
+    t_ptl_style.extend(ptl_spans)
+    
     t_ptl = Table(data_ptl, colWidths=[page_width*0.08, page_width*0.11, page_width*0.09, page_width*0.07, page_width*0.09, page_width*0.13, page_width*0.15, page_width*0.28])
-    t_ptl.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+    t_ptl.setStyle(TableStyle(t_ptl_style))
     story.append(t_ptl)
 
-    # 伍、第二階段（PDF 比例完美調配）
+    # 伍、【核心優化】第二階段擴大臨檢（動態合併編組、無線電呼號、單位、臨檢目標場所）
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     if df_cp is not None and not df_cp.empty:
         data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢場所"]]]
         for _, r in df_cp.iterrows():
             data_cp.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('臨檢目標場所')), style_cell_left)])
+        
+        t_cp_style = [('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]
+        # 欄位索引：0=編組, 1=無線電代號, 2=單位, 6=臨檢場所
+        cp_spans = calculate_table_spans(data_cp, [0, 1, 2, 6])
+        t_cp_style.extend(cp_spans)
+        
         t_cp = Table(data_cp, colWidths=[page_width*0.08, page_width*0.11, page_width*0.09, page_width*0.07, page_width*0.09, page_width*0.20, page_width*0.36])
-        t_cp.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+        t_cp.setStyle(TableStyle(t_cp_style))
         story.append(t_cp)
     
     story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
@@ -369,7 +401,6 @@ if "initialized" not in st.session_state:
     st.session_state.b_info = DEFAULT_BRIEF
     st.session_state.stats_data = {'cmd': 7, 'ptl': 16, 'inv': 3, 'civ': 0, 'b_time': '19時30分至20時00分', 'b_loc': '分局二樓會議室'}
     
-    # 網頁初始化：將動態生成的「編組」直接注入記憶體中
     st.session_state.df_cmd = DEFAULT_CMD.copy()
     st.session_state.df_ptl = assign_ptl_groups(DEFAULT_PTL.copy())
     st.session_state.df_cp = assign_cp_groups(DEFAULT_CHECKPOINT.copy())
@@ -416,10 +447,8 @@ st.subheader("勤務執行編組 (兩階段)")
 tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】擴大臨檢"])
 
 with tab1:
-    # 【核心功能更新】網頁現在會清清楚楚直接顯示「編組」欄位
     res_ptl_raw = st.data_editor(st.session_state.df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_ed").dropna(how='all').fillna("").reset_index(drop=True)
     
-    # 依據網頁增刪變更，即時動態重新整理「編組」序號並維持完美欄位排布
     if not res_ptl_raw.empty:
         res_ptl = res_ptl_raw.copy()
         group_ids = []
@@ -429,16 +458,14 @@ with tab1:
                 g_idx += 1
             group_ids.append(f"第{g_idx}巡邏組")
         res_ptl["編組"] = group_ids
-        res_ptl = res_ptl[["編組", "無線電代號"] + [col for col in res_ptl.columns if col not in ["編組", "無線電代號"]]]
-        st.session_state.df_ptl = res_ptl # 鎖定狀態
+        res_ptl = res_ptl[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]
+        st.session_state.df_ptl = res_ptl
     else:
         res_ptl = res_ptl_raw
 
 with tab2:
-    # 【核心功能更新】網頁現在會清清楚楚直接顯示「編組」欄位
     res_cp_raw = st.data_editor(st.session_state.df_cp, num_rows="dynamic", use_container_width=True, key="cp_ed").dropna(how='all').fillna("").reset_index(drop=True)
     
-    # 依據網頁增刪變更，即時動態重新整理「編組」序號並維持完美欄位排布
     if not res_cp_raw.empty:
         res_cp = res_cp_raw.copy()
         group_ids_cp = []
@@ -446,8 +473,8 @@ with tab2:
             if i < 5: group_ids_cp.append("第1臨檢組")
             else: group_ids_cp.append("第2臨檢組")
         res_cp["編組"] = group_ids_cp
-        res_cp = res_cp[["編組", "無線電代號"] + [col for col in res_cp.columns if col not in ["編組", "無線電代號"]]]
-        st.session_state.df_cp = res_cp # 鎖定狀態
+        res_cp = res_cp[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]]
+        st.session_state.df_cp = res_cp
     else:
         res_cp = res_cp_raw
 
