@@ -516,14 +516,7 @@ with tab2:
 
 st.markdown("---")
 
-# 輸出最終 PDF 報表（此處已包含自動配發的呼叫碼）
-pdf_plan       = generate_pdf_from_data(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
-pdf_attendance = generate_attendance_pdf(u, p_name, p_time, b_info)
-
-col_dl1, col_dl2 = st.columns(2)
-col_dl1.download_button("📝 下載規劃表", data=pdf_plan,       file_name=f"{u}執行{p_name}勤務規劃表.pdf", use_container_width=True)
-col_dl2.download_button("🖋️ 下載簽到表", data=pdf_attendance, file_name=f"{u}執行{p_name}勤務簽到表.pdf", use_container_width=True)
-
+# --- 移除原本的下載按鈕欄位，直接保留雲端備份與發信功能 ---
 if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True):
     with st.spinner("同步中，請稍候…"):
         if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc):
@@ -531,6 +524,6 @@ if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True
                 ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
             if ok:
                 st.success(f"✅ 同步與發信成功！已在後台為專案自動補上「{date_code}」代碼。")
-                st.rerun()  # 同步成功後重整，讓前端編輯器同步顯示最新配發的無線電代碼
+                st.rerun()  # 同步成功後重整前端，確保畫面立即更新最新配發的呼叫代碼
             else:
                 st.error(f"❌ 發信失敗: {mail_err}")
