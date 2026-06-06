@@ -215,7 +215,14 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
         return 1 if unit in CP_GROUP1_UNITS else 2
 
     res["_g"] = res.apply(_group, axis=1)
-    res = res.sort_values("_g").reset_index(drop=True)
+
+    # 組內排序：幹部（所長/副所長/小隊長等）排最前，同單位人員跟在後面
+    CP_UNIT_ORDER = {"中興所": 1, "龍潭所": 2, "偵查隊": 3,
+                     "石門所": 4, "聖亭所": 5, "三和所": 6, "高平所": 7}
+    res["_unit_ord"] = res["單位"].map(lambda x: CP_UNIT_ORDER.get(str(x).strip(), 99))
+    res["_is_senior"] = res["職別"].apply(lambda x: 0 if str(x).strip() in SENIOR_RANKS else 1)
+    res = res.sort_values(["_g", "_unit_ord", "_is_senior"]).drop(
+        columns=["_unit_ord", "_is_senior"]).reset_index(drop=True)
 
     group_ids, radio_codes, unit_officer_count = [], [], {}
     for i, row in res.iterrows():
