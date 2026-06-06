@@ -37,7 +37,7 @@ SCOPES   = ["https://www.googleapis.com/auth/spreadsheets",
 
 DEFAULT_UNIT     = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME     = "115年4月10日 19時至23時"
-DEFAULT_PROJ_BODY = "「全市取締酒後駕車及防制危險駕車」暨「場所臨檢」及「取締改裝(噪音)車輛專案監、警、環联合稽查」"
+DEFAULT_PROJ_BODY = "「全市取締酒後駕車及防制危險駕車」暨「擴大臨檢」及「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
 DEFAULT_BRIEF = (
     "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，"
     "落實「人犯戒護安全、案件程序安全、執法者及民眾安全」。\n"
@@ -600,7 +600,10 @@ if "initialized" not in st.session_state:
     if cfg and not err:
         # ── 雲端資料優先還原 ──
         st.session_state.p_time     = cfg.get("plan_time",    DEFAULT_TIME)
-        st.session_state.proj_body  = cfg.get("project_name", DEFAULT_PROJ_BODY)
+        raw_proj = cfg.get("project_name", DEFAULT_PROJ_BODY)
+        # 若雲端儲存的名稱開頭帶有 4 碼數字日期，自動去除
+        import re as _re
+        st.session_state.proj_body = _re.sub(r'^\d{4}', '', raw_proj) or DEFAULT_PROJ_BODY
         st.session_state.b_info     = cfg.get("briefing",     DEFAULT_BRIEF)
         st.session_state.ptl_focus  = cfg.get("ptl_focus",    DEFAULT_PTL_FOCUS)
         st.session_state.cp_focus   = cfg.get("cp_focus",     DEFAULT_CP_FOCUS)
@@ -663,8 +666,8 @@ with col_proj:
                              value=st.session_state.proj_body, height=80, key="ui_proj_body")
     st.session_state.proj_body = proj_body
 
-# 專案名稱直接使用輸入值，日期代碼由使用者自行包含在名稱中
-p_name = proj_body
+# p_name = 日期代碼(4碼) + 純專案名稱，日期代碼不儲存在 proj_body 裡
+p_name = f"{mmdd}{proj_body}"
 
 # ── 貳、警力統計（全自動）──
 live_stats = calculate_stats(st.session_state.df_cmd,
