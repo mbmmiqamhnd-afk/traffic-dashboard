@@ -322,11 +322,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
-# --- 4. 簽到表單頁完全輸出優化版 ---
+# --- 4. 簽到表：分局長與上級督導拉開距離、副分局長在下列之完美版 ---
 def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=8*mm, bottomMargin=8*mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=10*mm, bottomMargin=10*mm)
     page_width = A4[0] - 30*mm
     story = []
     
@@ -334,32 +334,35 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=20, spaceAfter=1*mm, wordWrap='CJK')
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
     
+    # 標頭
     story.append(Paragraph(f"<b>{unit}執行{project}簽到表</b>", style_title))
     date_part = time_str.split(' ')[0] if ' ' in time_str else "115年4月10日"
     story.append(Paragraph(f"時間：{date_part} {stats['b_time']}", style_info))
     story.append(Paragraph(f"地點：{stats['b_loc']}", style_info))
-    story.append(Spacer(1, 3*mm))
+    story.append(Spacer(1, 4*mm))
     
-    # 長官列
-    story.append(Paragraph("分局長：            上級督導：", style_info))
+    # 🥊 長官排版核心：分開分局長與上級督導，中間插入大量全形空格以拉開距離
+    story.append(Paragraph("<b>分局長：</b>            <b>上級督導：</b>", style_info))
+    story.append(Spacer(1, 10*mm))
+    
+    # 第二列副分局長
+    story.append(Paragraph("<b>副分局長：</b>", style_info))
     story.append(Spacer(1, 8*mm))
-    story.append(Paragraph("副分局長：", style_info))
-    story.append(Spacer(1, 6*mm))
     
-    # 🥊 【關鍵修正：列高從 32mm 降至 22mm，確保一頁輸出！】
+    # 基層表格 (列高 26mm 保證一頁輸出且簽名舒適)
     table_data = [[Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]]
     rows = [("交通組", "聖亭派出所"), ("督察組", "龍潭派出所"), ("行政組", "中興派出所"), ("保安民防組", "石門派出所"), ("勤務指揮中心", "高平派出所"), ("偵查隊", "三和派出所"), ("", "龍潭交通分隊")]
     for l, r in rows: table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
     
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[10*mm] + [22*mm]*len(rows))
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[10*mm] + [26*mm]*len(rows))
     t.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), 
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (3,0), colors.whitesmoke)
     ]))
     story.append(t)
+    
     doc.build(story)
     return buf.getvalue()
-
 # (其餘邏輯與上一版完全一致，直接覆蓋即可)
 def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     try:
