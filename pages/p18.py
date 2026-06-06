@@ -128,7 +128,7 @@ def p18_page():
     
     st.divider()
 
-    # --- 2. 模式選擇分流開關 (修正拼字盲區，達成精準二進位制流轉) ---
+    # --- 2. 模式選擇分流開關 ---
     st.subheader("🎯 2. 請選擇本次執行目標模式")
     op_mode = st.radio(
         "執行目標：",
@@ -237,8 +237,6 @@ def p18_page():
             
         with st.spinner("系統正在全力加速運算處理中..."):
             try:
-                mode_label = "底稿回填點數生成" if is_only_pts else "綜合點數印領清冊"
-
                 # 1. 讀取交通事故表
                 df_acc_raw = pd.read_excel(file_acc, header=4)
                 df_acc_raw['姓名'] = df_acc_raw['姓名'].astype(str).str.strip()
@@ -275,7 +273,7 @@ def p18_page():
                             ext_year, ext_month = m.group(1), m.group(2)
                             break
                 
-                # 4. 核心填空大迴圈
+                # 4. 核心邏輯：逐個分頁讀取底稿，並將數據智慧回填、重算
                 final_sheets = {}
                 summary_rows = []
                 g_cite = g_acc = g_traf = g_all = 0
@@ -308,6 +306,11 @@ def p18_page():
                             member_rows_idx.append(r)
                             
                         df_members = df_work.iloc[member_rows_idx].copy()
+                        
+                        # --- 【核心修正點：完美解決 Pandas 3.0 嚴格型態限制】 ---
+                        # 將切割出來的名單強制轉為萬用型態，從此允許塞入任何 int 數據！
+                        df_members = df_members.astype(object)
+                        
                         s_cite, s_acc, s_traf = 0, 0, 0
                         
                         for idx in df_members.index:
@@ -332,7 +335,6 @@ def p18_page():
                             
                             s_cite += cp; s_acc += ap; s_traf += tp
                             
-                            # --- 【大優化回填】將回填更新後的總點數完美捕捉進名單，供模式二精算獎金 ---
                             if total_pts > 0:
                                 direct_exec_list.append({
                                     "單位名稱": sheet_name, "員警姓名": name,
@@ -377,7 +379,7 @@ def p18_page():
                     
                     st.download_button("📥 下載【處理道路交通安全人員獎勵金點數統計表】(完美回填版)", pts_excel_data, pts_filename, use_container_width=True, type="primary")
                 
-                # --- 【完美分流 B】模式二：單獨產生獎金印領清冊 (攔截死結已解開！全代碼全速運作) ---
+                # --- 【完美分流 B】模式二：單獨產生獎金印領清冊 ---
                 else:
                     df_direct_exec = pd.DataFrame(direct_exec_list)
                     if df_direct_exec.empty:
