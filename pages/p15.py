@@ -71,7 +71,7 @@ DEFAULT_PTL = pd.DataFrame([
     {"單位": "聖亭所", "無線電代號": "", "職別": "警員", "姓名": "劉憬霖", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "聖亭所", "無線電代號": "", "職別": "警員", "姓名": "謝伯昇", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "張家維", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "王采蘋", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "警員", "無線電代號": "", "職別": "警員", "姓名": "王采蘋", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "中興所", "無線電代號": "", "職別": "所長", "姓名": "董亦文", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "中興所", "無線電代號": "", "職別": "警員", "姓名": "羅俊傑", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "石門所", "無線電代號": "", "職別": "所長", "姓名": "林育辰", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
@@ -322,7 +322,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
-# --- 4. 【核心修正重大升級】簽到表：表格最上方正式補齊長官(分局長、上級指導、副分局長)欄位 ---
 def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
     buf = io.BytesIO()
@@ -340,7 +339,6 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     story.append(Paragraph(f"地點：{stats['b_loc']} 召開", style_info))
     story.append(Spacer(1, 4*mm))
     
-    # 🥊 【長官列歸位】在單位簽到格子上方, 正式置入最高長官與指導官簽名列
     boss_data = [
         [Paragraph("<b>職稱</b>", style_cell), Paragraph("<b>分局長</b>", style_cell), Paragraph("<b>上級指導官</b>", style_cell), Paragraph("<b>副分局長</b>", style_cell)],
         [Paragraph("<b>簽名</b>", style_cell), "", "", ""]
@@ -353,7 +351,6 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     story.append(t_boss)
     story.append(Spacer(1, 6*mm))
     
-    # 基層各派出所與內勤單位簽到表
     table_data = [[Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]]
     rows = [("交通組", "聖亭派出所"), ("督察組", "龍潭派出所"), ("行政組", "中興派出所"), ("保安民防組", "石門派出所"), ("勤務指揮中心", "高平派出所"), ("偵查隊", "三和派出所"), ("", "龍潭交通分隊")]
     for l, r in rows: table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
@@ -452,7 +449,8 @@ with col_time:
 
 mmdd_code = extract_mmdd(p_time)
 with col_proj:
-    input_proj_body = st.text_input(f"專案名稱 (目前連動代碼: {mmdd_code})", value=st.session_body, key="input_proj_body")
+    # 【核心修正點】100% 解決 AttributeError，將原本錯誤的 st.session_body 改回正確的 st.session_state.proj_body 綁定
+    input_proj_body = st.text_input(f"專案名稱 (目前連動代碼: {mmdd_code})", value=st.session_state.proj_body, key="input_proj_body")
     st.session_state.proj_body = input_proj_body
 
 p_name = f"{mmdd_code}{input_proj_body}"
