@@ -595,6 +595,28 @@ if "initialized" not in st.session_state:
 
     st.session_state.initialized = True
 
+# ── 缺漏 key 補丁：版本升級後舊 session 可能缺少新 key，一律補齊預設值 ──
+_DEFAULTS = {
+    "p_time":     DEFAULT_TIME,
+    "proj_body":  DEFAULT_PROJ_BODY,
+    "b_info":     DEFAULT_BRIEF,
+    "ptl_focus":  DEFAULT_PTL_FOCUS,
+    "cp_focus":   DEFAULT_CP_FOCUS,
+    "brief_time": DEFAULT_BRIEF_TIME,
+    "brief_loc":  DEFAULT_BRIEF_LOC,
+}
+for _k, _v in _DEFAULTS.items():
+    if _k not in st.session_state:
+        st.session_state[_k] = _v
+
+for _k, _fn in [
+    ("df_cmd", lambda: DEFAULT_CMD.copy()),
+    ("df_ptl", lambda: assign_ptl_groups(DEFAULT_PTL.copy())),
+    ("df_cp",  lambda: assign_cp_groups(DEFAULT_CHECKPOINT.copy())),
+]:
+    if _k not in st.session_state:
+        st.session_state[_k] = _fn()
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 9. UI
 # ══════════════════════════════════════════════════════════════════════════════
