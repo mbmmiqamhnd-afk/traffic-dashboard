@@ -51,7 +51,7 @@ DEFAULT_BRIEF = (
 DEFAULT_PTL_FOCUS = "採取全面機動巡邏，針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。"
 DEFAULT_CP_FOCUS = "由第一階段之第1至第4組機動警力，會合偵查隊專案人員，於21時20分前集結完畢，21時30分準時進入目標場所執行威力掃蕩。"
 
-# 參、督導及其他任務編組表（【核心修正】交通組與聯絡組已完全拆分獨立）
+# 參、督導及其他任務編組表
 DEFAULT_CMD = pd.DataFrame([
     {"項目": "指揮官", "通訊代號": "隆安1號", "任務目標": "勤務核定並重點機動督導", "負責人員": "分局長 施宇峰", "共同執行人員": "巡官陳鵬翔、警員張庭溱"},
     {"項目": "副指揮官", "通訊代號": "隆安2號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 何憶雯", "共同執行人員": "警務佐曾威仁"},
@@ -65,20 +65,37 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "聯合稽查站", "通訊代號": "隆安1382", "任務目標": "配合環保局及監理站稽查車輛", "負責人員": "交通組巡官 郭勝隆", "共同執行人員": "環保局及監理站人員"}
 ])
 
-# 肆、第一階段機動攔查
+# 肆、【核心修正】第一階段機動攔查（新增「無線電代號」欄位，供網頁編輯）
 DEFAULT_PTL = pd.DataFrame([
-    {"單位": "聖亭所", "服勤人員": "副所長邱品淳\n警員劉憬霖\n警員謝伯昇", "任務分工": "帶班\n攔檢盤查\n警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "龍潭所", "服勤人員": "警員張家維\n警員王采蘋", "任務分工": "帶班兼蒐證\n攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "中興所", "服勤人員": "所長董亦文\n警員羅俊傑", "任務分工": "帶班兼蒐證\n攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "石門所\n三和所", "服勤人員": "所長林育辰\n警員童霈晟", "任務分工": "帶班兼蒐證\n攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "石門所\n高平所", "服勤人員": "巡佐林偉政\n警員葉雲翔", "任務分工": "帶班兼蒐證\n攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中興路、龍新路沿線及治安要點機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "龍潭交警\n通分隊", "服勤人員": "警員林家豪\n警員吳沛軒", "任務分工": "帶班兼蒐證\n攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "轄內易發生危駕路段、各聯外道路機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"}
+    {"單位": "聖亭所", "無線電代號": "聖亭分台", "職別": "副所長", "姓名": "邱品淳", "任務分工": "帶班", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "聖亭所", "無線電代號": "聖亭機動", "職別": "警員", "姓名": "劉憬霖", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "聖亭所", "無線電代號": "聖亭警戒", "職別": "警員", "姓名": "謝伯昇", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "龍潭所", "無線電代號": "龍潭帶班", "職別": "警員", "姓名": "張家維", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "龍潭所", "無線電代號": "龍潭機動", "職別": "警員", "姓名": "王采蘋", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "中興所", "無線電代號": "中興帶班", "職別": "所長", "姓名": "董亦文", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "中興所", "無線電代號": "中興機動", "職別": "警員", "姓名": "羅俊傑", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "石門所", "無線電代號": "石門帶班", "職別": "所長", "姓名": "林育辰", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "三和所", "無線電代號": "三和機動", "職別": "警員", "姓名": "童霈晟", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "石門所", "無線電代號": "分局巡佐", "職別": "巡佐", "姓名": "林偉政", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中興路、龍新路沿線及治安要點機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "高平所", "無線電代號": "高平機動", "職別": "警員", "姓名": "葉雲翔", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中興路、龍新路沿線及治安要點機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "龍潭交分隊", "無線電代號": "交通交01", "職別": "警員", "姓名": "林家豪", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "轄內易發生危駕路段、各聯外道路機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "龍潭交分隊", "無線電代號": "交通交02", "職別": "警員", "姓名": "吳沛軒", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "轄內易發生危駕路段、各聯外道路機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"}
 ])
 
-# 伍、第二階段擴大臨檢
+# 伍、【核心修正】第二階段擴大臨檢（新增「無線電代號」欄位，供網頁編輯）
 DEFAULT_CHECKPOINT = pd.DataFrame([
-    {"單位": "中興所\n龍潭所\n偵查隊", "服勤人員": "所長董亦文\n警員羅俊傑\n警員張家維\n警員王采蘋\n警員許家洋", "任務分工": "帶班\n製作臨檢紀錄\n盤查兼蒐證\n盤查兼蒐證\n刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nC. 丹陽泰養生館 (中豐路281號)\nD. 溫馨汽車旅館 (中正路457號)\nE. 凱虹汽車旅館 (中正路506號)\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
-    {"單位": "石門所\n聖亭所\n三和所\n偵查隊", "服勤人員": "所長林育辰\n副所長邱品淳\n警員劉憬霖\n警員謝伯昇\n小隊長陳正育\n偵查佐鄧正斌", "任務分工": "帶班\n製作臨檢紀錄\n盤查兼蒐證\n大門警戒\n刑案偵防、社維法案件查處\n持DV全程蒐證", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nF. 憤怒鳥網咖 (中興路269號)\nG. 真情男女養生館 (中興路387號)\nH. 萬紫千紅舒壓館 (中興路491-3號)\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"}
+    {"單位": "中興所", "無線電代號": "臨檢中興", "職別": "所長", "姓名": "董亦文", "任務分工": "帶班", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nC. 丹陽泰養生館 (中豐路281號)\nD. 溫馨汽車旅館 (中正路457號)\nE. 凱虹汽車旅館 (中正路506號)\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
+    {"單位": "中興所", "無線電代號": "臨檢紀錄1", "職別": "警員", "姓名": "羅俊傑", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
+    {"單位": "龍潭所", "無線電代號": "臨檢龍潭", "職別": "警員", "姓名": "張家維", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
+    {"單位": "龍潭所", "無線電代號": "臨檢盤查1", "職別": "警員", "姓名": "王采蘋", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
+    {"單位": "偵查隊", "無線電代號": "刑事專案1", "職別": "警員", "姓名": "許家洋", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
+    
+    {"單位": "石門所", "無線電代號": "臨檢石門", "職別": "所長", "姓名": "林育辰", "任務分工": "帶班", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nF. 憤怒鳥網咖 (中興路269號)\nG. 真情男女養生館 (中興路387號)\nH. 萬紫千紅舒壓館 (中興路491-3號)\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
+    {"單位": "聖亭所", "無線電代號": "臨檢紀錄2", "職別": "副所長", "姓名": "邱品淳", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
+    {"單位": "聖亭所", "無線電代號": "臨檢盤查2", "職別": "警員", "姓名": "劉憬霖", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
+    {"單位": "三和所", "無線電代號": "臨檢警戒1", "職別": "警員", "姓名": "謝伯昇", "任務分工": "大門警戒", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
+    {"單位": "偵查隊", "無線電代號": "刑事小隊", "職別": "小隊長", "姓名": "陳正育", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
+    {"單位": "偵查隊", "無線電代號": "刑事DV蒐證", "職別": "偵查佐", "姓名": "鄧正斌", "任務分工": "持DV全程蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"}
 ])
 
 # --- 2. 輔助函數 ---
@@ -172,12 +189,12 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         for ws_name, df in [("三合一_指揮組", df_cmd), ("三合一_巡邏組", df_ptl), ("三合一_擴大臨檢組", df_cp)]:
             if df is None: continue
             try: ws = sh.worksheet(ws_name)
-            except: ws = sh.add_worksheet(title=ws_name, rows="100", cols="20")
+            except: ws = sh.add_worksheet(title=ws_name, rows="150", cols="20")
             ws.clear()
             
             clean_df = df.dropna(how='all').fillna("")
-            if "組別" in clean_df.columns:
-                clean_df = clean_df.drop(columns=["組別"])
+            if "編組" in clean_df.columns:
+                clean_df = clean_df.drop(columns=["編組"])
                 
             if not clean_df.empty:
                 ws.update([clean_df.columns.tolist()] + clean_df.astype(str).values.tolist())
@@ -226,27 +243,28 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     data_cmd = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["項目", "通訊代號", "任務目標", "負責人員", "共同人員"]]]
     for _, r in df_cmd.iterrows():
         data_cmd.append([Paragraph(clean(r.get('項目')), style_cell), Paragraph(clean(r.get('通訊代號')), style_cell), Paragraph(clean(r.get('任務目標')), style_cell_left), Paragraph(clean(r.get('負責人員')), style_cell), Paragraph(clean(r.get('共同執行人員')), style_cell)])
-    
     t_cmd = Table(data_cmd, colWidths=[page_width*0.12, page_width*0.14, page_width*0.28, page_width*0.26, page_width*0.2])
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
     
+    # 肆、第一階段（PDF 標頭同步修正：新增無線電代號欄，重新配置比例）
     story.append(Paragraph("<b>肆、【第一階段】機動攔查任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text)) 
-    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["組別", "單位", "服勤人員", "任務分工", "攜行裝備", "責任區"]]]
+    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "責任區"]]]
     for _, r in df_ptl.iterrows():
-        data_ptl.append([Paragraph(clean(r.get('組別')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell_left), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('攜行裝備')), style_cell_left), Paragraph(clean(r.get('巡邏與攔查責任區')), style_cell_left)])
-    t_ptl = Table(data_ptl, colWidths=[page_width*0.11, page_width*0.12, page_width*0.20, page_width*0.21, page_width*0.16, page_width*0.20])
+        data_ptl.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('攜行裝備')), style_cell_left), Paragraph(clean(r.get('巡邏與攔查責任區')), style_cell_left)])
+    t_ptl = Table(data_ptl, colWidths=[page_width*0.08, page_width*0.11, page_width*0.09, page_width*0.07, page_width*0.09, page_width*0.13, page_width*0.15, page_width*0.28])
     t_ptl.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_ptl)
 
+    # 伍、第二階段（PDF 標頭同步修正：新增無線電代號欄，重新配置比例）
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     if df_cp is not None and not df_cp.empty:
-        data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["組別", "單位", "服勤人員", "任務分工", "臨檢場所"]]]
+        data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢場所"]]]
         for _, r in df_cp.iterrows():
-            data_cp.append([Paragraph(clean(r.get('組別')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('服勤人員')), style_cell_left), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('臨檢目標場所')), style_cell_left)])
-        t_cp = Table(data_cp, colWidths=[page_width*0.11, page_width*0.12, page_width*0.24, page_width*0.24, page_width*0.29])
+            data_cp.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('臨檢目標場所')), style_cell_left)])
+        t_cp = Table(data_cp, colWidths=[page_width*0.08, page_width*0.11, page_width*0.09, page_width*0.07, page_width*0.09, page_width*0.20, page_width*0.36])
         t_cp.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
         story.append(t_cp)
     
@@ -330,7 +348,7 @@ if "initialized" not in st.session_state:
     st.session_state.df_cp = DEFAULT_CHECKPOINT.copy()
     st.session_state.initialized = True
 
-st.title("🚓 專案勤務規劃系統")
+st.title("專案勤務規劃系統")
 
 col_time, col_proj = st.columns([1, 2])
 with col_time:
@@ -375,8 +393,16 @@ with tab1:
     st.session_state.df_ptl = res_ptl_raw
     if not res_ptl_raw.empty:
         res_ptl = res_ptl_raw.copy()
-        res_ptl["組別"] = [f"第{i+1}巡邏組" for i in range(len(res_ptl))]
-        res_ptl = res_ptl[["組別"] + [col for col in res_ptl.columns if col != "組別"]]
+        # 【動態判斷】依據連續單位生成「編組」欄位 [cite: 54]
+        group_ids = []
+        g_idx = 1
+        for i, row in res_ptl.iterrows():
+            if i > 0 and row['單位'] != res_ptl.loc[i-1, '單位']:
+                g_idx += 1
+            group_ids.append(f"第{g_idx}巡邏組")
+        res_ptl["編組"] = group_ids
+        # 排序：確保編組在左側，無線電代號在右側 [cite: 54]
+        res_ptl = res_ptl[["編組", "無線電代號"] + [col for col in res_ptl.columns if col not in ["編組", "無線電代號"]]]
     else:
         res_ptl = res_ptl_raw
 
@@ -385,8 +411,13 @@ with tab2:
     st.session_state.df_cp = res_cp_raw
     if not res_cp_raw.empty:
         res_cp = res_cp_raw.copy()
-        res_cp["組別"] = [f"第{i+1}臨檢組" for i in range(len(res_cp))]
-        res_cp = res_cp[["組別"] + [col for col in res_cp.columns if col != "組別"]]
+        group_ids_cp = []
+        for i in range(len(res_cp)):
+            if i < 5: group_ids_cp.append("第1臨檢組")
+            else: group_ids_cp.append("第2臨檢組")
+        res_cp["編組"] = group_ids_cp
+        # 排序：確保編組在左側，無線電代號在右側 [cite: 60]
+        res_cp = res_cp[["編組", "無線電代號"] + [col for col in res_cp.columns if col not in ["編組", "無線電代號"]]]
     else:
         res_cp = res_cp_raw
 
