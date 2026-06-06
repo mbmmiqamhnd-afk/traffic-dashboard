@@ -58,7 +58,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "副指揮官", "通訊代號": "隆安3號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 蔡志明", "共同執行人員": "警員陳明祥"},
     {"項目": "行政組", "通訊代號": "隆安5號", "任務目標": "督導擴大臨檢威力掃蕩第一臨檢組", "負責人員": "組長 周金柱", "共同執行人員": "巡官蕭凱文"},
     {"項目": "督察組", "通訊代號": "隆安6號", "任務目標": "機動督導各單位勤務紀律", "負責人員": "組長黃長旗", "共同執行人員": "警務員 陳冠彰"},
-    {"項目": "保安民防組", "通訊代號": "隆安9號", "任務目標": "督導擴大臨檢威力掃蕩第二臨檢組", "負責人員": "組長林良鍾", "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
+    {"項目": "保安民防組", "通訊代號": "隆安9號", "任務目標": "督導擴大臨檢威力掃蕩第二臨檢組", "負責人員": "組長林良鍾", "共同執行人員": "警務員曾盛鉉、警務佐許裕、警務佐劉俊德"},
     {"項目": "交通組", "通訊代號": "隆安 13號", "任務目標": "督導第一階段機動攔查", "負責人員": "組長 楊孟竟", "共同執行人員": "巡官郭勝隆、警務員李峯甫、警務員盧冠仁"},
     {"項目": "聯絡組", "通訊代號": "隆安", "任務目標": "擔任通訊聯絡、指揮管制事宜", "負責人員": "勤務指揮中心 主任蔡奇青", "共同執行人員": "執勤官李文章、執勤員黃文興、警員吳享運"},
     {"項目": "偵訊組", "通訊代號": "隆安10號", "任務目標": "負責按捺指紋、照相及移送", "負責人員": "偵查隊隊長 柯志賢", "共同執行人員": "偵查隊值日小隊"},
@@ -72,7 +72,7 @@ DEFAULT_PTL = pd.DataFrame([
     {"單位": "聖亭所", "無線電代號": "", "職別": "警員", "姓名": "謝伯昇", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "張家維", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "王采蘋", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "中興所", "無線電代號": "", "職別": "所長", "姓名": "董亦文", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏.。"},
+    {"單位": "中興所", "無線電代號": "", "職別": "所長", "姓名": "董亦文", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "中興所", "無線電代號": "", "職別": "警員", "姓名": "羅俊傑", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "石門所", "無線電代號": "", "職別": "所長", "姓名": "林育辰", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "三和所", "無線電代號": "", "職別": "警員", "姓名": "童霈晟", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
@@ -94,7 +94,7 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"單位": "聖亭所", "無線電代號": "", "職別": "副所長", "姓名": "邱品淳", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
     {"單位": "聖亭所", "無線電代號": "", "職別": "警員", "姓名": "劉憬霖", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
     {"單位": "三和所", "無線電代號": "", "職別": "警員", "姓名": "謝伯昇", "任務分工": "大門警戒", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
-    {"單位": "偵查隊", "無線電代號": "", "職別": "小隊長", "姓名": "陳正育", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G.真情男女養生館、H. 萬紫千紅舒壓館"},
+    {"單位": "偵查隊", "無線電代號": "", "職別": "小隊長", "姓名": "陳正育", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
     {"單位": "偵查隊", "無線電代號": "", "職別": "偵查佐", "姓名": "鄧正斌", "任務分工": "持DV全程蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"}
 ])
 
@@ -124,7 +124,7 @@ def extract_mmdd(time_text):
         pass
     return datetime.now().strftime("%m%d")
 
-# 【核心功能更新】警政無線電呼號：維持2碼(或交通隊3碼)，非主管尾數改為3起跳遞增
+# 警政無線電呼號預設自動生成算法（維持2碼或3碼，非主管尾數改為3起跳遞增）
 def generate_police_radio_code(unit, rank, idx_in_unit=1):
     unit_map = {
         "聖亭所": "50", "龍潭所": "60", "中興所": "70", 
@@ -140,11 +140,10 @@ def generate_police_radio_code(unit, rank, idx_in_unit=1):
     elif rk in ["副所長", "小隊長"]:
         return base[:-1] + "2"
     else:
-        # 【修正核心邏輯】去除尾數0，直接換成從 3 開始遞增的個位數，維持與基底相同的2碼(或3碼)位數
         start_suffix = 3 + (idx_in_unit - 1)
         return f"{base[:-1]}{start_suffix}"
 
-# 動態處理巡邏組：計算編組、且讓非主管同仁呼號以尾數 3 起跳，並同步全組代號
+# 動態處理巡邏組
 def assign_ptl_groups(df):
     if df.empty: return df
     res = df.copy()
@@ -164,7 +163,6 @@ def assign_ptl_groups(df):
             
     res["編組"] = group_ids
     
-    # 強制將非首位同仁的呼號聯動為該組首位人員代號，達成 PDF 大格合併
     for g_name in res['編組'].unique():
         sub_idx = res[res['編組'] == g_name].index
         if len(sub_idx) > 0:
@@ -173,7 +171,7 @@ def assign_ptl_groups(df):
             
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]
 
-# 動態處理臨檢組：計算編組、且讓非主管同仁呼號以尾數 3 起跳，並同步全組代號
+# 動態處理臨檢組
 def assign_cp_groups(df):
     if df.empty: return df
     res = df.copy()
@@ -191,7 +189,6 @@ def assign_cp_groups(df):
             
     res["編組"] = group_ids_cp
     
-    # 強制將非首位同仁的呼號聯動為該組首位人員代號，達成 PDF 大格合併
     for g_name in res['編組'].unique():
         sub_idx = res[res['編組'] == g_name].index
         if len(sub_idx) > 0:
@@ -319,12 +316,13 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
 
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", style_title))
     
+    # 壹、基本資料【優化修正：大幅調寬指揮官欄位(0.24 $\rightarrow$ 0.32)，確保完美容納 7 個中文字不換行】
     story.append(Paragraph("<b>壹、 勤務基本資料</b>", style_section))
     date_str = clean(time_str.split(" ")[0] if " " in time_str else "115年4月10日")
     time_str_only = clean(time_str.split(" ")[1] if " " in time_str else "19時至23時")
     data_basic = [[Paragraph("<b>實施日期</b>", style_cell), Paragraph("<b>勤務時間</b>", style_cell), Paragraph("<b>指揮官</b>", style_cell), Paragraph("<b>勤務編組</b>", style_cell), Paragraph("<b>聯合稽查站地點</b>", style_cell)], 
                   [Paragraph(date_str, style_cell), Paragraph(time_str_only, style_cell), Paragraph("分局長 施宇峰", style_cell), Paragraph("如任務編組表", style_cell), Paragraph("分局廣場", style_cell)]]
-    t_basic = Table(data_basic, colWidths=[page_width*0.18, page_width*0.2, page_width*0.18, page_width*0.18, page_width*0.26])
+    t_basic = Table(data_basic, colWidths=[page_width*0.14, page_width*0.18, page_width*0.32, page_width*0.14, page_width*0.22])
     t_basic.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_basic)
     
@@ -343,7 +341,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
     
-    # 肆、第一階段
+    # 肆、【優化修正：調寬姓名欄位(0.09 $\rightarrow$ 0.13)，滿足完美容納 3 個中文字寬度需求】
     story.append(Paragraph("<b>肆、【第一階段】機動攔查任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text)) 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]]
@@ -362,11 +360,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     ptl_spans = calculate_table_spans(data_ptl, [0, 1, 2, 7])
     t_ptl_style.extend(ptl_spans)
     
-    t_ptl = Table(data_ptl, colWidths=[page_width*0.08, page_width*0.11, page_width*0.09, page_width*0.07, page_width*0.09, page_width*0.13, page_width*0.15, page_width*0.28])
+    t_ptl = Table(data_ptl, colWidths=[page_width*0.07, page_width*0.11, page_width*0.09, page_width*0.06, page_width*0.13, page_width*0.12, page_width*0.14, page_width*0.28])
     t_ptl.setStyle(TableStyle(t_ptl_style))
     story.append(t_ptl)
 
-    # 伍、第二階段
+    # 伍、【優化修正：調寬姓名欄位(0.09 $\rightarrow$ 0.13)，滿足完美容納 3 個中文字寬度需求】
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     if df_cp is not None and not df_cp.empty:
@@ -386,7 +384,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         cp_spans = calculate_table_spans(data_cp, [0, 1, 2, 6])
         t_cp_style.extend(cp_spans)
         
-        t_cp = Table(data_cp, colWidths=[page_width*0.08, page_width*0.11, page_width*0.09, page_width*0.07, page_width*0.09, page_width*0.20, page_width*0.36])
+        t_cp = Table(data_cp, colWidths=[page_width*0.07, page_width*0.11, page_width*0.09, page_width*0.06, page_width*0.13, page_width*0.19, page_width*0.35])
         t_cp.setStyle(TableStyle(t_cp_style))
         story.append(t_cp)
     
