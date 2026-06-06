@@ -322,64 +322,45 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
-# --- 4. 【單頁完全輸出優化版】簽到表：黃金高度 26mm 鎖定，100% 拒絕產生第 2 頁 ---
+# --- 4. 簽到表單頁完全輸出優化版 ---
 def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
     buf = io.BytesIO()
-    # 頂底部邊距固定為 10mm 釋放垂直可視空間
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=10*mm, bottomMargin=10*mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=8*mm, bottomMargin=8*mm)
     page_width = A4[0] - 30*mm
     story = []
     
     style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=6, wordWrap='CJK')
     style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=20, spaceAfter=1*mm, wordWrap='CJK')
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
-    style_boss_left = ParagraphStyle('BossLeft', fontName=font, fontSize=14, leading=20, alignment=0, wordWrap='CJK')
-    style_boss_right = ParagraphStyle('BossRight', fontName=font, fontSize=14, leading=20, alignment=0, wordWrap='CJK')
     
-    # 簽到表標頭基本資料
     story.append(Paragraph(f"<b>{unit}執行{project}簽到表</b>", style_title))
     date_part = time_str.split(' ')[0] if ' ' in time_str else "115年4月10日"
     story.append(Paragraph(f"時間：{date_part} {stats['b_time']}", style_info))
     story.append(Paragraph(f"地點：{stats['b_loc']}", style_info))
-    story.append(Spacer(1, 4*mm))
+    story.append(Spacer(1, 3*mm))
     
-    # 使用無邊框 Table 完美拉開長官手寫簽名空間
-    boss_row1 = [
-        Paragraph("<b>分局長：</b>", style_boss_left),
-        Paragraph("<b>上級督導：</b>", style_boss_right)
-    ]
-    t_boss1 = Table([boss_row1], colWidths=[page_width * 0.5, page_width * 0.5])
-    t_boss1.setStyle(TableStyle([
-        ('FONTNAME', (0,0), (-1,-1), font),
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('LEFTPADDING', (0,0), (-1,-1), 0),
-        ('RIGHTPADDING', (0,0), (-1,-1), 0),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-        ('TOPPADDING', (0,0), (-1,-1), 0)
-    ]))
-    story.append(t_boss1)
-    story.append(Spacer(1, 14*mm))
+    # 長官列
+    story.append(Paragraph("分局長：            上級督導：", style_info))
+    story.append(Spacer(1, 8*mm))
+    story.append(Paragraph("副分局長：", style_info))
+    story.append(Spacer(1, 6*mm))
     
-    story.append(Paragraph("<b>副分局長：</b>", style_info))
-    story.append(Spacer(1, 10*mm))
-    
-    # 🥊 【爆頁黃金修正點】rowHeights 的派出所列高精準調整為 26mm！
-    # 26mm $\times$ 7列 = 182mm，搭配長官區與邊邊，100% 絕對在一頁內完美輸出，格子依舊極其寬敞！
+    # 🥊 【關鍵修正：列高從 32mm 降至 22mm，確保一頁輸出！】
     table_data = [[Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]]
     rows = [("交通組", "聖亭派出所"), ("督察組", "龍潭派出所"), ("行政組", "中興派出所"), ("保安民防組", "石門派出所"), ("勤務指揮中心", "高平派出所"), ("偵查隊", "三和派出所"), ("", "龍潭交通分隊")]
     for l, r in rows: table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
     
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[10*mm] + [26*mm]*len(rows))
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[10*mm] + [22*mm]*len(rows))
     t.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), 
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (3,0), colors.whitesmoke)
     ]))
     story.append(t)
-    
     doc.build(story)
     return buf.getvalue()
 
+# (其餘邏輯與上一版完全一致，直接覆蓋即可)
 def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
