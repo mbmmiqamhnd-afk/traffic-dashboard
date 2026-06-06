@@ -170,12 +170,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story = []
 
     style_title        = ParagraphStyle('Title',       fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8,   wordWrap='CJK')
-    style_info         = ParagraphStyle('Info',        fontName=font, fontSize=12, alignment=2, spaceAfter=10,              wordWrap='CJK')
-    style_cell         = ParagraphStyle('Cell',        fontName=font, fontSize=13, leading=18, alignment=1,                 wordWrap='CJK')
-    style_cell_left    = ParagraphStyle('CellLeft',    fontName=font, fontSize=13, leading=18, alignment=0,                 wordWrap='CJK')
+    style_info         = ParagraphStyle('Info',        fontName=font, fontSize=12, alignment=2, spaceAfter=10,               wordWrap='CJK')
+    style_cell         = ParagraphStyle('Cell',        fontName=font, fontSize=13, leading=18, alignment=1,                  wordWrap='CJK')
+    style_cell_left    = ParagraphStyle('CellLeft',    fontName=font, fontSize=13, leading=18, alignment=0,                  wordWrap='CJK')
     style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm,
-                                        alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0,                              wordWrap='CJK')
-    style_table_title  = ParagraphStyle('TTitle',      fontName=font, fontSize=16, alignment=1, leading=22,                 wordWrap='CJK')
+                                        alignment=TA_LEFT, leftIndent=5*mm, firstLineIndent=0,                               wordWrap='CJK')
+    style_table_title  = ParagraphStyle('TTitle',      fontName=font, fontSize=16, alignment=1, leading=22,                  wordWrap='CJK')
 
     story.append(Paragraph(f"{unit}{project}勤務規劃表", style_title))
     story.append(Paragraph(f"勤務時間：{time_str}", style_info))
@@ -427,23 +427,27 @@ s = d.get("check_station", DEFAULT_STATION)
 st.title("🚓 聯合稽查勤務規劃管理系統")
 c1, c2 = st.columns(2)
 
+# 1. 讓使用者修改時間
 p_time = c2.text_input("勤務時間", value=t)
 
+# 2. 解析時間內的月份與日期 (例如 "0328")
 match = re.search(r"(\d+)月(\d+)日", p_time)
 new_prefix = f"{str(match.group(1)).zfill(2)}{str(match.group(2)).zfill(2)}" if match else ""
 
-if "p_name_input" not in st.session_state:
-    st.session_state.p_name_input = p
+# 3. 處理網頁顯示用的「專案名稱」(去掉原本雲端資料開頭的 4 碼數字)
+if p and re.match(r"^\d{4}", p):
+    display_p_name = p[4:]
+else:
+    display_p_name = p
 
-current_p = st.session_state.p_name_input
+# 4. 網頁欄位只顯示純文字專案名稱
+p_name_display_input = c1.text_input("專案名稱", value=display_p_name)
+
+# 5. 在程式背後，自動與 new_prefix 還原成帶有 4 碼日期的完整名稱
 if new_prefix:
-    if re.match(r"^\d{4}", current_p):
-        if current_p[:4] != new_prefix:
-            st.session_state.p_name_input = f"{new_prefix}{current_p[4:]}"
-    else:
-        st.session_state.p_name_input = f"{new_prefix}{current_p}"
-
-p_name = c1.text_input("專案名稱", key="p_name_input")
+    p_name = f"{new_prefix}{p_name_display_input}"
+else:
+    p_name = p_name_display_input
 
 
 st.subheader("1. 指揮編組")
