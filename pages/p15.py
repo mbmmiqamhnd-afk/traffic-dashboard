@@ -65,7 +65,7 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "聯合稽查站", "通訊代號": "隆安1382", "任務目標": "配合環保局及監理站稽查車輛", "負責人員": "交通組巡官 郭勝隆", "共同執行人員": "環保局及監理站人員"}
 ])
 
-# 肆、【核心修正】第一階段機動攔查（新增「無線電代號」欄位，供網頁編輯）
+# 肆、第一階段機動攔查底稿
 DEFAULT_PTL = pd.DataFrame([
     {"單位": "聖亭所", "無線電代號": "聖亭分台", "職別": "副所長", "姓名": "邱品淳", "任務分工": "帶班", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "聖亭所", "無線電代號": "聖亭機動", "職別": "警員", "姓名": "劉憬霖", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
@@ -82,7 +82,7 @@ DEFAULT_PTL = pd.DataFrame([
     {"單位": "龍潭交分隊", "無線電代號": "交通交02", "職別": "警員", "姓名": "吳沛軒", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏與攔查責任區": "轄內易發生危駕路段、各聯外道路機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"}
 ])
 
-# 伍、【核心修正】第二階段擴大臨檢（新增「無線電代號」欄位，供網頁編輯）
+# 伍、第二階段擴大臨檢底稿
 DEFAULT_CHECKPOINT = pd.DataFrame([
     {"單位": "中興所", "無線電代號": "臨檢中興", "職別": "所長", "姓名": "董亦文", "任務分工": "帶班", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nC. 丹陽泰養生館 (中豐路281號)\nD. 溫馨汽車旅館 (中正路457號)\nE. 凱虹汽車旅館 (中正路506號)\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
     {"單位": "中興所", "無線電代號": "臨檢紀錄1", "職別": "警員", "姓名": "羅俊傑", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
@@ -123,6 +123,30 @@ def extract_mmdd(time_text):
     except:
         pass
     return datetime.now().strftime("%m%d")
+
+# 動態依連續單位分配「巡邏編組」名稱
+def assign_ptl_groups(df):
+    if df.empty: return df
+    res = df.copy()
+    group_ids = []
+    g_idx = 1
+    for i, row in res.iterrows():
+        if i > 0 and row['單位'] != res.loc[i-1, '單位']:
+            g_idx += 1
+        group_ids.append(f"第{g_idx}巡邏組")
+    res["編組"] = group_ids
+    return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏與攔查責任區"]]
+
+# 動態分配「臨檢編組」名稱（前5列為第1組，其餘為第2組）
+def assign_cp_groups(df):
+    if df.empty: return df
+    res = df.copy()
+    group_ids_cp = []
+    for i in range(len(res)):
+        if i < 5: group_ids_cp.append("第1臨檢組")
+        else: group_ids_cp.append("第2臨檢組")
+    res["編組"] = group_ids_cp
+    return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]]
 
 @st.cache_resource
 def get_client():
@@ -193,6 +217,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
             ws.clear()
             
             clean_df = df.dropna(how='all').fillna("")
+            # 雲端資料庫去耦合：儲存前安全移除「編組」動態生成欄位
             if "編組" in clean_df.columns:
                 clean_df = clean_df.drop(columns=["編組"])
                 
@@ -247,7 +272,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_cmd.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_cmd)
     
-    # 肆、第一階段（PDF 標頭同步修正：新增無線電代號欄，重新配置比例）
+    # 肆、第一階段（PDF 比例完美調配）
     story.append(Paragraph("<b>肆、【第一階段】機動攔查任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(ptl_f)}", style_text)) 
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "責任區"]]]
@@ -257,7 +282,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_ptl.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_ptl)
 
-    # 伍、第二階段（PDF 標頭同步修正：新增無線電代號欄，重新配置比例）
+    # 伍、第二階段（PDF 比例完美調配）
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     if df_cp is not None and not df_cp.empty:
@@ -343,9 +368,11 @@ if "initialized" not in st.session_state:
     st.session_state.proj_body = DEFAULT_PROJ_BODY
     st.session_state.b_info = DEFAULT_BRIEF
     st.session_state.stats_data = {'cmd': 7, 'ptl': 16, 'inv': 3, 'civ': 0, 'b_time': '19時30分至20時00分', 'b_loc': '分局二樓會議室'}
+    
+    # 網頁初始化：將動態生成的「編組」直接注入記憶體中
     st.session_state.df_cmd = DEFAULT_CMD.copy()
-    st.session_state.df_ptl = DEFAULT_PTL.copy()
-    st.session_state.df_cp = DEFAULT_CHECKPOINT.copy()
+    st.session_state.df_ptl = assign_ptl_groups(DEFAULT_PTL.copy())
+    st.session_state.df_cp = assign_cp_groups(DEFAULT_CHECKPOINT.copy())
     st.session_state.initialized = True
 
 st.title("專案勤務規劃系統")
@@ -389,11 +416,12 @@ st.subheader("勤務執行編組 (兩階段)")
 tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】擴大臨檢"])
 
 with tab1:
+    # 【核心功能更新】網頁現在會清清楚楚直接顯示「編組」欄位
     res_ptl_raw = st.data_editor(st.session_state.df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_ed").dropna(how='all').fillna("").reset_index(drop=True)
-    st.session_state.df_ptl = res_ptl_raw
+    
+    # 依據網頁增刪變更，即時動態重新整理「編組」序號並維持完美欄位排布
     if not res_ptl_raw.empty:
         res_ptl = res_ptl_raw.copy()
-        # 【動態判斷】依據連續單位生成「編組」欄位 [cite: 54]
         group_ids = []
         g_idx = 1
         for i, row in res_ptl.iterrows():
@@ -401,14 +429,16 @@ with tab1:
                 g_idx += 1
             group_ids.append(f"第{g_idx}巡邏組")
         res_ptl["編組"] = group_ids
-        # 排序：確保編組在左側，無線電代號在右側 [cite: 54]
         res_ptl = res_ptl[["編組", "無線電代號"] + [col for col in res_ptl.columns if col not in ["編組", "無線電代號"]]]
+        st.session_state.df_ptl = res_ptl # 鎖定狀態
     else:
         res_ptl = res_ptl_raw
 
 with tab2:
+    # 【核心功能更新】網頁現在會清清楚楚直接顯示「編組」欄位
     res_cp_raw = st.data_editor(st.session_state.df_cp, num_rows="dynamic", use_container_width=True, key="cp_ed").dropna(how='all').fillna("").reset_index(drop=True)
-    st.session_state.df_cp = res_cp_raw
+    
+    # 依據網頁增刪變更，即時動態重新整理「編組」序號並維持完美欄位排布
     if not res_cp_raw.empty:
         res_cp = res_cp_raw.copy()
         group_ids_cp = []
@@ -416,8 +446,8 @@ with tab2:
             if i < 5: group_ids_cp.append("第1臨檢組")
             else: group_ids_cp.append("第2臨檢組")
         res_cp["編組"] = group_ids_cp
-        # 排序：確保編組在左側，無線電代號在右側 [cite: 60]
         res_cp = res_cp[["編組", "無線電代號"] + [col for col in res_cp.columns if col not in ["編組", "無線電代號"]]]
+        st.session_state.df_cp = res_cp # 鎖定狀態
     else:
         res_cp = res_cp_raw
 
@@ -426,7 +456,7 @@ st.markdown("---")
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
     with st.spinner("⏳ 正在寫入雲端並寄送郵件，請稍候..."):
         if save_data(DEFAULT_UNIT, st.session_state.p_time, p_name, st.session_state.b_info, st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp, st.session_state.stats_data, DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS):
-            ok, mail_err = send_report_email(DEFAULT_UNIT, p_name, st.session_state.p_time, st.session_state.b_info, st.session_state.df_cmd, res_ptl, res_cp, st.session_state.stats_data, DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS)
+            ok, mail_err = send_report_email(DEFAULT_UNIT, p_name, st.session_state.p_time, st.session_state.b_info, st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp, st.session_state.stats_data, DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS)
             if ok: 
                 st.success(f"✅ 資料已成功同步至雲端！專案名稱：「{p_name}」，公文 PDF 郵件已發送完成！")
                 st.cache_data.clear()
