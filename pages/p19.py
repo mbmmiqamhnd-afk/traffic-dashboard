@@ -68,19 +68,19 @@ DEFAULT_CP_FOCUS = (
 )
 
 DEFAULT_CMD = pd.DataFrame([
-    {"項目": "指揮官",     "通訊代號": "隆安 1 號",  "任務目標": "重點機動督導",                                                      "負責人員": "分局長 施宇峰",     "共同執行人員": "秘書 陳鵬翔、警員 張庭溱"},
-    {"項目": "副指揮官",   "通訊代號": "隆安 2 號",  "任務目標": "重點機動督導",                                                      "負責人員": "副分局長 何憶雯",   "共同執行人員": "警務佐 曾威仁"},
-    {"項目": "副指揮官",   "通訊代號": "隆安 3 號",  "任務目標": "重點機動督導",                                                      "負責人員": "副分局長 蔡志明",   "共同執行人員": "警員 陳明祥"},
-    {"項目": "上級督導官", "通訊代號": "建興",        "任務目標": "重點機動督導",                                                      "負責人員": "督察 孫三陽",       "共同執行人員": ""},
-    {"項目": "偵查隊",     "通訊代號": "隆安 11號",  "任務目標": "在隊督辦刑案",                                                      "負責人員": "隊長 柯志賢",       "共同執行人員": "偵查員 施明輝"},
-    {"項目": "行政組",     "通訊代號": "隆安 5 號",  "任務目標": "督導第一階段臨檢組",                                                "負責人員": "組長 周金柱",       "共同執行人員": "巡官 蕭凱文、警務佐 曾威仁、警員 謝明展"},
-    {"項目": "督察組",     "通訊代號": "隆安 6 號",  "任務目標": "機動督導第二階段時檢組",                                            "負責人員": "組長 黃長旗",       "共同執行人員": "警務員 陳冠彰"},
-    {"項目": "保安民防組", "通訊代號": "隆安 9 號",  "任務目標": "機動督導第一階段臨檢組；機動督導第二階段路檢組",                               "負責人員": "組長 林良鍾",       "共同執行人員": "巡官 古家杰"},
-    {"項目": "交通組",     "通訊代號": "隆安 13號",  "任務目標": "機動督導第一階段路檢組",                                            "負責人員": "組長 楊孟竟",       "共同執行人員": "巡官 郭勝隆"},
-    {"項目": "勤務指導",   "通訊代號": "隆安 685號", "任務目標": "指導各路檢點、攔檢點，指導各檢查組勤務執行及狀況處置",        "負責人員": "教官 郭文義",       "共同執行人員": "勤務指導人員"},
-    {"項目": "聯絡組",     "通訊代號": "隆安",        "任務目標": "擔任通訊聯絡、指揮管制事宜",                                      "負責人員": "勤指主任 蔡奇青",   "共同執行人員": "執勤官 江文頌、值勤員 曾嘉偉 (18-20時)"},
-    {"項目": "偵訊組",     "通訊代號": "隆安 10號",  "任務目標": "負責按捺指紋、照相及移送案件相關事宜",                             "負責人員": "偵查佐 賴享宏、警員 張峻銨", "共同執行人員": "在隊待命受理移送案件"},
-    {"項目": "作業組",     "通訊代號": "",            "任務目標": "負責勤務後勤、勤教場地布置相關事宜",                               "負責人員": "警員 葉俊宏、警務員 曾盛鉉", "共同執行人員": "巡官 吳國棟、巡佐 許榮裕、警員 呂紹臺"},
+    {"項目": "指揮官",     "通訊代號": "隆安 1 號",  "任務目標": "重點機動督導",                                                              "負責人員": "分局長 施宇峰",     "共同執行人員": "秘書 陳鵬翔、警員 張庭溱"},
+    {"項目": "副指揮官",   "通訊代號": "隆安 2 號",  "任務目標": "重點機動督導",                                                              "負責人員": "副分局長 何憶雯",   "共同執行人員": "警務佐 曾威仁"},
+    {"項目": "副指揮官",   "通訊代號": "隆安 3 號",  "任務目標": "重點機動督導",                                                              "負責人員": "副分局長 蔡志明",   "共同執行人員": "警員 陳明祥"},
+    {"項目": "上級督導官", "通訊代號": "建興",        "任務目標": "重點機動督導",                                                              "負責人員": "督察 孫三陽",        "共同執行人員": ""},
+    {"項目": "偵查隊",     "通訊代號": "隆安 11號",  "任務目標": "在隊督辦刑案",                                                              "負責人員": "隊長 柯志賢",        "共同執行人員": "偵查員 施明輝"},
+    {"項目": "行政組",     "通訊代號": "隆安 5 號",  "任務目標": "督導第一階段臨檢組",                                                        "負責人員": "組長 周金柱",        "共同執行人員": "巡官 蕭凱文、警務佐 曾威仁、警員 謝明展"},
+    {"項目": "督察組",     "通訊代號": "隆安 6 號",  "任務目標": "機動督導第二階段時檢組",                                                    "負責人員": "組長 黃長旗",        "共同執行人員": "警務員 陳冠彰"},
+    {"項目": "保安民防組", "通訊代號": "隆安 9 號",  "任務目標": "機動督導第一階段臨檢組；機動督導第二階段路檢組",                               "負責人員": "組長 林良鍾",        "共同執行人員": "巡官 古家杰"},
+    {"項目": "交通組",     "通訊代號": "隆安 13號",  "任務目標": "機動督導第一階段路檢組",                                                    "負責人員": "組長 楊孟竟",        "共同執行人員": "巡官 郭勝隆"},
+    {"項目": "勤務指導",   "通訊代號": "隆安 685號", "任務目標": "指導各路檢點、攔檢點，指導各檢查組勤務執行及狀況處置",        "負責人員": "教官 郭文義",        "共同執行人員": "勤務指導人員"},
+    {"項目": "聯絡組",     "通訊代號": "隆安",        "任務目標": "擔任通訊聯絡、指揮管制事宜",                                              "負責人員": "勤指主任 蔡奇青",   "共同執行人員": "執勤官 江文頌、值勤員 曾嘉偉 (18-20時)"},
+    {"項目": "偵訊組",     "通訊代號": "隆安 10號",  "任務目標": "負責按捺指紋、照相及移送案件相關事宜",                                     "負責人員": "偵查佐 賴享宏、警員 張峻銨", "共同執行人員": "在隊待命受理移送案件"},
+    {"項目": "作業組",     "通訊代號": "",            "任務目標": "負責勤務後勤、勤教場地布置相關事宜",                                       "負責人員": "警員 葉俊宏、警務員 曾盛鉉", "共同執行人員": "巡官 吳國棟、巡佐 許榮裕、警員 呂紹臺"},
 ])
 
 DEFAULT_PTL = pd.DataFrame([
@@ -141,13 +141,20 @@ def safe_str(val):
 def clean_df_to_list(df):
     return df.astype(str).values.tolist()
 
+# 💡 動態獲取指揮官姓名
+def get_commander_name(df_cmd):
+    if not df_cmd.empty and "項目" in df_cmd.columns and "負責人員" in df_cmd.columns:
+        cmd_row = df_cmd[df_cmd["項目"].str.contains("指揮官", na=False)]
+        if not cmd_row.empty:
+            return safe_str(cmd_row.iloc[0]["負責人員"])
+    return "分局長"
+
 # ─────────────── ★ get_client ───────────────
 
 @st.cache_resource
 def get_client():
     try:
         info = dict(st.secrets["gcp_service_account"])
-        # 確保 private_key 的 \n 是真實換行而非字面字串
         info["private_key"] = info["private_key"].replace("\\n", "\n")
         creds = Credentials.from_service_account_info(info, scopes=SCOPES)
         return gspread.authorize(creds)
@@ -204,7 +211,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
             return False
         sh = client.open_by_key(SHEET_ID)
 
-        # 1. 二合一_設定
         try:
             ws_set = sh.worksheet(WS_SET_NAME)
         except Exception:
@@ -217,8 +223,8 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
             ["project_name",   project],
             ["briefing_info",  briefing],
             ["stats_cmd",      str(stats["cmd"])],
-            ["stats_ptl",      str(stats["ptl_road"])],   # 路檢組
-            ["stats_cp",       str(stats["ptl_cp"])],     # 臨檢組
+            ["stats_ptl",      str(stats["ptl_road"])],
+            ["stats_cp",       str(stats["ptl_cp"])],
             ["stats_inv",      str(stats["inv"])],
             ["stats_civ",      str(stats["civ"])],
             ["briefing_time",  str(stats["b_time"])],
@@ -230,7 +236,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
             ["cp_focus",       cp_f],
         ])
 
-        # 2. 二合一_指揮組
         try:
             ws_c = sh.worksheet(WS_CMD_NAME)
         except Exception:
@@ -240,7 +245,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         if not clean_cmd.empty:
             ws_c.update(range_name="A1", values=[clean_cmd.columns.tolist()] + clean_df_to_list(clean_cmd))
 
-        # 3. 二合一_路檢組
         try:
             ws_p = sh.worksheet(WS_PTL_NAME)
         except Exception:
@@ -250,7 +254,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
         if not clean_ptl.empty:
             ws_p.update(range_name="A1", values=[clean_ptl.columns.tolist()] + clean_df_to_list(clean_ptl))
 
-        # 4. 二合一_擴大臨檢組
         try:
             ws_cp = sh.worksheet(WS_CP_NAME)
         except Exception:
@@ -271,8 +274,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
 # ─────────────── PDF 生成：規劃表 ───────────────
 
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
-    import re
-
     font = _get_font()
     buf  = io.BytesIO()
     doc  = SimpleDocTemplate(
@@ -306,13 +307,14 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     date_str      = clean(time_str.split(" ")[0] if " " in time_str else "115年3月25日")
     time_str_only = clean(time_str.split(" ")[1] if " " in time_str else "18時至22時")
     briefing_time_loc_str = f"{stats['b_time']}<br/>{stats['b_loc']}"
+    commander_name = get_commander_name(df_cmd)
 
     data_basic = [
         [Paragraph(f"<b>{h}</b>", style_cell) for h in ["實施日期", "勤務時間", "指揮官", "勤務編組", "勤前教育時間地點"]],
         [
             Paragraph(date_str, style_cell),
             Paragraph(time_str_only, style_cell),
-            Paragraph("分局長 施宇峰", style_cell),
+            Paragraph(commander_name, style_cell),
             Paragraph("如任務編組表", style_cell),
             Paragraph(briefing_time_loc_str, style_cell),
         ],
@@ -335,7 +337,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     style_sub_section = ParagraphStyle("SubSection", fontName=font, fontSize=12, leading=18, alignment=0, spaceAfter=1*mm, spaceBefore=2*mm, wordWrap="CJK")
     story.append(Paragraph("<b>一、 警力統計：</b>", style_sub_section))
 
-    # ── 警力統計表：拆分路檢組 / 臨檢組 ──
     ptl_road = stats.get("ptl_road", 0)
     ptl_cp   = stats.get("ptl_cp",   0)
     total    = stats["cmd"] + ptl_road + ptl_cp + stats["inv"] + stats["civ"]
@@ -532,13 +533,13 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
 
 # ─────────────── PDF 生成：簽到表 ───────────────
 
-def generate_attendance_pdf(unit, project, time_str, stats):
+def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
     font = _get_font()
     buf  = io.BytesIO()
     doc  = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=15*mm, rightMargin=15*mm,
-        topMargin=10*mm,  bottomMargin=10*mm, # 微調邊界，爭取單頁空間
+        topMargin=10*mm,  bottomMargin=10*mm,
     )
     page_width = A4[0] - 30*mm
     story = []
@@ -546,7 +547,6 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     style_title = ParagraphStyle("Title", fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=8, wordWrap="CJK")
     style_info  = ParagraphStyle("Info",  fontName=font, fontSize=14, leading=22, spaceAfter=1*mm, wordWrap="CJK")
     style_cell  = ParagraphStyle("Cell",  fontName=font, fontSize=14, leading=20, alignment=1, wordWrap="CJK")
-    # 新增長官簽核欄位的樣式
     style_sig   = ParagraphStyle("Sig",   fontName=font, fontSize=14, leading=20, alignment=0, wordWrap="CJK") 
 
     story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
@@ -554,22 +554,24 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     story.append(Paragraph(f"時間：{date_part} {stats['b_time']}", style_info))
     story.append(Paragraph(f"地點：{stats['b_loc']}召開", style_info))
     
-    story.append(Spacer(1, 3*mm)) # 縮小間距
+    story.append(Spacer(1, 3*mm))
 
-    # --- 修改：長官簽核欄位 (分局長與上級督導同一列) ---
+    # 💡 串接全動態職稱：動態提取分局長/副分局長名銜
+    commander_title = get_commander_name(df_cmd)
+    if " " in commander_title:
+        commander_title = commander_title.split(" ")[0] # 取得 "分局長" 職稱
+
     sig_data = [
-        [Paragraph("分局長：", style_sig), Paragraph("上級督導：", style_sig)],
+        [Paragraph(f"{commander_title}：", style_sig), Paragraph("上級督導：", style_sig)],
         [Paragraph("副分局長：", style_sig), ""]
     ]
     t_sig = Table(sig_data, colWidths=[page_width/2.0]*2)
     t_sig.setStyle(TableStyle([
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 2), # 縮小 padding 以節省空間
-        # 不設定 GRID，讓表格無外框，僅作排版使用
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
     ]))
     story.append(t_sig)
-    story.append(Spacer(1, 4*mm)) # 縮小間距
-    # ------------------------------------
+    story.append(Spacer(1, 4*mm))
 
     rows = [
         ("交通組",     "聖亭派出所"),
@@ -597,7 +599,6 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     t = Table(
         table_data,
         colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3],
-        # ▼ 此處縮小列高 (標題列10mm，資料列20mm)，確保能維持單頁產出
         rowHeights=[10*mm] + [20*mm]*len(rows),
     )
     t.setStyle(TableStyle([
@@ -608,7 +609,6 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     ]))
     story.append(t)
     
-    # 頁尾維持不變
     def add_footer(canvas, doc):
         canvas.saveState()
         canvas.setFont(font, 10)
@@ -637,7 +637,7 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(f'{unit}規劃表.pdf')}")
         msg.attach(part1)
 
-        pdf2  = generate_attendance_pdf(unit, project, time_str, stats)
+        pdf2  = generate_attendance_pdf(unit, project, time_str, stats, df_cmd)
         part2 = MIMEBase("application", "pdf")
         part2.set_payload(pdf2)
         encoders.encode_base64(part2)
@@ -658,8 +658,8 @@ df_set, df_cmd, df_ptl, df_cp, err = load_data()
 
 default_stats = {
     "cmd":      7,
-    "ptl_road": 10,   # 路檢組（第一階段）
-    "ptl_cp":   6,    # 臨檢組（第二階段）
+    "ptl_road": 10,
+    "ptl_cp":   6, 
     "inv":      3,
     "civ":      0,
     "b_time": "18時30分至19時00分",
@@ -687,7 +687,7 @@ else:
     p_cp_focus  = d.get("cp_focus",       DEFAULT_CP_FOCUS)
     default_stats.update({
         "cmd":      int(d.get("stats_cmd",  7)),
-        "ptl_road": int(d.get("stats_ptl",  10)),  # 向下相容舊欄位名
+        "ptl_road": int(d.get("stats_ptl",  10)),
         "ptl_cp":   int(d.get("stats_cp",   6)),
         "inv":      int(d.get("stats_inv",  3)),
         "civ":      int(d.get("stats_civ",  0)),
@@ -698,7 +698,6 @@ else:
         "loc_3":  int(d.get("loc_3", 0)),
     })
     
-    # --- ★ 關鍵修正部分 ---
     ed_cmd = (df_cmd if not df_cmd.empty else DEFAULT_CMD.copy()).astype(str)
     ed_ptl = (df_ptl[PTL_COLS] if (not df_ptl.empty and all(c in df_ptl.columns for c in PTL_COLS)) else DEFAULT_PTL.copy()).astype(str)
     ed_cp  = (df_cp[CP_COLS]   if (df_cp is not None and not df_cp.empty and all(c in df_cp.columns for c in CP_COLS))  else DEFAULT_CHECKPOINT.copy()).astype(str)
@@ -708,24 +707,34 @@ st.title("二合一專案勤務規劃系統 🚓")
 if err:
     st.warning(f"⚠️ 無法連線 Google Sheets（{err}），顯示預設資料。")
 
-# ── 基本資訊
-p_time = st.text_input("勤務時間", t)
+# ── 壹、基本資訊區塊 (優化：欄位排版與動態時間整合)
+st.subheader("壹、 勤務基本資料")
+col_b1, col_b2 = st.columns(2)
+with col_b1:
+    p_time = st.text_input("勤務時間", t, help="格式例：115年3月25日 18時至22時")
+with col_b2:
+    display_project_name = re.sub(r'^\d{4}「?', '', p)
+    p_input = st.text_input("專案名稱", display_project_name)
 
-display_project_name = re.sub(r'^\d{4}「?', '', p)
-p_input = st.text_input("專案名稱", display_project_name)
+# 💡 勤前教育時間地點交互編輯優化
+col_b3, col_b4 = st.columns(2)
+with col_b3:
+    input_b_time = st.text_input("勤前教育時間", default_stats["b_time"])
+with col_b4:
+    input_b_loc = st.text_input("勤前教育地點", default_stats["b_loc"])
 
+# 自動解析4碼日期字串 (例如 0325)
 date_match = re.search(r'(\d+)年(\d+)月(\d+)日', p_time)
 if date_match:
     auto_4_digit = f"{int(date_match.group(2)):02d}{int(date_match.group(3)):02d}"
 else:
     auto_4_digit = datetime.now().strftime("%m%d")
 
-if not p_input.startswith("「"):
-    p_name = f"{auto_4_digit}「{p_input}"
-else:
-    p_name = f"{auto_4_digit}{p_input}"
+p_name = f"{auto_4_digit}「{p_input.replace('「', '').replace('」', '')}」"
 
-# ── 指揮組及編輯器區塊
+st.info(f"📋 **即時預覽專案完整名稱：** {p_name}")
+
+# ── 參、指揮組及編輯器區塊
 st.subheader("參、 指揮編組與重點宣導")
 res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
 
@@ -741,14 +750,14 @@ with tab1:
         use_container_width=True,
         key="ptl_ed",
         column_config={
-            "組別":      st.column_config.TextColumn("組別",      width="small"),
+            "組別":       st.column_config.TextColumn("組別",      width="small"),
             "無線電代號": st.column_config.TextColumn("無線電代號", width="small"),
-            "派遣單位":   st.column_config.TextColumn("派遣單位",   width="small"),
-            "職別":      st.column_config.TextColumn("職別",      width="small"),
-            "姓名":      st.column_config.TextColumn("姓名",      width="small"),
-            "任務分工":   st.column_config.TextColumn("任務分工",   width="medium"),
-            "攜行裝備":   st.column_config.TextColumn("攜行裝備",   width="medium"),
-            "臨檢目標":   st.column_config.TextColumn("臨檢目標",   width="large"),
+            "派遣單位":   st.column_config.TextColumn("派遣單位",  width="small"),
+            "職別":       st.column_config.TextColumn("職別",      width="small"),
+            "姓名":       st.column_config.TextColumn("姓名",      width="small"),
+            "任務分工":   st.column_config.TextColumn("任務分工",  width="medium"),
+            "攜行裝備":   st.column_config.TextColumn("攜行裝備",  width="medium"),
+            "臨檢目標":   st.column_config.TextColumn("臨檢目標",  width="large"),
         },
     ).dropna(how="all").fillna("").reset_index(drop=True)
 
@@ -764,58 +773,65 @@ with tab2:
             "組別":        st.column_config.TextColumn("組別",        width="small"),
             "無線電代號":   st.column_config.TextColumn("無線電代號",   width="small"),
             "派遣單位":     st.column_config.TextColumn("派遣單位",     width="small"),
-            "職別":        st.column_config.TextColumn("職別",        width="small"),
-            "姓名":        st.column_config.TextColumn("姓名",        width="small"),
+            "職別":         st.column_config.TextColumn("職別",         width="small"),
+            "姓名":         st.column_config.TextColumn("姓名",         width="small"),
             "任務分工":     st.column_config.TextColumn("任務分工",     width="medium"),
-            "臨檢目標場所": st.column_config.TextColumn("臨檢目標場所", width="large"),
+            "臨檢目標場所":  st.column_config.TextColumn("臨檢目標場所", width="large"),
         },
     ).dropna(how="all").fillna("").reset_index(drop=True)
 
 # ── 動態計算警力統計數據 ──
 
-# 1. 督導組：指揮組「負責人員」欄有填寫的列數
 if not res_cmd.empty and "負責人員" in res_cmd.columns:
     cmd_series = res_cmd["負責人員"].astype(str).str.strip()
     calc_cmd_count = int(cmd_series[(cmd_series != "") & (cmd_series.str.lower() != "nan")].count())
 else:
     calc_cmd_count = 0
 
-# 2. 路檢組：第一階段「姓名」有填寫的列數
 ptl_road_count = 0
 if not res_ptl.empty and "姓名" in res_ptl.columns:
     ptl_series = res_ptl["姓名"].astype(str).str.strip()
     ptl_road_count = int(ptl_series[(ptl_series != "") & (ptl_series.str.lower() != "nan")].count())
 
-# 3. 臨檢組：第二階段「姓名」有填寫的列數
 ptl_cp_count = 0
 if not res_cp.empty and "姓名" in res_cp.columns:
     cp_series = res_cp["姓名"].astype(str).str.strip()
     ptl_cp_count = int(cp_series[(cp_series != "") & (cp_series.str.lower() != "nan")].count())
 
-# ── 貳、警力統計與地點統計顯示區塊 ──
+# ── 貳、警力統計與地點統計顯示區塊 (優化：使用高級 Metric 卡片視覺化) ──
 st.subheader("貳、 警力統計及地點統計")
-col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns(5)
 
-c_cmd  = col_s1.number_input("督導組 (自動計算)", value=calc_cmd_count,  min_value=0, disabled=True)
-c_ptl  = col_s2.number_input("路檢組 (自動計算)", value=ptl_road_count,  min_value=0, disabled=True)
-c_cp   = col_s3.number_input("臨檢組 (自動計算)", value=ptl_cp_count,    min_value=0, disabled=True)
-c_inv  = col_s4.number_input("偵訊組",            value=default_stats["inv"], min_value=0)
-c_civ  = col_s5.number_input("民力",              value=default_stats["civ"], min_value=0)
+# 非自動計算項目保留微調空間
+col_adj1, col_adj2 = st.columns(2)
+with col_adj1:
+    c_inv  = col_adj1.number_input("偵訊組人數調整", value=default_stats["inv"], min_value=0)
+with col_adj2:
+    c_civ  = col_adj2.number_input("民力人數調整",   value=default_stats["civ"], min_value=0)
 
 current_stats = {
-    "cmd":      c_cmd,
-    "ptl_road": c_ptl,   # 路檢組（第一階段）
-    "ptl_cp":   c_cp,    # 臨檢組（第二階段）
-    "ptl":      c_ptl + c_cp,  # 保留合計欄位供舊邏輯相容
+    "cmd":      calc_cmd_count,
+    "ptl_road": ptl_road_count,
+    "ptl_cp":   ptl_cp_count,
+    "ptl":      ptl_road_count + ptl_cp_count,
     "inv":      c_inv,
     "civ":      c_civ,
-    "total":    c_cmd + c_ptl + c_cp + c_inv + c_civ,
-    "b_time":   default_stats["b_time"],
-    "b_loc":    default_stats["b_loc"],
+    "total":    calc_cmd_count + ptl_road_count + ptl_cp_count + c_inv + c_civ,
+    "b_time":   input_b_time,
+    "b_loc":    input_b_loc,
     "loc_1":    default_stats["loc_1"],
     "loc_2":    default_stats["loc_2"],
     "loc_3":    default_stats["loc_3"],
 }
+
+# 💡 警力儀表板卡片
+st.markdown("##### 📊 本次編組警力一覽")
+m_col1, m_col2, m_col3, m_col4, m_col5, m_col6 = st.columns(6)
+m_col1.metric("總警力 (總計)", f"{current_stats['total']} 人")
+m_col2.metric("督導組", f"{current_stats['cmd']} 人")
+m_col3.metric("路檢組 (一階)", f"{current_stats['ptl_road']} 人")
+m_col4.metric("臨檢組 (二階)", f"{current_stats['ptl_cp']} 人")
+m_col5.metric("偵訊組", f"{current_stats['inv']} 人")
+m_col6.metric("民力支援", f"{current_stats['civ']} 人")
 
 # ── 操作按鈕
 st.markdown("---")
