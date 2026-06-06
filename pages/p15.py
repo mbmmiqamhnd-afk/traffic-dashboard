@@ -149,32 +149,51 @@ PTL_UNIT_ORDER = {"聖亭所": 1, "龍潭所": 2, "中興所": 3,
 
 CP_GROUP1_UNITS = {"中興所", "龍潭所"}
 
+def _normalize_radio_col(res: pd.DataFrame) -> pd.DataFrame:
+    """確保無線電代號欄位是純字串型態，防止從 Sheets 讀回 int64 造成寫入失敗。"""
+    if "無線電代號" in res.columns:
+        res["無線電代號"] = res["無線電代號"].astype(str).str.strip()
+        res["無線電代號"] = res["無線電代號"].replace({"nan": "", "None": "", "0": ""})
+    else:
+        res["無線電代號"] = ""
+    return res
+
+
 def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     res = df.copy().reset_index(drop=True)
+    res = _normalize_radio_col(res)
     res["_ord"] = res["單位"].map(lambda x: PTL_UNIT_ORDER.get(str(x).strip(), 99))
     res = res.sort_values("_ord").drop(columns=["_ord"]).reset_index(drop=True)
 
-    group_ids, unit_officer_count = [], {}
+    group_ids, radio_codes, unit_officer_count = [], [], {}
     prev_unit, g_idx = None, 0
-    for _, row in res.iterrows():
+    for i, row in res.iterrows():
         unit = str(row["單位"]).strip()
         if unit != prev_unit:
             g_idx += 1
             prev_unit = unit
         group_ids.append(f"第{g_idx}巡邏組")
 
-        if not str(row.get("無線電代號", "")).strip() and unit:
+        existing = str(row.get("無線電代號", "")).strip()
+        if existing and existing not in ("nan", "None", "0"):
+            radio_codes.append(existing)
+        elif unit:
             is_officer = row["職別"] in SENIOR_RANKS
             unit_officer_count[unit] = unit_officer_count.get(unit, 0) + (0 if is_officer else 1)
-            res.at[_, "無線電代號"] = generate_radio_code(unit, row["職別"], unit_officer_count[unit])
+            radio_codes.append(generate_radio_code(unit, row["職別"], unit_officer_count[unit]))
+        else:
+            radio_codes.append("")
 
-    res["編組"] = group_ids
-    # 同組無線電代號統一用第一人
+    res["編組"]      = group_ids
+    res["無線電代號"] = radio_codes          # 整欄一次賦值，避免逐格寫入型別衝突
+
+    # 同組無線電代號統一用該組第一筆
     for g in res["編組"].unique():
-        idx = res[res["編組"] == g].index
-        res.loc[idx, "無線電代號"] = res.loc[idx[0], "無線電代號"]
+        mask = res["編組"] == g
+        first_radio = res.loc[mask, "無線電代號"].iloc[0]
+        res.loc[mask, "無線電代號"] = first_radio
 
     cols = ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]
     return res[[c for c in cols if c in res.columns]]
@@ -184,6 +203,7 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     res = df.copy().reset_index(drop=True)
+    res = _normalize_radio_col(res)
 
     def _group(row):
         existing = str(row.get("編組", "")).strip()
@@ -197,20 +217,29 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
     res["_g"] = res.apply(_group, axis=1)
     res = res.sort_values("_g").reset_index(drop=True)
 
-    group_ids, unit_officer_count = [], {}
-    for _, row in res.iterrows():
+    group_ids, radio_codes, unit_officer_count = [], [], {}
+    for i, row in res.iterrows():
         group_ids.append("第1臨檢組" if row["_g"] == 1 else "第2臨檢組")
         unit = str(row.get("單位", "")).strip()
-        if unit:
+
+        existing = str(row.get("無線電代號", "")).strip()
+        if existing and existing not in ("nan", "None", "0"):
+            radio_codes.append(existing)
+        elif unit:
             is_officer = row["職別"] in SENIOR_RANKS
             unit_officer_count[unit] = unit_officer_count.get(unit, 0) + (0 if is_officer else 1)
-            res.at[_, "無線電代號"] = generate_radio_code(unit, row["職別"], unit_officer_count[unit])
+            radio_codes.append(generate_radio_code(unit, row["職別"], unit_officer_count[unit]))
+        else:
+            radio_codes.append("")
 
-    res["編組"] = group_ids
+    res["編組"]      = group_ids
+    res["無線電代號"] = radio_codes          # 整欄一次賦值
     res = res.drop(columns=["_g"])
+
     for g in res["編組"].unique():
-        idx = res[res["編組"] == g].index
-        res.loc[idx, "無線電代號"] = res.loc[idx[0], "無線電代號"]
+        mask = res["編組"] == g
+        first_radio = res.loc[mask, "無線電代號"].iloc[0]
+        res.loc[mask, "無線電代號"] = first_radio
 
     cols = ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]
     return res[[c for c in cols if c in res.columns]]
