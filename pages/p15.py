@@ -36,11 +36,11 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapi
 
 DEFAULT_UNIT = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME = "115年4月10日 19時至23時"
-DEFAULT_PROJ_BODY = "「全市取締酒後駕車及防制危險駕車」暨「擴大臨檢」及「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
+DEFAULT_PROJ_BODY = "「全市取締酒後駕車及防制危險駕車」暨「場所臨檢」及「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
 DEFAULT_BRIEF = (
     "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，"
     "落實「人犯戒護安全、案件程序安全、執法者及民眾安全」。\n"
-    "二、 臨檢合法性：警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所，"
+    "二、 臨檢合法性：警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判盤易生危害之場所，"
     "進行臨檢前應對當事人告以實施事由，便衣人員並應出示證件(依《警察職權行使法》第6條)。\n"
     "三、 攔停規範：機動攔檢對於已發生危害或易生危害之交通工具，得予以攔停；"
     "若有異常舉動而合理懷疑其將有危害行為時，得要求接受酒精濃度測試(依《警察職權行使法》第8條)。\n"
@@ -56,9 +56,9 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "指揮官", "通訊代號": "隆安1號", "任務目標": "勤務核定並重點機動督導", "負責人員": "分局長 施宇峰", "共同執行人員": "巡官陳鵬翔、警員張庭溱"},
     {"項目": "副指揮官", "通訊代號": "隆安2號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 何憶雯", "共同執行人員": "警務佐曾威仁"},
     {"項目": "副指揮官", "通訊代號": "隆安3號", "任務目標": "襄助指揮、重點機動督導", "負責人員": "副分局長 蔡志明", "共同執行人員": "警員陳明祥"},
-    {"項目": "行政組", "通訊代號": "隆安5號", "任務目標": "督導擴大臨檢威力掃蕩第一臨檢組", "負責人員": "組長 周金柱", "共同執行人員": "巡官蕭凱文"},
+    {"項目": "行政組", "通訊代號": "隆安5號", "任務目標": "督導場所臨檢威力掃蕩第一臨檢組", "負責人員": "組長 周金柱", "共同執行人員": "巡官蕭凱文"},
     {"項目": "督察組", "通訊代號": "隆安6號", "任務目標": "機動督導各單位勤務紀律", "負責人員": "組長黃長旗", "共同執行人員": "警務員 陳冠彰"},
-    {"項目": "保安民防組", "通訊代號": "隆安9號", "任務目標": "督導擴大臨檢威力掃蕩第二臨檢組", "負責人員": "組長林良鍾", "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
+    {"項目": "保安民防組", "通訊代號": "隆安9號", "任務目標": "督導場所臨檢威力掃蕩第二臨檢組", "負責人員": "組長林良鍾", "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
     {"項目": "交通組", "通訊代號": "隆安 13號", "任務目標": "督導第一階段機動攔查", "負責人員": "組長 楊孟竟", "共同執行人員": "巡官郭勝隆、警務員李峯甫、警務員盧冠仁"},
     {"項目": "聯絡組", "通訊代號": "隆安", "任務目標": "擔任通訊聯絡、指揮管制事宜", "負責人員": "勤務指揮中心 主任蔡奇青", "共同執行人員": "執勤官李文章、執勤員黃文興、警員吳享運"},
     {"項目": "偵訊組", "通訊代號": "隆安10號", "任務目標": "負責按捺指紋、照相及移送", "負責人員": "偵查隊隊長 柯志賢", "共同執行人員": "偵查隊值日小隊"},
@@ -82,11 +82,11 @@ DEFAULT_PTL = pd.DataFrame([
     {"單位": "龍潭交分隊", "無線電代號": "", "職別": "警員", "姓名": "吳沛軒", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "轄內易發生危駕路段、各聯外道路機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"}
 ])
 
-# 伍、第二階段擴大臨檢底稿
+# 伍、第二階段場所臨檢底稿 【正本對齊：全面更名為場所臨檢】
 DEFAULT_CHECKPOINT = pd.DataFrame([
     {"單位": "中興所", "無線電代號": "", "職別": "所長", "姓名": "董亦文", "任務分工": "帶班", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nC. 丹陽泰養生館 (中豐路281號)\nD. 溫馨汽車旅館 (中正路457號)\nE. 凱虹汽車旅館 (中正路506號)\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
     {"單位": "中興所", "無線電代號": "", "職別": "警員", "姓名": "羅俊傑", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
-    {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "張家維", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館定位、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
+    {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "張家維", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "王采蘋", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"單位": "偵查隊", "無線電代號": "", "職別": "警員", "姓名": "許家洋", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     
@@ -152,7 +152,6 @@ def calculate_dynamic_stats(df_cmd, df_ptl, df_cp):
                 name_clean = re.sub(r'(巡官|警員|警務員|警務佐|巡佐|執勤官|值勤員|勤務指導人員)\s*', '', name).strip()
                 if name_clean and name_clean.lower() != "nan" and "環保局" not in name_clean and "監理站" not in name_clean:
                     supervisors.add(name_clean)
-    # 【語法優化修正】移除先前尾端誤植的文字
     c_cmd = len(supervisors) if len(supervisors) > 0 else 7
     ptl_names = set(df_ptl["姓名"].dropna().astype(str).str.strip())
     ptl_names.discard("")
@@ -192,8 +191,8 @@ def assign_cp_groups(df):
         g_text = str(row_data.get('編組', '')).strip()
         u_text = str(row_data.get('單位', '')).strip()
         if not g_text and not u_text: return 999 
-        if g_text == "第1臨檢組": return 10
-        if g_text == "第2臨檢組": return 20
+        if g_text == "第1場所臨檢組": return 10
+        if g_text == "第2場所臨檢組": return 20
         if u_text in ["中興所", "龍潭所"] or (u_text == "偵查隊" and current_idx < 5): return 11
         return 21
     res["_sort_score"] = [get_sort_score(r, idx) for idx, r in res.iterrows()]
@@ -202,8 +201,8 @@ def assign_cp_groups(df):
     unit_counters = {}
     for i, row in res.iterrows():
         s_score = res.loc[i, "_sort_score"]
-        if s_score in [10, 11, 999]: group_ids_cp.append("第1臨檢組")
-        else: group_ids_cp.append("第2臨檢組")
+        if s_score in [10, 11, 999]: group_ids_cp.append("第1場所臨檢組")
+        else: group_ids_cp.append("第2場所臨檢組")
         u_str = str(row.get('單位', '')).strip()
         if u_str:
             unit_counters[u_str] = unit_counters.get(u_str, 0) + (1 if row['職別'] not in ["所長", "分隊長", "隊長", "副所長", "小隊長"] else 0)
@@ -291,8 +290,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_ptl.setStyle(TableStyle(t_ptl_style))
     story.append(t_ptl)
 
-    # 伍、第二階段
-    story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
+    # 伍、第二階段場所臨檢編組 【正本對齊：場所臨檢標題連動修正】
+    story.append(Paragraph("<b>伍、【第二階段】場所臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     if df_cp is not None and not df_cp.empty:
         data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢場所"]]]
@@ -323,6 +322,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
+# --- 4. 簽到表長官欄無邊框大拉開留白排版 ---
 def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
     buf = io.BytesIO()
@@ -363,12 +363,12 @@ def generate_attendance_pdf(unit, project, time_str, stats):
     story.append(Paragraph("<b>副分局長：</b>", style_info))
     story.append(Spacer(1, 12*mm))
     
-    # 下方基層各派出所表格
+    # 【實務升級修正點】下方基層各派出所表格：將列高由 20mm 大幅拉高至 32mm，預留極其寬敞的同仁現場蓋章、手寫空間！
     table_data = [[Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]]
     rows = [("交通組", "聖亭派出所"), ("督察組", "龍潭派出所"), ("行政組", "中興派出所"), ("保安民防組", "石門派出所"), ("勤務指揮中心", "高平派出所"), ("偵查隊", "三和派出所"), ("", "龍潭交通分隊")]
     for l, r in rows: table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
     
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[10*mm] + [20*mm]*len(rows))
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[10*mm] + [32*mm]*len(rows))
     t.setStyle(TableStyle([
         ('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), 
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (3,0), colors.whitesmoke)
@@ -491,8 +491,9 @@ if not res_cmd.equals(st.session_state.df_cmd):
 b_info = st.text_area("陸、 工作重點與法令宣導", value=st.session_state.b_info, height=150, key="input_b_info")
 st.session_state.b_info = b_info
 
+# 【正本連動校正】分頁名稱正式更名為 場所臨檢
 st.subheader("勤務執行編組 (兩階段)")
-tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】擴大臨檢"])
+tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】場所臨檢"])
 
 with tab1:
     res_ptl_raw = st.data_editor(st.session_state.df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_ed").dropna(how='all').fillna("").reset_index(drop=True)
