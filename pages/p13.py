@@ -237,41 +237,10 @@ ed_cmd = st.data_editor(df_c, num_rows="dynamic", use_container_width=True).drop
 st.subheader("3. 警力佈署 (第一欄相同日期請留白)")
 ed_sch = st.data_editor(df_s, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
 
-def get_html():
-    parts = ["<style>body{font-family:'標楷體';} th{border:1px solid black;background-color:#f2f2f2;} td{border:1px solid black;text-align:center;} table{width:100%;border-collapse:collapse;}</style>"]
-    parts.append(f"<h2 style='text-align:center;'>{full_table_title}</h2>")
-    parts.append("<table><tr><th colspan='4'>任 務 編 組</th></tr><tr><th>職稱</th><th>代號</th><th>姓名</th><th>任務</th></tr>")
-    for _, r in ed_cmd.iterrows():
-        parts.append(f"<tr><td><b>{r.get('職稱','')}</b></td><td>{r.get('代號','')}</td><td>{str(r.get('姓名','')).replace('、','<br>')}</td><td style='text-align:left'>{r.get('任務','')}</td></tr>")
-    parts.append("</table>")
-    if brief_info.strip():
-        parts.append(f"<p><b>📢 勤前教育：</b><br>{brief_info.replace(chr(10), '<br>')}</p>")
-    parts.append("<table><tr><th colspan='4'>警 力 佈 署</th></tr><tr><th>勤務日期</th><th>執行單位</th><th>執行人數</th><th>執行路段</th></tr>")
-
-    row_idx = 0
-    while row_idx < len(ed_sch):
-        date_val = str(ed_sch.iloc[row_idx].get('勤務日期','')).strip()
-        span = 1
-        if date_val:
-            for nxt in range(row_idx+1, len(ed_sch)):
-                if not str(ed_sch.iloc[nxt].get('勤務日期','')).strip(): span += 1
-                else: break
-        for i in range(span):
-            if row_idx+i < len(ed_sch):
-                curr = ed_sch.iloc[row_idx+i]
-                parts.append("<tr>")
-                if i == 0: parts.append(f"<td rowspan='{span}'>{date_val}</td>")
-                parts.append(f"<td>{curr.get('執行單位','')}</td><td>{curr.get('執行人數','')}</td><td style='text-align:left'>{curr.get('執行路段','')}</td></tr>")
-        row_idx += span
-    parts.append(f"</table><p style='text-align:left;'><b>備註：</b><br>{CORRECT_NOTES}</p>")
-    return "".join(parts)
-
 st.markdown("---")
-st.components.v1.html(get_html(), height=600, scrolling=True)
 
-colA, colB = st.columns(2)
-
-if colA.button("💾 同步雲端並發送備份郵件", type="primary", use_container_width=True):
+# 這裡移除了原本的網頁 HTML 預覽與 colB 下載按鈕，直接將同步按鈕滿版呈現
+if st.button("💾 同步雲端並發送備份郵件", type="primary", use_container_width=True):
     with st.spinner("處理中..."):
         if save_data(month_val, brief_info, ed_cmd, ed_sch):
             pdf_bytes = generate_pdf(month_val, brief_info, ed_cmd, ed_sch, full_table_title)
@@ -282,6 +251,3 @@ if colA.button("💾 同步雲端並發送備份郵件", type="primary", use_con
                 st.warning(f"⚠️ 雲端已同步，但郵件失敗: {mail_err}")
         else:
             st.error("❌ 雲端同步失敗，請檢查權限設定。")
-
-pdf_data = generate_pdf(month_val, brief_info, ed_cmd, ed_sch, full_table_title)
-colB.download_button(label="📥 下載 PDF 報表", data=pdf_data, file_name=f"{full_table_title}.pdf", mime="application/pdf", use_container_width=True)
