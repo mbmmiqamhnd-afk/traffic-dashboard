@@ -41,6 +41,7 @@ try:
     api_key = st.secrets["api"]["GOOGLE_API_KEY"]
     if GENAI_AVAILABLE:
         genai.configure(api_key=api_key)
+        # 保持使用 2.5-flash
         model = genai.GenerativeModel('gemini-2.5-flash')
 except Exception as e:
     st.error(f"Gemini API 初始化失敗，請檢查 secrets 設定: {e}")
@@ -151,7 +152,7 @@ def _clean_duty_name(raw):
     return raw
 
 # ==========================================
-# 4. 勤務表解析 (含偵查隊過濾邏輯)
+# 4. 勤務表解析
 # ==========================================
 def extract_duty_v2(d_file, hour):
     res = {
@@ -161,6 +162,8 @@ def extract_duty_v2(d_file, hour):
         'is_guard_unit': False, 'roster': []
     }
     try:
+        # 確保檔案指標在開頭
+        d_file.seek(0)
         df = pd.read_excel(d_file, header=None, dtype=str).fillna('')
 
         for r in range(3):
@@ -168,7 +171,6 @@ def extract_duty_v2(d_file, hour):
             m = re.search(r'([\u4e00-\u9fa5]+(派出所|分駐所|警備隊|偵查隊|分隊|中隊|大隊|隊))', rt)
             if m:
                 unit_full = m.group(1)
-                # 強制轉換名稱
                 if '刑事警察大隊' in unit_full or '刑警大隊' in unit_full:
                     unit_full = unit_full.replace('刑事警察大隊', '龍潭分局偵查隊').replace('刑警大隊', '龍潭分局偵查隊')
                 
@@ -227,7 +229,6 @@ def extract_duty_v2(d_file, hour):
                             base_name = fmap.get(matched_code, f'({matched_code})').strip()
                             base_name = re.sub(r'\s+', ' ', base_name)
                             
-                            # 增加 '偵查佐' 的防呆，避免變成 "警員 偵查佐 XXX"
                             if not any(title in base_name for title in ['警員', '巡佐', '隊長', '所長', '副所長', '分隊長', '小隊長', '警務佐', '偵查佐']):
                                 res['v_name'] = f"警員 {base_name}"
                             else:
@@ -245,11 +246,9 @@ def extract_duty_v2(d_file, hour):
                 return 1
             return 2
 
-        # 刑事/偵查單位幹部過濾
         is_investigation_unit = any(x in res['unit_name'] for x in ['偵查隊', '刑事警察大隊', '刑警大隊'])
 
         if is_investigation_unit:
-            # 僅保留隊長/副隊長，排除小隊長與分隊長
             cadre_codes = sorted(
                 [personnel_code for personnel_code in fmap
                  if ('隊長' in fmap[personnel_code] or '大隊長' in fmap[personnel_code])
@@ -362,6 +361,7 @@ def extract_duty_v2(d_file, hour):
 # ==========================================
 def extract_equip_v2(e_file):
     try:
+        e_file.seek(0)
         df = pd.read_excel(e_file, header=None).fillna('')
         header_row, col_map = 2, {}
 
@@ -412,7 +412,7 @@ def extract_equip_v2(e_file):
         return None
 
 # ==========================================
-# 6. Gemini 2.5 Vision 強效刑案單辨識核心
+# 6. Gemini 2.5 Vision 強效刑案單辨識核心 (強制 JSON 輸出)
 # ==========================================
 def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
     if model is None:
@@ -426,34 +426,27 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
 
     prompt = "請提取：嫌疑人, 查獲時間(請務必提取完整的年月日與時分，例如「115年05月17日10時58分」), 查獲地點, 觸犯法條, 查獲員警(請完整提取「職稱+姓名」，例如「警員蕭漢祥」)。\n"
     prompt += "名冊供比對參考：" + roster_str + "。\n"
-    prompt += "請務必嚴格回傳 JSON Array 格式，不要加入任何對話或說明文字，多名員警請一律使用頓號「、」分隔，例如：\n"
+    prompt += "請回傳符合以下結構的 JSON Array 格式：\n"
     prompt += '[\n  {\n    "嫌疑人": "王大明",\n    "查獲時間": "115年5月19日10時00分",\n    "查獲地點": "某路段",\n    "觸犯法條": "公共危險",\n    "查獲員警": "警員李小華、巡佐張大山"\n  }\n]'
 
     total_pages = len(images)
     for i, img in enumerate(images):
         try:
             st.info(f"單位 {unit_idx+1} 🚀 AI 正在辨識刑案單第 {i+1}/{total_pages} 頁...")
-            response = model.generate_content([prompt, img], safety_settings=safety_settings)
-            raw_text = response.text.strip()
-
-            s_idx = raw_text.find('[')
-            e_idx = raw_text.rfind(']')
             
-            if s_idx != -1 and e_idx != -1 and e_idx > s_idx:
-                json_str = raw_text[s_idx:e_idx+1]
-                parsed = json.loads(json_str)
-                if isinstance(parsed, list):
-                    results.extend(parsed)
-            else:
-                s_idx = raw_text.find('{')
-                e_idx = raw_text.rfind('}')
-                if s_idx != -1 and e_idx != -1 and e_idx > s_idx:
-                    json_str = raw_text[s_idx:e_idx+1]
-                    parsed = json.loads(json_str)
-                    if isinstance(parsed, dict):
-                        results.append(parsed)
-                else:
-                    st.warning(f"第 {i+1} 頁無法找到有效 JSON 結構，AI 回傳：{raw_text[:100]}...")
+            # 使用 response_mime_type 強制模型輸出純 JSON，完全免去正則或字串裁剪
+            response = model.generate_content(
+                contents=[prompt, img],
+                safety_settings=safety_settings,
+                generation_config={"response_mime_type": "application/json"}
+            )
+            raw_text = response.text.strip()
+            parsed = json.loads(raw_text)
+            
+            if isinstance(parsed, list):
+                results.extend(parsed)
+            elif isinstance(parsed, dict):
+                results.append(parsed)
 
         except json.JSONDecodeError:
             st.warning(f"第 {i+1} 頁 JSON 解析失敗，請確認圖片清晰度。")
@@ -465,8 +458,7 @@ def parse_crime_pdf_gemini(pdf_file, roster: list, unit_idx: int) -> list:
 # ==========================================
 # 7. 報告組合
 # ==========================================
-def build_report(duty_info: dict, equip: dict, crimes: list,
-                 time_str: str, sup_date) -> str:
+def build_report(duty_info: dict, equip: dict, crimes: list, time_str: str, sup_date) -> str:
     unit = duty_info.get('unit_name', '未知單位')
     term = duty_info.get('term', '該所')
     loc_term = duty_info.get('loc_term', '所')
@@ -480,31 +472,20 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
     d_3  = (sup_date - timedelta(days=3)).strftime("%m月%d日")
     d_5  = (sup_date - timedelta(days=5)).strftime("%m月%d日")
 
-    lines = []
-    lines.append(f"【{unit} 督導報告】")
-
+    lines = [f"【{unit} 督導報告】"]
     idx = 1
 
     if "無值班人員" in v_name:
         lines.append(f"{idx}、{time_str}，{term}該時段無值班人員。")
     else:
-        lines.append(
-            f"{idx}、{time_str}，{term}值班{v_name}服裝整齊，佩件齊全，"
-            f"對槍、彈、無線電等裝備管制良好，領用情形均熟悉。"
-        )
+        lines.append(f"{idx}、{time_str}，{term}值班{v_name}服裝整齊，佩件齊全，對槍、彈、無線電等裝備管制良好，領用情形均熟悉。")
     idx += 1
 
     skyline_str = "及天羅地網系統" if has_skyline else ""
-    lines.append(
-        f"{idx}、{term}駐地監錄設備{skyline_str}均運作正常，無故障，"
-        f"{d_5}至{d_e}有逐日檢測2次以上紀錄。"
-    )
+    lines.append(f"{idx}、{term}駐地監錄設備{skyline_str}均運作正常，無故障，{d_5}至{d_e}有逐日檢測2次以上紀錄。")
     idx += 1
 
-    lines.append(
-        f"{idx}、{term}{d_3}至{d_e}勤前教育，幹部均有宣導「防制員警酒後駕車」、"
-        f"「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。"
-    )
+    lines.append(f"{idx}、{term}{d_3}至{d_e}勤前教育，幹部均有宣導「防制員警酒後駕車」、「員警駕車行駛交通優先權」及「追緝車輛執行原則」，參與同仁均有點閱。")
     idx += 1
 
     lines.append(f"{idx}、{term}環境內務擺設整齊清潔，符合規定。")
@@ -530,9 +511,7 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
     lines.append(f"{idx}、本日{cadre}")
     idx += 1
 
-    lines.append(
-        f"{idx}、{term}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。"
-    )
+    lines.append(f"{idx}、{term}酒測聯單日期、編號均依規定填寫、黏貼，無跳號情形。")
     idx += 1
 
     if is_guard:
@@ -559,17 +538,14 @@ def build_report(duty_info: dict, equip: dict, crimes: list,
                 officer = "、".join(officer)
             else:
                 officer = str(officer).replace(', ', '、').replace(',', '、').replace('，', '、')
-            lines.append(
-    f"{idx}、優蹟紀錄：{officer} 於 {full_time} "
-    f"在 {loc} 查獲 {suspect} 涉嫌 {law} 案。"
-)
+            lines.append(f"{idx}、優蹟紀錄：{officer} 於 {full_time} 在 {loc} 查獲 {suspect} 涉嫌 {law} 案。")
             idx += 1
 
     return "\n".join(lines)
 
 
 # ==========================================
-# 8. Streamlit UI
+# 8. Streamlit UI (使用 Form 優化體驗)
 # ==========================================
 show_sidebar()
 
@@ -582,16 +558,17 @@ with st.expander("📋 督導基本資訊", expanded=True):
 
 sup_date_str = sup_date.strftime("%Y年%m月%d日")
 
-# --- 單位上傳區 ---
 st.markdown("---")
 st.subheader("📁 上傳單位資料")
 
 num_units = st.number_input("本次督導單位數量", min_value=1, max_value=10, value=1, step=1)
 
-unit_inputs = []
-for i in range(num_units):
-    with st.expander(f"第 {i+1} 個單位", expanded=(i == 0)):
-        u_time = st.time_input(f"抵達時間（單位 {i+1}）", value=datetime.now().time(), key=f"time_{i}")
+# 使用 st.form 包裹上傳與時間選取元件，避免每傳一個檔案頁面就自動 Re-run 影響體驗
+with st.form("supervision_data_form"):
+    unit_inputs = []
+    for i in range(num_units):
+        st.markdown(f"#### 🏢 第 {i+1} 個單位")
+        u_time = st.time_input(f"抵達時間", value=datetime.now().time(), key=f"time_{i}")
         c1, c2, c3 = st.columns(3)
         with c1:
             d_file = st.file_uploader("勤務表 (Excel)", type=["xlsx", "xls"], key=f"duty_{i}")
@@ -600,10 +577,13 @@ for i in range(num_units):
         with c3:
             p_file = st.file_uploader("刑案單 (PDF，選填)", type=["pdf"], key=f"crime_{i}")
         unit_inputs.append((u_time, d_file, e_file, p_file))
+        if i < num_units - 1:
+            st.markdown("---")
 
-# --- 生成按鈕 ---
-st.markdown("---")
-if st.button("🚀 生成督導報告", type="primary"):
+    submit_btn = st.form_submit_button("🚀 開始生成督導報告", type="primary", use_container_width=True)
+
+# --- 按下 Form 提交按鈕後的後續處理 ---
+if submit_btn:
     all_ready = all(d is not None for _t, d, _e, _p in unit_inputs)
     if not all_ready:
         st.error("每個單位都必須至少上傳【勤務表】。")
@@ -614,10 +594,14 @@ if st.button("🚀 生成督導報告", type="primary"):
 
     for i, (u_time, d_file, e_file, p_file) in enumerate(unit_inputs):
         with st.spinner(f"正在處理第 {i+1} 個單位..."):
+            
+            # 使用 BytesIO 包裝，並在外部確實呼叫 seek(0) 確保檔案指標正確
+            d_file.seek(0)
             duty_info = extract_duty_v2(io.BytesIO(d_file.read()), u_time.hour)
 
             equip = None
             if e_file:
+                e_file.seek(0)
                 equip = extract_equip_v2(io.BytesIO(e_file.read()))
 
             crimes = []
@@ -639,7 +623,7 @@ if st.button("🚀 生成督導報告", type="primary"):
 
     st.success(f"✅ 已完成 {num_units} 個單位的報告生成！")
 
-# --- 報告預覽與下載 ---
+# --- 報告預覽與下載 (留在 Form 外，生成後即可編輯) ---
 if st.session_state.unit_reports:
     st.markdown("---")
     st.subheader("📄 報告預覽")
@@ -664,11 +648,10 @@ if st.session_state.unit_reports:
                 key=f"dl_{idx}"
             )
 
-    # --- 總匯整：合併下載與一次寄送全部 ---
+    # --- 總匯整 ---
     st.markdown("---")
     st.subheader("📦 總匯整處理 (合併所有單位報告)")
     
-    # 組合所有報告的文字
     all_text = "\n\n────────────────────────────────────────\n\n".join(
         [v['report'] for v in st.session_state.unit_reports.values()]
     )
