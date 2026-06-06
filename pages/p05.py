@@ -24,19 +24,33 @@ def get_font_path():
 
 font_path = get_font_path()
 
-# --- PDF 遮蓋邏輯 ---
+# --- PDF 遮蓋邏輯（已修正為動態寬度） ---
 def create_pdf_overlay(page_width, page_height, page_num, current_font):
     packet = io.BytesIO()
     c = canvas.Canvas(packet, pagesize=(page_width, page_height))
-    text = f"交通組製 - 第 {page_num} 頁"
-    box_width, box_height = 130, 20
-    rect_x, rect_y = page_width - box_width, 0
     
+    # 1. 決定文字與字級
+    text = f"交通組製 - 第 {page_num} 頁"
+    font_size = 14
+    
+    # 2. 動態計算文字寬度，並加上左右各 8 像素的留白 (Padding)
+    text_width = c.stringWidth(text, current_font, font_size)
+    box_width = text_width + 16  
+    box_height = 20
+    
+    # 3. 計算白框的左上角 X 座標 (靠右對齊)
+    rect_x = page_width - box_width
+    rect_y = 0
+    
+    # 4. 繪製白框
     c.setFillColor(white)
     c.rect(rect_x, rect_y, box_width, box_height, fill=1, stroke=0)
+    
+    # 5. 繪製文字 (靠右對齊，並往左縮 8 像素以維持美觀)
     c.setFillColor(black)
-    c.setFont(current_font, 14)
-    c.drawRightString(page_width - 4, 4, text)
+    c.setFont(current_font, font_size)
+    c.drawRightString(page_width - 8, 4, text)
+    
     c.save()
     packet.seek(0)
     return packet
@@ -47,7 +61,7 @@ def process_image(image_file, font_p):
     draw = ImageDraw.Draw(img)
     width, height = img.size
     
-    # 定義遮蓋框大小 (圖片像素通常較多，這裡設為寬度的 20%)
+    # 定義遮蓋框大小
     box_w, box_h = 250, 50 
     rect_x0, rect_y0 = width - box_w, height - box_h
     
@@ -61,7 +75,6 @@ def process_image(image_file, font_p):
         font = ImageFont.load_default()
         
     text = "交通組製"
-    # 簡單置中文字在白框內
     draw.text((rect_x0 + 10, rect_y0 + 10), text, fill="black", font=font)
     
     img_byte_arr = io.BytesIO()
