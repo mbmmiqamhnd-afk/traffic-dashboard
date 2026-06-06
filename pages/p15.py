@@ -142,6 +142,7 @@ def generate_police_radio_code(unit, rank, idx_in_unit=1):
         start_suffix = 3 + (idx_in_unit - 1)
         return f"{base[:-1]}{start_suffix}"
 
+# 動態處理巡邏組
 def assign_ptl_groups(df):
     if df.empty: return df
     res = df.copy()
@@ -169,15 +170,21 @@ def assign_ptl_groups(df):
             
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]
 
+# 【核心功能修正】臨檢組全面導入「動態智慧分組演算法」，徹底解放最下列 Add Row 限制！
 def assign_cp_groups(df):
     if df.empty: return df
-    res = df.copy()
+    res = df.copy().reset_index(drop=True)
     group_ids_cp = []
     unit_counters = {}
     
+    # 建立動態分組判定基準：只要單位屬於中興、龍潭、偵查隊(前段)，就歸為第1臨檢組；其餘歸第2組
+    # 這樣一來，使用者不論在最下列怎麼加人，只要打對單位，系統重整時就會自動精準分流
     for i, row in res.iterrows():
-        if i < 5: group_ids_cp.append("第1臨檢組")
-        else: group_ids_cp.append("第2臨檢組")
+        u_str = str(row['單位']).strip()
+        if u_str in ["中興所", "龍潭所"] or (u_str == "偵查隊" and i < 5):
+            group_ids_cp.append("第1臨檢組")
+        else:
+            group_ids_cp.append("第2臨檢組")
         
         if not str(row.get('無線電代號', '')).strip():
             u = row['單位']
@@ -186,6 +193,7 @@ def assign_cp_groups(df):
             
     res["編組"] = group_ids_cp
     
+    # 全組無線電呼號與首列人員聯動鎖定
     for g_name in res['編組'].unique():
         sub_idx = res[res['編組'] == g_name].index
         if len(sub_idx) > 0:
@@ -194,6 +202,7 @@ def assign_cp_groups(df):
             
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]]
 
+# 計算 ReportLab 表格垂直合併區間
 def calculate_table_spans(data_list, columns_to_merge):
     spans = []
     if len(data_list) <= 1: return spans
@@ -298,7 +307,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     font = _get_font()
     buf = io.BytesIO()
-    # 【安全優化修正】放寬上下邊距（topMargin/bottomMargin 縮小至 8mm），釋放更多垂直排版容留空間
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=10*mm, rightMargin=10*mm, topMargin=8*mm, bottomMargin=8*mm)
     page_width = A4[0] - 20*mm
     story = []
@@ -308,15 +316,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     style_text = ParagraphStyle('Text', fontName=font, fontSize=14, leading=20, alignment=0, wordWrap='CJK')
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
     style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=14, leading=20, alignment=0, wordWrap='CJK')
-    
-    # 【關鍵修正】特別收緊臨檢場所、巡邏路段合併儲存格的文字緊湊度（fontSize 11, leading 15），阻止合併儲存格高度炸開
     style_cell_longtext = ParagraphStyle('CellLongText', fontName=font, fontSize=11, leading=15, alignment=0, wordWrap='CJK')
     
     def clean(t): return safe_str(t).replace("\n", "<br/>")
 
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", style_title))
     
-    # 壹、基本資料
     story.append(Paragraph("<b>壹、 勤務基本資料</b>", style_section))
     date_str = clean(time_str.split(" ")[0] if " " in time_str else "115年4月10日")
     time_str_only = clean(time_str.split(" ")[1] if " " in time_str else "19時至23時")
@@ -326,7 +331,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_basic.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_basic)
     
-    # 貳、警力統計
     story.append(Paragraph("<b>貳、 警力統計及地點統計</b>", style_section))
     data_stats = [[Paragraph("督導組", style_cell), Paragraph("攔臨組", style_cell), Paragraph("偵訊組", style_cell), Paragraph("小計", style_cell), Paragraph("民力", style_cell), Paragraph("總計", style_cell)], 
                   [Paragraph(str(stats['cmd']), style_cell), Paragraph(str(stats['ptl']), style_cell), Paragraph(str(stats['inv']), style_cell), Paragraph(str(stats['cmd']+stats['ptl']+stats['inv']), style_cell), Paragraph(str(stats['civ']), style_cell), Paragraph(str(stats['total']), style_cell)]]
@@ -334,7 +338,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_stats.setStyle(TableStyle([('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
     story.append(t_stats)
 
-    # 參、指導與督導組
     story.append(Paragraph("<b>參、 督導及其他任務編組表</b>", style_section))
     data_cmd = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ["項目", "通訊代號", "任務目標", "負責人員", "共同人員"]]]
     for _, r in df_cmd.iterrows():
@@ -358,7 +361,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     for _, r in pdf_ptl_df.iterrows():
         data_ptl.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('攜行裝備')), style_cell_left), Paragraph(clean(r.get('巡邏路段')), style_cell_longtext)])
     
-    # 【核心修正】增加 VALIGN TOP 靠上對齊，可使合併單元格在分頁渲染時擁有最高容錯率
     t_ptl_style = [('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#f2f2f2')),('VALIGN',(0,0),(-1,-1),'TOP')]
     ptl_spans = calculate_table_spans(data_ptl, [0, 1, 2, 7])
     t_ptl_style.extend(ptl_spans)
@@ -367,7 +369,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_ptl.setStyle(TableStyle(t_ptl_style))
     story.append(t_ptl)
 
-    # 伍、【第二階段】擴大臨檢（解決 Flowable too large 崩潰處）
+    # 伍、【第二階段】擴大臨檢
     story.append(Paragraph("<b>伍、【第二階段】擴大臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務重點：</b>{clean(cp_f)}", style_text))
     if df_cp is not None and not df_cp.empty:
@@ -383,7 +385,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         for _, r in pdf_cp_df.iterrows():
             data_cp.append([Paragraph(clean(r.get('編組')), style_cell), Paragraph(clean(r.get('無線電代號')), style_cell), Paragraph(clean(r.get('單位')), style_cell), Paragraph(clean(r.get('職別')), style_cell), Paragraph(clean(r.get('姓名')), style_cell), Paragraph(clean(r.get('任務分工')), style_cell_left), Paragraph(clean(r.get('臨檢目標場所')), style_cell_longtext)])
         
-        # 【核心修正】加入 VALIGN TOP 靠上對齊，排除合併 6 行的超大格子在 Later Frame 中算高失敗的崩潰 Bug
         t_cp_style = [('FONTNAME',(0,0),(-1,-1),font),('GRID',(0,0),(-1,-1),0.5,colors.black),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#e6e6e6')),('VALIGN',(0,0),(-1,-1),'TOP')]
         cp_spans = calculate_table_spans(data_cp, [0, 1, 2, 6])
         t_cp_style.extend(cp_spans)
@@ -392,7 +393,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         t_cp.setStyle(TableStyle(t_cp_style))
         story.append(t_cp)
     
-    # 陸、工作重點
     story.append(Paragraph("<b>陸、 工作重點與法令宣導</b>", style_section))
     for line in str(briefing).split('\n'):
         if line.strip(): story.append(Paragraph(clean(line), style_text))
@@ -527,6 +527,7 @@ with tab1:
             group_ids.append(f"第{g_idx}巡邏組")
         res_ptl["編組"] = group_ids
         
+        # 網頁端即時連動呼號
         for g_name in res_ptl['編組'].unique():
             sub_idx = res_ptl[res_ptl['編組'] == g_name].index
             if len(sub_idx) > 0:
@@ -541,25 +542,12 @@ with tab1:
         res_ptl = res_ptl_raw
 
 with tab2:
+    # 【已解鎖】網頁前端現在完全允許點擊 + Add row 自由在最下列追加同仁名單！
     res_cp_raw = st.data_editor(st.session_state.df_cp, num_rows="dynamic", use_container_width=True, key="cp_ed").dropna(how='all').fillna("").reset_index(drop=True)
     
     if not res_cp_raw.empty:
-        res_cp = res_cp_raw.copy()
-        group_ids_cp = []
-        for i in range(len(res_cp)):
-            if i < 5: group_ids_cp.append("第1臨檢組")
-            else: group_ids_cp.append("第2臨檢組")
-        res_cp["編組"] = group_ids_cp
-        
-        for g_name in res_cp['編組'].unique():
-            sub_idx = res_cp[res_cp['編組'] == g_name].index
-            if len(sub_idx) > 0:
-                first_code = res_cp.loc[sub_idx[0], '無線電代號']
-                for s_idx in sub_idx[1:]:
-                    if not str(res_cp.loc[s_idx, '無線電代號']).strip():
-                        res_cp.loc[s_idx, '無線電代號'] = first_code
-                        
-        res_cp = res_cp[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]]
+        # 調用優化後的 assign_cp_groups 進行動態單位判定
+        res_cp = assign_cp_groups(res_cp_raw)
         st.session_state.df_cp = res_cp
     else:
         res_cp = res_cp_raw
