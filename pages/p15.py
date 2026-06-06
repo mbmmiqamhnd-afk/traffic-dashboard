@@ -88,7 +88,7 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"單位": "中興所", "無線電代號": "", "職別": "警員", "姓名": "羅俊傑", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "張家維", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員", "姓名": "王采蘋", "任務分工": "盤查兼蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
-    {"單位": "偵查隊", "無線電代號": "", "職別": "警員", "姓名": "許家洋", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會 Graves, C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
+    {"單位": "偵查隊", "無線電代號": "", "職別": "警員", "姓名": "許家洋", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     
     {"單位": "石門所", "無線電代號": "", "職別": "所長", "姓名": "林育辰", "任務分工": "帶班", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nF. 憤怒鳥網咖\nG. 真情男女養生館\nH. 萬紫千紅舒壓館\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
     {"單位": "聖亭所", "無線電代號": "", "職別": "副所長", "姓名": "邱品淳", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
@@ -318,40 +318,59 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         canvas.saveState()
         canvas.setFont(font, 10)
         canvas.drawCentredString(A4[0]/2.0, 10*mm, f"-第{canvas.getPageNumber()}頁-")
-        canvas.saveState()
+        canvas.restoreState()
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
+# --- 4. 【核心修正重大升級】簽到表：表格最上方正式補齊長官(分局長、上級指導、副分局長)欄位 ---
 def generate_attendance_pdf(unit, project, time_str, stats):
     font = _get_font()
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=12*mm, bottomMargin=15*mm)
     page_width = A4[0] - 30*mm
     story = []
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=12, wordWrap='CJK')
+    
+    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=10, wordWrap='CJK')
     style_info = ParagraphStyle('Info', fontName=font, fontSize=14, leading=22, spaceAfter=1*mm, wordWrap='CJK')
     style_cell = ParagraphStyle('Cell', fontName=font, fontSize=14, leading=20, alignment=1, wordWrap='CJK')
-    story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
+    
+    story.append(Paragraph(f"<b>{unit}執行{project}簽到表</b>", style_title))
     date_part = time_str.split(' ')[0] if ' ' in time_str else "115年4月10日"
-    story.append(Paragraph(f"時間:{date_part}{stats['b_time']}", style_info))
-    story.append(Paragraph(f"地點:{stats['b_loc']}召開", style_info))
-    table_data = [[Paragraph("單位", style_cell), Paragraph("參加人員", style_cell), Paragraph("單位", style_cell), Paragraph("參加人員", style_cell)]]
+    story.append(Paragraph(f"時間：{date_part} {stats['b_time']}", style_info))
+    story.append(Paragraph(f"地點：{stats['b_loc']} 召開", style_info))
+    story.append(Spacer(1, 4*mm))
+    
+    # 🥊 【長官列歸位】在單位簽到格子上方, 正式置入最高長官與指導官簽名列
+    boss_data = [
+        [Paragraph("<b>職稱</b>", style_cell), Paragraph("<b>分局長</b>", style_cell), Paragraph("<b>上級指導官</b>", style_cell), Paragraph("<b>副分局長</b>", style_cell)],
+        [Paragraph("<b>簽名</b>", style_cell), "", "", ""]
+    ]
+    t_boss = Table(boss_data, colWidths=[page_width*0.15, page_width*0.28, page_width*0.29, page_width*0.28], rowHeights=[10*mm, 20*mm])
+    t_boss.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f2f2f2'))
+    ]))
+    story.append(t_boss)
+    story.append(Spacer(1, 6*mm))
+    
+    # 基層各派出所與內勤單位簽到表
+    table_data = [[Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell), Paragraph("<b>單位</b>", style_cell), Paragraph("<b>參加人員</b>", style_cell)]]
     rows = [("交通組", "聖亭派出所"), ("督察組", "龍潭派出所"), ("行政組", "中興派出所"), ("保安民防組", "石門派出所"), ("勤務指揮中心", "高平派出所"), ("偵查隊", "三和派出所"), ("", "龍潭交通分隊")]
     for l, r in rows: table_data.append([Paragraph(l, style_cell) if l else "", "", Paragraph(r, style_cell) if r else "", ""])
-    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[12*mm] + [24*mm]*len(rows))
+    
+    t = Table(table_data, colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3], rowHeights=[10*mm] + [20*mm]*len(rows))
     t.setStyle(TableStyle([('FONTNAME', (0,0), (-1,-1), font), ('GRID', (0,0), (-1,-1), 0.5, colors.black), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BACKGROUND', (0,0), (3,0), colors.whitesmoke)]))
-    story.append(Spacer(1, 10*mm))
     story.append(t)
+    
     doc.build(story)
     return buf.getvalue()
 
-# 【核心功能修正】完全對齊接收參數，全面接收傳遞過來的 stats 數據字典
 def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
         msg["From"], msg["To"], msg["Subject"] = sender, sender, f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')}"
-        msg.attach(MIMEText("附件為最新版本勤務規劃表。", "plain"))
+        msg.attach(MIMEText("附件為最新版本勤務規劃表及簽到表。", "plain"))
         pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f)
         part1 = MIMEBase("application", "pdf")
         part1.set_payload(pdf1)
@@ -433,7 +452,7 @@ with col_time:
 
 mmdd_code = extract_mmdd(p_time)
 with col_proj:
-    input_proj_body = st.text_input(f"專案名稱 (目前連動代碼: {mmdd_code})", value=st.session_state.proj_body, key="input_proj_body")
+    input_proj_body = st.text_input(f"專案名稱 (目前連動代碼: {mmdd_code})", value=st.session_body, key="input_proj_body")
     st.session_state.proj_body = input_proj_body
 
 p_name = f"{mmdd_code}{input_proj_body}"
@@ -482,7 +501,6 @@ st.markdown("---")
 
 if st.button("💾 同步雲端並發送郵件", use_container_width=True):
     with st.spinner("⏳ 正在寫入雲端並寄送郵件，請稍候..."):
-        # 【技術重大更新】完全傳遞繁體中文的 Key 變數集，防止傳送字典時 KeyError 崩潰
         stats_to_send = {
             'cmd': st.session_state.stats_data['cmd'],
             'ptl_机动': st.session_state.stats_data['ptl_机动'],
@@ -493,7 +511,7 @@ if st.button("💾 同步雲端並發送郵件", use_container_width=True):
             'b_time': '19時30分至20時00分', 
             'b_loc': '分局二樓會議室'
         }
-        if save_data(DEFAULT_UNIT, st.session_state.p_time, p_name, st.session_state.b_info, st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp, stats_to_send, DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS):
+        if save_data(DEFAULT_UNIT, p_name, st.session_state.p_time, st.session_state.b_info, st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp, stats_to_send, DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS):
             ok, mail_err = send_report_email(DEFAULT_UNIT, p_name, st.session_state.p_time, st.session_state.b_info, st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp, stats_to_send, DEFAULT_PTL_FOCUS, DEFAULT_CP_FOCUS)
             if ok: 
                 st.success(f"✅ 資料已成功同步至雲端！專案名稱：「{p_name}」，公文 PDF 郵件已發送完成！")
