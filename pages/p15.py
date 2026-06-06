@@ -708,26 +708,8 @@ with tab2:
             st.session_state.df_cp = re_cp
             st.rerun()
 
-# ── 預覽下載 ──
-st.markdown("---")
-col_dl1, col_dl2 = st.columns(2)
-with col_dl1:
-    if st.button("📄 預覽下載 規劃表 PDF", use_container_width=True):
-        pdf = generate_main_pdf(
-            DEFAULT_UNIT, p_name, p_time, b_info,
-            st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp,
-            live_stats, ptl_focus, cp_focus)
-        st.download_button("⬇️ 下載規劃表", pdf,
-                           file_name=f"{DEFAULT_UNIT}_{mmdd}規劃表.pdf",
-                           mime="application/pdf")
-with col_dl2:
-    if st.button("📋 預覽下載 簽到表 PDF", use_container_width=True):
-        pdf = generate_attendance_pdf(DEFAULT_UNIT, p_name, p_time, brief_time, brief_loc)
-        st.download_button("⬇️ 下載簽到表", pdf,
-                           file_name=f"{DEFAULT_UNIT}_{mmdd}簽到表.pdf",
-                           mime="application/pdf")
-
 # ── 同步＋寄信 ──
+st.markdown("---")
 if st.button("💾 同步雲端並發送郵件", use_container_width=True, type="primary"):
     with st.spinner("⏳ 正在寫入雲端並寄送郵件，請稍候..."):
         ok, err = save_data(
