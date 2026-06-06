@@ -142,26 +142,33 @@ def generate_police_radio_code(unit, rank, idx_in_unit=1):
         start_suffix = 3 + (idx_in_unit - 1)
         return f"{base[:-1]}{start_suffix}"
 
-# 動態處理巡邏組
+# 【核心更新】動態處理巡邏組：兼顧排序與一鍵填入鎖定
 def assign_ptl_groups(df):
     if df.empty: return df
-    res = df.copy()
+    res = df.copy().reset_index(drop=True)
+    
+    # 智慧型動態單位自適應排序：確保聖亭->龍潭->中興->石門->三和->高平->交隊完全對齊
+    order_map = {"聖亭所": 1, "龍潭所": 2, "中興所": 3, "石門所": 4, "三和所": 5, "高平所": 6, "龍潭交分隊": 7}
+    res["_sort_key"] = res["單位"].map(lambda x: order_map.get(str(x).strip(), 99))
+    res = res.sort_values(by=["_sort_key"]).reset_index(drop=True)
+    
     group_ids = []
     g_idx = 1
-    
     unit_counters = {}
+    
     for i, row in res.iterrows():
         if i > 0 and row['單位'] != res.loc[i-1, '單位']:
             g_idx += 1
         group_ids.append(f"第{g_idx}巡邏組")
         
-        if not str(row.get('無線電代號', '')).strip():
+        if not str(row.get('無線電代號', '')).strip() and str(row['單位']).strip():
             u = row['單位']
             unit_counters[u] = unit_counters.get(u, 0) + (1 if row['職別'] not in ["所長", "分隊長", "隊長", "副所長", "小隊長"] else 0)
             res.loc[i, '無線電代號'] = generate_police_radio_code(u, row['職別'], unit_counters[u])
             
     res["編組"] = group_ids
     
+    # 無線電代號全組自動向第一列對齊
     for g_name in res['編組'].unique():
         sub_idx = res[res['編組'] == g_name].index
         if len(sub_idx) > 0:
@@ -170,43 +177,55 @@ def assign_ptl_groups(df):
             
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]
 
-# 【核心算法更新】徹底重構分組優先級：網頁手動填寫優先！防止新行閃退、卡死、要求輸入兩次
+# 【核心重大更新】臨檢組：徹底移除行數鎖定，全面改為單位自動權重排序，完美解決新增人員順序錯亂與打2次Bug
 def assign_cp_groups(df):
     if df.empty: return df
     res = df.copy().reset_index(drop=True)
+    
+    # 建立正式公文排序基準：第1組單位（中興、龍潭、內勤偵查隊）在前；第2組單位（石門、聖亭、三和、外勤偵查隊）在後
+    def get_sort_score(row_data, current_idx):
+        u = str(row_data.get('單位', '')).strip()
+        # 網頁剛打好尚未設定單位的全新行，最優先留在底部不亂跳
+        if not u: return 999 
+        
+        # 偵查隊的分流排版對齊
+        if u == "偵查隊":
+            return 15 if current_idx < 5 else 25
+            
+        order_weight = {"中興所": 10, "龍潭所": 11, "石門所": 20, "聖亭所": 21, "三和所": 22}
+        return order_weight.get(u, 50)
+
+    # 執行智慧連動排序
+    res["_sort_score"] = [get_sort_score(r, idx) for idx, r in res.iterrows()]
+    res = res.sort_values(by=["_sort_score"]).reset_index(drop=True)
+    
     group_ids_cp = []
     unit_counters = {}
     
     for i, row in res.iterrows():
-        # 【防護盾核心】如果使用者已經在網頁上手動指派了「編組」文字，絕對尊重，直接沿用，不再蓋台
-        if str(row.get('編組', '')).strip() in ["第1臨檢組", "第2臨檢組"]:
-            group_ids_cp.append(str(row['編組']).strip())
-        else:
-            # 只有在全新空白列時，才啟動動態單位判定
-            u_str = str(row['單位']).strip()
-            if u_str in ["中興所", "龍潭所"] or (u_str == "偵查隊" and i < 5) or u_str == "":
-                group_ids_cp.append("第1臨檢組")
-            else:
-                group_ids_cp.append("第2臨檢組")
+        u_str = str(row.get('單位', '')).strip()
         
-        if not str(row.get('無線電代號', '')).strip():
-            u = row['單位']
-            if u:
-                unit_counters[u] = unit_counters.get(u, 0) + (1 if row['職別'] not in ["所長", "分隊長", "隊長", "副所長", "小隊長"] else 0)
-                res.loc[i, '無線電代號'] = generate_police_radio_code(u, row['職別'], unit_counters[u])
+        # 完美自動化編組分流算法：不再綁死寫固定列，輸入完立刻被拖曳排序至正確大組
+        if u_str in ["中興所", "龍潭所"] or (u_str == "偵查隊" and res.loc[i, "_sort_score"] == 15) or u_str == "":
+            group_ids_cp.append("第1臨檢組")
+        else:
+            group_ids_cp.append("第2臨檢組")
+        
+        if not str(row.get('無線電代號', '')).strip() and u_str:
+            unit_counters[u_str] = unit_counters.get(u_str, 0) + (1 if row['職別'] not in ["所長", "分隊長", "隊長", "副所長", "小隊長"] else 0)
+            res.loc[i, '無線電代號'] = generate_police_radio_code(u_str, row['職別'], unit_counters[u_str])
             
     res["編組"] = group_ids_cp
     
-    # 呼號與各組首列聯動
+    # 自動代號聯動大格合併
     for g_name in res['編組'].unique():
         sub_idx = res[res['編組'] == g_name].index
         if len(sub_idx) > 0:
             first_code = res.loc[sub_idx[0], '無線電代號']
-            # 只在代號為空，或代號不等於前人時，才進行遞補，給予手動更高自由度
             for s_idx in sub_idx:
                 if not str(res.loc[s_idx, '無線電代號']).strip():
                     res.loc[s_idx, '無線電代號'] = first_code
-            
+                    
     return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]]
 
 # 計算 ReportLab 表格垂直合併區間
@@ -525,34 +544,18 @@ with tab1:
     res_ptl_raw = st.data_editor(st.session_state.df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_ed").dropna(how='all').fillna("").reset_index(drop=True)
     
     if not res_ptl_raw.empty:
-        res_ptl = res_ptl_raw.copy()
-        group_ids = []
-        g_idx = 1
-        for i, row in res_ptl.iterrows():
-            if i > 0 and row['單位'] != res_ptl.loc[i-1, '單位']:
-                g_idx += 1
-            group_ids.append(f"第{g_idx}巡邏組")
-        res_ptl["編組"] = group_ids
-        
-        for g_name in res_ptl['編組'].unique():
-            sub_idx = res_ptl[res_ptl['編組'] == g_name].index
-            if len(sub_idx) > 0:
-                first_code = res_ptl.loc[sub_idx[0], '無線電代號']
-                for s_idx in sub_idx[1:]:
-                    if not str(res_ptl.loc[s_idx, '無線電代號']).strip():
-                        res_ptl.loc[s_idx, '無線電代號'] = first_code
-                        
-        res_ptl = res_ptl[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]]
+        # 即時套用連動排序與智慧呼號
+        res_ptl = assign_ptl_groups(res_ptl_raw)
         st.session_state.df_ptl = res_ptl
     else:
         res_ptl = res_ptl_raw
 
 with tab2:
-    # 【完美收載修正點】data_editor 直接與記憶緩衝綁定，不再對空值列進行強制覆蓋，保障輸入一次就儲存
+    # 【全面修復】現在在最下列 Add Row 完直接輸入資料，背景會無縫進行即時智慧排序移位，保證輸入1次就鎖定固定，絕不跳回！
     res_cp_raw = st.data_editor(st.session_state.df_cp, num_rows="dynamic", use_container_width=True, key="cp_ed").dropna(how='all').fillna("").reset_index(drop=True)
     
     if not res_cp_raw.empty:
-        # 使用手動優先算法處理臨檢組別，成功解除 Add Row 的衝突
+        # 即時套用連動排序與智慧呼號
         res_cp = assign_cp_groups(res_cp_raw)
         st.session_state.df_cp = res_cp
     else:
