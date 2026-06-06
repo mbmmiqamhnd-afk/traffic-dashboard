@@ -14,7 +14,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import smtplib, io, os, traceback, re
+import smtplib, io, os, traceback
 import urllib.parse as _ul
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -28,6 +28,9 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
+
+# 💡 使用安全別名導入 re 模組，徹底解決 UnboundLocalError 作用域衝突問題
+import re as _re_safe
 
 # --- 常數與設定 ---
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
@@ -99,10 +102,10 @@ DEFAULT_PTL = pd.DataFrame([
 
 DEFAULT_CHECKPOINT = pd.DataFrame([
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "所長",   "姓名": "鄭榮捷", "任務分工": "帶班",                             "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",                     "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（死中正路506號）IA318"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",                     "臨檢目標場所": "A. 鉅大撞球館（心中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（死中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "劉柏延", "任務分工": "盤查兼蒐證",                       "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",   "姓名": "林宸緯", "任務分工": "盤查兼蒐證",                       "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",   "姓名": "黃丞穎", "任務分工": "大門警(車)戒兼蒐證",               "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（心中正路506號）IA318"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",   "姓名": "黃丞穎", "任務分工": "大門警(車)戒兼蒐證",               "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（心中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "偵查佐", "姓名": "賴享宏", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（Play館）（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "張峻銨", "任務分工": "刑案偵防、社維法案件之處理及移送", "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（心中正路506號）IA318"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "副所長", "姓名": "林榮裕", "任務分工": "帶班",                             "臨檢目標場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
@@ -274,7 +277,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
 # ─────────────── PDF 生成：規劃表 ───────────────
 
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
-    # 💡 移除內部的 import re，完全交給檔頭的全域 re 處理，修復 UnboundLocalError
     font = _get_font()
     buf  = io.BytesIO()
     doc  = SimpleDocTemplate(
@@ -330,6 +332,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#f2f2f2")),
         ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
     ]))
+    doc_basic = t_basic # 保留變數名稱相容性
     story.append(t_basic)
 
     # 貳、統計表
@@ -376,7 +379,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         for target in raw_targets:
             target_clean = str(target).strip()
             if target_clean and target_clean.lower() != "nan":
-                matches = re.findall(r'(?:^[A-Z0-9熱點]\s*[\.\、\-\：]\s*|[A-Z0-9熱點]\s*[\.\、\-\：]\s*)([^\n]+)', target_clean, re.MULTILINE)
+                # 💡 使用全域安全模組別名 _re_safe 進行正規表示式解析
+                matches = _re_safe.findall(r'(?:^[A-Z0-9熱點]\s*[\.\、\-\：]\s*|[A-Z0-9熱點]\s*[\.\、\-\：]\s*)([^\n]+)', target_clean, _re_safe.MULTILINE)
                 for item in matches:
                     place_title = item.strip().split("（")[0].split("(")[0][:15]
                     if place_title:
@@ -557,7 +561,6 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
     
     story.append(Spacer(1, 3*mm))
 
-    # 串接全動態職稱：動態提取分局長/副分局長名銜
     commander_title = get_commander_name(df_cmd)
     if " " in commander_title:
         commander_title = commander_title.split(" ")[0]
@@ -714,7 +717,8 @@ col_b1, col_b2 = st.columns(2)
 with col_b1:
     p_time = st.text_input("勤務時間", t, help="格式例：115年3月25日 18時至22時")
 with col_b2:
-    display_project_name = re.sub(r'^\d{4}「?', '', p)
+    # 💡 使用安全別名變數避免隱式污染
+    display_project_name = _re_safe.sub(r'^\d{4}「?', '', p)
     p_input = st.text_input("專案名稱", display_project_name)
 
 col_b3, col_b4 = st.columns(2)
@@ -723,8 +727,8 @@ with col_b3:
 with col_b4:
     input_b_loc = st.text_input("勤前教育地點", default_stats["b_loc"])
 
-# 自動解析4碼日期字串 (例如 0325)
-date_match = re.search(r'(\d+)年(\d+)月(\d+)日', p_time)
+# 💡 安全解析4碼日期字串
+date_match = _re_safe.search(r'(\d+)年(\d+)月(\d+)日', p_time)
 if date_match:
     auto_4_digit = f"{int(date_match.group(2)):02d}{int(date_match.group(3)):02d}"
 else:
@@ -801,7 +805,6 @@ if not res_cp.empty and "姓名" in res_cp.columns:
 # ── 貳、警力統計與地點統計顯示區塊 ──
 st.subheader("貳、 警力統計及地點統計")
 
-# 非自動計算項目保留微調空間
 col_adj1, col_adj2 = st.columns(2)
 with col_adj1:
     c_inv  = col_adj1.number_input("偵訊組人數調整", value=default_stats["inv"], min_value=0)
