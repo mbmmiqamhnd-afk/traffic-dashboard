@@ -224,25 +224,24 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
     res = res.sort_values(["_g", "_is_invest", "_is_senior", "_orig_idx"]).drop(
         columns=["_is_senior", "_is_invest", "_orig_idx"]).reset_index(drop=True)
 
-    group_ids, radio_codes, unit_officer_count = [], [], {}
-    for i, row in res.iterrows():
-        group_ids.append("第1臨檢組" if row["_g"] == 1 else "第2臨檢組")
-        unit = str(row.get("單位", "")).strip()
+    # 先指定編組名稱
+    group_ids = ["第1臨檢組" if row["_g"] == 1 else "第2臨檢組" for _, row in res.iterrows()]
+    res["編組"] = group_ids
+    res = res.drop(columns=["_g"])
 
-        # 無線電代號：各人獨立計算，不統一蓋成同一號
-        existing = str(row.get("無線電代號", "")).strip()
-        if existing and existing not in ("nan", "None", "0"):
-            radio_codes.append(existing)
-        elif unit:
+    # 排序完成後重新計算無線電代號，確保代號對應排序後的第一列（帶班所長）
+    unit_officer_count = {}
+    radio_codes = []
+    for i, row in res.iterrows():
+        unit = str(row.get("單位", "")).strip()
+        if unit:
             is_officer = row["職別"] in SENIOR_RANKS
             unit_officer_count[unit] = unit_officer_count.get(unit, 0) + (0 if is_officer else 1)
             radio_codes.append(generate_radio_code(unit, row["職別"], unit_officer_count[unit]))
         else:
             radio_codes.append("")
 
-    res["編組"]      = group_ids
     res["無線電代號"] = radio_codes
-    res = res.drop(columns=["_g"])
 
     # 整組統一用第一列（帶班所長）的無線電代號
     for g in res["編組"].unique():
