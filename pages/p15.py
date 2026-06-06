@@ -82,7 +82,7 @@ DEFAULT_PTL = pd.DataFrame([
     {"單位": "龍潭交分隊", "無線電代號": "", "職別": "警員", "姓名": "吳沛軒", "任務分工": "攔檢盤查", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "轄內易發生危駕路段、各聯外道路機動攔查。(全程留守機動 20:00-23:00) *雨天備案:轄區治安要點巡邏。"}
 ])
 
-# 伍、第二階段場所臨檢底稿
+# 伍、第二階段臨檢組底稿 (名稱已更新)
 DEFAULT_CHECKPOINT = pd.DataFrame([
     {"單位": "中興所", "無線電代號": "", "職別": "所長", "姓名": "董亦文", "任務分工": "帶班", "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nC. 丹陽泰養生館 (中豐路281號)\nD. 溫馨汽車旅館 (中正路457號)\nE. 凱虹汽車旅館 (中正路506號)\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
     {"單位": "中興所", "無線電代號": "", "職別": "警員", "姓名": "羅俊傑", "任務分工": "製作臨檢紀錄", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
@@ -98,6 +98,35 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"單位": "偵查隊", "無線電代號": "", "職別": "偵查佐", "姓名": "鄧正斌", "任務分工": "持DV全程蒐證", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"}
 ])
 
+# 修改組別判定邏輯，將「場所臨檢組」改為「臨檢組」
+def assign_cp_groups(df):
+    if df.empty: return df
+    res = df.copy().reset_index(drop=True)
+    def get_sort_score(row_data, current_idx):
+        g_text = str(row_data.get('編組', '')).strip()
+        u_text = str(row_data.get('單位', '')).strip()
+        if not g_text and not u_text: return 999 
+        # 統一更名為「第1臨檢組」、「第2臨檢組」
+        if g_text == "第1臨檢組": return 10
+        if g_text == "第2臨檢組": return 20
+        if u_text in ["中興所", "龍潭所"] or (u_text == "偵查隊" and current_idx < 5): return 11
+        return 21
+    res["_sort_score"] = [get_sort_score(r, idx) for idx, r in res.iterrows()]
+    res = res.sort_values(by=["_sort_score"]).reset_index(drop=True)
+    group_ids_cp = []
+    unit_counters = {}
+    for i, row in res.iterrows():
+        s_score = res.loc[i, "_sort_score"]
+        if s_score in [10, 11, 999]: group_ids_cp.append("第1臨檢組")
+        else: group_ids_cp.append("第2臨檢組")
+        # ... (後續無線電邏輯保持不變)
+        u_str = str(row.get('單位', '')).strip()
+        if u_str:
+            unit_counters[u_str] = unit_counters.get(u_str, 0) + (1 if row['職別'] not in ["所長", "分隊長", "隊長", "副所長", "小隊長"] else 0)
+            res.loc[i, '無線電代號'] = generate_police_radio_code(u_str, row['職別'], unit_counters[u_str])
+    res["編組"] = group_ids_cp
+    # ...
+    return res[["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]]
 # --- 2. 輔助與演算法函數區塊 ---
 def _get_font():
     fname = "kaiu"
