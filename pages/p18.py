@@ -137,29 +137,21 @@ def p18_page():
     )
     is_only_pts = "模式 A" in op_mode
     
-    # --- 3. 模式二專屬：金流配置控制面板 ---
+    # --- 3. 模式二專屬：金流配置控制面板 (已移除手動輸入選項，全面自動化) ---
     if not is_only_pts:
         st.markdown("---")
-        st.subheader("📝 3. 獎金核發與印領清冊分配設定")
+        st.subheader("📝 3. 獎金核發與自動按比例分配設定")
         point_value = st.number_input("💵 直接執行人員 - 每點獎金金額", value=1.905, format="%.3f", step=0.001)
         target_direct_budget = st.number_input("🎯 警察局核撥【直接執行人員】總獎金目標 (元) *若為 0 則不啟動自動平帳", value=0, step=1)
 
-        st.markdown("##### 👥 共同作業及配合人員 - 分配模式")
-        alloc_mode = st.radio(
-            "請選擇「共同作業及配合人員」的獎金計算方式：",
-            ["🤖 系統自動按比例分配 (72%差異化)", "✍️ 手動輸入固定金額 (僅於總表分類顯示)"]
-        )
-        if "系統自動" in alloc_mode:
-            st.info("💡 負責管考(72%)：正副主官固定8% + 派出所/交通分隊正副主管56% + 交通組26% + 業務承辦人10%")
-            budget_type = st.selectbox("請選擇預算輸入方式：", ["A. 直接輸入【共同作業人員】的總分配預算", "B. 輸入【全分局】本月核撥總預算"])
-            if "A" in budget_type:
-                budget_input = st.number_input("💰 輸入【共同作業人員】總預算 (元)", value=9467, step=100)
-            else:
-                budget_input = st.number_input("💰 輸入【全分局】核撥總預算 (元)", value=50000, step=100)
+        st.markdown("##### 👥 共同作業及配合人員 - 獎金預算配置")
+        st.info("💡 系統全自動分配規則：負責管考(72%)：正副主官固定8% + 派出所/交通分隊正副主管56% + 交通組26% + 業務承辦人10%")
+        
+        budget_type = st.selectbox("請選擇預算輸入方式：", ["A. 直接輸入【共同作業人員】的總分配預算", "B. 輸入【全分局】本月核撥總預算"])
+        if "A" in budget_type:
+            budget_input = st.number_input("💰 輸入【共同作業人員】總預算 (元)", value=9467, step=100)
         else:
-            st.info("💡 手提模式：請於表格內自行填寫實際金額。")
-            budget_input = 0
-            budget_type = ""
+            budget_input = st.number_input("💰 輸入【全分局】核撥總預算 (元)", value=50000, step=100)
         
         st.markdown("**共同作業名單**")
         st.caption("💡 挪移順序教學：表格最左側「排序調整」欄位可手動調整數字來改變順序")
@@ -214,6 +206,11 @@ def p18_page():
             st.session_state.current_roster = sort_coworkers(df_init)
         
         df_display = st.session_state.current_roster.copy()
+        
+        # 移除非必要的金額手動展示
+        if '金額' in df_display.columns:
+            df_display = df_display.drop(columns=['金額'])
+            
         col_cfg = {
             "排序調整": st.column_config.NumberColumn("排序調整 🔢", help="修改數字可調整順序", min_value=1, format="%d"),
             "分配類別": st.column_config.SelectboxColumn("分配類別", options=["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)"], required=True)
@@ -306,10 +303,7 @@ def p18_page():
                             member_rows_idx.append(r)
                             
                         df_members = df_work.iloc[member_rows_idx].copy()
-                        
-                        # --- 【核心修正點：完美解決 Pandas 3.0 嚴格型態限制】 ---
-                        # 將切割出來的名單強制轉為萬用型態，從此允許塞入任何 int 數據！
-                        df_members = df_members.astype(object)
+                        df_members = df_members.astype(object) # 完美相容新版 Pandas 3.0
                         
                         s_cite, s_acc, s_traf = 0, 0, 0
                         
@@ -379,7 +373,7 @@ def p18_page():
                     
                     st.download_button("📥 下載【處理道路交通安全人員獎勵金點數統計表】(完美回填版)", pts_excel_data, pts_filename, use_container_width=True, type="primary")
                 
-                # --- 【完美分流 B】模式二：單獨產生獎金印領清冊 ---
+                # --- 【完美分流 B】模式二：單獨產生獎金印領清冊 (固定的 72/20/8% 自動按比例分帳) ---
                 else:
                     df_direct_exec = pd.DataFrame(direct_exec_list)
                     if df_direct_exec.empty:
@@ -413,7 +407,7 @@ def p18_page():
                     direct_total_row['蓋章'] = ""
                     df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
                     
-                    # 共同作業處理
+                    # 共同作業自動處理 (固定啟動系統核心分配邏輯)
                     df_coworkers_work = st.session_state.current_roster.copy()
                     df_coworkers_work = sort_coworkers(df_coworkers_work)
                     
@@ -533,7 +527,6 @@ def p18_page():
                     grand_total_row_data['蓋章'] = ""
                     df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
                     
-                    # 僅產生印領清冊 
                     payroll_output = io.BytesIO()
                     with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
                         workbook = writer.book
