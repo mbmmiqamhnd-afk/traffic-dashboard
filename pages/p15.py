@@ -659,11 +659,12 @@ with col_time:
 
 mmdd = extract_mmdd(p_time)
 with col_proj:
-    proj_body = st.text_input(f"專案名稱（代碼：{mmdd}）",
-                              value=st.session_state.proj_body, key="ui_proj_body")
+    proj_body = st.text_area(f"專案名稱（日期代碼：{mmdd}，自動加在最前面）",
+                             value=st.session_state.proj_body, height=80, key="ui_proj_body")
     st.session_state.proj_body = proj_body
 
-p_name = f"{mmdd}{proj_body}"
+# 專案名稱直接使用輸入值，日期代碼由使用者自行包含在名稱中
+p_name = proj_body
 
 # ── 貳、警力統計（全自動）──
 live_stats = calculate_stats(st.session_state.df_cmd,
