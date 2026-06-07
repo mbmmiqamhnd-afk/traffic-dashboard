@@ -274,7 +274,7 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
                 story.append(Paragraph(line.strip(), s_note))
         story.append(Spacer(1, 3*mm))
 
-    story.append(Paragraph("<b>備註：</b>", s_sub))
+    story.append(Paragraph("<b>備註：</b>", s_note))
     for line in notes.strip().split("\n"):
         if line.strip():
             story.append(Paragraph(line.strip(), s_note))
