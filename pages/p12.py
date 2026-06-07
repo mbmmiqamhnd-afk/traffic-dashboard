@@ -82,13 +82,15 @@ DEFAULT_CMD = pd.DataFrame([
 DEFAULT_NOTES = """壹、警察局規劃本月份「行人及護老交通安全專案勤務」，各編組依規劃日期執行。
 貳、執行本專案勤務視轄區狀況及執勤警力，擇定轄區易肇事路口（段）及校園周邊道路，依上揭日期妥適編排勤務協助維護行人、學童及高齡者通行安全，並加強取締「車不讓人」、「未依規定停讓」、「違規停車」等。"""
 
-# =========================
+# ====================================================
 # 自動產生上班日文字
-# =========================
+# ====================================================
 def generate_workday_label(month_str, holiday_str):
     """
     依月份與放假日，產生上班日清單文字
     格式：3月3日（星期一）、4日（星期二）、…
+    支援：+月/日 代表週六日強行補班（例如 +3/21）
+    ✨ 已移除原本最後一行的 6時至10時 時間贅字
     """
     year_match = re.search(r"(\d+)年", month_str)
     mon_match  = re.search(r"(\d+)月", month_str)
@@ -98,28 +100,47 @@ def generate_workday_label(month_str, holiday_str):
     ce_year = int(year_match.group(1)) + 1911
     month   = int(mon_match.group(1))
 
-    # 解析放假日
+    # 解析放假日與補班日
     holidays = set()
+    work_weekends = set()
+    
     for part in holiday_str.replace("，", ",").split(","):
         part = part.strip()
-        m = re.match(r"(\d+)[/月](\d+)", part)
-        if m:
-            try:
-                d = datetime(ce_year, int(m.group(1)), int(m.group(2)))
-                holidays.add(d.date())
-            except ValueError:
-                pass
+        
+        if part.startswith("+"):
+            m = re.match(r"\+(\d+)[/月](\d+)", part)
+            if m:
+                try:
+                    d = datetime(ce_year, int(m.group(1)), int(m.group(2)))
+                    work_weekends.add(d.date())
+                except ValueError:
+                    pass
+        else:
+            m = re.match(r"(\d+)[/月](\d+)", part)
+            if m:
+                try:
+                    d = datetime(ce_year, int(m.group(1)), int(m.group(2)))
+                    holidays.add(d.date())
+                except ValueError:
+                    pass
 
     # 取得當月所有日期，排除週六週日與放假日
     _, days_in_month = calendar.monthrange(ce_year, month)
     workdays = []
     for day in range(1, days_in_month + 1):
         d = datetime(ce_year, month, day)
-        if d.weekday() < 5 and d.date() not in holidays:  # 0=週一 … 4=週五
+        current_date = d.date()
+        
+        if current_date in work_weekends:
+            workdays.append(d)
+        elif d.weekday() < 5 and current_date not in holidays:
             workdays.append(d)
 
     if not workdays:
         return "（本月無上班日）"
+
+    # 排序日期
+    workdays.sort()
 
     # 組成文字：第一天含月份，後續只顯示日
     parts = []
@@ -130,13 +151,14 @@ def generate_workday_label(month_str, holiday_str):
         else:
             parts.append(f"{d.day}日（{wd}）")
 
-    return "、".join(parts) + f"\n6時至10時、16時至20時"
+    # ✨ 僅回傳純粹的日期與星期組合文字
+    return "、".join(parts)
 
 
 def build_schedule_df(month_str, holiday_str):
     """產生警力佈署 DataFrame，日期欄第一列填入，其餘留空"""
     label = generate_workday_label(month_str, holiday_str)
-    # ✨ 修正欄位名稱為指定的格式
+    # ✨ 欄位標題精準指定時間區段
     col   = "執行勤務日期（6時至10時，16時至20時）"
     rows  = []
     for i, (unit, patrol) in enumerate(FIXED_UNITS):
@@ -261,7 +283,7 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
         data1.append([
             c(f"<b>{row.get('職稱','')}</b>"),
             c(row.get('代號', '')),
-            c(str(row.get('姓名', ''))).replace("、", "<br/>"),
+            c(str(row.get('姓名', '')).replace("、", "<br/>")),
             c(row.get('任務', ''), s_left)
         ])
     t1 = Table(data1, colWidths=[W*0.15, W*0.12, W*0.28, W*0.45], repeatRows=2)
@@ -356,21 +378,21 @@ if err and err != "權限不足或未設定 Secrets":
 
 
 # ----------------------------------------------------
-# ✨ 核心機制：Session State 狀態與月份切換自動填入邏輯
+# ✨ 核心控制：Session State 月份與放假日連動緩存機制
 # ----------------------------------------------------
 init_month = sd.get("month", DEFAULT_MONTH)
 
-# 初始化假日儲存快取
+# 初始化假日快取
 if "current_holidays" not in st.session_state:
     if "holidays" in sd:
         st.session_state["current_holidays"] = sd.get("holidays")
     else:
          st.session_state["current_holidays"] = MONTH_HOLIDAYS_MAP.get(init_month, DEFAULT_HOLIDAYS)
 
-# 月份改變時觸發的回呼函式
+# 當手動改變月份輸入框時觸發
 def on_month_change():
     new_month = st.session_state["selected_month"]
-    # 依月份去對照表自動更換假日輸入框文字，若無對照則為空字串，提供使用者自行輸入
+    # 自動抓對照表的預設假日填入框，若無對照則給予空字串供客製化
     st.session_state["current_holidays"] = MONTH_HOLIDAYS_MAP.get(new_month, "")
 
 
@@ -378,14 +400,14 @@ def on_month_change():
 st.subheader("1. 基本設定")
 col_a, col_b = st.columns([1, 2])
 
-# 月份欄位（綁定 key 與 callback）
+# 月份欄位
 c_month   = col_a.text_input("月份", value=init_month, key="selected_month", on_change=on_month_change)
 
-# 假日欄位（綁定關鍵字快取，支援自動刷新與直接手動修改）
+# 假日欄位（與 session_state 綁定，完美支援自動刷新與直接人工修改增刪）
 c_holidays = col_b.text_input(
-    "本月放假日（用逗號分隔，例：3/3, 3/10）",
+    "本月放假日（用逗號分隔，例：3/3, 3/10，補班日請用加號如 +3/21）",
     key="current_holidays",
-    help="輸入國定假日、補假等放假日期，週六週日程式會自動排除，不需填入"
+    help="輸入國定假日、補假等放假日期。週六週日會自動排除不需填寫。若週六日需補班請在前面加個 + 號（如 +3/21）"
 )
 
 # 即時預覽上班日
@@ -414,7 +436,7 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 # --- 警力佈署 ---
 st.subheader("3. 警力佈署")
 st.caption("💡 修改上方月份或放假日後，日期欄會自動重新產生")
-# ✨ 修正介面顯示欄位與防改保護名稱
+# ✨ 防改欄位名稱與顯示標題完美吻合
 col_date = "執行勤務日期（6時至10時，16時至20時）"
 res_sch = st.data_editor(
     use_sch,
