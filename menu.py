@@ -1,8 +1,5 @@
 import streamlit as st
 
-# 設定整個 APP 的基礎設定 (這行必須在檔案最前面)
-st.set_page_config(page_title="交通執法自動化分析引擎", page_icon="🚓", layout="wide")
-
 
 def show_sidebar():
     with st.sidebar:
@@ -14,7 +11,6 @@ def show_sidebar():
 
         # 2. 核心數據處理
         st.subheader("📊 數據與分析")
-        st.page_link("pages/traffic_app.py", label="交通執法統計儀表板", icon="📈")
         st.page_link("pages/p17.py", label="交通疏導時數彙整", icon="⏱️")
         st.page_link("pages/p18.py", label="獎勵金點數統計表", icon="💰")
 
