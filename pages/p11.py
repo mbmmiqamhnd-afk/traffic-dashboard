@@ -392,8 +392,14 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 # --- 警力佈署 ---
 st.subheader("3. 警力佈署")
 st.caption("💡 修改上方假日日期後，表格會自動重新產生")
-res_sch = st.data_editor(use_sch, num_rows="dynamic", use_container_width=True)
-
+res_sch = st.data_editor(
+    use_sch,
+    num_rows="dynamic",
+    use_container_width=True,
+    column_config={
+        "日期（22時至翌日6時）": st.column_config.TextColumn(disabled=True),
+    }
+)
 st.markdown("---")
 
 if st.button("💾 儲存至雲端並發送 Email", use_container_width=True):
