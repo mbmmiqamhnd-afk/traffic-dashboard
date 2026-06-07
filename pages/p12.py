@@ -50,7 +50,23 @@ FIXED_UNITS = [
 ]
 
 DEFAULT_MONTH    = "115年3月份"
-DEFAULT_HOLIDAYS = ""  # 使用者輸入放假日，如 3/3, 3/10
+
+# ✨ 各月份預設假日對照表（輸入月份時會自動帶出，並保留手動修改權限）
+MONTH_HOLIDAYS_MAP = {
+    "115年1月份": "1/1, 1/19, 1/20, 1/21, 1/22, 1/23, 1/26",  # 元旦與春節連假
+    "115年2月份": "2/27",                                     # 228連假
+    "115年3月份": "3/3, 3/10",                                 # 預設範例
+    "115年4月份": "4/2, 4/3",                                 # 清明連假
+    "115年5月份": "5/1",                                      # 勞動節
+    "115年6月份": "6/19",                                     # 端午節
+    "115年7月份": "",
+    "115年8月份": "",
+    "115年9月份": "9/25",                                     # 中秋節
+    "115年10月份": "10/9",                                    # 國慶連假
+    "115年11月份": "",
+    "115年12月份": ""
+}
+DEFAULT_HOLIDAYS = "3/3, 3/10"
 
 DEFAULT_CMD = pd.DataFrame([
     {"職稱": "指揮官",       "代號": "隆安1",   "姓名": "分局長 施宇峰",   "任務": "核定本勤務執行並重點機動督導。"},
@@ -114,14 +130,14 @@ def generate_workday_label(month_str, holiday_str):
         else:
             parts.append(f"{d.day}日（{wd}）")
 
-    roc_year = ce_year - 1911
     return "、".join(parts) + f"\n6時至10時、16時至20時"
 
 
 def build_schedule_df(month_str, holiday_str):
     """產生警力佈署 DataFrame，日期欄第一列填入，其餘留空"""
     label = generate_workday_label(month_str, holiday_str)
-    col   = "日期（6時至10時、16時至20時）"
+    # ✨ 修正欄位名稱為指定的格式
+    col   = "執行勤務日期（6時至10時，16時至20時）"
     rows  = []
     for i, (unit, patrol) in enumerate(FIXED_UNITS):
         rows.append({
@@ -151,7 +167,7 @@ def clean_df_to_list(df):
 def load_data():
     try:
         client = get_client()
-        if client is None: return None, None, None, None, "權限不足或未設定 Secrets"
+        if client is None: return None, None, None, None, {}, "權限不足或未設定 Secrets"
         sh       = client.open_by_key(SHEET_ID)
         ws_list  = sh.worksheets()
         ws_set   = next((w for w in ws_list if w.title == "護老_設定"), None)
@@ -245,7 +261,7 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
         data1.append([
             c(f"<b>{row.get('職稱','')}</b>"),
             c(row.get('代號', '')),
-            c(str(row.get('姓名', '')).replace("、", "<br/>")),
+            c(str(row.get('姓名', ''))).replace("、", "<br/>"),
             c(row.get('任務', ''), s_left)
         ])
     t1 = Table(data1, colWidths=[W*0.15, W*0.12, W*0.28, W*0.45], repeatRows=2)
@@ -260,7 +276,8 @@ def generate_pdf(month, df_cmd, df_schedule, notes_content):
     story.append(Spacer(1, 6*mm))
 
     # 警力佈署
-    col_date = "日期（6時至10時、16時至20時）"
+    # ✨ 修正 PDF 的欄位對應名稱
+    col_date = "執行勤務日期（6時至10時，16時至20時）"
     data2 = [
         [Paragraph("<b>警 力 佈 署</b>", s_th), '', ''],
         [Paragraph("<b>執行勤務日期</b>", s_th), Paragraph("<b>單位</b>", s_th), Paragraph("<b>路段</b>", s_th)]
@@ -321,24 +338,53 @@ def send_report_email(subject, month, df_cmd, df_schedule, notes):
     except Exception as e:
         return False, str(e)
 
+
+# ====================================================
 # --- 主介面 ---
+# ====================================================
 st.title("🚶 行人及護老交通安全專案勤務規劃表")
 
 if st.sidebar.button("🔄 強制重新載入"):
     st.cache_data.clear()
+    if "current_holidays" in st.session_state:
+        del st.session_state["current_holidays"]
     st.rerun()
 
 df_set, df_cmd_raw, df_sch_raw, db_notes, sd, err = load_data()
 if err and err != "權限不足或未設定 Secrets":
     st.warning(f"⚠️ 無法連線 Google Sheets（{err}），顯示預設資料。")
 
+
+# ----------------------------------------------------
+# ✨ 核心機制：Session State 狀態與月份切換自動填入邏輯
+# ----------------------------------------------------
+init_month = sd.get("month", DEFAULT_MONTH)
+
+# 初始化假日儲存快取
+if "current_holidays" not in st.session_state:
+    if "holidays" in sd:
+        st.session_state["current_holidays"] = sd.get("holidays")
+    else:
+         st.session_state["current_holidays"] = MONTH_HOLIDAYS_MAP.get(init_month, DEFAULT_HOLIDAYS)
+
+# 月份改變時觸發的回呼函式
+def on_month_change():
+    new_month = st.session_state["selected_month"]
+    # 依月份去對照表自動更換假日輸入框文字，若無對照則為空字串，提供使用者自行輸入
+    st.session_state["current_holidays"] = MONTH_HOLIDAYS_MAP.get(new_month, "")
+
+
 # --- 基本設定 ---
 st.subheader("1. 基本設定")
 col_a, col_b = st.columns([1, 2])
-c_month   = col_a.text_input("月份", value=sd.get("month", DEFAULT_MONTH))
+
+# 月份欄位（綁定 key 與 callback）
+c_month   = col_a.text_input("月份", value=init_month, key="selected_month", on_change=on_month_change)
+
+# 假日欄位（綁定關鍵字快取，支援自動刷新與直接手動修改）
 c_holidays = col_b.text_input(
     "本月放假日（用逗號分隔，例：3/3, 3/10）",
-    value=sd.get("holidays", DEFAULT_HOLIDAYS),
+    key="current_holidays",
     help="輸入國定假日、補假等放假日期，週六週日程式會自動排除，不需填入"
 )
 
@@ -368,7 +414,8 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 # --- 警力佈署 ---
 st.subheader("3. 警力佈署")
 st.caption("💡 修改上方月份或放假日後，日期欄會自動重新產生")
-col_date = "日期（6時至10時、16時至20時）"
+# ✨ 修正介面顯示欄位與防改保護名稱
+col_date = "執行勤務日期（6時至10時，16時至20時）"
 res_sch = st.data_editor(
     use_sch,
     num_rows="dynamic",
