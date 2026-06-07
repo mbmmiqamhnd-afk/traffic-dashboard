@@ -391,7 +391,7 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True)
 
 # --- 警力佈署 ---
 st.subheader("3. 警力佈署")
-st.caption("💡 修改上方假日日期後，表格會自動重新產生；亦可直接在表格內手動微調")
+st.caption("💡 修改上方假日日期後，表格會自動重新產生")
 res_sch = st.data_editor(use_sch, num_rows="dynamic", use_container_width=True)
 
 st.markdown("---")
