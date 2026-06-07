@@ -11,6 +11,7 @@ def show_sidebar():
 
         # 2. 核心數據處理
         st.subheader("📊 數據與分析")
+        st.page_link("app.py", label="回首頁 / 批次處理中心", icon="⚙️")
         st.page_link("pages/p17.py", label="交通疏導時數彙整", icon="⏱️")
         st.page_link("pages/p18.py", label="獎勵金點數統計表", icon="💰")
 
