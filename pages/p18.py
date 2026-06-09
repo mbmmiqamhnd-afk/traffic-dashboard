@@ -225,13 +225,17 @@ def p18_page():
                                     sub_row_data[col_n] = int(v_sum) if v_sum > 0 else 0
                                 
                                 df_final_sheet = pd.concat([df_members, pd.DataFrame([sub_row_data])], ignore_index=True)
+                                # 徹底清洗階段一的隨機 NaN 防閃退
+                                df_final_sheet = df_final_sheet.fillna("").replace([np.inf, -np.inf], "")
                                 final_sheets[sheet_name] = df_final_sheet
                                 summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
                                 g_cite += s_cite; g_acc += s_acc; g_traf += s_traf; g_all += (s_cite + s_acc + s_traf)
                         
                         df_pts_summary_final = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', int(g_cite), int(g_acc), int(g_traf), int(g_all)]])
                         pts_output = io.BytesIO()
-                        with pd.ExcelWriter(pts_output, engine='xlsxwriter') as writer:
+                        
+                        # 外嵌防護字典：{'nan_inf_to_errors': True}
+                        with pd.ExcelWriter(pts_output, engine='xlsxwriter', engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
                             df_pts_summary_final.to_excel(writer, sheet_name='總表', header=False, index=False)
                             for sn, df_f in final_sheets.items(): df_f.to_excel(writer, sheet_name=sn, index=False)
                         
@@ -271,7 +275,6 @@ def p18_page():
         st.markdown("**共同作業名單配置**")
         roster_file = 'coworkers_roster.csv'
         
-        # --- 【核心修正點：完美重啟名單初始化防線】 ---
         if 'current_roster' not in st.session_state:
             if os.path.exists(roster_file):
                 df_init = pd.read_csv(roster_file)
@@ -518,12 +521,17 @@ def p18_page():
                         
                         grand_total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                         grand_total_row_data['單位'] = '總計（含直接執行人員）'; grand_total_row_data['金額'] = direct_total_money + coworker_sheet_total_money
-                        
-                        # --- 【核心修正點二】修正大後方字典結構串接錯誤，回填為正確的 DataFrame 變數 ---
                         df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
                         
+                        # 徹底清洗階段二的所有遺留 NaN/Inf 資料結構
+                        df_direct_exec = df_direct_exec.fillna("").replace([np.inf, -np.inf], "")
+                        df_coworkers_final_sheet = df_coworkers_final_sheet.fillna("").replace([np.inf, -np.inf], "")
+                        df_payroll_summary = df_payroll_summary.fillna("").replace([np.inf, -np.inf], "")
+                        
                         payroll_output = io.BytesIO()
-                        with pd.ExcelWriter(payroll_output, engine='xlsxwriter') as writer:
+                        
+                        # --- 【核心防護關鍵點】加上防閃退參數設定選項 ---
+                        with pd.ExcelWriter(payroll_output, engine='xlsxwriter', engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
                             workbook = writer.book
                             border_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                             
@@ -564,7 +572,7 @@ def p18_page():
                             ws2.write(sign_start_row, 4, "主計：", sign_title_format)
                             ws2.write(sign_start_row, 6, "分局長：", sign_title_format)
                             
-                            df_payroll_summary.to_excel(writer, sheet_name='處理道路交通安全人員獎勵金支領一覽表', index=False)
+                            df_payroll_summary.to_excel(writer, sheet_name='處理道路交通安全人員獎奖励金支領一覽表', index=False)
                         
                         payroll_excel_data = payroll_output.getvalue()
                         payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_處理道路交通安全人員獎勵金印領清冊.xlsx"
@@ -573,7 +581,7 @@ def p18_page():
                         body_txt = f"郭同仁您好：\n\n系統已自動完成 {ext_year}年{ext_month}月份的獎金核算與自動平帳作業。\n本次產出【僅印領清冊】，可直接送交核銷。"
                         send_report_email_auto([(payroll_excel_data, payroll_filename)], ext_year, ext_month, sub_title, body_txt)
                         
-                        st.success(f"🚀 已啟動直接請款大腦！成功產出 {ext_month} 月份【獎金印領清冊】，蓋章欄位已強制置右。")
+                        st.success(f"🚀 數據清洗完成，容錯安全鎖已啟動！成功產出 {ext_month} 月份【獎金印領清冊】。")
                         st.download_button("📥 下載【處理道路交通安全人員獎勵金印領清冊】(官方核銷版)", payroll_excel_data, payroll_filename, use_container_width=True, type="primary")
                     except Exception as e:
                         st.error(f"❌ 發生錯誤：{str(e)}")
