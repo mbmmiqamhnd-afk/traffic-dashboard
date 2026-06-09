@@ -119,7 +119,7 @@ def p18_page():
     st.title("💰 龍潭分局 - 處理道路交通安全人員獎勵金核銷自動化產生器")
     st.markdown("---")
     
-    # --- 使用 Streamlit 頂級 Tabs 元件，將工作階段完全從視覺與邏輯上分流 ---
+    # --- 使用 Tab 元件，完美將工作階段徹底分流 ---
     tab_pts, tab_pay = st.tabs(["📊 階段一：自動填報對帳（產生點數統計表）", "💰 階段二：月底獎金請款（產生獎金印領清冊）"])
     
     # ==========================================================================
@@ -195,7 +195,7 @@ def p18_page():
                                     if name_cell in ['小計', '總計', 'nan', 'None', '', '合計']: continue
                                     member_rows_idx.append(r)
                                     
-                                df_members = df_work.iloc[member_rows_idx].copy().astype(object) # 萬用型態防呆
+                                df_members = df_work.iloc[member_rows_idx].copy().astype(object)
                                 s_cite, s_acc, s_traf = 0, 0, 0
                                 
                                 for idx in df_members.index:
@@ -238,7 +238,6 @@ def p18_page():
                         pts_excel_data = pts_output.getvalue()
                         pts_filename = f"龍潭分局{ext_year}年{ext_month}月份_處理道路交通安全人員獎勵金點數統計表.xlsx"
                         
-                        # 自動發送備份信件
                         sub_title = f"【系統備份】龍潭分局 {ext_year}年{ext_month}月 處理道路交通安全人員獎勵金點數統計表(純點數對帳版)"
                         body_txt = f"郭同仁您好：\n\n系統已自動完成 {ext_year}年{ext_month}月份的處理道路交通安全人員獎勵金點數統計表數據回填任務。\n本次產出【僅點數表】，附件請查收對帳。"
                         send_report_email_auto([(pts_excel_data, pts_filename)], ext_year, ext_month, sub_title, body_txt)
@@ -249,11 +248,11 @@ def p18_page():
                         st.error(f"❌ 發生錯誤：{str(e)}")
 
     # ==========================================================================
-    # 💰 階段二：月底獎金請款面板 (極致精簡，不再重複上傳對帳單)
+    # 💰 階段二：月底獎金請款面板
     # ==========================================================================
     with tab_pay:
         st.subheader("📂 請上傳最終確認的點數表以造冊請款")
-        st.info("💡 說明：本區塊專用於月底造冊。系統會直接讀取點數表內的「個人總點數」進行獎金換算與比例拆分，不需重複上傳事故、疏導原始資料。")
+        st.info("💡 說明：本區塊專用於月底造冊。系統會直接讀取點數表內的「個人總點數」進行獎金換算，不需重複上傳對帳檔案。")
         
         file_final_pts = st.file_uploader("👉 請上傳您已確認好數據的【處理道路交通安全人員獎勵金點數統計表】", type=['xls', 'xlsx'], key="pay_final")
         
@@ -271,9 +270,56 @@ def p18_page():
         
         st.markdown("**共同作業名單配置**")
         roster_file = 'coworkers_roster.csv'
+        
+        # --- 【核心修正點：完美重啟名單初始化防線】 ---
         if 'current_roster' not in st.session_state:
-            # 此處維持原本名單讀取邏輯
-            pass
+            if os.path.exists(roster_file):
+                df_init = pd.read_csv(roster_file)
+            else:
+                default_coworkers_data = [
+                    {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "分局長", "姓名": "施宇峰"},
+                    {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "何憶雯"},
+                    {"分配類別": "負責管考(72%)", "單位": "龍潭分局", "職別": "副分局長", "姓名": "蔡志明"},
+                    {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "業務單位主管", "姓名": "楊孟竟"},
+                    {"分配類別": "勤務督導(20%)", "單位": "交通組", "職別": "業務單位主管", "姓名": "楊孟竟"},
+                    {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "組長", "姓名": "盧冠仁"},
+                    {"分配類別": "勤務督導(20%)", "單位": "交通組", "職別": "組長", "姓名": "盧冠仁"},
+                    {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "警務員", "姓名": "李峯甫"},
+                    {"分配類別": "勤務督導(20%)", "單位": "交通組", "職別": "警務員", "姓名": "李峯甫"},
+                    {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "警務員", "姓名": "葉佳媛"},
+                    {"分配類別": "勤務督導(20%)", "單位": "交通組", "職別": "警務員", "姓名": "葉佳媛"},
+                    {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "巡官", "姓名": "郭勝隆"},
+                    {"分配類別": "勤務督導(20%)", "單位": "交通組", "職別": "巡官", "姓名": "郭勝隆"},
+                    {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "警員", "姓名": "吳享運"},
+                    {"分配類別": "負責管考(72%)", "單位": "交通組", "職別": "警員", "姓名": "吳沛軒"},
+                    {"分配類別": "負責管考(72%)", "單位": "聖亭派出所", "職別": "所長", "姓名": "鄭榮捷"},
+                    {"分配類別": "負責管考(72%)", "單位": "聖亭派出所", "職別": "副所長", "姓名": "邱品淳"},
+                    {"分配類別": "負責管考(72%)", "單位": "聖亭派出所", "職別": "副所長", "姓名": "曹培翔"},
+                    {"分配類別": "負責管考(72%)", "單位": "聖亭派出所", "職別": "業務承辦人", "姓名": "曾建凱"},
+                    {"分配類別": "負責管考(72%)", "單位": "龍潭派出所", "職別": "所長", "姓名": "孫祥愷"},
+                    {"分配類別": "負責管考(72%)", "單位": "龍潭派出所", "職別": "副所長", "姓名": "全楚文"},
+                    {"分配類別": "負責管考(72%)", "單位": "龍潭派出所", "職別": "副所長", "姓名": "劉重言"},
+                    {"分配類別": "負責管考(72%)", "單位": "龍潭派出所", "職別": "業務承辦人", "姓名": "周薇"},
+                    {"分配類別": "負責管考(72%)", "單位": "中興派出所", "職別": "所長", "姓名": "董亦文"},
+                    {"分配類別": "負責管考(72%)", "單位": "中興派出所", "職別": "副所長", "姓名": "何昀融"},
+                    {"分配類別": "負責管考(72%)", "單位": "中興派出所", "職別": "副所長", "姓名": "薛德祥"},
+                    {"分配類別": "負責管考(72%)", "單位": "中興派出所", "職別": "業務承辦人", "姓名": "鄧雅文"},
+                    {"分配類別": "負責管考(72%)", "單位": "石門派出所", "職別": "所長", "姓名": "林育辰"},
+                    {"分配類別": "負責管考(72%)", "單位": "石門派出所", "職別": "副所長", "姓名": "林榮裕"},
+                    {"分配類別": "負責管考(72%)", "單位": "石門派出所", "職別": "業務承辦人", "姓名": "陳琦"},
+                    {"分配類別": "負責管考(72%)", "單位": "高平派出所", "職別": "所長", "姓名": "王梓岳"},
+                    {"分配類別": "負責管考(72%)", "單位": "高平派出所", "職別": "副所長", "姓名": "余志誠"},
+                    {"分配類別": "負責管考(72%)", "單位": "高平派出所", "職別": "業務承辦人", "姓名": "黃丞潁"},
+                    {"分配類別": "負責管考(72%)", "單位": "三和派出所", "職別": "所長", "姓名": "宋開國"},
+                    {"分配類別": "負責管考(72%)", "單位": "三和派出所", "職別": "副所長", "姓名": "陳佶汎"},
+                    {"分配類別": "負責管考(72%)", "單位": "三和派出所", "職別": "業務承辦人", "姓名": "童霂晟"},
+                    {"分配類別": "負責管考(72%)", "單位": "龍潭交通分隊", "職別": "分隊長", "姓名": "蘇郁安"},
+                    {"分配類別": "負責管考(72%)", "單位": "龍潭交通分隊", "職別": "小隊長", "姓名": "鄭敬思"},
+                    {"分配類別": "負責管考(72%)", "單位": "龍潭交通分隊", "職別": "小隊長", "姓名": "蔡安龍"},
+                    {"分配類別": "負責管考(72%)", "單位": "龍潭交通分隊", "職別": "業務承辦人", "姓名": "陳建穎"},
+                ]
+                df_init = pd.DataFrame(default_coworkers_data)
+            st.session_state.current_roster = sort_coworkers(df_init)
             
         df_display = st.session_state.current_roster.copy()
         if '金額' in df_display.columns: df_display = df_display.drop(columns=['金額'])
@@ -329,7 +375,6 @@ def p18_page():
                                     name = str(df_work.iloc[r, 0]).strip()
                                     if name in ['小計', '總計', 'nan', 'None', '', '合計']: continue
                                     
-                                    # 直接精準讀取已生成的個人總點數與明細
                                     total_pts = pd.to_numeric(df_work.iloc[r].get('個人總點數', 0), errors='coerce') or 0
                                     cp = pd.to_numeric(df_work.iloc[r].get('取締點數', 0), errors='coerce') or 0
                                     ap = pd.to_numeric(df_work.iloc[r].get('事故點數', 0), errors='coerce') or 0
@@ -354,7 +399,6 @@ def p18_page():
                         df_direct_exec['實領獎金'] = (df_direct_exec['個人總點數'] * point_value).round().astype(int)
                         direct_total_money = df_direct_exec['實領獎金'].sum()
                         
-                        # 智慧多退少補平帳
                         if target_direct_budget > 0:
                             diff = target_direct_budget - direct_total_money
                             if diff != 0:
@@ -365,13 +409,11 @@ def p18_page():
                                 if rem > 0: df_direct_exec.iloc[:rem, df_direct_exec.columns.get_loc('實領獎金')] += sign
                                 direct_total_money = df_direct_exec['實領獎金'].sum()
                         
-                        # 簽章靠右
                         df_direct_exec['蓋章'] = ""
                         direct_total_row = {c: "" for c in df_direct_exec.columns}
                         direct_total_row['員警姓名'] = '合計'; direct_total_row['實領獎金'] = direct_total_money
                         df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
                         
-                        # 共同作業比例分配邏輯
                         df_coworkers_work = st.session_state.current_roster.copy()
                         df_coworkers_work = sort_coworkers(df_coworkers_work)
                         
@@ -442,7 +484,7 @@ def p18_page():
                             {"項目": "一、直接執行人員", "金額": direct_total_money},
                             {"項目": "二、共同作業-負責管考(72%)", "金額": sub_72},
                             {"項目": "二、共同作業-勤務督導(20%)", "金額": sub_20},
-                            {"項目": "二、共同作業-其他配合(8%)", "金額": sub_08},
+                            {"項目": "二、共同作業-開他配合(8%)", "金額": sub_08},
                             {"項目": "共同作業人員小計", "金額": coworkers_total_money},
                             {"項目": "本月合計應發放", "金額": direct_total_money + coworkers_total_money}
                         ])
@@ -476,6 +518,8 @@ def p18_page():
                         
                         grand_total_row_data = {c: "" for c in df_coworkers_final_sheet.columns}
                         grand_total_row_data['單位'] = '總計（含直接執行人員）'; grand_total_row_data['金額'] = direct_total_money + coworker_sheet_total_money
+                        
+                        # --- 【核心修正點二】修正大後方字典結構串接錯誤，回填為正確的 DataFrame 變數 ---
                         df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
                         
                         payroll_output = io.BytesIO()
