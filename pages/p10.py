@@ -346,16 +346,29 @@ date_updated = False
 unit_match = re.search(r"(.+?(所|分隊))", fast_cmd)
 cmd_unit = unit_match.group(1) if unit_match else "該單位"
 
-# 2. 建立各單位「專責警力」的代號對照表
-unit_code_map = {
-    "聖亭所": "隆安52",
-    "龍潭所": "隆安62",
-    "中興所": "隆安72",
-    "石門所": "隆安82",
-    "高平所": "隆安92",
-    "龍潭交通分隊": "隆安992"
+# 2. 建立各單位「專責警力」的代號「字首」對照表
+unit_prefix_map = {
+    "聖亭所": "隆安5",
+    "龍潭所": "隆安6",
+    "中興所": "隆安7",
+    "石門所": "隆安8",
+    "高平所": "隆安9",
+    "龍潭交通分隊": "隆安99"
 }
-cmd_code = unit_code_map.get(cmd_unit, "請確認代號")
+
+# 取得單位代號字首
+base_code = unit_prefix_map.get(cmd_unit, "請確認代號")
+
+# 動態判斷職稱以決定尾數
+if base_code != "請確認代號":
+    if "副所長" in fast_cmd:
+        cmd_code = f"{base_code}2"
+    elif "所長" in fast_cmd:
+        cmd_code = f"{base_code}1"
+    else:
+        cmd_code = f"{base_code}2" # 預設巡邏網尾數
+else:
+    cmd_code = base_code
 
 # 3. 嘗試解析完整的民國年月日格式 (例如: 115年5月25日)
 date_match = re.search(r"(\d+)年(\d+)月(\d+)日", time_val)
