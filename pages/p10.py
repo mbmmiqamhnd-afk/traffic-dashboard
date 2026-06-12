@@ -361,9 +361,11 @@ base_code = unit_prefix_map.get(cmd_unit, "請確認代號")
 
 # 動態判斷職稱以決定尾數
 if base_code != "請確認代號":
-    if "副所長" in fast_cmd:
+    # 優先判斷明確為副手或幹部的職稱
+    if "副所長" in fast_cmd or "副分隊長" in fast_cmd or "小隊長" in fast_cmd:
         cmd_code = f"{base_code}2"
-    elif "所長" in fast_cmd:
+    # 再判斷正主管
+    elif "所長" in fast_cmd or "分隊長" in fast_cmd:
         cmd_code = f"{base_code}1"
     else:
         cmd_code = f"{base_code}2" # 預設巡邏網尾數
