@@ -54,22 +54,21 @@ safety_settings = [
 ]
 
 # ==========================================
-# 2. 寄信功能
+# 2. 寄信功能 (已修正：改為自己寄給自己)
 # ==========================================
 def send_gmail(subject, body):
     try:
         sender_email = st.secrets["email"]["user"]
         password = st.secrets["email"]["password"]
-        receiver_email = st.secrets["email"]["receiver"]  # 直接從 secrets 讀取預設收件人
         
         msg = MIMEText(body, 'plain', 'utf-8')
         msg['Subject'] = Header(subject, 'utf-8')
         msg['From'] = f"督導助手 <{sender_email}>"
-        msg['To'] = receiver_email
+        msg['To'] = sender_email
         
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender_email, password)
-            server.sendmail(sender_email, receiver_email, msg.as_string())
+            server.sendmail(sender_email, sender_email, msg.as_string())
         return True
     except Exception as e:
         st.error(f"寄信失敗：{e}")
