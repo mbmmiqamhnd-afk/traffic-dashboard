@@ -436,31 +436,40 @@ def auto_assign_radio_code(df):
     df_copy = df.copy()
     base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
     
-    group_radio = ""
+    active_group_name = ""
+    active_group_radio = ""
+    
     for idx, row in df_copy.iterrows():
         group_name = safe_str(row.get('編組')).strip()
-        unit = safe_str(row.get('單位'))
-        person = safe_str(row.get('姓名'))
-        rank = safe_str(row.get('職別'))
-        current_radio = safe_str(row.get('無線電代號'))
+        unit = safe_str(row.get('單位')).strip()
+        person = safe_str(row.get('姓名')).strip()
+        rank = safe_str(row.get('職別')).strip()
+        current_radio = safe_str(row.get('無線電代號')).strip()
         
-        # 只要有新的編組名稱，就視為新編組的開始，重新決定帶班人員的無線電代號
-        if group_name: 
-            if current_radio: # 如果第一列已經有手動輸入，就尊重手動輸入
-                group_radio = current_radio
-            else: # 否則自動推算該編組的預設代號
-                first_unit = re.split(r'[\n、 ]', unit.strip())[0] if unit else ""
-                base_pfx = next((v for k, v in base_prefixes.items() if k in first_unit), "")
+        # 判斷是否為「新編組」的起點：
+        # 1. 這是第一列 (idx == 0)
+        # 2. 或者有填寫編組名稱，且跟上一組的名稱不同
+        if idx == 0 or (group_name != "" and group_name != active_group_name):
+            if group_name != "":
+                active_group_name = group_name
+            
+            if current_radio != "":
+                # 如果帶班人已經有手動打代號，就尊重手動輸入
+                active_group_radio = current_radio
+            else:
+                # 自動推算第一位(帶班人)的代號
+                base_pfx = next((v for k, v in base_prefixes.items() if k in unit), "")
                 if base_pfx:
-                    if "副所長" in rank or "副所長" in person: group_radio = f"隆安{base_pfx}2"
-                    elif "所長" in rank or "所長" in person: group_radio = f"隆安{base_pfx}1"
-                    else: group_radio = f"隆安{base_pfx}0"
+                    if "副所長" in rank or "副所長" in person: active_group_radio = f"隆安{base_pfx}2"
+                    elif "所長" in rank or "所長" in person: active_group_radio = f"隆安{base_pfx}1"
+                    else: active_group_radio = f"隆安{base_pfx}0"
                 else:
-                    group_radio = ""
+                    active_group_radio = ""
         
-        # 將計算出的帶班代號套用到整個編組
+        # 將算出的帶班代號，強制覆寫進該編組的所有成員列中
+        # 這樣一來該編組所有人的代號都會一模一樣，PDF 就會自動合併儲存格
         if '無線電代號' in df_copy.columns:
-            df_copy.at[idx, '無線電代號'] = group_radio
+            df_copy.at[idx, '無線電代號'] = active_group_radio
             
     return df_copy
 
