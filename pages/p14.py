@@ -446,31 +446,32 @@ def auto_assign_radio_code(df):
         rank = safe_str(row.get('職別')).strip()
         current_radio = safe_str(row.get('無線電代號')).strip()
         
-        # 判斷是否為「新編組」的起點：
-        # 1. 這是第一列 (idx == 0)
-        # 2. 或者有填寫編組名稱，且跟上一組的名稱不同
+        # 強制濾除可能隱藏的換行或空白符號 (例如將 "副所\n長" 清洗為 "副所長")
+        clean_unit = re.sub(r'\s+', '', unit)
+        clean_rank = re.sub(r'\s+', '', rank)
+        clean_person = re.sub(r'\s+', '', person)
+        
+        # 當遇到新編組的第一列時
         if idx == 0 or (group_name != "" and group_name != active_group_name):
             if group_name != "":
                 active_group_name = group_name
             
-            if current_radio != "":
-                # 如果帶班人已經有手動打代號，就尊重手動輸入
-                active_group_radio = current_radio
+            # 從清洗後的單位名稱找對應的代碼前綴
+            base_pfx = next((v for k, v in base_prefixes.items() if k in clean_unit), "")
+            
+            if base_pfx:
+                # 強制重新計算，無視舊有的快取資料
+                if "副所長" in clean_rank or "小隊長" in clean_rank or "副所長" in clean_person or "小隊長" in clean_person: 
+                    active_group_radio = f"隆安{base_pfx}2"
+                elif "所長" in clean_rank or "分隊長" in clean_rank or "所長" in clean_person or "分隊長" in clean_person: 
+                    active_group_radio = f"隆安{base_pfx}1"
+                else: 
+                    active_group_radio = f"隆安{base_pfx}0"
             else:
-                # 自動推算第一位(帶班人)的代號
-                base_pfx = next((v for k, v in base_prefixes.items() if k in unit), "")
-                if base_pfx:
-                    # 依據實務慣例與新規則判定後綴代碼
-                    if "副所長" in rank or "小隊長" in rank or "副所長" in person or "小隊長" in person: 
-                        active_group_radio = f"隆安{base_pfx}2"
-                    elif "所長" in rank or "分隊長" in rank or "所長" in person or "分隊長" in person: 
-                        active_group_radio = f"隆安{base_pfx}1"
-                    else: 
-                        active_group_radio = f"隆安{base_pfx}0"
-                else:
-                    active_group_radio = ""
+                # 若無法自動推算(例如其他特殊單位)，則保留該列原本手寫的代號
+                active_group_radio = current_radio
         
-        # 將算出的帶班代號，強制覆寫進該編組的所有成員列中
+        # 將正確計算出的帶班代號，強力覆寫進該編組的所有成員列中
         if '無線電代號' in df_copy.columns:
             df_copy.at[idx, '無線電代號'] = active_group_radio
             
