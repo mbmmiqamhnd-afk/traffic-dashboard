@@ -460,14 +460,17 @@ def auto_assign_radio_code(df):
                 # 自動推算第一位(帶班人)的代號
                 base_pfx = next((v for k, v in base_prefixes.items() if k in unit), "")
                 if base_pfx:
-                    if "副所長" in rank or "副所長" in person: active_group_radio = f"隆安{base_pfx}2"
-                    elif "所長" in rank or "所長" in person: active_group_radio = f"隆安{base_pfx}1"
-                    else: active_group_radio = f"隆安{base_pfx}0"
+                    # 依據實務慣例與新規則判定後綴代碼
+                    if "副所長" in rank or "小隊長" in rank or "副所長" in person or "小隊長" in person: 
+                        active_group_radio = f"隆安{base_pfx}2"
+                    elif "所長" in rank or "分隊長" in rank or "所長" in person or "分隊長" in person: 
+                        active_group_radio = f"隆安{base_pfx}1"
+                    else: 
+                        active_group_radio = f"隆安{base_pfx}0"
                 else:
                     active_group_radio = ""
         
         # 將算出的帶班代號，強制覆寫進該編組的所有成員列中
-        # 這樣一來該編組所有人的代號都會一模一樣，PDF 就會自動合併儲存格
         if '無線電代號' in df_copy.columns:
             df_copy.at[idx, '無線電代號'] = active_group_radio
             
