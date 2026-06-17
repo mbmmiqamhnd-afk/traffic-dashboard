@@ -78,6 +78,24 @@ def parse_meeting_time(time_str):
     except: pass
     return "19時30分至20時00分"
 
+def parse_briefing_time_range(briefing_str):
+    try:
+        match = re.search(r"(\d+)時(?:(\d+)分)?", briefing_str)
+        if match:
+            hour = int(match.group(1))
+            minute = int(match.group(2)) if match.group(2) else 0
+            
+            end_minute = minute + 30
+            end_hour = hour
+            if end_minute >= 60:
+                end_minute -= 60
+                end_hour += 1
+            
+            return f"{hour}時{minute:02d}分至{end_hour}時{end_minute:02d}分"
+    except: 
+        pass
+    return "19時30分至20時00分"
+
 def extract_4_digit_date(time_str):
     try:
         match = re.search(r"(\d+)月(\d+)日", time_str)
@@ -101,7 +119,6 @@ def draw_page_number(canvas, doc):
     canvas.setFont(_get_font(), 10)
     canvas.drawCentredString(105 * mm, 10 * mm, text)
 
-# 計算 PDF 表格需要合併的儲存格 (SPAN)
 def get_merge_styles(df, merge_cols):
     span_styles = []
     if df.empty: return span_styles
@@ -352,7 +369,7 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
 
     story.append(Paragraph(f"{unit}執行{project}勤務簽到表", style_title))
 
-    meeting_range = parse_meeting_time(time_str)
+    meeting_range = parse_briefing_time_range(str(briefing))
     date_part = time_str.split('日')[0] + '日' if '日' in time_str else ""
     story.append(Paragraph(f"時間：{date_part}{meeting_range}", style_top_info))
     loc = str(briefing).strip() if "於" not in str(briefing) else str(briefing).strip().split("於")[1]
