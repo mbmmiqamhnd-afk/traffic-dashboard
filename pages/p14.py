@@ -49,8 +49,8 @@ DEFAULT_BRIEF   = "20時30分於分局二樓會議室召開"
 DEFAULT_P1_DESC = "第一階段：21時至22時30分，機動巡邏"
 DEFAULT_P2_DESC = "第二階段：22時30分至24時，定點路檢及機動攔檢"
 
-EXPECTED_PTL_COLS = ["編組", "無線電", "單位", "職別", "姓名", "任務分工", "巡邏路段"]
-EXPECTED_CP_COLS  = ["編組", "無線電", "單位", "職別", "姓名", "任務分工", "路檢地點"]
+EXPECTED_PTL_COLS = ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]
+EXPECTED_CP_COLS  = ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "路檢地點"]
 
 # --- 2. 輔助函數 ---
 def _get_font():
@@ -301,13 +301,13 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     df_ptl = clean_df(df_ptl)
     story.append(Paragraph(f"<b>{p1_desc}</b>", style_middle_block))
     
-    span_styles_ptl = get_merge_styles(df_ptl, ["編組", "無線電", "單位", "巡邏路段"])
+    span_styles_ptl = get_merge_styles(df_ptl, ["編組", "無線電代號", "單位", "巡邏路段"])
     
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in EXPECTED_PTL_COLS]]
     for _, r in df_ptl.iterrows():
         data_ptl.append([
             Paragraph(clean_text_only(r.get('編組')), style_cell),
-            Paragraph(clean_text_only(r.get('無線電')), style_cell),
+            Paragraph(clean_text_only(r.get('無線電代號')), style_cell),
             Paragraph(clean_p(r.get('單位')), style_cell),
             Paragraph(clean_p(r.get('職別')), style_cell),
             Paragraph(clean_p(r.get('姓名')), style_cell),
@@ -330,13 +330,13 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     df_cp = clean_df(df_cp)
     story.append(Paragraph(f"<b>{p2_desc}</b>", style_middle_block))
     
-    span_styles_cp = get_merge_styles(df_cp, ["編組", "無線電", "單位", "路檢地點"])
+    span_styles_cp = get_merge_styles(df_cp, ["編組", "無線電代號", "單位", "路檢地點"])
     
     data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in EXPECTED_CP_COLS]]
     for _, r in df_cp.iterrows():
         data_cp.append([
             Paragraph(clean_text_only(r.get('編組')), style_cell),
-            Paragraph(clean_text_only(r.get('無線電')), style_cell),
+            Paragraph(clean_text_only(r.get('無線電代號')), style_cell),
             Paragraph(clean_p(r.get('單位')), style_cell),
             Paragraph(clean_p(r.get('職別')), style_cell),
             Paragraph(clean_p(r.get('姓名')), style_cell),
@@ -435,16 +435,33 @@ def auto_assign_radio_code(df):
     if df is None or df.empty: return df
     df_copy = df.copy()
     base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
+    
+    group_radio = ""
     for idx, row in df_copy.iterrows():
-        unit, person, rank, current_radio = safe_str(row.get('單位')), safe_str(row.get('姓名')), safe_str(row.get('職別')), safe_str(row.get('無線電'))
-        if current_radio != "": continue
-        if not unit: continue
-        first_unit = re.split(r'[\n、 ]', unit.strip())[0]
-        base_pfx = next((v for k, v in base_prefixes.items() if k in first_unit), "")
-        if base_pfx:
-            if "副所長" in rank or "副所長" in person: df_copy.at[idx, '無線電'] = f"隆安{base_pfx}2"
-            elif "所長" in rank or "所長" in person: df_copy.at[idx, '無線電'] = f"隆安{base_pfx}1"
-            else: df_copy.at[idx, '無線電'] = f"隆安{base_pfx}0"
+        group_name = safe_str(row.get('編組')).strip()
+        unit = safe_str(row.get('單位'))
+        person = safe_str(row.get('姓名'))
+        rank = safe_str(row.get('職別'))
+        current_radio = safe_str(row.get('無線電代號'))
+        
+        # 只要有新的編組名稱，就視為新編組的開始，重新決定帶班人員的無線電代號
+        if group_name: 
+            if current_radio: # 如果第一列已經有手動輸入，就尊重手動輸入
+                group_radio = current_radio
+            else: # 否則自動推算該編組的預設代號
+                first_unit = re.split(r'[\n、 ]', unit.strip())[0] if unit else ""
+                base_pfx = next((v for k, v in base_prefixes.items() if k in first_unit), "")
+                if base_pfx:
+                    if "副所長" in rank or "副所長" in person: group_radio = f"隆安{base_pfx}2"
+                    elif "所長" in rank or "所長" in person: group_radio = f"隆安{base_pfx}1"
+                    else: group_radio = f"隆安{base_pfx}0"
+                else:
+                    group_radio = ""
+        
+        # 將計算出的帶班代號套用到整個編組
+        if '無線電代號' in df_copy.columns:
+            df_copy.at[idx, '無線電代號'] = group_radio
+            
     return df_copy
 
 # --- 3. 主程式介面 ---
@@ -473,6 +490,9 @@ if isinstance(df_ptl, pd.DataFrame) and not df_ptl.empty:
     if '任務分工' in df_ptl.columns and '巡邏路段' not in df_ptl.columns:
         df_ptl['巡邏路段'] = df_ptl['任務分工']
         df_ptl['任務分工'] = ""
+    # 新增相容: 無線電 -> 無線電代號
+    if '無線電' in df_ptl.columns and '無線電代號' not in df_ptl.columns:
+        df_ptl['無線電代號'] = df_ptl['無線電']
     for c in EXPECTED_PTL_COLS:
         if c not in df_ptl.columns: df_ptl[c] = ""
     df_ptl = df_ptl[EXPECTED_PTL_COLS]
@@ -485,6 +505,9 @@ if isinstance(df_cp, pd.DataFrame) and not df_cp.empty:
     if '任務分工' in df_cp.columns and '路檢地點' not in df_cp.columns:
         df_cp['路檢地點'] = df_cp['任務分工']
         df_cp['任務分工'] = ""
+    # 新增相容: 無線電 -> 無線電代號
+    if '無線電' in df_cp.columns and '無線電代號' not in df_cp.columns:
+        df_cp['無線電代號'] = df_cp['無線電']
     for c in EXPECTED_CP_COLS:
         if c not in df_cp.columns: df_cp[c] = ""
     df_cp = df_cp[EXPECTED_CP_COLS]
