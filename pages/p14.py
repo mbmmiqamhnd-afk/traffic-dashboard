@@ -446,7 +446,7 @@ def auto_assign_radio_code(df):
         rank = safe_str(row.get('職別')).strip()
         current_radio = safe_str(row.get('無線電代號')).strip()
         
-        # 強制濾除可能隱藏的換行或空白符號 (例如將 "副所\n長" 清洗為 "副所長")
+        # 強制濾除可能隱藏的換行或空白符號
         clean_unit = re.sub(r'\s+', '', unit)
         clean_rank = re.sub(r'\s+', '', rank)
         clean_person = re.sub(r'\s+', '', person)
@@ -456,22 +456,27 @@ def auto_assign_radio_code(df):
             if group_name != "":
                 active_group_name = group_name
             
-            # 從清洗後的單位名稱找對應的代碼前綴
+            # 先試算出該人員預設的標準代號
             base_pfx = next((v for k, v in base_prefixes.items() if k in clean_unit), "")
+            expected_radio = ""
             
             if base_pfx:
-                # 強制重新計算，無視舊有的快取資料
                 if "副所長" in clean_rank or "小隊長" in clean_rank or "副所長" in clean_person or "小隊長" in clean_person: 
-                    active_group_radio = f"隆安{base_pfx}2"
+                    expected_radio = f"隆安{base_pfx}2"
                 elif "所長" in clean_rank or "分隊長" in clean_rank or "所長" in clean_person or "分隊長" in clean_person: 
-                    active_group_radio = f"隆安{base_pfx}1"
+                    expected_radio = f"隆安{base_pfx}1"
                 else: 
-                    active_group_radio = f"隆安{base_pfx}0"
-            else:
-                # 若無法自動推算(例如其他特殊單位)，則保留該列原本手寫的代號
+                    expected_radio = f"隆安{base_pfx}0"
+            
+            # 🟢 判斷是否採用手動輸入：
+            # 如果目前這列已經有值，就優先以手動輸入的值為主 (允許特例覆寫)
+            # 如果清空該格，就會自動幫您帶入推算好的標準值
+            if current_radio != "":
                 active_group_radio = current_radio
+            else:
+                active_group_radio = expected_radio
         
-        # 將正確計算出的帶班代號，強力覆寫進該編組的所有成員列中
+        # 將確認後的代號套用到該編組所有人身上
         if '無線電代號' in df_copy.columns:
             df_copy.at[idx, '無線電代號'] = active_group_radio
             
@@ -555,17 +560,29 @@ res_cmd = st.data_editor(df_cmd, num_rows="dynamic", use_container_width=True).d
 b_info  = st.text_area("📢 勤前教育", b, height=70)
 
 st.subheader("2. 勤務編組")
+
+# 🟢 保持勾選功能，同時兼具手動覆寫的彈性
+auto_sync_radio = st.checkbox("✨ 啟用自動推算與統一同編組「無線電代號」 (若需完全手動自訂每列代號，請取消勾選)", value=True)
+
 tab1, tab2 = st.tabs(["📍 第一階段 (巡邏)", "🚧 第二階段 (路檢)"])
 
 with tab1:
     st.info(f"當前標題：{phase1_desc}")
     raw_ptl = st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
-    res_ptl = auto_assign_radio_code(raw_ptl).dropna(how="all").fillna("")
+    
+    if auto_sync_radio:
+        res_ptl = auto_assign_radio_code(raw_ptl).dropna(how="all").fillna("")
+    else:
+        res_ptl = raw_ptl.dropna(how="all").fillna("")
 
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
     raw_cp = st.data_editor(df_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
-    res_cp = auto_assign_radio_code(raw_cp).dropna(how="all").fillna("")
+    
+    if auto_sync_radio:
+        res_cp = auto_assign_radio_code(raw_cp).dropna(how="all").fillna("")
+    else:
+        res_cp = raw_cp.dropna(how="all").fillna("")
 
 st.markdown("---")
 
