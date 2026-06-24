@@ -165,13 +165,11 @@ def p18_page():
                         # ====================================================
                         ext_year, ext_month = None, None
                         
-                        # 1. 優先從檔名截取
                         m_file = re.search(r'(\d{3})\s*年\s*(\d{1,2})\s*月', file_template.name)
                         if m_file:
                             ext_year = m_file.group(1)
                             ext_month = m_file.group(2).zfill(2)
                             
-                        # 2. 掃描工作表內容
                         if not ext_year or not ext_month:
                             for s_name in template_sheets:
                                 if '總表' in s_name or 'SUMMARY' in s_name.upper(): continue
@@ -186,7 +184,6 @@ def p18_page():
                                     if ext_year: break
                                 if ext_year: break
                                 
-                        # 3. 當前系統時間保底
                         if not ext_year or not ext_month:
                             now = datetime.now()
                             ext_year = str(now.year - 1911)
@@ -368,7 +365,7 @@ def p18_page():
                     {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "主任", "姓名": "陳振貴"},
                     {"分配類別": "其他配合(8%)", "單位": "秘書室", "職別": "出納", "姓名": "簡啟峯"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
-                    {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
+                    {"分配類別": "開他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
@@ -405,13 +402,11 @@ def p18_page():
                         # ====================================================
                         ext_year, ext_month = None, None
                         
-                        # 1. 優先從檔名截取
                         m_file = re.search(r'(\d{3})\s*年\s*(\d{1,2})\s*月', file_final_pts.name)
                         if m_file:
                             ext_year = m_file.group(1)
                             ext_month = m_file.group(2).zfill(2)
                             
-                        # 2. 掃描工作表內容（完美避開空白的總表）
                         if not ext_year or not ext_month:
                             for s_name in template_sheets:
                                 if '總表' in s_name or 'SUMMARY' in s_name.upper(): continue
@@ -426,7 +421,6 @@ def p18_page():
                                     if ext_year: break
                                 if ext_year: break
                                 
-                        # 3. 當前系統時間保底
                         if not ext_year or not ext_month:
                             now = datetime.now()
                             ext_year = str(now.year - 1911)
@@ -607,7 +601,9 @@ def p18_page():
                         with pd.ExcelWriter(payroll_output, engine='xlsxwriter', engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
                             workbook = writer.book
                             border_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                            sign_title_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 12, 'bold': True})
                             
+                            # 1. 寫入【直接執行人員】分頁
                             df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                             ws1 = writer.sheets['直接執行人員']
                             ws1.set_portrait(); ws1.set_paper(9); stamp_col1 = df_direct_exec.columns.get_loc('蓋章')
@@ -617,6 +613,16 @@ def p18_page():
                                 for c in range(len(df_direct_exec.columns)):
                                     ws1.write(r, c, df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c], border_format)
                             
+                            # 【直接執行人員頁面 - 簽章核銷欄位】(欄位較寬，採間隔等距排列)
+                            sign_start_row1 = len(df_direct_exec) + 2
+                            ws1.write(sign_start_row1, 0, "製表人：", sign_title_format)
+                            ws1.write(sign_start_row1, 2, "單位主管：", sign_title_format)
+                            ws1.write(sign_start_row1, 4, "出納：", sign_title_format)
+                            ws1.write(sign_start_row1, 6, "人事：", sign_title_format)
+                            ws1.write(sign_start_row1, 8, "主計：", sign_title_format)
+                            ws1.write(sign_start_row1, 11, "分局長：", sign_title_format)
+                            
+                            # 2. 寫入【共同作業及配合人員】分頁
                             df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                             ws2 = writer.sheets['共同作業及配合人員']
                             ws2.set_portrait(); ws2.set_paper(9); stamp_col2 = df_coworkers_final_sheet.columns.get_loc('蓋章')
@@ -638,13 +644,16 @@ def p18_page():
                             ws2.merge_range(main_data_len + 2, 0, main_data_len + 2, 3, "總計（含直接執行人員）", style_total)
                             ws2.write(main_data_len + 2, 4, direct_total_money + coworker_sheet_total_money, style_total)
                             
+                            # 【共同作業及配合人員頁面 - 簽章核銷欄位】(欄位完美對齊 A ~ F 欄位)
                             sign_start_row = data_len + 2
-                            sign_title_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 12, 'bold': True})
                             ws2.write(sign_start_row, 0, "製表人：", sign_title_format)
-                            ws2.write(sign_start_row, 2, "人事：", sign_title_format)
+                            ws2.write(sign_start_row, 1, "單位主管：", sign_title_format)
+                            ws2.write(sign_start_row, 2, "出納：", sign_title_format)
+                            ws2.write(sign_start_row, 3, "人事：", sign_title_format)
                             ws2.write(sign_start_row, 4, "主計：", sign_title_format)
-                            ws2.write(sign_start_row, 6, "分局長：", sign_title_format)
+                            ws2.write(sign_start_row, 5, "分局長：", sign_title_format)
                             
+                            # 3. 寫入【一覽表】
                             df_payroll_summary.to_excel(writer, sheet_name='處理道路交通安全人員獎奖励金支領一覽表', index=False)
                         
                         payroll_excel_data = payroll_output.getvalue()
