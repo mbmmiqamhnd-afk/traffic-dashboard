@@ -603,22 +603,20 @@ def p18_page():
                             border_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
                             sign_title_format = workbook.add_format({'font_name': 'Microsoft JhengHei', 'font_size': 12, 'bold': True})
                             
-                            # 共同的會辦簽章條線（絕對等距：每隔一欄 = 索引值 + 2）
-                            review_cols = [
-                                (0, "單位主管："),
-                                (2, "出納："),
-                                (4, "人事："),
-                                (6, "主計："),
-                                (8, "分局長：")
+                            # 共同作業核銷會辦條線座標定義（靠左對齊 Col 0，彼此間隔一欄 = 0, 2, 4, 6）
+                            review_line_officers = [
+                                (0, "出納："),
+                                (2, "人事："),
+                                (4, "主計："),
+                                (6, "分局長：")
                             ]
                             
                             # --------------------------------------------------
-                            # 1. 寫入【直接執行人員】分頁
+                            # 1. 寫入【直接執行人員】分頁 (僅保留各欄蓋章、不加任何底部簽章列)
                             # --------------------------------------------------
                             df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                             ws1 = writer.sheets['直接執行人員']
-                            ws1.set_portrait(); ws1.set_paper(9)
-                            ws1.fit_to_pages(1, 0)  # 強迫橫向縮放為 1 頁寬，防止右側被切頁
+                            ws1.set_portrait(); ws1.set_paper(9); ws1.fit_to_pages(1, 0)
                             
                             stamp_col1 = df_direct_exec.columns.get_loc('蓋章')
                             ws1.set_column(stamp_col1, stamp_col1, 22)
@@ -627,20 +625,12 @@ def p18_page():
                                 for c in range(len(df_direct_exec.columns)):
                                     ws1.write(r, c, df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c], border_format)
                             
-                            # 【直接執行人員 - 簽章核銷欄位】
-                            sign_start_row1 = len(df_direct_exec) + 2
-                            ws1.write(sign_start_row1, 0, "製表人：", sign_title_format)
-                            review_row1 = sign_start_row1 + 3
-                            for col_idx, title_text in review_cols:
-                                ws1.write(review_row1, col_idx, title_text, sign_title_format)
-                            
                             # --------------------------------------------------
-                            # 2. 寫入【共同作業及配合人員】分頁
+                            # 2. 寫入【共同作業及配合人員】分頁 (完美部署「雙層矩陣簽章引擎」)
                             # --------------------------------------------------
                             df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                             ws2 = writer.sheets['共同作業及配合人員']
-                            ws2.set_portrait(); ws2.set_paper(9)
-                            ws2.fit_to_pages(1, 0)  # 強迫橫向縮放為 1 頁寬，防止右側被切頁
+                            ws2.set_portrait(); ws2.set_paper(9); ws2.fit_to_pages(1, 0)
                             
                             stamp_col2 = df_coworkers_final_sheet.columns.get_loc('蓋章')
                             ws2.set_column(stamp_col2, stamp_col2, 22)
@@ -661,11 +651,15 @@ def p18_page():
                             ws2.merge_range(main_data_len + 2, 0, main_data_len + 2, 3, "總計（含直接執行人員）", style_total)
                             ws2.write(main_data_len + 2, 4, direct_total_money + coworker_sheet_total_money, style_total)
                             
-                            # 【共同作業及配合人員 - 簽章核銷欄位】
+                            # 【共同作業人員專用 - 雙層矩陣核銷簽章區】
                             sign_start_row2 = data_len + 2
+                            # 第一層：製表人(Col 0) 與 單位主管(Col 2)，中間空一欄(Col 1)
                             ws2.write(sign_start_row2, 0, "製表人：", sign_title_format)
+                            ws2.write(sign_start_row2, 2, "單位主管：", sign_title_format)
+                            
+                            # 空二列緩衝後，下一列（+3）排開會辦與決行線（出納、人事、主計、分局長均靠左對齊並彼此空一欄）
                             review_row2 = sign_start_row2 + 3
-                            for col_idx, title_text in review_cols:
+                            for col_idx, title_text in review_line_officers:
                                 ws2.write(review_row2, col_idx, title_text, sign_title_format)
                             
                             # --------------------------------------------------
