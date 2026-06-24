@@ -663,9 +663,9 @@ def p18_page():
                                 ws2.write(review_row2, col_idx, title_text, sign_title_format)
                             
                             # --------------------------------------------------
-                            # 3. 寫入【一覽表】
+                            # 3. 寫入【一覽表】 (簡體簡字修正處)
                             # --------------------------------------------------
-                            df_payroll_summary.to_excel(writer, sheet_name='處理道路交通安全人員獎奖励金支領一覽表', index=False)
+                            df_payroll_summary.to_excel(writer, sheet_name='處理道路交通安全人員獎勵金支領一覽表', index=False)
                         
                         payroll_excel_data = payroll_output.getvalue()
                         payroll_filename = f"龍潭分局{ext_year}年{ext_month}月份_處理道路交通安全人員獎勵金印領清冊.xlsx"
