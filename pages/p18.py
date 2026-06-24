@@ -160,15 +160,38 @@ def p18_page():
                         xls_template = pd.ExcelFile(file_template)
                         template_sheets = xls_template.sheet_names
                         
-                        ext_year, ext_month = "115", "04"
-                        df_first_sheet = pd.read_excel(file_template, sheet_name=template_sheets[0], header=None)
-                        for r in range(min(15, len(df_first_sheet))):
-                            for c in range(min(10, len(df_first_sheet.columns))):
-                                v = str(df_first_sheet.iloc[r, c])
-                                m = re.search(r'開單日期[：:\s]*(\d{3})(\d{2})', v)
-                                if m:
-                                    ext_year, ext_month = m.group(1), m.group(2)
-                                    break
+                        # ====================================================
+                        # 【階段一：三重保險年月自動偵測】
+                        # ====================================================
+                        ext_year, ext_month = None, None
+                        
+                        # 1. 優先從檔名截取
+                        m_file = re.search(r'(\d{3})\s*年\s*(\d{1,2})\s*月', file_template.name)
+                        if m_file:
+                            ext_year = m_file.group(1)
+                            ext_month = m_file.group(2).zfill(2)
+                            
+                        # 2. 掃描工作表內容
+                        if not ext_year or not ext_month:
+                            for s_name in template_sheets:
+                                if '總表' in s_name or 'SUMMARY' in s_name.upper(): continue
+                                df_check = pd.read_excel(file_template, sheet_name=s_name, header=None)
+                                for r in range(min(15, len(df_check))):
+                                    for c in range(min(10, len(df_check.columns))):
+                                        v = str(df_check.iloc[r, c])
+                                        m_cell = re.search(r'開單日期[：:\s]*(\d{3})(\d{2})', v)
+                                        if m_cell:
+                                            ext_year, ext_month = m_cell.group(1), m_cell.group(2)
+                                            break
+                                    if ext_year: break
+                                if ext_year: break
+                                
+                        # 3. 當前系統時間保底
+                        if not ext_year or not ext_month:
+                            now = datetime.now()
+                            ext_year = str(now.year - 1911)
+                            ext_month = str(now.month).zfill(2)
+                        # ====================================================
                         
                         final_sheets = {}
                         summary_rows = []
@@ -225,7 +248,6 @@ def p18_page():
                                     sub_row_data[col_n] = int(v_sum) if v_sum > 0 else 0
                                 
                                 df_final_sheet = pd.concat([df_members, pd.DataFrame([sub_row_data])], ignore_index=True)
-                                # 徹底清洗階段一的隨機 NaN 防閃退
                                 df_final_sheet = df_final_sheet.fillna("").replace([np.inf, -np.inf], "")
                                 final_sheets[sheet_name] = df_final_sheet
                                 summary_rows.append([sheet_name, s_cite, s_acc, s_traf, s_cite + s_acc + s_traf])
@@ -234,7 +256,6 @@ def p18_page():
                         df_pts_summary_final = pd.DataFrame([['單位名稱', '取締點數', '事故點數', '交整點數', '個人總點數']] + summary_rows + [['合計', int(g_cite), int(g_acc), int(g_traf), int(g_all)]])
                         pts_output = io.BytesIO()
                         
-                        # 外嵌防護字典：{'nan_inf_to_errors': True}
                         with pd.ExcelWriter(pts_output, engine='xlsxwriter', engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
                             df_pts_summary_final.to_excel(writer, sheet_name='總表', header=False, index=False)
                             for sn, df_f in final_sheets.items(): df_f.to_excel(writer, sheet_name=sn, index=False)
@@ -351,10 +372,9 @@ def p18_page():
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
-
-        ]
+                ]
                 df_init = pd.DataFrame(default_coworkers_data)
-            st.session_state.current_roster = sort_coworkers(df_init)
+                st.session_state.current_roster = sort_coworkers(df_init)
             
         df_display = st.session_state.current_roster.copy()
         if '金額' in df_display.columns: df_display = df_display.drop(columns=['金額'])
@@ -380,15 +400,38 @@ def p18_page():
                         xls_template = pd.ExcelFile(file_final_pts)
                         template_sheets = xls_template.sheet_names
                         
-                        ext_year, ext_month = "115", "04"
-                        df_first_sheet = pd.read_excel(file_final_pts, sheet_name=template_sheets[0], header=None)
-                        for r in range(min(15, len(df_first_sheet))):
-                            for c in range(min(10, len(df_first_sheet.columns))):
-                                v = str(df_first_sheet.iloc[r, c])
-                                m = re.search(r'開單日期[：:\s]*(\d{3})(\d{2})', v)
-                                if m:
-                                    ext_year, ext_month = m.group(1), m.group(2)
-                                    break
+                        # ====================================================
+                        # 【階段二：三重保險年月自動偵測】
+                        # ====================================================
+                        ext_year, ext_month = None, None
+                        
+                        # 1. 優先從檔名截取
+                        m_file = re.search(r'(\d{3})\s*年\s*(\d{1,2})\s*月', file_final_pts.name)
+                        if m_file:
+                            ext_year = m_file.group(1)
+                            ext_month = m_file.group(2).zfill(2)
+                            
+                        # 2. 掃描工作表內容（完美避開空白的總表）
+                        if not ext_year or not ext_month:
+                            for s_name in template_sheets:
+                                if '總表' in s_name or 'SUMMARY' in s_name.upper(): continue
+                                df_check = pd.read_excel(file_final_pts, sheet_name=s_name, header=None)
+                                for r in range(min(15, len(df_check))):
+                                    for c in range(min(10, len(df_check.columns))):
+                                        v = str(df_check.iloc[r, c])
+                                        m_cell = re.search(r'開單日期[：:\s]*(\d{3})(\d{2})', v)
+                                        if m_cell:
+                                            ext_year, ext_month = m_cell.group(1), m_cell.group(2)
+                                            break
+                                    if ext_year: break
+                                if ext_year: break
+                                
+                        # 3. 當前系統時間保底
+                        if not ext_year or not ext_month:
+                            now = datetime.now()
+                            ext_year = str(now.year - 1911)
+                            ext_month = str(now.month).zfill(2)
+                        # ====================================================
                         
                         direct_exec_list = []
                         for sheet_name in template_sheets:
@@ -555,14 +598,12 @@ def p18_page():
                         grand_total_row_data['單位'] = '總計（含直接執行人員）'; grand_total_row_data['金額'] = direct_total_money + coworker_sheet_total_money
                         df_coworkers_final_sheet = pd.concat([df_coworkers_final_sheet, pd.DataFrame([grand_total_row_data])], ignore_index=True)
                         
-                        # 徹底清洗階段二的所有遺留 NaN/Inf 資料結構
                         df_direct_exec = df_direct_exec.fillna("").replace([np.inf, -np.inf], "")
                         df_coworkers_final_sheet = df_coworkers_final_sheet.fillna("").replace([np.inf, -np.inf], "")
                         df_payroll_summary = df_payroll_summary.fillna("").replace([np.inf, -np.inf], "")
                         
                         payroll_output = io.BytesIO()
                         
-                        # --- 【核心防護關鍵點】加上防閃退參數設定選項 ---
                         with pd.ExcelWriter(payroll_output, engine='xlsxwriter', engine_kwargs={'options': {'nan_inf_to_errors': True}}) as writer:
                             workbook = writer.book
                             border_format = workbook.add_format({'border': 1, 'align': 'center', 'valign': 'vcenter'})
