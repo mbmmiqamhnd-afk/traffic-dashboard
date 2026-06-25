@@ -290,9 +290,38 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, d
 
 
 # ==========================================
-# UI 介面區塊
+# UI 介面與【自動匯入】邏輯
 # ==========================================
 df_set, df_cmd, df_s1, df_s2, df_s3, err = load_data()
+
+# 💡 魔法發生在這裡：如果「三階段_設定」完全沒資料（第一次開啟）
+if not err and (df_set is None or (isinstance(df_set, pd.DataFrame) and df_set.empty)):
+    try:
+        # 自動去 Google Sheet 抓取舊的「二合一」資料來當初始值
+        client = get_client()
+        if client:
+            sh = client.open_by_key(SHEET_ID)
+            old_set = pd.DataFrame(sh.worksheet("二合一_設定").get_all_records()).fillna("")
+            old_cmd = pd.DataFrame(sh.worksheet("二合一_指揮組").get_all_records()).fillna("")
+            old_ptl = pd.DataFrame(sh.worksheet("二合一_路檢組").get_all_records()).fillna("")
+            old_cp  = pd.DataFrame(sh.worksheet("二合一_擴大臨檢組").get_all_records()).fillna("")
+            
+            if not old_set.empty:
+                st.toast("✨ 偵測到首次啟用，已自動為您匯入舊版『二合一』的人員名單！", icon="📥")
+                df_set = old_set
+                if not old_cmd.empty: df_cmd = old_cmd
+                
+                if not old_ptl.empty:
+                    # 把路檢組直接複製給「一階機動」跟「三階路檢」
+                    df_s1 = old_ptl.copy()
+                    if "臨檢目標" in df_s1.columns: df_s1.rename(columns={"臨檢目標": "機動攔檢區域"}, inplace=True)
+                    df_s3 = old_ptl.copy()
+                    if "臨檢目標" in df_s3.columns: df_s3.rename(columns={"臨檢目標": "定點路檢目標"}, inplace=True)
+                    
+                if not old_cp.empty:
+                    df_s2 = old_cp.copy()
+    except Exception:
+        pass # 如果舊表不存在，就安靜地跳過，使用下方的預設值
 
 default_stats = {"cmd": 7, "s1": 10, "s2": 10, "s3": 10, "inv": 3, "civ": 0, "b_time": "18時30分至19時00分", "b_loc": "本分局2樓會議室"}
 
@@ -303,15 +332,19 @@ if err or df_set is None or (isinstance(df_set, pd.DataFrame) and df_set.empty):
 else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ)
-    f_s1, f_s2, f_s3 = d.get("s1_focus", DEFAULT_S1_FOCUS), d.get("s2_focus", DEFAULT_S2_FOCUS), d.get("s3_focus", DEFAULT_S3_FOCUS)
+    # 這裡如果舊表匯入，可能找不到 s1_focus，會 fallback 到 DEFAULT_S1_FOCUS
+    f_s1 = d.get("s1_focus", DEFAULT_S1_FOCUS)
+    f_s2 = d.get("s2_focus", DEFAULT_S2_FOCUS)
+    f_s3 = d.get("s3_focus", DEFAULT_S3_FOCUS)
     default_stats.update({
         "cmd": int(d.get("stats_cmd", 7)), "s1": int(d.get("stats_s1", 10)), "s2": int(d.get("stats_s2", 10)), "s3": int(d.get("stats_s3", 10)),
         "inv": int(d.get("stats_inv", 3)), "civ": int(d.get("stats_civ", 0)), "b_time": d.get("briefing_time", "18時30分至19時00分"), "b_loc": d.get("briefing_loc", "本分局2樓會議室")
     })
     ed_cmd = df_cmd.astype(str)
-    ed_s1 = df_s1[S1_COLS].astype(str) if not df_s1.empty and all(c in df_s1.columns for c in S1_COLS) else DEFAULT_S1.astype(str)
-    ed_s2 = df_s2[S2_COLS].astype(str) if not df_s2.empty and all(c in df_s2.columns for c in S2_COLS) else DEFAULT_S2.astype(str)
-    ed_s3 = df_s3[S3_COLS].astype(str) if not df_s3.empty and all(c in df_s3.columns for c in S3_COLS) else DEFAULT_S3.astype(str)
+    # 強制過濾欄位，避免舊資料的殘留欄位造成 UI 渲染錯誤
+    ed_s1 = df_s1[S1_COLS].astype(str) if not df_s1.empty and all(c in df_s1.columns for c in S1_COLS) else df_s1.astype(str)
+    ed_s2 = df_s2[S2_COLS].astype(str) if not df_s2.empty and all(c in df_s2.columns for c in S2_COLS) else df_s2.astype(str)
+    ed_s3 = df_s3[S3_COLS].astype(str) if not df_s3.empty and all(c in df_s3.columns for c in S3_COLS) else df_s3.astype(str)
 
 st.title("三階段專案勤務規劃系統 🚓")
 st.info("💡 系統特色：本功能將勤務分為「一階機動攔檢」、「二階場所臨檢」、「三階定點路檢」進行無縫排班規劃。")
