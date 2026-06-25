@@ -18,15 +18,16 @@ def show_sidebar():
 
         # 3. 勤務與專案規劃
         st.subheader("📅 勤務與專案規劃")
-        st.page_link("pages/p09.py", label="聯合稽查勤務規劃", icon="🚓")          # 保留原版
-        st.page_link("pages/p20.py", label="聯合稽查(二階段)勤務規劃", icon="🚓") # 新增二階段版
+        st.page_link("pages/p09.py", label="聯合稽查勤務規劃", icon="🚓")          
+        st.page_link("pages/p20.py", label="聯合稽查(二階段)勤務規劃", icon="🚓") 
         st.page_link("pages/p10.py", label="防制危險駕車", icon="🚓")
         st.page_link("pages/p11.py", label="防制危險駕車 (月份版)", icon="📅")
         st.page_link("pages/p12.py", label="行人及護老交通安全", icon="🚶")
         st.page_link("pages/p13.py", label="取締砂石車", icon="🚛")
         st.page_link("pages/p14.py", label="二階段勤務規劃", icon="🚓")
-        st.page_link("pages/p15.py", label="三合一勤務規劃系統", icon="📋")
+        st.page_link("pages/p15.py", label="三合一勤務規劃系統", icon="📋") # 原有功能
         st.page_link("pages/p19.py", label="二合一勤務規劃系統", icon="📋")
+        st.page_link("pages/p21.py", label="三階段專案勤務規劃系統", icon="🚀") # 🆕 全新功能
 
         st.divider()
 
@@ -36,22 +37,18 @@ def show_sidebar():
         st.page_link("pages/p06.py", label="PDF 轉 PPTX 工具", icon="📂")
         st.page_link("pages/p16.py", label="督導報告極速生成器 v7.0", icon="📋")
 
-
 def main():
-    # 呼叫側邊欄
     show_sidebar()
 
-    # 首頁的主要內容
     st.title("🚓 歡迎使用交通執法自動化分析引擎")
     st.markdown("""
     請從左側選單選擇您要使用的功能。
 
     ✅ **最新系統更新：**
-    * 已於「勤務與專案規劃」專區新增 **[聯合稽查(二階段)勤務規劃]**，完美融合環保局臨時檢驗站開設功能與二階段定點路檢排班機制（同時保留原有單階段版本）。
-    * 已於「數據與分析」專區新增 **[獎勵金點數統計表]** 功能，可自動比對匯入交通事故與疏導時數，並完整保留龍潭分局表單排版。
-    * 已於「勤務與專案規劃」專區新增 **[二合一勤務規劃系統]**，支援第一階段「定點路檢」與第二階段「擴大臨檢」的獨立表單規劃。
+    * 已於「勤務與專案規劃」專區新增 **[三階段專案勤務規劃系統]**，支援第一階段「機動攔檢」、第二階段「場所臨檢」與第三階段「定點路檢」的獨立表單規劃。
+    * 已於「勤務與專案規劃」專區新增 **[聯合稽查(二階段)勤務規劃]**，完美融合環保局臨時檢驗站開設功能與二階段定點路檢排班機制。
+    * 已於「數據與分析」專區新增 **[獎勵金點數統計表]** 功能，可自動比對匯入交通事故與疏導時數。
     """)
-
 
 if __name__ == "__main__":
     main()
