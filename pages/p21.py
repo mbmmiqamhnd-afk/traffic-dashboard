@@ -44,6 +44,11 @@ DEFAULT_UNIT  = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME  = "115年3月25日 18時至22時"
 DEFAULT_PROJ  = "0325「雷霆除暴專案」三階段專案"
 
+# 🆕 各階段預設勤務時間
+DEFAULT_S1_TIME = "18時00分至19時30分"
+DEFAULT_S2_TIME = "19時30分至20時30分"
+DEFAULT_S3_TIME = "20時30分至22時00分"
+
 DEFAULT_BRIEF = (
     "一、 工作重點任務提示：同仁執行盤查、臨檢及路檢勤務過程中，應強化敵情觀念，提高危機意識，並特別注意人犯戒護。\n"
     "二、 行動要領：除法律另有規定外，警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所。\n"
@@ -112,7 +117,8 @@ def load_data():
     except Exception as e:
         return None, None, None, None, None, str(e)
 
-def save_data(unit, time_str, project, briefing, df_cmd, df_s1, df_s2, df_s3, stats, f_s1, f_s2, f_s3):
+# 🆕 儲存函數加入 t_s1, t_s2, t_s3
+def save_data(unit, time_str, project, briefing, df_cmd, df_s1, df_s2, df_s3, stats, t_s1, t_s2, t_s3, f_s1, f_s2, f_s3):
     try:
         client = get_client()
         if client is None: return False
@@ -133,6 +139,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_s1, df_s2, df_s3, st
             ["stats_s1", str(stats["s1"])], ["stats_s2", str(stats["s2"])], ["stats_s3", str(stats["s3"])],
             ["stats_inv", str(stats["inv"])], ["stats_civ", str(stats["civ"])],
             ["briefing_time", str(stats["b_time"])], ["briefing_loc", str(stats["b_loc"])],
+            ["s1_time", t_s1], ["s2_time", t_s2], ["s3_time", t_s3], # 寫入雲端
             ["s1_focus", f_s1], ["s2_focus", f_s2], ["s3_focus", f_s3],
         ])
 
@@ -146,7 +153,8 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_s1, df_s2, df_s3, st
 # ==========================================
 # PDF 產出區塊
 # ==========================================
-def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, df_s3, stats, f_s1, f_s2, f_s3):
+# 🆕 產生函數加入 t_s1, t_s2, t_s3
+def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, df_s3, stats, t_s1, t_s2, t_s3, f_s1, f_s2, f_s3):
     font = _get_font()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=10*mm, rightMargin=10*mm, topMargin=12*mm, bottomMargin=15*mm)
@@ -211,15 +219,21 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_s1, df_
         t.setStyle(TableStyle(ts))
         return t
 
+    # 🆕 肆、第一階段 PDF 加上時間
     story.append(Paragraph("<b>肆、【第一階段】機動攔檢任務編組</b>", style_section))
+    story.append(Paragraph(f"<b>勤務時間：</b>{clean(t_s1)}", style_text))
     story.append(Paragraph(f"<b>勤務重點：</b><br/>{clean(f_s1)}", style_text))
     story.append(build_stage_table(df_s1, ["攜行裝備", "機動攔檢區域"], [page_width*0.1, page_width*0.09, page_width*0.09, page_width*0.1, page_width*0.11, page_width*0.12, page_width*0.15, page_width*0.24]))
 
+    # 🆕 伍、第二階段 PDF 加上時間
     story.append(Paragraph("<b>伍、【第二階段】場所臨檢任務編組</b>", style_section))
+    story.append(Paragraph(f"<b>勤務時間：</b>{clean(t_s2)}", style_text))
     story.append(Paragraph(f"<b>勤務重點：</b><br/>{clean(f_s2)}", style_text))
     story.append(build_stage_table(df_s2, ["臨檢目標場所"], [page_width*0.1, page_width*0.09, page_width*0.09, page_width*0.1, page_width*0.11, page_width*0.16, page_width*0.35], bg_color="#e6e6e6"))
 
+    # 🆕 陸、第三階段 PDF 加上時間
     story.append(Paragraph("<b>陸、【第三階段】定點路檢任務編組</b>", style_section))
+    story.append(Paragraph(f"<b>勤務時間：</b>{clean(t_s3)}", style_text))
     story.append(Paragraph(f"<b>勤務重點：</b><br/>{clean(f_s3)}", style_text))
     story.append(build_stage_table(df_s3, ["攜行裝備", "定點路檢目標"], [page_width*0.1, page_width*0.09, page_width*0.09, page_width*0.1, page_width*0.11, page_width*0.12, page_width*0.15, page_width*0.24]))
 
@@ -267,14 +281,15 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
-def send_report_email(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, df_s3, stats, f_s1, f_s2, f_s3):
+# 🆕 寄信函數傳遞 t_s1, t_s2, t_s3
+def send_report_email(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, df_s3, stats, t_s1, t_s2, t_s3, f_s1, f_s2, f_s3):
     try:
         sender = st.secrets["email"]["user"]; pwd = st.secrets["email"]["password"]
         msg = MIMEMultipart()
         msg["From"] = sender; msg["To"] = sender; msg["Subject"] = f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')} (三階段專案)"
         msg.attach(MIMEText("附件為最新版本「三階段專案」勤務規劃表與簽到表。", "plain"))
 
-        pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, df_s3, stats, f_s1, f_s2, f_s3)
+        pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, df_s3, stats, t_s1, t_s2, t_s3, f_s1, f_s2, f_s3)
         part1 = MIMEBase("application", "pdf"); part1.set_payload(pdf1); encoders.encode_base64(part1)
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(f'{unit}規劃表(三階段).pdf')}"); msg.attach(part1)
 
@@ -294,10 +309,9 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, d
 # ==========================================
 df_set, df_cmd, df_s1, df_s2, df_s3, err = load_data()
 
-# 💡 魔法發生在這裡：如果「三階段_設定」完全沒資料（第一次開啟）
+# 自動匯入二合一舊資料當預設值
 if not err and (df_set is None or (isinstance(df_set, pd.DataFrame) and df_set.empty)):
     try:
-        # 自動去 Google Sheet 抓取舊的「二合一」資料來當初始值
         client = get_client()
         if client:
             sh = client.open_by_key(SHEET_ID)
@@ -310,18 +324,14 @@ if not err and (df_set is None or (isinstance(df_set, pd.DataFrame) and df_set.e
                 st.toast("✨ 偵測到首次啟用，已自動為您匯入舊版『二合一』的人員名單！", icon="📥")
                 df_set = old_set
                 if not old_cmd.empty: df_cmd = old_cmd
-                
                 if not old_ptl.empty:
-                    # 把路檢組直接複製給「一階機動」跟「三階路檢」
                     df_s1 = old_ptl.copy()
                     if "臨檢目標" in df_s1.columns: df_s1.rename(columns={"臨檢目標": "機動攔檢區域"}, inplace=True)
                     df_s3 = old_ptl.copy()
                     if "臨檢目標" in df_s3.columns: df_s3.rename(columns={"臨檢目標": "定點路檢目標"}, inplace=True)
-                    
-                if not old_cp.empty:
-                    df_s2 = old_cp.copy()
+                if not old_cp.empty: df_s2 = old_cp.copy()
     except Exception:
-        pass # 如果舊表不存在，就安靜地跳過，使用下方的預設值
+        pass 
 
 default_stats = {"cmd": 7, "s1": 10, "s2": 10, "s3": 10, "inv": 3, "civ": 0, "b_time": "18時30分至19時00分", "b_loc": "本分局2樓會議室"}
 
@@ -329,19 +339,23 @@ if err or df_set is None or (isinstance(df_set, pd.DataFrame) and df_set.empty):
     u, t, p = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ
     ed_cmd, ed_s1, ed_s2, ed_s3 = DEFAULT_CMD.copy(), DEFAULT_S1.copy(), DEFAULT_S2.copy(), DEFAULT_S3.copy()
     f_s1, f_s2, f_s3 = DEFAULT_S1_FOCUS, DEFAULT_S2_FOCUS, DEFAULT_S3_FOCUS
+    t_s1, t_s2, t_s3 = DEFAULT_S1_TIME, DEFAULT_S2_TIME, DEFAULT_S3_TIME # 🆕 賦予預設時間
 else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ)
-    # 這裡如果舊表匯入，可能找不到 s1_focus，會 fallback 到 DEFAULT_S1_FOCUS
     f_s1 = d.get("s1_focus", DEFAULT_S1_FOCUS)
     f_s2 = d.get("s2_focus", DEFAULT_S2_FOCUS)
     f_s3 = d.get("s3_focus", DEFAULT_S3_FOCUS)
+    # 🆕 雲端讀取各階段時間，若無則用預設
+    t_s1 = d.get("s1_time", DEFAULT_S1_TIME)
+    t_s2 = d.get("s2_time", DEFAULT_S2_TIME)
+    t_s3 = d.get("s3_time", DEFAULT_S3_TIME)
+
     default_stats.update({
         "cmd": int(d.get("stats_cmd", 7)), "s1": int(d.get("stats_s1", 10)), "s2": int(d.get("stats_s2", 10)), "s3": int(d.get("stats_s3", 10)),
         "inv": int(d.get("stats_inv", 3)), "civ": int(d.get("stats_civ", 0)), "b_time": d.get("briefing_time", "18時30分至19時00分"), "b_loc": d.get("briefing_loc", "本分局2樓會議室")
     })
     ed_cmd = df_cmd.astype(str)
-    # 強制過濾欄位，避免舊資料的殘留欄位造成 UI 渲染錯誤
     ed_s1 = df_s1[S1_COLS].astype(str) if not df_s1.empty and all(c in df_s1.columns for c in S1_COLS) else df_s1.astype(str)
     ed_s2 = df_s2[S2_COLS].astype(str) if not df_s2.empty and all(c in df_s2.columns for c in S2_COLS) else df_s2.astype(str)
     ed_s3 = df_s3[S3_COLS].astype(str) if not df_s3.empty and all(c in df_s3.columns for c in S3_COLS) else df_s3.astype(str)
@@ -369,12 +383,14 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).d
 st.subheader("勤務執行編組 (三階段)")
 tab1, tab2, tab3 = st.tabs(["肆、【第一階段】機動攔檢", "伍、【第二階段】場所臨檢", "陸、【第三階段】定點路檢"])
 
-def create_editor(tab_obj, key, title, focus_val, ed_df, col_config):
+# 🆕 編輯器生成加入 time_val 參數與 text_input
+def create_editor(tab_obj, key, title, time_val, focus_val, ed_df, col_config):
     with tab_obj:
-        res_focus = st.text_area(f"勤務重點 ({title})", focus_val, height=80)
+        res_time = st.text_input(f"勤務時間 ({title})", time_val, key=f"{key}_time_in")
+        res_focus = st.text_area(f"勤務重點 ({title})", focus_val, height=80, key=f"{key}_focus_in")
         st.caption("💡 同一組的多名人員請填寫相同的「組別」與「無線電代號」，PDF 會自動合併。")
         res_df = st.data_editor(ed_df, num_rows="dynamic", use_container_width=True, key=f"{key}_ed", column_config=col_config).dropna(how="all").fillna("").reset_index(drop=True)
-        return res_focus, res_df
+        return res_time, res_focus, res_df
 
 base_col_config = {
     "組別": st.column_config.TextColumn("組別", width="small"),
@@ -389,9 +405,10 @@ s1_config = {**base_col_config, "攜行裝備": st.column_config.TextColumn("攜
 s2_config = {**base_col_config, "臨檢目標場所": st.column_config.TextColumn("臨檢目標場所", width="large")}
 s3_config = {**base_col_config, "攜行裝備": st.column_config.TextColumn("攜行裝備", width="medium"), "定點路檢目標": st.column_config.TextColumn("定點路檢目標", width="large")}
 
-res_s1_focus, res_s1 = create_editor(tab1, "s1", "第一階段", f_s1, ed_s1, s1_config)
-res_s2_focus, res_s2 = create_editor(tab2, "s2", "第二階段", f_s2, ed_s2, s2_config)
-res_s3_focus, res_s3 = create_editor(tab3, "s3", "第三階段", f_s3, ed_s3, s3_config)
+# 🆕 傳入 t_s1, t_s2, t_s3
+res_s1_time, res_s1_focus, res_s1 = create_editor(tab1, "s1", "第一階段", t_s1, f_s1, ed_s1, s1_config)
+res_s2_time, res_s2_focus, res_s2 = create_editor(tab2, "s2", "第二階段", t_s2, f_s2, ed_s2, s2_config)
+res_s3_time, res_s3_focus, res_s3 = create_editor(tab3, "s3", "第三階段", t_s3, f_s3, ed_s3, s3_config)
 
 def count_people(df):
     return int(df["姓名"].astype(str).str.strip().loc[lambda x: x!=""].count()) if not df.empty and "姓名" in df.columns else 0
@@ -413,10 +430,11 @@ m3.metric("一階機動", f"{current_stats['s1']} 人"); m4.metric("二階臨檢
 m5.metric("三階路檢", f"{current_stats['s3']} 人"); m6.metric("偵/民", f"{current_stats['inv']} / {current_stats['civ']} 人")
 
 st.markdown("---")
+# 🆕 儲存與發發信時，傳遞 res_sX_time
 if st.button("💾 儲存【三階段專案】規劃並發送郵件", use_container_width=True):
     with st.spinner("同步至 Google Sheets 中..."):
-        if save_data(u, p_time, p_name, DEFAULT_BRIEF, res_cmd, res_s1, res_s2, res_s3, current_stats, res_s1_focus, res_s2_focus, res_s3_focus):
+        if save_data(u, p_time, p_name, DEFAULT_BRIEF, res_cmd, res_s1, res_s2, res_s3, current_stats, res_s1_time, res_s2_time, res_s3_time, res_s1_focus, res_s2_focus, res_s3_focus):
             with st.spinner("正在產生 PDF 並寄送郵件..."):
-                ok, err = send_report_email(u, p_name, p_time, DEFAULT_BRIEF, res_cmd, res_s1, res_s2, res_s3, current_stats, res_s1_focus, res_s2_focus, res_s3_focus)
+                ok, err = send_report_email(u, p_name, p_time, DEFAULT_BRIEF, res_cmd, res_s1, res_s2, res_s3, current_stats, res_s1_time, res_s2_time, res_s3_time, res_s1_focus, res_s2_focus, res_s3_focus)
                 if ok: st.success("✅ 資料已同步，且郵件發送成功！")
                 else: st.warning(f"⚠️ 同步成功，但郵件失敗：{err}")
