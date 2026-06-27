@@ -434,8 +434,10 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 def auto_assign_radio_code(df):
     if df is None or df.empty: return df
     df_copy = df.copy()
+    # 基礎代碼對應表
     base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
     
+    # 暫存當前處理中的群組名稱與其對應的無線電代號，確保同一編組代號一致
     active_group_name = ""
     active_group_radio = ""
     
@@ -446,39 +448,41 @@ def auto_assign_radio_code(df):
         rank = safe_str(row.get('職別')).strip()
         current_radio = safe_str(row.get('無線電代號')).strip()
         
-        # 強制濾除可能隱藏的換行或空白符號
+        # 整理文字用於判斷
         clean_unit = re.sub(r'\s+', '', unit)
         clean_rank = re.sub(r'\s+', '', rank)
         clean_person = re.sub(r'\s+', '', person)
         
-        # 當遇到新編組的第一列時
-        if idx == 0 or (group_name != "" and group_name != active_group_name):
+        # 判斷是否進入新編組，或者編組名稱雖然相同但需要重新確認該編組的「領隊代號」
+        if idx == 0 or (group_name != "" and group_name != active_group_name) or group_name == "":
             if group_name != "":
                 active_group_name = group_name
             
-            # 先試算出該人員預設的標準代號
-            base_pfx = next((v for k, v in base_prefixes.items() if k in clean_unit), "")
-            expected_radio = ""
-            
-            if base_pfx:
-                if "副所長" in clean_rank or "小隊長" in clean_rank or "副所長" in clean_person or "小隊長" in clean_person: 
-                    expected_radio = f"隆安{base_pfx}2"
-                elif "所長" in clean_rank or "分隊長" in clean_rank or "所長" in clean_person or "分隊長" in clean_person: 
-                    expected_radio = f"隆安{base_pfx}1"
-                else: 
-                    expected_radio = f"隆安{base_pfx}0"
-            
-            # 🟢 判斷是否採用手動輸入：
-            # 如果目前這列已經有值，就優先以手動輸入的值為主 (允許特例覆寫)
-            # 如果清空該格，就會自動幫您帶入推算好的標準值
+            # 優先判斷手動值：若該列已有輸入，則以該輸入為該組基準代號
             if current_radio != "":
                 active_group_radio = current_radio
             else:
-                active_group_radio = expected_radio
+                # 取得基礎代碼
+                base_pfx = next((v for k, v in base_prefixes.items() if k in clean_unit), "")
+                
+                if base_pfx:
+                    # 邏輯判斷：所長/分隊長 -> 1, 副所長/小隊長 -> 2, 其餘 -> 0
+                    if any(x in clean_rank or x in clean_person for x in ["所長", "分隊長"]):
+                        suffix = "1"
+                    elif any(x in clean_rank or x in clean_person for x in ["副所長", "小隊長"]):
+                        suffix = "2"
+                    else:
+                        suffix = "0"
+                    
+                    active_group_radio = f"隆安{base_pfx}{suffix}"
+                else:
+                    active_group_radio = current_radio # 若無法匹配單位，則保持現狀
         
-        # 將確認後的代號套用到該編組所有人身上
+        # 應用代號到該行
         if '無線電代號' in df_copy.columns:
-            df_copy.at[idx, '無線電代號'] = active_group_radio
+            # 只有當該行原本沒有代號時，才自動寫入；若該行已有特定代號則不強制覆寫
+            if df_copy.at[idx, '無線電代號'] == "":
+                df_copy.at[idx, '無線電代號'] = active_group_radio
             
     return df_copy
 
