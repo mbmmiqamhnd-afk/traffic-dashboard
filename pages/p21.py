@@ -198,14 +198,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_s1, df_
     def build_stage_table(df_stage, target_col, col_widths, bg_color="#f2f2f2"):
         headers = ["組別","無線電\n代號","派遣\n單位","職別","姓名","任務分工"] + target_col
         data = [[Paragraph(f"<b>{h}</b>", style_cell) for h in headers]]
-        
-        # 【自動防呆處理】複製並改寫 rows，將同組內填寫的地點擴散給全組各列，避免 ReportLab 垂直合併 SPAN 機制吃掉非首列之新地點
-        rows = df_stage.reset_index(drop=True).copy()
-        for col_name in target_col:
-            if col_name in rows.columns:
-                rows[col_name] = rows[col_name].replace(r'^\s*$', pd.NA, regex=True)
-                rows[col_name] = rows.groupby('組別')[col_name].transform(lambda x: x.ffill().bfill()).fillna("")
-
+        rows = df_stage.reset_index(drop=True)
         merges, prev_grp, grp_start = [], None, 1
         for i, r in rows.iterrows():
             grp = safe_str(r.get("組別",""))
@@ -224,19 +217,19 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_s1, df_
         t.setStyle(TableStyle(ts))
         return t
 
-    # 肆、第一階段 PDF 加上時間
+    # 肆、第一階段
     story.append(Paragraph("<b>肆、【第一階段】機動攔檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務時間：</b>{clean(t_s1)}", style_text))
     story.append(Paragraph(f"<b>勤務重點：</b><br/>{clean(f_s1)}", style_text))
     story.append(build_stage_table(df_s1, ["攜行裝備", "機動攔檢區域"], [page_width*0.1, page_width*0.09, page_width*0.09, page_width*0.1, page_width*0.11, page_width*0.12, page_width*0.15, page_width*0.24]))
 
-    # 伍、第二階段 PDF 加上時間
+    # 伍、第二階段
     story.append(Paragraph("<b>伍、【第二階段】場所臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務時間：</b>{clean(t_s2)}", style_text))
     story.append(Paragraph(f"<b>勤務重點：</b><br/>{clean(f_s2)}", style_text))
     story.append(build_stage_table(df_s2, ["臨檢目標場所"], [page_width*0.1, page_width*0.09, page_width*0.09, page_width*0.1, page_width*0.11, page_width*0.16, page_width*0.35], bg_color="#e6e6e6"))
 
-    # 陸、第三階段 PDF 加上時間
+    # 陸、第三階段
     story.append(Paragraph("<b>陸、【第三階段】定點路檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務時間：</b>{clean(t_s3)}", style_text))
     story.append(Paragraph(f"<b>勤務重點：</b><br/>{clean(f_s3)}", style_text))
@@ -260,7 +253,7 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
     style_title = ParagraphStyle("Title", fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=8, wordWrap="CJK")
     style_info  = ParagraphStyle("Info",  fontName=font, fontSize=14, leading=22, spaceAfter=1*mm, wordWrap="CJK")
     style_cell  = ParagraphStyle("Cell",  fontName=font, fontSize=14, leading=20, alignment=1, wordWrap="CJK")
-    style_sig   = ParagraphStyle("Sig",  fontName=font, fontSize=14, leading=20, alignment=0, wordWrap="CJK") 
+    style_sig   = ParagraphStyle("Sig",   fontName=font, fontSize=14, leading=20, alignment=0, wordWrap="CJK") 
 
     story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
     date_part = time_str.split(" ")[0] if " " in time_str else "115年3月25日"
@@ -286,14 +279,14 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
-def send_report_email(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, df_s3, stats, t_s1, t_s2, t_s3, f_s1, f_s2, f_s3):
+def send_report_email(unit, project, time_str, briefing, df_cmd, res_s1, res_s2, res_s3, stats, t_s1, t_s2, t_s3, f_s1, f_s2, f_s3):
     try:
         sender = st.secrets["email"]["user"]; pwd = st.secrets["email"]["password"]
         msg = MIMEMultipart()
         msg["From"] = sender; msg["To"] = sender; msg["Subject"] = f"勤務規劃與簽到表_{datetime.now().strftime('%m%d')} (三階段專案)"
         msg.attach(MIMEText("附件為最新版本「三階段專案」勤務規劃表與簽到表。", "plain"))
 
-        pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, df_s3, stats, t_s1, t_s2, t_s3, f_s1, f_s2, f_s3)
+        pdf1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, res_s1, res_s2, res_s3, stats, t_s1, t_s2, t_s3, f_s1, f_s2, f_s3)
         part1 = MIMEBase("application", "pdf"); part1.set_payload(pdf1); encoders.encode_base64(part1)
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(f'{unit}規劃表(三階段).pdf')}"); msg.attach(part1)
 
@@ -386,12 +379,45 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).d
 st.subheader("勤務執行編組 (三階段)")
 tab1, tab2, tab3 = st.tabs(["肆、【第一階段】機動攔檢", "伍、【第二階段】場所臨檢", "陸、【第三階段】定點路檢"])
 
-def create_editor(tab_obj, key, title, time_val, focus_val, ed_df, col_config):
+# 【核心防呆升級】透過原始 ed_df 與編輯後的數值差異，精準找出學長當下改了哪一格，並強制擴散全組
+def create_editor(tab_obj, key, title, time_val, focus_val, ed_df, col_config, target_cols):
     with tab_obj:
         res_time = st.text_input(f"勤務時間 ({title})", time_val, key=f"{key}_time_in")
         res_focus = st.text_area(f"勤務重點 ({title})", focus_val, height=80, key=f"{key}_focus_in")
         st.caption("💡 同一組的多名人員請填寫相同的「組別」與「無線電代號」，PDF 會自動合併。")
-        res_df = st.data_editor(ed_df, num_rows="dynamic", use_container_width=True, key=f"{key}_ed", column_config=col_config).dropna(how="all").fillna("").reset_index(drop=True)
+        
+        raw_edited = st.data_editor(ed_df, num_rows="dynamic", use_container_width=True, key=f"{key}_ed", column_config=col_config)
+        
+        synced_df = raw_edited.copy()
+        if not synced_df.empty and "組別" in synced_df.columns:
+            for col in target_cols:
+                if col not in synced_df.columns:
+                    continue
+                s_curr = synced_df[col].astype(str).str.strip()
+                best_map = {}
+                for grp, grp_idx_list in synced_df.groupby("組別").groups.items():
+                    vals = s_curr.loc[grp_idx_list]
+                    non_empty = vals[vals != ""]
+                    if non_empty.empty:
+                        best_map[grp] = ""
+                        continue
+                    u_vals = non_empty.unique()
+                    if len(u_vals) == 1:
+                        best_map[grp] = u_vals[0]
+                        continue
+                    
+                    # 同組內有多個不同文字時，比對原本載入的 ed_df，找出到底哪一格是當下手動被改寫的
+                    picked = u_vals[0]
+                    for idx in grp_idx_list:
+                        val = s_curr.loc[idx]
+                        if val == "": continue
+                        if idx not in ed_df.index or col not in ed_df.columns or val != str(ed_df.loc[idx, col]).strip():
+                            picked = val # 抓到了！這格跟載入時不一樣，絕對是 user 剛改的！
+                            break
+                    best_map[grp] = picked
+                synced_df[col] = synced_df["組別"].map(best_map).fillna("")
+
+        res_df = synced_df.dropna(how="all").fillna("").reset_index(drop=True)
         return res_time, res_focus, res_df
 
 base_col_config = {
@@ -407,9 +433,9 @@ s1_config = {**base_col_config, "攜行裝備": st.column_config.TextColumn("攜
 s2_config = {**base_col_config, "臨檢目標場所": st.column_config.TextColumn("臨檢目標場所", width="large")}
 s3_config = {**base_col_config, "攜行裝備": st.column_config.TextColumn("攜行裝備", width="medium"), "定點路檢目標": st.column_config.TextColumn("定點路檢目標", width="large")}
 
-res_s1_time, res_s1_focus, res_s1 = create_editor(tab1, "s1", "第一階段", t_s1, f_s1, ed_s1, s1_config)
-res_s2_time, res_s2_focus, res_s2 = create_editor(tab2, "s2", "第二階段", t_s2, f_s2, ed_s2, s2_config)
-res_s3_time, res_s3_focus, res_s3 = create_editor(tab3, "s3", "第三階段", t_s3, f_s3, ed_s3, s3_config)
+res_s1_time, res_s1_focus, res_s1 = create_editor(tab1, "s1", "第一階段", t_s1, f_s1, ed_s1, s1_config, ["攜行裝備", "機動攔檢區域"])
+res_s2_time, res_s2_focus, res_s2 = create_editor(tab2, "s2", "第二階段", t_s2, f_s2, ed_s2, s2_config, ["臨檢目標場所"])
+res_s3_time, res_s3_focus, res_s3 = create_editor(tab3, "s3", "第三階段", t_s3, f_s3, ed_s3, s3_config, ["攜行裝備", "定點路檢目標"])
 
 def count_people(df):
     return int(df["姓名"].astype(str).str.strip().loc[lambda x: x!=""].count()) if not df.empty and "姓名" in df.columns else 0
