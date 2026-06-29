@@ -44,7 +44,7 @@ DEFAULT_UNIT  = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME  = "115年3月25日 18時至22時"
 DEFAULT_PROJ  = "0325「雷霆除暴專案」三階段專案"
 
-# 🆕 各階段預設勤務時間
+# 各階段預設勤務時間
 DEFAULT_S1_TIME = "18時00分至19時30分"
 DEFAULT_S2_TIME = "19時30分至20時30分"
 DEFAULT_S3_TIME = "20時30分至22時00分"
@@ -117,7 +117,6 @@ def load_data():
     except Exception as e:
         return None, None, None, None, None, str(e)
 
-# 🆕 儲存函數加入 t_s1, t_s2, t_s3
 def save_data(unit, time_str, project, briefing, df_cmd, df_s1, df_s2, df_s3, stats, t_s1, t_s2, t_s3, f_s1, f_s2, f_s3):
     try:
         client = get_client()
@@ -139,7 +138,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_s1, df_s2, df_s3, st
             ["stats_s1", str(stats["s1"])], ["stats_s2", str(stats["s2"])], ["stats_s3", str(stats["s3"])],
             ["stats_inv", str(stats["inv"])], ["stats_civ", str(stats["civ"])],
             ["briefing_time", str(stats["b_time"])], ["briefing_loc", str(stats["b_loc"])],
-            ["s1_time", t_s1], ["s2_time", t_s2], ["s3_time", t_s3], # 寫入雲端
+            ["s1_time", t_s1], ["s2_time", t_s2], ["s3_time", t_s3], 
             ["s1_focus", f_s1], ["s2_focus", f_s2], ["s3_focus", f_s3],
         ])
 
@@ -153,7 +152,6 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_s1, df_s2, df_s3, st
 # ==========================================
 # PDF 產出區塊
 # ==========================================
-# 🆕 產生函數加入 t_s1, t_s2, t_s3
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, df_s3, stats, t_s1, t_s2, t_s3, f_s1, f_s2, f_s3):
     font = _get_font()
     buf = io.BytesIO()
@@ -200,7 +198,14 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_s1, df_
     def build_stage_table(df_stage, target_col, col_widths, bg_color="#f2f2f2"):
         headers = ["組別","無線電\n代號","派遣\n單位","職別","姓名","任務分工"] + target_col
         data = [[Paragraph(f"<b>{h}</b>", style_cell) for h in headers]]
-        rows = df_stage.reset_index(drop=True)
+        
+        # 【自動防呆處理】複製並改寫 rows，將同組內填寫的地點擴散給全組各列，避免 ReportLab 垂直合併 SPAN 機制吃掉非首列之新地點
+        rows = df_stage.reset_index(drop=True).copy()
+        for col_name in target_col:
+            if col_name in rows.columns:
+                rows[col_name] = rows[col_name].replace(r'^\s*$', pd.NA, regex=True)
+                rows[col_name] = rows.groupby('組別')[col_name].transform(lambda x: x.ffill().bfill()).fillna("")
+
         merges, prev_grp, grp_start = [], None, 1
         for i, r in rows.iterrows():
             grp = safe_str(r.get("組別",""))
@@ -219,19 +224,19 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_s1, df_
         t.setStyle(TableStyle(ts))
         return t
 
-    # 🆕 肆、第一階段 PDF 加上時間
+    # 肆、第一階段 PDF 加上時間
     story.append(Paragraph("<b>肆、【第一階段】機動攔檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務時間：</b>{clean(t_s1)}", style_text))
     story.append(Paragraph(f"<b>勤務重點：</b><br/>{clean(f_s1)}", style_text))
     story.append(build_stage_table(df_s1, ["攜行裝備", "機動攔檢區域"], [page_width*0.1, page_width*0.09, page_width*0.09, page_width*0.1, page_width*0.11, page_width*0.12, page_width*0.15, page_width*0.24]))
 
-    # 🆕 伍、第二階段 PDF 加上時間
+    # 伍、第二階段 PDF 加上時間
     story.append(Paragraph("<b>伍、【第二階段】場所臨檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務時間：</b>{clean(t_s2)}", style_text))
     story.append(Paragraph(f"<b>勤務重點：</b><br/>{clean(f_s2)}", style_text))
     story.append(build_stage_table(df_s2, ["臨檢目標場所"], [page_width*0.1, page_width*0.09, page_width*0.09, page_width*0.1, page_width*0.11, page_width*0.16, page_width*0.35], bg_color="#e6e6e6"))
 
-    # 🆕 陸、第三階段 PDF 加上時間
+    # 陸、第三階段 PDF 加上時間
     story.append(Paragraph("<b>陸、【第三階段】定點路檢任務編組</b>", style_section))
     story.append(Paragraph(f"<b>勤務時間：</b>{clean(t_s3)}", style_text))
     story.append(Paragraph(f"<b>勤務重點：</b><br/>{clean(f_s3)}", style_text))
@@ -255,7 +260,7 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
     style_title = ParagraphStyle("Title", fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=8, wordWrap="CJK")
     style_info  = ParagraphStyle("Info",  fontName=font, fontSize=14, leading=22, spaceAfter=1*mm, wordWrap="CJK")
     style_cell  = ParagraphStyle("Cell",  fontName=font, fontSize=14, leading=20, alignment=1, wordWrap="CJK")
-    style_sig   = ParagraphStyle("Sig",   fontName=font, fontSize=14, leading=20, alignment=0, wordWrap="CJK") 
+    style_sig   = ParagraphStyle("Sig",  fontName=font, fontSize=14, leading=20, alignment=0, wordWrap="CJK") 
 
     story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
     date_part = time_str.split(" ")[0] if " " in time_str else "115年3月25日"
@@ -281,7 +286,6 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
     doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
     return buf.getvalue()
 
-# 🆕 寄信函數傳遞 t_s1, t_s2, t_s3
 def send_report_email(unit, project, time_str, briefing, df_cmd, df_s1, df_s2, df_s3, stats, t_s1, t_s2, t_s3, f_s1, f_s2, f_s3):
     try:
         sender = st.secrets["email"]["user"]; pwd = st.secrets["email"]["password"]
@@ -339,14 +343,13 @@ if err or df_set is None or (isinstance(df_set, pd.DataFrame) and df_set.empty):
     u, t, p = DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ
     ed_cmd, ed_s1, ed_s2, ed_s3 = DEFAULT_CMD.copy(), DEFAULT_S1.copy(), DEFAULT_S2.copy(), DEFAULT_S3.copy()
     f_s1, f_s2, f_s3 = DEFAULT_S1_FOCUS, DEFAULT_S2_FOCUS, DEFAULT_S3_FOCUS
-    t_s1, t_s2, t_s3 = DEFAULT_S1_TIME, DEFAULT_S2_TIME, DEFAULT_S3_TIME # 🆕 賦予預設時間
+    t_s1, t_s2, t_s3 = DEFAULT_S1_TIME, DEFAULT_S2_TIME, DEFAULT_S3_TIME 
 else:
     d = dict(zip(df_set.iloc[:,0], df_set.iloc[:,1]))
     u, t, p = d.get("unit_name", DEFAULT_UNIT), d.get("plan_full_time", DEFAULT_TIME), d.get("project_name", DEFAULT_PROJ)
     f_s1 = d.get("s1_focus", DEFAULT_S1_FOCUS)
     f_s2 = d.get("s2_focus", DEFAULT_S2_FOCUS)
     f_s3 = d.get("s3_focus", DEFAULT_S3_FOCUS)
-    # 🆕 雲端讀取各階段時間，若無則用預設
     t_s1 = d.get("s1_time", DEFAULT_S1_TIME)
     t_s2 = d.get("s2_time", DEFAULT_S2_TIME)
     t_s3 = d.get("s3_time", DEFAULT_S3_TIME)
@@ -383,7 +386,6 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).d
 st.subheader("勤務執行編組 (三階段)")
 tab1, tab2, tab3 = st.tabs(["肆、【第一階段】機動攔檢", "伍、【第二階段】場所臨檢", "陸、【第三階段】定點路檢"])
 
-# 🆕 編輯器生成加入 time_val 參數與 text_input
 def create_editor(tab_obj, key, title, time_val, focus_val, ed_df, col_config):
     with tab_obj:
         res_time = st.text_input(f"勤務時間 ({title})", time_val, key=f"{key}_time_in")
@@ -405,7 +407,6 @@ s1_config = {**base_col_config, "攜行裝備": st.column_config.TextColumn("攜
 s2_config = {**base_col_config, "臨檢目標場所": st.column_config.TextColumn("臨檢目標場所", width="large")}
 s3_config = {**base_col_config, "攜行裝備": st.column_config.TextColumn("攜行裝備", width="medium"), "定點路檢目標": st.column_config.TextColumn("定點路檢目標", width="large")}
 
-# 🆕 傳入 t_s1, t_s2, t_s3
 res_s1_time, res_s1_focus, res_s1 = create_editor(tab1, "s1", "第一階段", t_s1, f_s1, ed_s1, s1_config)
 res_s2_time, res_s2_focus, res_s2 = create_editor(tab2, "s2", "第二階段", t_s2, f_s2, ed_s2, s2_config)
 res_s3_time, res_s3_focus, res_s3 = create_editor(tab3, "s3", "第三階段", t_s3, f_s3, ed_s3, s3_config)
@@ -430,7 +431,7 @@ m3.metric("一階機動", f"{current_stats['s1']} 人"); m4.metric("二階臨檢
 m5.metric("三階路檢", f"{current_stats['s3']} 人"); m6.metric("偵/民", f"{current_stats['inv']} / {current_stats['civ']} 人")
 
 st.markdown("---")
-# 🆕 儲存與發發信時，傳遞 res_sX_time
+
 if st.button("💾 儲存【三階段專案】規劃並發送郵件", use_container_width=True):
     with st.spinner("同步至 Google Sheets 中..."):
         if save_data(u, p_time, p_name, DEFAULT_BRIEF, res_cmd, res_s1, res_s2, res_s3, current_stats, res_s1_time, res_s2_time, res_s3_time, res_s1_focus, res_s2_focus, res_s3_focus):
