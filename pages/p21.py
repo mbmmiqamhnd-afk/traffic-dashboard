@@ -102,17 +102,44 @@ def get_client():
         return None
 
 # ==========================================
-# 資料存取區塊
+# 資料存取區塊 (全面強化手動列新增防呆)
 # ==========================================
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=3) # 快取優化至 3 秒，重新整理更即時
 def load_data():
     try:
         client = get_client()
         if client is None: return None, None, None, None, None, "權限不足"
         sh = client.open_by_key(SHEET_ID)
+        
         def _get_ws(name, default_df):
-            try: return pd.DataFrame(sh.worksheet(name).get_all_records()).fillna("")
-            except: return default_df.copy() if default_df is not None else pd.DataFrame()
+            try:
+                ws = sh.worksheet(name)
+                raw_data = ws.get_all_values() # 改用更強韌的 get_all_values 避免對齊崩潰
+                if not raw_data or len(raw_data) < 1:
+                    return default_df.copy() if default_df is not None else pd.DataFrame()
+                
+                headers = [str(h).strip() for h in raw_data[0]]
+                rows = raw_data[1:]
+                
+                valid_rows = []
+                for r in rows:
+                    # 補足或裁剪手動新增時造成的欄位長度不一致
+                    if len(r) < len(headers):
+                        r = r + [""] * (len(headers) - len(r))
+                    else:
+                        r = r[:len(headers)]
+                    # 排除完全空白的列
+                    if any(str(cell).strip() != "" for cell in r):
+                        valid_rows.append([str(cell).strip() for cell in r])
+                        
+                if not valid_rows:
+                    return default_df.copy() if default_df is not None else pd.DataFrame()
+                    
+                return pd.DataFrame(valid_rows, columns=headers)
+            except Exception as e:
+                st.sidebar.error(f"⚠️ 讀取工作表 【{name}】 失敗：{e}")
+                return default_df.copy() if default_df is not None else pd.DataFrame()
+                
         return _get_ws(WS_SET_NAME, None), _get_ws(WS_CMD_NAME, DEFAULT_CMD), _get_ws(WS_S1_NAME, DEFAULT_S1), _get_ws(WS_S2_NAME, DEFAULT_S2), _get_ws(WS_S3_NAME, DEFAULT_S3), None
     except Exception as e:
         return None, None, None, None, None, str(e)
@@ -253,7 +280,7 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
     style_title = ParagraphStyle("Title", fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=8, wordWrap="CJK")
     style_info  = ParagraphStyle("Info",  fontName=font, fontSize=14, leading=22, spaceAfter=1*mm, wordWrap="CJK")
     style_cell  = ParagraphStyle("Cell",  fontName=font, fontSize=14, leading=20, alignment=1, wordWrap="CJK")
-    style_sig   = ParagraphStyle("Sig",   fontName=font, fontSize=14, leading=20, alignment=0, wordWrap="CJK") 
+    style_sig   = ParagraphStyle("Sig",  fontName=font, fontSize=14, leading=20, alignment=0, wordWrap="CJK") 
 
     story.append(Paragraph(f"{unit}執行{project}簽到表", style_title))
     date_part = time_str.split(" ")[0] if " " in time_str else "115年3月25日"
@@ -306,7 +333,7 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, res_s1, res_s2,
 # ==========================================
 df_set, df_cmd, df_s1, df_s2, df_s3, err = load_data()
 
-# 自動匯入二合一舊資料當預設值
+# 自動匯入二合一舊資料當預設值 (精準判斷三階段設定表是否為空)
 if not err and (df_set is None or (isinstance(df_set, pd.DataFrame) and df_set.empty)):
     try:
         client = get_client()
@@ -379,7 +406,7 @@ res_cmd = st.data_editor(ed_cmd, num_rows="dynamic", use_container_width=True).d
 st.subheader("勤務執行編組 (三階段)")
 tab1, tab2, tab3 = st.tabs(["肆、【第一階段】機動攔檢", "伍、【第二階段】場所臨檢", "陸、【第三階段】定點路檢"])
 
-# 【核心防呆升級】透過原始 ed_df 與編輯後的數值差異，精準找出學長當下改了哪一格，並強制擴散全組
+# 精準找出網頁當下改了哪一格，並強制擴散全組的編輯器
 def create_editor(tab_obj, key, title, time_val, focus_val, ed_df, col_config, target_cols):
     with tab_obj:
         res_time = st.text_input(f"勤務時間 ({title})", time_val, key=f"{key}_time_in")
@@ -406,13 +433,12 @@ def create_editor(tab_obj, key, title, time_val, focus_val, ed_df, col_config, t
                         best_map[grp] = u_vals[0]
                         continue
                     
-                    # 同組內有多個不同文字時，比對原本載入的 ed_df，找出到底哪一格是當下手動被改寫的
                     picked = u_vals[0]
                     for idx in grp_idx_list:
                         val = s_curr.loc[idx]
                         if val == "": continue
                         if idx not in ed_df.index or col not in ed_df.columns or val != str(ed_df.loc[idx, col]).strip():
-                            picked = val # 抓到了！這格跟載入時不一樣，絕對是 user 剛改的！
+                            picked = val
                             break
                     best_map[grp] = picked
                 synced_df[col] = synced_df["組別"].map(best_map).fillna("")
