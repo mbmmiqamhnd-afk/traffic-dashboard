@@ -54,19 +54,19 @@ DEFAULT_CMD = pd.DataFrame([
 ])
 
 DEFAULT_PTL = pd.DataFrame([
-    {"編組": "第一巡邏組", "無線電": "隆安52", "單位": "聖亭所", "職別": "副所長", "姓名": "曹培翔", "任務分工": "帶班兼蒐證", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第一巡邏組", "無線電": "隆安52", "單位": "聖亭所", "職別": "警員", "姓名": "詹宗澤", "任務分工": "攔檢盤查", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第二巡邏組", "無線電": "隆安62", "單位": "龍潭所", "職別": "副所長", "姓名": "劉重言", "任務分工": "帶班", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第二巡邏組", "無線電": "隆安62", "單位": "龍潭所", "職別": "警員", "姓名": "楊浩瑋", "任務分工": "攔檢盤查", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第二巡邏組", "無線電": "隆安62", "單位": "龍潭所", "職別": "警員", "姓名": "劉柏延", "任務分工": "蒐證兼警戒", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第三巡邏組", "無線電": "隆安72", "單位": "中興所", "職別": "副所長", "姓名": "何昀融", "任務分工": "帶班兼蒐證", "巡邏路段": "於中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第三巡邏組", "無線電": "隆安72", "單位": "中興所", "職別": "警員", "姓名": "林國仁", "任務分工": "攔檢盤查", "巡邏路段": "於中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第四巡邏組", "無線電": "隆安83", "單位": "石門所", "職別": "巡佐", "姓名": "林偉政", "任務分工": "帶班兼蒐證", "巡邏路段": "於神龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第四巡邏組", "無線電": "隆安83", "單位": "石門所", "職別": "警員", "姓名": "陳琦", "任務分工": "攔檢盤查", "巡邏路段": "於神龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第五巡邏組", "無線電": "隆安33", "單位": "三和所", "職別": "警員", "姓名": "朱志遠", "任務分工": "帶班兼蒐證", "巡邏路段": "於東龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第五巡邏組", "無線電": "隆安33", "單位": "高平所", "職別": "警員", "姓名": "楊文杰", "任務分工": "攔檢盤查", "巡邏路段": "於東龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第六巡邏組", "無線電": "隆安992", "單位": "龍潭交通分隊", "職別": "小隊長", "姓名": "林振生", "任務分工": "帶班兼蒐證", "巡邏路段": "於中豐路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
-    {"編組": "第六巡邏組", "無線電": "隆安992", "單位": "龍潭交通分隊", "職別": "警員", "姓名": "吳沛軒", "任務分工": "攔檢盤查", "巡邏路段": "於中豐路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"}
+    {"編組": "第一巡邏組", "無線電代號": "隆安52", "單位": "聖亭所", "職別": "副所長", "姓名": "曹培翔", "任務分工": "帶班兼蒐證", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第一巡邏組", "無線電代號": "隆安52", "單位": "聖亭所", "職別": "警員", "姓名": "詹宗澤", "任務分工": "攔檢盤查", "巡邏路段": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第二巡邏組", "無線電代號": "隆安62", "單位": "龍潭所", "職別": "副所長", "姓名": "劉重言", "任務分工": "帶班", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第二巡邏組", "無線電代號": "隆安62", "單位": "龍潭所", "職別": "警員", "姓名": "楊浩瑋", "任務分工": "攔檢盤查", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第二巡邏組", "無線電代號": "隆安62", "單位": "龍潭所", "職別": "警員", "姓名": "劉柏延", "任務分工": "蒐證兼警戒", "巡邏路段": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第三巡邏組", "無線電代號": "隆安72", "單位": "中興所", "職別": "副所長", "姓名": "何昀融", "任務分工": "帶班兼蒐證", "巡邏路段": "於中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第三巡邏組", "無線電代號": "隆安72", "單位": "中興所", "職別": "警員", "姓名": "林國仁", "任務分工": "攔檢盤查", "巡邏路段": "於中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第四巡邏組", "無線電代號": "隆安83", "單位": "石門所", "職別": "巡佐", "姓名": "林偉政", "任務分工": "帶班兼蒐證", "巡邏路段": "於神龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第四巡邏組", "無線電代號": "隆安83", "單位": "石門所", "職別": "警員", "姓名": "陳琦", "任務分工": "攔檢盤查", "巡邏路段": "於神龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第五巡邏組", "無線電代號": "隆安33", "單位": "三和所", "職別": "警員", "姓名": "朱志遠", "任務分工": "帶班兼蒐證", "巡邏路段": "於東龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第五巡邏組", "無線電代號": "隆安33", "單位": "高平所", "職別": "警員", "姓名": "楊文杰", "任務分工": "攔檢盤查", "巡邏路段": "於東龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第六巡邏組", "無線電代號": "隆安992", "單位": "龍潭交通分隊", "職別": "小隊長", "姓名": "林振生", "任務分工": "帶班兼蒐證", "巡邏路段": "於中豐路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"},
+    {"編組": "第六巡邏組", "無線電代號": "隆安992", "單位": "龍潭交通分隊", "職別": "警員", "姓名": "吳沛軒", "任務分工": "攔檢盤查", "巡邏路段": "於中豐路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"}
 ])
 
 # --- 2. 輔助函數 ---
@@ -105,7 +105,7 @@ def init_sheets():
         headers = {
             WS_MAP["set"]: [["Key", "Value"]],
             WS_MAP["cmd"]: [["職稱", "無線電代號", "負責人員", "任務"]],
-            WS_MAP["ptl"]: [["編組", "無線電", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]
+            WS_MAP["ptl"]: [["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]]
         }
         for ws_name, head in headers.items():
             try:
@@ -170,7 +170,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story = []
 
     style_title        = ParagraphStyle('Title',       fontName=font, fontSize=18, leading=24, alignment=1, spaceAfter=8,   wordWrap='CJK')
-    style_info         = ParagraphStyle('Info',        fontName=font, fontSize=12, alignment=2, spaceAfter=10,               wordWrap='CJK')
+    style_info         = ParagraphStyle('Info',        fontName=font, fontSize=12, alignment=2, spaceAfter=10,              wordWrap='CJK')
     style_cell         = ParagraphStyle('Cell',        fontName=font, fontSize=13, leading=18, alignment=1,                  wordWrap='CJK')
     style_cell_left    = ParagraphStyle('CellLeft',    fontName=font, fontSize=13, leading=18, alignment=0,                  wordWrap='CJK')
     style_middle_block = ParagraphStyle('MiddleBlock', fontName=font, fontSize=14, leading=22, spaceAfter=2*mm,
@@ -230,7 +230,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                 task_route = f"{r.get('巡邏路段','')}<br/><font color='blue' size='11'>*雨備方案：各治安要點巡邏。</font>"
                 data_ptl.append([
                     Paragraph(clean(r.get('編組','')), style_cell),
-                    Paragraph(clean(r.get('無線電','')), style_cell),
+                    Paragraph(clean(r.get('無線電代號','')), style_cell),
                     Paragraph(clean(r.get('單位','')), style_cell),
                     Paragraph(clean(r.get('職別','')), style_cell),
                     Paragraph(clean(r.get('姓名','')), style_cell),
@@ -246,8 +246,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
                 # 合併無線電代號
                 sub_start_rad = start_row
                 for r_idx in range(start_row + 1, end_row + 1):
-                    prev_val = str(g_df.iloc[sub_start_rad - start_row]['無線電']).strip()
-                    curr_val = str(g_df.iloc[r_idx - start_row]['無線電']).strip()
+                    prev_val = str(g_df.iloc[sub_start_rad - start_row]['無線電代號']).strip()
+                    curr_val = str(g_df.iloc[r_idx - start_row]['無線電代號']).strip()
                     if prev_val != curr_val:
                         if sub_start_rad < r_idx - 1:
                             t2_styles.append(('SPAN', (1, sub_start_rad), (1, r_idx - 1)))
@@ -380,7 +380,7 @@ def auto_assign_radio_code(df):
     for idx in first_row_indices:
         unit = str(df.at[idx, '單位'])
         title = str(df.at[idx, '職別']).strip()
-        current_radio = str(df.at[idx, '無線電']).strip()
+        current_radio = str(df.at[idx, '無線電代號']).strip()
         
         base_pfx = next((v for k, v in prefixes.items() if k in unit), "")
         
@@ -390,18 +390,18 @@ def auto_assign_radio_code(df):
                 current_radio in [f"隆安{base_pfx}0", f"隆安{base_pfx}1", f"隆安{base_pfx}2"]):
                 
                 if "副所長" in title or "小隊長" in title:
-                    df.at[idx, '無線電'] = f"隆安{base_pfx}2"
+                    df.at[idx, '無線電代號'] = f"隆安{base_pfx}2"
                 elif "所長" in title or "分隊長" in title:
-                    df.at[idx, '無線電'] = f"隆安{base_pfx}1"
+                    df.at[idx, '無線電代號'] = f"隆安{base_pfx}1"
                 else:
-                    df.at[idx, '無線電'] = f"隆安{base_pfx}0"
+                    df.at[idx, '無線電代號'] = f"隆安{base_pfx}0"
 
-    radio_map = dict(zip(df.loc[first_row_indices, "編組"], df.loc[first_row_indices, "無線電"]))
+    radio_map = dict(zip(df.loc[first_row_indices, "編組"], df.loc[first_row_indices, "無線電代號"]))
     
     for idx, row in df.iterrows():
         g_name = row.get("編組")
         if g_name in radio_map:
-            df.at[idx, '無線電'] = radio_map[g_name]
+            df.at[idx, '無線電代號'] = radio_map[g_name]
             
     return df
 
@@ -503,7 +503,7 @@ with st.expander("📋 點此打開【今日出勤名冊快速貼上區】", exp
                 
                 parsed_ptl.append({
                     "編組": g_name,
-                    "無線電": "", 
+                    "無線電代號": "", 
                     "單位": u_name,
                     "職別": title,
                     "姓名": name,
