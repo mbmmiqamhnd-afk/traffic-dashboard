@@ -33,19 +33,6 @@ except:
 # 2. Google Sheets 連線層（快取 + 重試）
 # ==========================================
 
-@st.cache_resource
-def get_gsheet_connection():
-    if GCP_CREDS:
-        try:
-            gc = gspread.service_account_from_dict(GCP_CREDS)
-            sh = gc.open_by_url(GOOGLE_SHEET_URL)
-            sh._cached_worksheets = sh.worksheets()
-            return sh
-        except Exception as e:
-            st.error(f"⚠️ Google Sheets 連線失敗: {e}")
-    return None
-
-
 def _gsheet_call_with_retry(fn, *args, max_retries=4, base_delay=5, **kwargs):
     for attempt in range(max_retries):
         try:
@@ -57,6 +44,19 @@ def _gsheet_call_with_retry(fn, *args, max_retries=4, base_delay=5, **kwargs):
                 time.sleep(wait)
             else:
                 raise
+
+@st.cache_resource
+def get_gsheet_connection():
+    if GCP_CREDS:
+        try:
+            gc = gspread.service_account_from_dict(GCP_CREDS)
+            sh = gc.open_by_url(GOOGLE_SHEET_URL)
+            # 修正 1：將工作表列表的讀取動作包進重試機制，防止連線初始化時爆發 429 錯誤
+            sh._cached_worksheets = _gsheet_call_with_retry(sh.worksheets)
+            return sh
+        except Exception as e:
+            st.error(f"⚠️ Google Sheets 連線失敗: {e}")
+    return None
 
 
 def _ws_update(ws, range_name, values):
@@ -461,7 +461,8 @@ def process_major(files, sh):
 
     if sh:
         try:
-            all_worksheets = sh.worksheets()
+            # 修正 2：使用具有指數退避重試機制的 _gsheet_call_with_retry 呼叫 sh.worksheets
+            all_worksheets = _gsheet_call_with_retry(sh.worksheets)
             existing_sheets = [s.title for s in all_worksheets]
 
             red_color   = {"red": 1.0, "green": 0.0, "blue": 0.0}
@@ -1019,8 +1020,8 @@ if uploads:
         for f in uploads:
             name = f.name.lower()
             if any(k in name for k in ["list", "地點", "科技"]):               cat_files["科技執法"].append(f)
-            elif any(k in name for k in ["stone", "超載"]):                     cat_files["超載統計"].append(f)
-            elif any(k in name for k in ["重大", "重點"]):                     cat_files["重大違規"].append(f)
+            elif any(k in name for k in ["stone", "超載"]):                      cat_files["超載統計"].append(f)
+            elif any(k in name for k in ["重大", "重點"]):                      cat_files["重大違規"].append(f)
             elif any(k in name for k in ["強化", "專案", "砂石", "大貨", "r17", "法條", "自選匯出"]): cat_files["強化專案"].append(f)
             elif any(k in name for k in ["a1", "a2", "事故", "案件統計"]):     cat_files["交通事故"].append(f)
             elif any(k in name for k in ["靜桃", "噪音", "改裝車", "總表", "詳細資料"]): cat_files["靜桃計畫"].append(f)
