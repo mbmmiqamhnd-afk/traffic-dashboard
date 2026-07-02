@@ -313,10 +313,12 @@ def generate_main_pdf(unit, project, time_str, briefing,
     def add_section(title):
         story.append(Paragraph(f"<b>{title}</b>", S["section"]))
 
-    # 動態排版：將有編號的內容自動拆分，實現「首字完美對齊」與「懸掛縮排」
+    # 動態排版：標題（如有）與內容並列同一欄位起點，內容換行時維持與標題並排對齊（懸掛縮排）
     def add_list_block(title_text, content):
-        lines = str(content).split('\n')
-        data = []
+        lines = [ln.strip() for ln in str(content).split('\n') if ln.strip()]
+        if not lines:
+            return
+
         style_cmds = [
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -324,45 +326,34 @@ def generate_main_pdf(unit, project, time_str, briefing,
             ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
             ("TOPPADDING", (0, 0), (-1, -1), 0),
         ]
-        
+
         has_title = bool(title_text)
         title_w = 26 * mm if has_title else 0
-        bullet_w = 15 * mm
-        text_w = PW - title_w - bullet_w
-        
+        text_w  = PW - title_w  # 內容欄一律使用同一寬度，確保逐行皆與標題並列對齊
+
+        enum_re = re.compile(
+            r'^([一二三四五六七八九十]+[、。.]|\d+[、。.]|[a-zA-Z]+[、。.]|'
+            r'\([一二三四五六七八九十]+\)|\(\d+\)|\([a-zA-Z]+\))\s*(.*)$'
+        )
+
+        data = []
         for line in lines:
-            line = line.strip()
-            if not line: continue
-            
+            m = enum_re.match(line)
+            # 編號與內文放在同一個 Paragraph 中，讓該行內部自然對齊；
+            # 不同行（不論是否有編號）皆共用同一欄寬，確保並列對齊一致。
+            body = f"{m.group(1)}{_clean(m.group(2))}" if m else _clean(line)
+
             row = []
-            # 若有標題（如"勤務重點："），僅在第一列顯示
             if has_title:
                 prefix = Paragraph(f"<b>{title_text}：</b>", S["text"]) if len(data) == 0 else ""
                 row.append(prefix)
-            
-            # 使用正則自動擷取編號符號 (例如: 一、, 1., (一), A. 等)
-            m = re.match(r'^([一二三四五六七八九十]+[、。.]|\d+[、。.]|[a-zA-Z]+[、。.]|\([一二三四五六七八九十]+\)|\(\d+\)|\([a-zA-Z]+\))\s*(.*)$', line)
-            if m:
-                row.extend([
-                    Paragraph(m.group(1), S["text"]),
-                    Paragraph(_clean(m.group(2)), S["text"])
-                ])
-            else:
-                row.extend([
-                    Paragraph(_clean(line), S["text"]),
-                    ""
-                ])
-                # 若該行沒有編號，合併編號與文字欄位
-                start_col = 1 if has_title else 0
-                style_cmds.append(("SPAN", (start_col, len(data)), (start_col+1, len(data))))
-                
+            row.append(Paragraph(body, S["text"]))
             data.append(row)
-            
-        if data:
-            cols = [title_w, bullet_w, text_w] if has_title else [bullet_w, text_w]
-            t = Table(data, colWidths=cols)
-            t.setStyle(TableStyle(style_cmds))
-            story.append(t)
+
+        cols = [title_w, text_w] if has_title else [text_w]
+        t = Table(data, colWidths=cols)
+        t.setStyle(TableStyle(style_cmds))
+        story.append(t)
 
     # 標題
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", S["title"]))
