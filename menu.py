@@ -28,6 +28,7 @@ def show_sidebar():
         st.page_link("pages/p15.py", label="三合一勤務規劃系統", icon="📋") # 原有功能
         st.page_link("pages/p19.py", label="二合一勤務規劃系統", icon="📋")
         st.page_link("pages/p21.py", label="三階段專案勤務規劃系統", icon="🚀") # 🆕 全新功能
+        st.sidebar.page_link("pages/p22.py", label="綜合勤務規劃(新)")
 
         st.divider()
 
