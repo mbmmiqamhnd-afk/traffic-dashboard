@@ -208,7 +208,69 @@ def generate_universal_pdf(duty_name, project_name, meta_dict, dfs_dict):
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     buf.seek(0)
     return buf.getvalue()
+# ==========================================
+# 泛用型雲端存取引擎 (Universal Cloud Sync)
+# ==========================================
+def save_universal_data(sheet_prefix, meta_dict, dfs_dict):
+    try:
+        client = get_client()
+        if client is None: return False
+        sh = client.open_by_key(SHEET_ID)
+        
+        # 1. 儲存設定檔 (Meta)
+        set_ws_name = f"{sheet_prefix}_設定"
+        try: ws_set = sh.worksheet(set_ws_name)
+        except: ws_set = sh.add_worksheet(title=set_ws_name, rows="50", cols="5")
+        
+        ws_set.clear()
+        meta_values = [["Key", "Value"]] + [[k, str(v)] for k, v in meta_dict.items()]
+        ws_set.update(range_name="A1", values=meta_values)
 
+        # 2. 動態儲存所有 DataFrame (Tabs)
+        for tab_name, df in dfs_dict.items():
+            ws_name = f"{sheet_prefix}_{tab_name}"
+            try: ws = sh.worksheet(ws_name)
+            except: ws = sh.add_worksheet(title=ws_name, rows="100", cols="20")
+            
+            ws.clear()
+            clean_df = df.dropna(how="all").fillna("")
+            if not clean_df.empty:
+                ws.update(range_name="A1", values=[clean_df.columns.tolist()] + clean_df.astype(str).values.tolist())
+                
+        return True
+    except Exception as e:
+        st.error(f"❌ 雲端同步失敗：{e}")
+        return False
+
+def load_universal_data(sheet_prefix, profile_tabs, default_dfs):
+    try:
+        client = get_client()
+        if client is None: return {}, default_dfs, "授權失敗"
+        sh = client.open_by_key(SHEET_ID)
+        
+        # 1. 讀取設定檔
+        set_ws_name = f"{sheet_prefix}_設定"
+        meta_data = {}
+        try:
+            ws_set = sh.worksheet(set_ws_name)
+            raw_meta = ws_set.get_all_records()
+            meta_data = {str(row["Key"]): str(row["Value"]) for row in raw_meta if "Key" in row}
+        except: pass # 若找不到分頁則回傳空字典
+
+        # 2. 讀取各個 Tab 的 DataFrame
+        loaded_dfs = {}
+        for tab_name in profile_tabs:
+            ws_name = f"{sheet_prefix}_{tab_name}"
+            try:
+                ws = sh.worksheet(ws_name)
+                raw_df = pd.DataFrame(ws.get_all_records()).fillna("")
+                loaded_dfs[tab_name] = raw_df if not raw_df.empty else default_dfs[tab_name].copy()
+            except:
+                loaded_dfs[tab_name] = default_dfs[tab_name].copy()
+
+        return meta_data, loaded_dfs, None
+    except Exception as e:
+        return {}, default_dfs, str(e)
 
 # ==========================================
 # 3. 特定業務邏輯輔助函數
