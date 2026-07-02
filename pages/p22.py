@@ -200,17 +200,10 @@ def generate_universal_pdf(duty_name, project_name, meta_dict, dfs_dict):
                 if line.strip(): story.append(Paragraph(line, s_txt))
 
     def add_page_number(canvas, doc):
-    canvas.saveState()
-    font_name = _get_font()
-    canvas.setFont(font_name, 10)
-    
-    # 這裡就是控制格式的地方
-    page_num = canvas.getPageNumber()
-    # 例如改成： 第 X 頁
-    text = f"第 {page_num} 頁"
-    
-    canvas.drawCentredString(A4[0] / 2.0, 10 * mm, text)
-    canvas.restoreState()
+        canvas.saveState()
+        canvas.setFont(font, 10)
+        canvas.drawCentredString(A4[0] / 2, 8*mm, f"- {canvas.getPageNumber()} -")
+        canvas.restoreState()
 
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     buf.seek(0)
