@@ -1,7 +1,14 @@
 import streamlit as st
 import pandas as pd
-import io
-import os
+import gspread
+from google.oauth2.service_account import Credentials
+import io, os, re, smtplib, calendar
+from datetime import datetime, timedelta
+import urllib.parse as _ul
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -10,203 +17,310 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
 
-# 必須是第一個 Streamlit 指令
-st.set_page_config(page_title="綜合勤務規劃系統", layout="wide", page_icon="🚓")
+st.set_page_config(page_title="綜合勤務規劃總署", layout="wide", page_icon="🚓")
+
+# 嘗試載入側邊欄
+try:
+    from menu import show_sidebar
+    show_sidebar()
+except ImportError:
+    pass
 
 # ==========================================
-# 1. 泛用型 PDF 輸出引擎
+# 1. 核心設定與預設資料庫 (DUTY_PROFILES)
 # ==========================================
+SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
+SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+UNIT = "桃園市政府警察局龍潭分局"
+
+# --- 預設指揮組 ---
+DEFAULT_CMD = pd.DataFrame([
+    {"職稱": "指揮官", "代號": "隆安1", "姓名": "分局長 施宇峰", "任務": "核定本勤務執行並重點機動督導。"},
+    {"職稱": "副指揮官", "代號": "隆安2", "姓名": "副分局長 何憶雯", "任務": "襄助指揮官執行本勤務並重點機動督導。"},
+    {"職稱": "副指揮官", "代號": "隆安3", "姓名": "副分局長 蔡志明", "任務": "襄助指揮官執行本勤務並重點機動督導。"}
+])
+
+# --- 綜合勤務配置字典 (新增任何專案只需在這裡加一筆) ---
+DUTY_PROFILES = {
+    "聯合稽查 (單階段)": {
+        "sheet_prefix": "統整_聯合",
+        "meta_fields": ["勤務時間", "勤前教育", "環保局臨時檢驗站"],
+        "tabs": ["指揮編組", "巡邏編組"],
+        "default_dfs": {
+            "指揮編組": DEFAULT_CMD.copy(),
+            "巡邏編組": pd.DataFrame([
+                {"編組": "第一巡邏組", "代號": "隆安52", "單位": "聖亭所", "職別": "副所長", "姓名": "曹培翔", "任務分工": "帶班兼蒐證", "巡邏路段": "於中正路周邊易有噪音車輛滋擾路段機動巡查。"},
+                {"編組": "第一巡邏組", "代號": "隆安52", "單位": "聖亭所", "職別": "警員", "姓名": "詹宗澤", "任務分工": "攔檢盤查", "巡邏路段": "於中正路周邊易有噪音車輛滋擾路段機動巡查。"}
+            ])
+        },
+        "business_logic": "auto_radio"
+    },
+    "防制危險駕車 (時段分佈)": {
+        "sheet_prefix": "統整_危駕",
+        "meta_fields": ["勤務時間", "交通快打指揮官", "巡簽地點", "備註"],
+        "tabs": ["指揮編組", "警力佈署"],
+        "default_dfs": {
+            "指揮編組": DEFAULT_CMD.copy(),
+            "警力佈署": pd.DataFrame([
+                {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安80", "編組": "石門", "服勤人員": "線上警力兼任", "巡邏路段": "「區域聯防」勤務，於中正路等路段巡邏"},
+                {"勤務時段": "5月22日\n22時至翌日6時", "代號": "隆安90", "編組": "高平", "服勤人員": "線上警力兼任", "巡邏路段": "「區域聯防」勤務，於中豐路等路段巡邏"},
+            ])
+        },
+        "business_logic": "shift_date"
+    },
+    "行人及護老專案 (月份排班)": {
+        "sheet_prefix": "統整_護老",
+        "meta_fields": ["月份", "放假日", "備註"],
+        "tabs": ["指揮編組", "警力佈署"],
+        "default_dfs": {
+            "指揮編組": DEFAULT_CMD.copy(),
+            "警力佈署": pd.DataFrame([
+                {"日期": "", "單位": "聖亭派出所", "路段": "中豐路、聖亭路段\n轄區行人易肇事路口"},
+                {"日期": "", "單位": "石門派出所", "路段": "中正、文化路段\n轄區行人易肇事路口"}
+            ])
+        },
+        "business_logic": "monthly_calendar"
+    },
+    "三階段專案 (多模組)": {
+        "sheet_prefix": "統整_三階",
+        "meta_fields": ["勤務時間", "勤前教育"],
+        "tabs": ["指揮編組", "一階機動", "二階臨檢", "三階路檢"],
+        "default_dfs": {
+            "指揮編組": DEFAULT_CMD.copy(),
+            "一階機動": pd.DataFrame([{"組別": "第1機動組", "代號": "隆安51", "單位": "龍潭所", "職別": "所長", "姓名": "", "任務分工": "帶班", "攜行裝備": "槍彈", "機動攔檢區域": "龍潭市區"}]),
+            "二階臨檢": pd.DataFrame([{"組別": "第1臨檢組", "代號": "隆安51", "單位": "龍潭所", "職別": "所長", "姓名": "", "任務分工": "帶班", "臨檢目標場所": "A. 鉅大撞球館"}]),
+            "三階路檢": pd.DataFrame([{"組別": "第1路檢組", "代號": "隆安51", "單位": "龍潭所", "職別": "所長", "姓名": "", "任務分工": "管制", "攜行裝備": "酒測器", "定點路檢目標": "北龍路319號前"}])
+        },
+        "business_logic": "none"
+    }
+}
+
+# ==========================================
+# 2. 泛用型字體與 PDF 引擎 (Universal Engine)
+# ==========================================
+@st.cache_resource
 def _get_font():
     fname = "kaiu"
     if fname in pdfmetrics.getRegisteredFontNames(): return fname
-    font_paths = ["kaiu.ttf", "./kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf", "/usr/share/fonts/truetype/custom/kaiu.ttf"]
-    for p in font_paths:
+    for p in ["./kaiu.ttf", "kaiu.ttf", "/usr/share/fonts/truetype/custom/kaiu.ttf", "C:/Windows/Fonts/kaiu.ttf"]:
         if os.path.exists(p):
             pdfmetrics.registerFont(TTFont(fname, p))
             return fname
     return "Helvetica"
 
-def generate_dynamic_pdf(duty_name, focus_text, df):
+def generate_universal_pdf(duty_name, project_name, meta_dict, dfs_dict):
+    """
+    終極 PDF 產出引擎：無論傳入幾個 DataFrame、長什麼形狀，都會自動計算欄寬、自動繪製表格，並自動合併相同屬性的列。
+    """
     font = _get_font()
     buf = io.BytesIO()
-    
-    margin_lr = 12 * mm
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=margin_lr, rightMargin=margin_lr, topMargin=15*mm, bottomMargin=15*mm)
-    page_width = A4[0] - (2 * margin_lr)
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=12*mm, bottomMargin=15*mm)
+    W = A4[0] - 24*mm
     story = []
 
-    # 定義字體樣式
-    style_title = ParagraphStyle('Title', fontName=font, fontSize=18, leading=26, alignment=1, spaceAfter=12, wordWrap='CJK')
-    style_section = ParagraphStyle('Section', fontName=font, fontSize=14, leading=20, spaceAfter=8, wordWrap='CJK')
-    style_text = ParagraphStyle('Text', fontName=font, fontSize=12, leading=18, wordWrap='CJK')
-    style_cell = ParagraphStyle('Cell', fontName=font, fontSize=12, leading=16, alignment=1, wordWrap='CJK')
-    style_cell_left = ParagraphStyle('CellLeft', fontName=font, fontSize=12, leading=16, alignment=0, wordWrap='CJK')
+    s_title = ParagraphStyle("title", fontName=font, fontSize=16, alignment=1, leading=24, spaceAfter=8)
+    s_sec   = ParagraphStyle("sec", fontName=font, fontSize=14, leading=20, spaceAfter=4, spaceBefore=8)
+    s_txt   = ParagraphStyle("txt", fontName=font, fontSize=12, leading=18)
+    s_cell  = ParagraphStyle("cell", fontName=font, fontSize=12, alignment=1, leading=16)
+    s_left  = ParagraphStyle("left", fontName=font, fontSize=12, alignment=0, leading=16)
 
-    # 標題與重點
-    story.append(Paragraph(f"<b>桃園市政府警察局龍潭分局 {duty_name} 勤務規劃表</b>", style_title))
-    story.append(Paragraph("<b>壹、勤務重點：</b>", style_section))
-    story.append(Paragraph(focus_text.replace("\n", "<br/>"), style_text))
-    story.append(Spacer(1, 6*mm))
+    def c(txt, style=s_cell): return Paragraph(str(txt).replace("\n", "<br/>"), style)
 
-    # 動態表格生成
-    story.append(Paragraph("<b>貳、勤務執行編組：</b>", style_section))
+    # --- 檔頭資訊 ---
+    story.append(Paragraph(f"<b>{UNIT}執行「{project_name}」勤務規劃表</b>", s_title))
     
-    clean_df = df.dropna(how="all").fillna("")
-    headers = clean_df.columns.tolist()
-    
-    # 計算欄寬邏輯
-    fixed_widths = {
-        "組別": page_width * 0.08,
-        "無線電代號": page_width * 0.12,
-        "派遣單位": page_width * 0.12,
-        "姓名": page_width * 0.12,
-        "任務分工": page_width * 0.12,
-    }
-    
-    col_widths = []
-    used_width = 0
-    dynamic_cols_count = 0
-    
-    for h in headers:
-        if h in fixed_widths:
-            used_width += fixed_widths[h]
-        else:
-            dynamic_cols_count += 1
+    # 輸出上半部 Meta 資訊 (時間、勤教等)
+    for k, v in meta_dict.items():
+        if k not in ["巡簽地點", "備註"] and str(v).strip():
+            story.append(Paragraph(f"<b>{k}：</b>", s_sec))
+            story.append(Paragraph(str(v).replace("\n", "<br/>"), s_txt))
             
-    remaining_width = page_width - used_width
-    dynamic_width = remaining_width / dynamic_cols_count if dynamic_cols_count > 0 else 0
-    
-    for h in headers:
-        col_widths.append(fixed_widths.get(h, dynamic_width))
-
-    # 組裝表格資料
-    table_data = [[Paragraph(f"<b>{h}</b>", style_cell) for h in headers]]
-    
-    for _, row in clean_df.iterrows():
-        row_data = []
+    # --- 動態渲染各階段表格 ---
+    for tab_name, df in dfs_dict.items():
+        clean_df = df.dropna(how="all").fillna("")
+        if clean_df.empty: continue
+            
+        story.append(Paragraph(f"<b>【{tab_name}】</b>", s_sec))
+        headers = clean_df.columns.tolist()
+        
+        # 智慧計算欄寬：依據欄位名稱特徵賦予權重
+        col_widths = []
         for h in headers:
-            val = str(row.get(h, "")).strip().replace("\n", "<br/>")
-            cell_style = style_cell_left if h not in ["組別", "無線電代號", "派遣單位", "姓名"] else style_cell
-            row_data.append(Paragraph(val, cell_style))
-        table_data.append(row_data)
+            if any(x in h for x in ["姓名", "人員", "裝備"]): col_widths.append(W * 0.12)
+            elif "代號" in h: col_widths.append(W * 0.09)
+            elif any(x in h for x in ["單位", "職別", "職稱"]): col_widths.append(W * 0.10)
+            elif any(x in h for x in ["時間", "時段", "日期"]): col_widths.append(W * 0.18)
+            elif "組別" in h or "編組" in h: col_widths.append(W * 0.11)
+            else: col_widths.append(0) # 剩下的長文字欄位平分剩餘空間
+            
+        rem = W - sum(col_widths)
+        zeros = col_widths.count(0)
+        if zeros > 0:
+            for i in range(len(col_widths)):
+                if col_widths[i] == 0: col_widths[i] = rem / zeros
+                
+        # 組裝表格資料
+        data = [[c(f"<b>{h}</b>") for h in headers]]
+        for _, row in clean_df.iterrows():
+            row_data = []
+            for h in headers:
+                val = str(row.get(h, ""))
+                style = s_left if any(x in h for x in ["任務", "路段", "目標", "區域", "人員"]) else s_cell
+                row_data.append(c(val, style))
+            data.append(row_data)
+            
+        # 表格樣式與動態合併邏輯 (Span)
+        ts = [("FONTNAME", (0,0), (-1,-1), font), ("GRID", (0,0), (-1,-1), 0.5, colors.black),
+              ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f2f2f2")), ("VALIGN", (0,0), (-1,-1), "MIDDLE")]
+        
+        # 若第一欄是識別性的群組欄位（如組別、時段），進行相鄰相同值的垂直合併
+        if headers[0] in ["組別", "編組", "勤務時段", "日期"]:
+            i = 1
+            while i <= len(clean_df):
+                j = i + 1
+                while j <= len(clean_df) and str(clean_df.iloc[i-1, 0]) == str(clean_df.iloc[j-1, 0]) and str(clean_df.iloc[i-1, 0]).strip() != "":
+                    j += 1
+                if j - i > 1:
+                    ts.append(("SPAN", (0, i), (0, j-1)))
+                    # 順便合併代號欄位 (若存在)
+                    if len(headers) > 1 and headers[1] in ["代號", "無線電代號", "單位"]:
+                        ts.append(("SPAN", (1, i), (1, j-1)))
+                i = j
+                
+        t = Table(data, colWidths=col_widths, repeatRows=1)
+        t.setStyle(TableStyle(ts))
+        story.append(t)
+        story.append(Spacer(1, 4*mm))
 
-    t = Table(table_data, colWidths=col_widths, repeatRows=1)
-    t.setStyle(TableStyle([
-        ('FONTNAME', (0,0), (-1,-1), font),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f2f2f2')),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-    ]))
-    story.append(t)
+    # 輸出下半部 Meta 資訊 (備註等)
+    for k, v in meta_dict.items():
+        if k in ["巡簽地點", "備註"] and str(v).strip():
+            story.append(Paragraph(f"<b>{k}：</b>", s_sec))
+            for line in str(v).split("\n"):
+                if line.strip(): story.append(Paragraph(line, s_txt))
 
     def add_page_number(canvas, doc):
         canvas.saveState()
         canvas.setFont(font, 10)
-        canvas.drawCentredString(A4[0] / 2.0, 10 * mm, f"- 第 {canvas.getPageNumber()} 頁 -")
+        canvas.drawCentredString(A4[0] / 2, 8*mm, f"- {canvas.getPageNumber()} -")
         canvas.restoreState()
 
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
+    buf.seek(0)
     return buf.getvalue()
 
-# ==========================================
-# 2. 勤務版型設定檔 (Configuration Dictionary)
-# ==========================================
-DUTY_PROFILES = {
-    "一般機動巡邏": {
-        "extra_cols": ["攜行裝備", "巡邏路段"],
-        "default_focus": "採取全面機動巡邏，針對重點路段加強攔檢；發現異常立即通報，注意自身三安。",
-        "col_config": {
-            "巡邏路段": st.column_config.TextColumn("巡邏路段", width="large"),
-            "攜行裝備": st.column_config.TextColumn("攜行裝備", width="medium")
-        }
-    },
-    "定點場所臨檢": {
-        "extra_cols": ["臨檢目標場所"],
-        "default_focus": "會合專案人員，準時進入目標場所執行威力掃蕩，全程開啟密錄器蒐證。",
-        "col_config": {
-            "臨檢目標場所": st.column_config.TextColumn("臨檢目標場所", width="large")
-        }
-    },
-    "定點路檢": {
-        "extra_cols": ["攜行裝備", "定點路檢目標"],
-        "default_focus": "於各聯外道路、重要路口設立檢測點，加強取締違規。",
-        "col_config": {
-            "定點路檢目標": st.column_config.TextColumn("定點路檢目標", width="large"),
-            "攜行裝備": st.column_config.TextColumn("攜行裝備", width="medium")
-        }
-    }
-}
 
 # ==========================================
-# 3. 主畫面 UI 與動態表單
+# 3. 特定業務邏輯輔助函數
 # ==========================================
-st.title("🚓 綜合勤務規劃系統 (動態模組化測試)")
-st.info("💡 只要切換下方的勤務類型，系統的「勤務重點」、「表格欄位」以及最終的「PDF排版」都會自動跟著變形。")
+def parse_monthly_workdays(month_str, holiday_str):
+    """護老專案專用：產生上班日清單文字"""
+    year_match = re.search(r"(\d+)年", month_str)
+    mon_match  = re.search(r"(\d+)月", month_str)
+    if not year_match or not mon_match: return "請確認月份格式 (例: 115年3月份)"
+    
+    ce_year = int(year_match.group(1)) + 1911
+    month = int(mon_match.group(1))
+    
+    holidays = set()
+    for part in holiday_str.replace("，", ",").split(","):
+        m = re.match(r"(\d+)[/月](\d+)", part.strip())
+        if m:
+            try: holidays.add(datetime(ce_year, int(m.group(1)), int(m.group(2))).date())
+            except ValueError: pass
+            
+    _, days_in_month = calendar.monthrange(ce_year, month)
+    workdays = []
+    for day in range(1, days_in_month + 1):
+        d = datetime(ce_year, month, day)
+        if d.weekday() < 5 and d.date() not in holidays:
+            workdays.append(d)
+            
+    if not workdays: return "（本月無上班日）"
+    
+    parts = []
+    for i, d in enumerate(workdays):
+        wd = ["一", "二", "三", "四", "五", "六", "日"][d.weekday()]
+        if i == 0: parts.append(f"{month}月{d.day}日(星期{wd})")
+        else: parts.append(f"{d.day}日({wd})")
+    return "、".join(parts)
 
-# 選擇器
-selected_duty = st.selectbox("📌 請選擇本次規劃的勤務類型", list(DUTY_PROFILES.keys()))
+
+# ==========================================
+# 4. 主介面 (Dynamic Router)
+# ==========================================
+st.title("🚓 綜合勤務規劃系統")
+
+# --- 左側選單：切換勤務模組 ---
+selected_duty = st.sidebar.selectbox("📌 選擇專案勤務類型", list(DUTY_PROFILES.keys()))
 profile = DUTY_PROFILES[selected_duty]
+biz_logic = profile["business_logic"]
 
+st.info(f"💡 目前載入模組：**{selected_duty}**。下方欄位與表格已自動變換為該專案專屬架構。")
+
+col1, col2 = st.columns([1, 2])
+with col1:
+    project_name = st.text_input("專案名稱", value=f"預設{selected_duty.split(' ')[0]}專案")
+
+# --- 動態渲染文字欄位 (Meta Fields) ---
+meta_inputs = {}
+for field in profile["meta_fields"]:
+    if field in ["備註", "巡簽地點", "勤前教育"]:
+        meta_inputs[field] = st.text_area(field, height=80)
+    else:
+        meta_inputs[field] = st.text_input(field, value=f"預設{field}")
+
+# --- 注入特定業務邏輯 (Business Logics) ---
+if biz_logic == "monthly_calendar":
+    c_month = meta_inputs.get("月份", "115年3月份")
+    c_holi = meta_inputs.get("放假日", "3/3, 3/10")
+    workday_label = parse_monthly_workdays(c_month, c_holi)
+    st.caption(f"📅 系統自動推算上班日：{workday_label}")
+    # 動態覆寫護老專案的第一個日期欄位
+    for k in profile["default_dfs"].keys():
+        if "佈署" in k and "日期" in profile["default_dfs"][k].columns:
+            profile["default_dfs"][k]["日期"] = ""
+            profile["default_dfs"][k].loc[0, "日期"] = workday_label
+
+if biz_logic == "shift_date":
+    fast_cmd = meta_inputs.get("交通快打指揮官", "")
+    time_str = meta_inputs.get("勤務時間", "")
+    st.caption(f"⚙️ 系統將依據指揮官單位及時間，自動微調下方【專責警力】之排班時段與代號。")
+
+# --- 動態渲染資料表格 (Tabs) ---
 st.markdown("---")
-st.subheader(f"【{selected_duty}】編組設定")
+st.subheader("勤務編組與佈署設定")
 
-# 動態勤務重點
-focus_text = st.text_area("📢 勤務重點", value=profile["default_focus"], height=80)
+tabs = st.tabs(profile["tabs"])
+result_dfs = {}
 
-# 準備基礎與動態欄位
-base_cols = ["組別", "無線電代號", "派遣單位", "姓名", "任務分工"]
-dynamic_cols = base_cols + profile["extra_cols"]
-
-# 產生預設假資料
-default_units = ["石門", "中興", "聖亭", "龍潭", "高平", "三和", "交通分隊"]
-default_data = []
-for i, unit in enumerate(default_units[:3]): 
-    row = {
-        "組別": f"第{i+1}組",
-        "無線電代號": f"隆安{i+1}1" if i == 0 else f"隆安{i+1}0",
-        "派遣單位": unit,
-        "姓名": "",
-        "任務分工": "帶班" if i == 0 else "攔檢盤查"
-    }
-    for col in profile["extra_cols"]:
-        row[col] = ""
-    default_data.append(row)
-
-df_template = pd.DataFrame(default_data, columns=dynamic_cols)
-
-# 欄位寬度設定合併
-base_config = {
-    "組別": st.column_config.TextColumn("組別", width="small"),
-    "無線電代號": st.column_config.TextColumn("無線電代號", width="small"),
-    "派遣單位": st.column_config.TextColumn("派遣單位", width="small"),
-    "姓名": st.column_config.TextColumn("姓名", width="small"),
-    "任務分工": st.column_config.TextColumn("任務分工", width="medium"),
-}
-final_col_config = {**base_config, **profile["col_config"]}
-
-# 渲染動態 Data Editor
-st.caption("💡 下方表格已自動變換欄位，編輯完畢後請點擊下方按鈕產出 PDF：")
-res_df = st.data_editor(
-    df_template,
-    num_rows="dynamic",
-    use_container_width=True,
-    column_config=final_col_config,
-    key=f"editor_{selected_duty}" 
-)
-
-# ==========================================
-# 4. 觸發按鈕與 PDF 下載
-# ==========================================
-st.markdown("---")
-if st.button("📄 生成動態 PDF 報表", type="primary"):
-    with st.spinner("正在計算欄寬並產生 PDF..."):
+for tab_obj, tab_name in zip(tabs, profile["tabs"]):
+    with tab_obj:
+        st.caption(f"編輯【{tab_name}】資料：")
+        default_df = profile["default_dfs"][tab_name]
         
-        pdf_bytes = generate_dynamic_pdf(selected_duty, focus_text, res_df)
-        
-        st.success("✅ PDF 產生成功！請點擊下方按鈕下載。")
-        st.download_button(
-            label="⬇️ 點擊下載 PDF 規劃表",
-            data=pdf_bytes,
-            file_name=f"{selected_duty}規劃表.pdf",
-            mime="application/pdf"
+        # 建立 Data Editor
+        edited_df = st.data_editor(
+            default_df, 
+            num_rows="dynamic", 
+            use_container_width=True,
+            key=f"editor_{selected_duty}_{tab_name}"
         )
+        result_dfs[tab_name] = edited_df
+
+# --- 產出 PDF 報表 ---
+st.markdown("---")
+if st.button("📄 產生綜合勤務規劃 PDF", type="primary", use_container_width=True):
+    with st.spinner("啟動泛用型 PDF 引擎進行排版計算中..."):
+        try:
+            pdf_bytes = generate_universal_pdf(selected_duty, project_name, meta_inputs, result_dfs)
+            
+            st.success("✅ PDF 產生成功！")
+            st.download_button(
+                label="⬇️ 點擊下載 PDF 報表",
+                data=pdf_bytes,
+                file_name=f"{project_name}規劃表.pdf",
+                mime="application/pdf"
+            )
+        except Exception as e:
+            st.error(f"產出 PDF 時發生錯誤: {str(e)}")
