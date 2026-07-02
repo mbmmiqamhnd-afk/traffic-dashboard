@@ -26,17 +26,17 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (Paragraph, SimpleDocTemplate, Spacer, Table,
-                                 TableStyle)
+                                TableStyle)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. 常數
 # ══════════════════════════════════════════════════════════════════════════════
 SHEET_ID = "1dOrFjewsdpTGy0JyBJXmuBhr8p_LSpSb6Lp2gC39KK0"
 SCOPES   = ["https://www.googleapis.com/auth/spreadsheets",
-             "https://www.googleapis.com/auth/drive"]
+            "https://www.googleapis.com/auth/drive"]
 
-DEFAULT_UNIT     = "桃園市政府警察局龍潭分局"
-DEFAULT_TIME     = "115年4月10日 19時至23時"
+DEFAULT_UNIT      = "桃園市政府警察局龍潭分局"
+DEFAULT_TIME      = "115年4月10日 19時至23時"
 DEFAULT_PROJ_BODY = "「全市取締酒後駕車及防制危險駕車」暨「擴大臨檢」及「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
 DEFAULT_BRIEF = (
     "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，"
@@ -48,7 +48,9 @@ DEFAULT_BRIEF = (
     "四、 全程蒐證：執行各項干涉、取締、處理糾紛及爭議性勤務(含噪音車引導與酒測)，務必全程連續錄音或錄影。\n"
     "五、 異議處理：民眾對警察行使職權表示異議，認為無理由者得繼續執行，但經請求時應將異議之理由製作紀錄交付之(依《警察職權行使法》第29條)。"
 )
+DEFAULT_PTL_TIME  = "20時00分至21時30分"
 DEFAULT_PTL_FOCUS = "採取全面機動巡邏，針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。"
+DEFAULT_CP_TIME   = "21時30分至23時00分"
 DEFAULT_CP_FOCUS  = "由第一階段之第1至第4組機動警力，會合偵查隊專案人員，於21時20分前集結完畢，21時30分準時進入目標場所執行威力掃蕩。"
 DEFAULT_BRIEF_TIME = "19時30分至20時00分"
 DEFAULT_BRIEF_LOC  = "分局二樓會議室"
@@ -57,10 +59,10 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "指揮官",    "通訊代號": "隆安1號",    "任務目標": "勤務核定並重點機動督導",         "負責人員": "分局長 施宇峰",         "共同執行人員": "巡官陳鵬翔、警員張庭溱"},
     {"項目": "副指揮官",  "通訊代號": "隆安2號",    "任務目標": "襄助指揮、重點機動督導",         "負責人員": "副分局長 何憶雯",        "共同執行人員": "警務佐曾威仁"},
     {"項目": "副指揮官",  "通訊代號": "隆安3號",    "任務目標": "襄助指揮、重點機動督導",         "負責人員": "副分局長 蔡志明",        "共同執行人員": "警員陳明祥"},
-    {"項目": "行政組",    "通訊代號": "隆安5號",    "任務目標": "督導場所臨檢威力掃蕩第一臨檢組",  "負責人員": "組長 周金柱",           "共同執行人員": "巡官蕭凱文"},
-    {"項目": "督察組",    "通訊代號": "隆安6號",    "任務目標": "機動督導各單位勤務紀律",          "負責人員": "組長黃長旗",            "共同執行人員": "警務員 陳冠彰"},
-    {"項目": "保安民防組", "通訊代號": "隆安9號",   "任務目標": "督導場所臨檢威力掃蕩第二臨檢組",  "負責人員": "組長林良鍾",            "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
-    {"項目": "交通組",    "通訊代號": "隆安13號",   "任務目標": "督導第一階段機動攔查",            "負責人員": "組長 楊孟竟",           "共同執行人員": "巡官郭勝隆、警務員李峯甫、警務員盧冠仁、警員吳享運"},
+    {"項目": "行政組",    "通訊代號": "隆安5號",    "任務目標": "督導場所臨檢威力掃蕩第一臨檢組",  "負責人員": "組長 周金柱",            "共同執行人員": "巡官蕭凱文"},
+    {"項目": "督察組",    "通訊代號": "隆安6號",    "任務目標": "機動督導各單位勤務紀律",          "負責人員": "組長黃長旗",             "共同執行人員": "警務員 陳冠彰"},
+    {"項目": "保安民防組", "通訊代號": "隆安9號",   "任務目標": "督導場所臨檢威力掃蕩第二臨檢組",  "負責人員": "組長林良鍾",             "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
+    {"項目": "交通組",    "通訊代號": "隆安13號",   "任務目標": "督導第一階段機動攔查",            "負責人員": "組長 楊孟竟",            "共同執行人員": "巡官郭勝隆、警務員李峯甫、警務員盧冠仁、警員吳享運"},
     {"項目": "聯絡組",    "通訊代號": "隆安",       "任務目標": "擔任通訊聯絡、指揮管制事宜",      "負責人員": "勤務指揮中心 主任蔡奇青", "共同執行人員": "執勤官李文章、執勤員黃文興"},
     {"項目": "偵訊組",    "通訊代號": "隆安10號",   "任務目標": "負責按捺指紋、照相及移送",        "負責人員": "偵查隊隊長 柯志賢",      "共同執行人員": "偵查隊值日小隊"},
     {"項目": "聯合稽查站", "通訊代號": "隆安1382",  "任務目標": "配合環保局及監理站稽查車輛",      "負責人員": "交通組巡官 郭勝隆",      "共同執行人員": "環保局及監理站人員"},
@@ -327,7 +329,7 @@ def _apply_spans(style_cmds, data_list, merge_cols):
 
 def generate_main_pdf(unit, project, time_str, briefing,
                       df_cmd, df_ptl, df_cp, stats,
-                      ptl_focus, cp_focus):
+                      ptl_time, ptl_focus, cp_time, cp_focus):
     font   = _get_font()
     buf    = io.BytesIO()
     PW     = A4[0] - 20 * mm
@@ -372,7 +374,7 @@ def generate_main_pdf(unit, project, time_str, briefing,
     add_section("參、 督導及其他任務編組表")
     data = [_header_row(["項目","通訊代號","任務目標","負責人員","共同人員"], S["cell"])]
     for _, r in df_cmd.iterrows():
-        data.append([Paragraph(_clean(r.get("項目","")),     S["cell"]),
+        data.append([Paragraph(_clean(r.get("項目","")),      S["cell"]),
                      Paragraph(_clean(r.get("通訊代號","")),  S["cell"]),
                      Paragraph(_clean(r.get("任務目標","")),  S["cell_left"]),
                      Paragraph(_clean(r.get("負責人員","")),  S["cell"]),
@@ -383,6 +385,7 @@ def generate_main_pdf(unit, project, time_str, briefing,
 
     # 肆、第一階段
     add_section("肆、【第一階段】機動攔查任務編組")
+    story.append(Paragraph(f"<b>勤務時間：</b>{_clean(ptl_time)}", S["text"]))
     story.append(Paragraph(f"<b>勤務重點：</b>{_clean(ptl_focus)}", S["text"]))
     data = [_header_row(["編組","無線電代號","單位","職別","姓名","任務分工","攜行裝備","巡邏路段"], S["cell"])]
     for _, r in df_ptl.iterrows():
@@ -405,6 +408,7 @@ def generate_main_pdf(unit, project, time_str, briefing,
 
     # 伍、第二階段
     add_section("伍、【第二階段】場所臨檢任務編組")
+    story.append(Paragraph(f"<b>勤務時間：</b>{_clean(cp_time)}", S["text"]))
     story.append(Paragraph(f"<b>勤務重點：</b>{_clean(cp_focus)}", S["text"]))
     if df_cp is not None and not df_cp.empty:
         data = [_header_row(["編組","無線電代號","單位","職別","姓名","任務分工","臨檢場所"], S["cell"])]
@@ -523,7 +527,7 @@ def load_data():
 
 
 def save_data(unit, time_str, project, briefing,
-              ptl_focus, cp_focus, brief_time, brief_loc,
+              ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc,
               df_cmd, df_ptl, df_cp, stats):
     client = get_client()
     if client is None:
@@ -538,7 +542,9 @@ def save_data(unit, time_str, project, briefing,
             ["plan_time",    time_str],
             ["project_name", project],
             ["briefing",     briefing],
+            ["ptl_time",     ptl_time],
             ["ptl_focus",    ptl_focus],
+            ["cp_time",      cp_time],
             ["cp_focus",     cp_focus],
             ["brief_time",   brief_time],
             ["brief_loc",    brief_loc],
@@ -567,7 +573,7 @@ def save_data(unit, time_str, project, briefing,
 # 7. Email
 # ══════════════════════════════════════════════════════════════════════════════
 def send_email(unit, project, time_str, briefing,
-               ptl_focus, cp_focus, brief_time, brief_loc,
+               ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc,
                df_cmd, df_ptl, df_cp, stats):
     try:
         sender = st.secrets["email"]["user"]
@@ -581,7 +587,7 @@ def send_email(unit, project, time_str, briefing,
         for pdf_bytes, filename in [
             (generate_main_pdf(unit, project, time_str, briefing,
                                df_cmd, df_ptl, df_cp, stats,
-                               ptl_focus, cp_focus), f"{unit}規劃表.pdf"),
+                               ptl_time, ptl_focus, cp_time, cp_focus), f"{unit}規劃表.pdf"),
             (generate_attendance_pdf(unit, project, time_str,
                                      brief_time, brief_loc), f"{unit}簽到表.pdf"),
         ]:
@@ -613,7 +619,9 @@ if "initialized" not in st.session_state:
         import re as _re
         st.session_state.proj_body = _re.sub(r'^\d{4}', '', raw_proj) or DEFAULT_PROJ_BODY
         st.session_state.b_info     = cfg.get("briefing",     DEFAULT_BRIEF)
+        st.session_state.ptl_time   = cfg.get("ptl_time",     DEFAULT_PTL_TIME)
         st.session_state.ptl_focus  = cfg.get("ptl_focus",    DEFAULT_PTL_FOCUS)
+        st.session_state.cp_time    = cfg.get("cp_time",      DEFAULT_CP_TIME)
         st.session_state.cp_focus   = cfg.get("cp_focus",     DEFAULT_CP_FOCUS)
         st.session_state.brief_time = cfg.get("brief_time",   DEFAULT_BRIEF_TIME)
         st.session_state.brief_loc  = cfg.get("brief_loc",    DEFAULT_BRIEF_LOC)
@@ -625,7 +633,9 @@ if "initialized" not in st.session_state:
         st.session_state.p_time     = DEFAULT_TIME
         st.session_state.proj_body  = DEFAULT_PROJ_BODY
         st.session_state.b_info     = DEFAULT_BRIEF
+        st.session_state.ptl_time   = DEFAULT_PTL_TIME
         st.session_state.ptl_focus  = DEFAULT_PTL_FOCUS
+        st.session_state.cp_time    = DEFAULT_CP_TIME
         st.session_state.cp_focus   = DEFAULT_CP_FOCUS
         st.session_state.brief_time = DEFAULT_BRIEF_TIME
         st.session_state.brief_loc  = DEFAULT_BRIEF_LOC
@@ -637,10 +647,12 @@ if "initialized" not in st.session_state:
 
 # ── 缺漏 key 補丁：版本升級後舊 session 可能缺少新 key，一律補齊預設值 ──
 _DEFAULTS = {
-    "p_time":     DEFAULT_TIME,
+    "p_time":      DEFAULT_TIME,
     "proj_body":  DEFAULT_PROJ_BODY,
-    "b_info":     DEFAULT_BRIEF,
+    "b_info":      DEFAULT_BRIEF,
+    "ptl_time":    DEFAULT_PTL_TIME,
     "ptl_focus":  DEFAULT_PTL_FOCUS,
+    "cp_time":     DEFAULT_CP_TIME,
     "cp_focus":   DEFAULT_CP_FOCUS,
     "brief_time": DEFAULT_BRIEF_TIME,
     "brief_loc":  DEFAULT_BRIEF_LOC,
@@ -692,20 +704,26 @@ c5.metric("總計服勤警力", f"{live_stats['total']} 人")
 # ── 參、指揮編組 ──
 st.subheader("參、 督導及指揮編組")
 edited_cmd = st.data_editor(st.session_state.df_cmd, num_rows="dynamic",
-                             use_container_width=True, key="ed_cmd")
+                            use_container_width=True, key="ed_cmd")
 edited_cmd = edited_cmd.dropna(how="all").fillna("")
 if not edited_cmd.equals(st.session_state.df_cmd):
     st.session_state.df_cmd = edited_cmd
     st.rerun()
 
-# ── 勤務重點（可編輯）──
-st.subheader("勤務重點設定")
+# ── 勤務時間與重點設定（可編輯）──
+st.subheader("勤務時間與重點設定")
 col_ptl_f, col_cp_f = st.columns(2)
 with col_ptl_f:
+    ptl_time = st.text_input("【第一階段】機動攔查 勤務時間",
+                             value=st.session_state.ptl_time, key="ui_ptl_time")
+    st.session_state.ptl_time = ptl_time
     ptl_focus = st.text_area("【第一階段】機動攔查 勤務重點",
                              value=st.session_state.ptl_focus, height=100, key="ui_ptl_focus")
     st.session_state.ptl_focus = ptl_focus
 with col_cp_f:
+    cp_time = st.text_input("【第二階段】場所臨檢 勤務時間",
+                            value=st.session_state.cp_time, key="ui_cp_time")
+    st.session_state.cp_time = cp_time
     cp_focus = st.text_area("【第二階段】場所臨檢 勤務重點",
                             value=st.session_state.cp_focus, height=100, key="ui_cp_focus")
     st.session_state.cp_focus = cp_focus
@@ -755,7 +773,7 @@ if st.button("💾 同步雲端並發送郵件", use_container_width=True, type=
     with st.spinner("⏳ 正在寫入雲端並寄送郵件，請稍候..."):
         ok, err = save_data(
             DEFAULT_UNIT, p_time, p_name, b_info,
-            ptl_focus, cp_focus, brief_time, brief_loc,
+            ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc,
             st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp,
             live_stats)
         if not ok:
@@ -764,7 +782,7 @@ if st.button("💾 同步雲端並發送郵件", use_container_width=True, type=
 
         mail_ok, mail_err = send_email(
             DEFAULT_UNIT, p_name, p_time, b_info,
-            ptl_focus, cp_focus, brief_time, brief_loc,
+            ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc,
             st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp,
             live_stats)
         if mail_ok:
