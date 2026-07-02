@@ -39,12 +39,9 @@ DEFAULT_UNIT      = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME      = "115年4月10日 19時至23時"
 DEFAULT_PROJ_BODY = "「全市取締酒後駕車及防制危險駕車」暨「擴大臨檢」及「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
 DEFAULT_BRIEF = (
-    "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，"
-    "落實「人犯戒護安全、案件程序安全、執法者及民眾安全」。\n"
-    "二、 臨檢合法性：警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所，"
-    "進行臨檢前應對當事人告以實施事由，便衣人員並應出示證件(依《警察職權行使法》第6條)。\n"
-    "三、 攔停規範：機動攔檢對於已發生危害或易生危害之交通工具，得予以攔停；"
-    "若有異常舉動而合理懷疑其將有危害行為時，得要求接受酒精濃度測試(依《警察職權行使法》第8條)。\n"
+    "一、 落實三安：同仁執行盤查、臨檢及機動勤務過程中，應強化敵情觀念，提高危機意識，落實「人犯戒護安全、案件程序安全、執法者及民眾安全」。\n"
+    "二、 臨檢合法性：警察人員執行場所之臨檢，應限於已發生危害或依客觀合理判斷易生危害之場所，進行臨檢前應對當事人告以實施事由，便衣人員並應出示證件(依《警察職權行使法》第6條)。\n"
+    "三、 攔停規範：機動攔檢對於已發生危害或易生危害之交通工具，得予以攔停；若有異常舉動而合理懷疑其將有危害行為時，得要求接受酒精濃度測試(依《警察職權行使法》第8條)。\n"
     "四、 全程蒐證：執行各項干涉、取締、處理糾紛及爭議性勤務(含噪音車引導與酒測)，務必全程連續錄音或錄影。\n"
     "五、 異議處理：民眾對警察行使職權表示異議，認為無理由者得繼續執行，但經請求時應將異議之理由製作紀錄交付之(依《警察職權行使法》第29條)。"
 )
@@ -144,7 +141,7 @@ def generate_radio_code(unit: str, rank: str, officer_seq: int = 1) -> str:
     return f"{base}{2 + officer_seq}"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. 分組邏輯（只保留一份）
+# 3. 分組邏輯
 # ══════════════════════════════════════════════════════════════════════════════
 PTL_UNIT_ORDER = {"聖亭所": 1, "龍潭所": 2, "中興所": 3,
                   "石門所": 4, "三和所": 5, "高平所": 6, "龍潭交分隊": 7}
@@ -152,7 +149,6 @@ PTL_UNIT_ORDER = {"聖亭所": 1, "龍潭所": 2, "中興所": 3,
 CP_GROUP1_UNITS = {"中興所", "龍潭所"}
 
 def _normalize_radio_col(res: pd.DataFrame) -> pd.DataFrame:
-    """確保無線電代號欄位是純字串型態，防止從 Sheets 讀回 int64 造成寫入失敗。"""
     if "無線電代號" in res.columns:
         res["無線電代號"] = res["無線電代號"].astype(str).str.strip()
         res["無線電代號"] = res["無線電代號"].replace({"nan": "", "None": "", "0": ""})
@@ -160,10 +156,8 @@ def _normalize_radio_col(res: pd.DataFrame) -> pd.DataFrame:
         res["無線電代號"] = ""
     return res
 
-
 def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
+    if df.empty: return df
     res = df.copy().reset_index(drop=True)
     res = _normalize_radio_col(res)
     res["_ord"] = res["單位"].map(lambda x: PTL_UNIT_ORDER.get(str(x).strip(), 99))
@@ -177,7 +171,6 @@ def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
             g_idx += 1
             prev_unit = unit
         group_ids.append(f"第{g_idx}巡邏組")
-
         existing = str(row.get("無線電代號", "")).strip()
         if existing and existing not in ("nan", "None", "0"):
             radio_codes.append(existing)
@@ -187,53 +180,36 @@ def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
             radio_codes.append(generate_radio_code(unit, row["職別"], unit_officer_count[unit]))
         else:
             radio_codes.append("")
-
-    res["編組"]      = group_ids
-    res["無線電代號"] = radio_codes          # 整欄一次賦值，避免逐格寫入型別衝突
-
-    # 同組無線電代號統一用該組第一筆
+    res["編組"] = group_ids
+    res["無線電代號"] = radio_codes
     for g in res["編組"].unique():
         mask = res["編組"] == g
         first_radio = res.loc[mask, "無線電代號"].iloc[0]
         res.loc[mask, "無線電代號"] = first_radio
-
     cols = ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]
     return res[[c for c in cols if c in res.columns]]
 
 
 def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
+    if df.empty: return df
     res = df.copy().reset_index(drop=True)
     res = _normalize_radio_col(res)
-
     def _group(row):
         existing = str(row.get("編組", "")).strip()
-        if existing in ("第1臨檢組", "第1場所臨檢組"):
-            return 1
-        if existing in ("第2臨檢組", "第2場所臨檢組"):
-            return 2
+        if existing in ("第1臨檢組", "第1場所臨檢組"): return 1
+        if existing in ("第2臨檢組", "第2場所臨檢組"): return 2
         unit = str(row.get("單位", "")).strip()
         return 1 if unit in CP_GROUP1_UNITS else 2
-
     res["_g"] = res.apply(_group, axis=1)
-
-    # 組內排序：幹部優先，同單位跟在後面；偵查隊固定排最後
     res["_is_senior"] = res["職別"].apply(lambda x: 0 if str(x).strip() in SENIOR_RANKS else 1)
     res["_is_invest"] = res["單位"].apply(lambda x: 1 if str(x).strip() == "偵查隊" else 0)
-    # 組內以「原始列順序」為次排序，確保同單位人員維持原順序
     res["_orig_idx"] = res.index
     res = res.sort_values(["_g", "_is_invest", "_is_senior", "_orig_idx"]).drop(
         columns=["_is_senior", "_is_invest", "_orig_idx"]).reset_index(drop=True)
-
-    # 先指定編組名稱
-    group_ids = ["第1臨檢組" if row["_g"] == 1 else "第2臨檢組" for _, row in res.iterrows()]
-    res["編組"] = group_ids
+    res["編組"] = ["第1臨檢組" if row["_g"] == 1 else "第2臨檢組" for _, row in res.iterrows()]
     res = res.drop(columns=["_g"])
 
-    # 排序完成後重新計算無線電代號，確保代號對應排序後的第一列（帶班所長）
-    unit_officer_count = {}
-    radio_codes = []
+    unit_officer_count, radio_codes = {}, []
     for i, row in res.iterrows():
         unit = str(row.get("單位", "")).strip()
         if unit:
@@ -242,15 +218,11 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
             radio_codes.append(generate_radio_code(unit, row["職別"], unit_officer_count[unit]))
         else:
             radio_codes.append("")
-
     res["無線電代號"] = radio_codes
-
-    # 整組統一用第一列（帶班所長）的無線電代號
     for g in res["編組"].unique():
         mask = res["編組"] == g
         first_radio = res.loc[mask, "無線電代號"].iloc[0]
         res.loc[mask, "無線電代號"] = first_radio
-
     cols = ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]
     return res[[c for c in cols if c in res.columns]]
 
@@ -310,7 +282,6 @@ def _base_table_style(font, header_color="#f2f2f2"):
     ])
 
 def _apply_spans(style_cmds, data_list, merge_cols):
-    """相鄰儲存格值相同則合併（SPAN）。"""
     if len(data_list) <= 1:
         return
     for col in merge_cols:
@@ -325,7 +296,6 @@ def _apply_spans(style_cmds, data_list, merge_cols):
                 if r - 1 > start:
                     style_cmds.append(("SPAN", (col, start), (col, r - 1)))
                 start = r
-
 
 def generate_main_pdf(unit, project, time_str, briefing,
                       df_cmd, df_ptl, df_cp, stats,
@@ -342,6 +312,57 @@ def generate_main_pdf(unit, project, time_str, briefing,
 
     def add_section(title):
         story.append(Paragraph(f"<b>{title}</b>", S["section"]))
+
+    # 動態排版：將有編號的內容自動拆分，實現「首字完美對齊」與「懸掛縮排」
+    def add_list_block(title_text, content):
+        lines = str(content).split('\n')
+        data = []
+        style_cmds = [
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ]
+        
+        has_title = bool(title_text)
+        title_w = 26 * mm if has_title else 0
+        bullet_w = 15 * mm
+        text_w = PW - title_w - bullet_w
+        
+        for line in lines:
+            line = line.strip()
+            if not line: continue
+            
+            row = []
+            # 若有標題（如"勤務重點："），僅在第一列顯示
+            if has_title:
+                prefix = Paragraph(f"<b>{title_text}：</b>", S["text"]) if len(data) == 0 else ""
+                row.append(prefix)
+            
+            # 使用正則自動擷取編號符號 (例如: 一、, 1., (一), A. 等)
+            m = re.match(r'^([一二三四五六七八九十]+[、。.]|\d+[、。.]|[a-zA-Z]+[、。.]|\([一二三四五六七八九十]+\)|\(\d+\)|\([a-zA-Z]+\))\s*(.*)$', line)
+            if m:
+                row.extend([
+                    Paragraph(m.group(1), S["text"]),
+                    Paragraph(_clean(m.group(2)), S["text"])
+                ])
+            else:
+                row.extend([
+                    Paragraph(_clean(line), S["text"]),
+                    ""
+                ])
+                # 若該行沒有編號，合併編號與文字欄位
+                start_col = 1 if has_title else 0
+                style_cmds.append(("SPAN", (start_col, len(data)), (start_col+1, len(data))))
+                
+            data.append(row)
+            
+        if data:
+            cols = [title_w, bullet_w, text_w] if has_title else [bullet_w, text_w]
+            t = Table(data, colWidths=cols)
+            t.setStyle(TableStyle(style_cmds))
+            story.append(t)
 
     # 標題
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", S["title"]))
@@ -389,7 +410,8 @@ def generate_main_pdf(unit, project, time_str, briefing,
     # 肆、第一階段
     add_section("肆、【第一階段】機動攔查任務編組")
     story.append(Paragraph(f"<b>勤務時間：</b>{_clean(ptl_time)}", S["text"]))
-    story.append(Paragraph(f"<b>勤務重點：</b>{_clean(ptl_focus)}", S["text"]))
+    add_list_block("勤務重點", ptl_focus)
+    
     data = [_header_row(["編組","無線電代號","單位","職別","姓名","任務分工","攜行裝備","巡邏路段"], S["cell"])]
     for _, r in df_ptl.iterrows():
         data.append([
@@ -412,7 +434,8 @@ def generate_main_pdf(unit, project, time_str, briefing,
     # 伍、第二階段
     add_section("伍、【第二階段】場所臨檢任務編組")
     story.append(Paragraph(f"<b>勤務時間：</b>{_clean(cp_time)}", S["text"]))
-    story.append(Paragraph(f"<b>勤務重點：</b>{_clean(cp_focus)}", S["text"]))
+    add_list_block("勤務重點", cp_focus)
+    
     if df_cp is not None and not df_cp.empty:
         data = [_header_row(["編組","無線電代號","單位","職別","姓名","任務分工","臨檢場所"], S["cell"])]
         for _, r in df_cp.iterrows():
@@ -434,9 +457,8 @@ def generate_main_pdf(unit, project, time_str, briefing,
 
     # 陸、法令宣導
     add_section("陸、 工作重點與法令宣導")
-    for line in str(briefing).split("\n"):
-        if line.strip():
-            story.append(Paragraph(_clean(line), S["text"]))
+    # 同步套用智慧清單排版，讓法令宣導的多行內容也能完美對齊
+    add_list_block("", briefing)
 
     def _footer(canvas, doc):
         canvas.saveState()
@@ -509,10 +531,8 @@ def get_client():
     except Exception:
         return None
 
-
 @st.cache_data(ttl=30)
 def load_data():
-    """讀取雲端設定，回傳 (設定dict, df_cmd, df_ptl, df_cp, err_str)。"""
     client = get_client()
     if client is None:
         return None, None, None, None, "無法建立 Google Sheets 連線"
@@ -527,7 +547,6 @@ def load_data():
         return cfg, df_cmd, df_ptl, df_cp, None
     except Exception as e:
         return None, None, None, None, str(e)
-
 
 def save_data(unit, time_str, project, briefing,
               ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc,
@@ -610,16 +629,14 @@ def send_email(unit, project, time_str, briefing,
         return False, str(e)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 8. Session State 初始化（含雲端還原）
+# 8. Session State 初始化
 # ══════════════════════════════════════════════════════════════════════════════
 if "initialized" not in st.session_state:
     cfg, df_cmd_cl, df_ptl_cl, df_cp_cl, err = load_data()
 
     if cfg and not err:
-        # ── 雲端資料優先還原 ──
         st.session_state.p_time     = cfg.get("plan_time",    DEFAULT_TIME)
         raw_proj = cfg.get("project_name", DEFAULT_PROJ_BODY)
-        # 若雲端儲存的名稱開頭帶有 4 碼數字日期，自動去除
         import re as _re
         st.session_state.proj_body = _re.sub(r'^\d{4}', '', raw_proj) or DEFAULT_PROJ_BODY
         st.session_state.b_info     = cfg.get("briefing",     DEFAULT_BRIEF)
@@ -633,7 +650,6 @@ if "initialized" not in st.session_state:
         st.session_state.df_ptl = assign_ptl_groups(df_ptl_cl) if not df_ptl_cl.empty else assign_ptl_groups(DEFAULT_PTL.copy())
         st.session_state.df_cp  = assign_cp_groups(df_cp_cl)  if not df_cp_cl.empty  else assign_cp_groups(DEFAULT_CHECKPOINT.copy())
     else:
-        # ── 預設值 ──
         st.session_state.p_time     = DEFAULT_TIME
         st.session_state.proj_body  = DEFAULT_PROJ_BODY
         st.session_state.b_info     = DEFAULT_BRIEF
@@ -649,7 +665,6 @@ if "initialized" not in st.session_state:
 
     st.session_state.initialized = True
 
-# ── 缺漏 key 補丁：版本升級後舊 session 可能缺少新 key，一律補齊預設值 ──
 _DEFAULTS = {
     "p_time":      DEFAULT_TIME,
     "proj_body":  DEFAULT_PROJ_BODY,
@@ -664,7 +679,6 @@ _DEFAULTS = {
 for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
-
 for _k, _fn in [
     ("df_cmd", lambda: DEFAULT_CMD.copy()),
     ("df_ptl", lambda: assign_ptl_groups(DEFAULT_PTL.copy())),
@@ -678,7 +692,6 @@ for _k, _fn in [
 # ══════════════════════════════════════════════════════════════════════════════
 st.title("🚓 專案勤務規劃系統")
 
-# ── 壹、基本資料列 ──
 col_time, col_proj = st.columns([1, 2])
 with col_time:
     p_time = st.text_input("勤務時間", value=st.session_state.p_time, key="ui_p_time")
@@ -690,10 +703,8 @@ with col_proj:
                              value=st.session_state.proj_body, height=80, key="ui_proj_body")
     st.session_state.proj_body = proj_body
 
-# p_name = 日期代碼(4碼) + 純專案名稱，日期代碼不儲存在 proj_body 裡
 p_name = f"{mmdd}{proj_body}"
 
-# ── 貳、警力統計（全自動）──
 live_stats = calculate_stats(st.session_state.df_cmd,
                              st.session_state.df_ptl,
                              st.session_state.df_cp)
@@ -705,7 +716,6 @@ c3.metric("場所臨檢組", f"{live_stats['ptl_场所']} 人")
 c4.metric("偵訊組/民力", f"{live_stats['inv']}人 / {live_stats['civ']}人")
 c5.metric("總計服勤警力", f"{live_stats['total']} 人")
 
-# ── 參、指揮編組 ──
 st.subheader("參、 督導及指揮編組")
 edited_cmd = st.data_editor(st.session_state.df_cmd, num_rows="dynamic",
                             use_container_width=True, key="ed_cmd")
@@ -714,7 +724,6 @@ if not edited_cmd.equals(st.session_state.df_cmd):
     st.session_state.df_cmd = edited_cmd
     st.rerun()
 
-# ── 勤務時間與重點設定（可編輯）──
 st.subheader("勤務時間與重點設定")
 col_ptl_f, col_cp_f = st.columns(2)
 with col_ptl_f:
@@ -732,12 +741,10 @@ with col_cp_f:
                             value=st.session_state.cp_focus, height=100, key="ui_cp_focus")
     st.session_state.cp_focus = cp_focus
 
-# ── 陸、法令宣導 ──
 b_info = st.text_area("陸、 工作重點與法令宣導",
                       value=st.session_state.b_info, height=150, key="ui_b_info")
 st.session_state.b_info = b_info
 
-# ── 簽到表集合資訊 ──
 st.subheader("簽到表設定")
 col_bt, col_bl = st.columns(2)
 with col_bt:
@@ -747,7 +754,6 @@ with col_bl:
     brief_loc = st.text_input("簽到集合地點", value=st.session_state.brief_loc, key="ui_brief_loc")
     st.session_state.brief_loc = brief_loc
 
-# ── 任務編組（兩階段）──
 st.subheader("勤務執行編組（兩階段）")
 tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】場所臨檢"])
 
@@ -771,7 +777,6 @@ with tab2:
             st.session_state.df_cp = re_cp
             st.rerun()
 
-# ── 同步＋寄信 ──
 st.markdown("---")
 if st.button("💾 同步雲端並發送郵件", use_container_width=True, type="primary"):
     with st.spinner("⏳ 正在寫入雲端並寄送郵件，請稍候..."):
