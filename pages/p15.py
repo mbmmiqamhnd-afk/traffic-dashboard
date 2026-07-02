@@ -321,8 +321,6 @@ def generate_main_pdf(unit, project, time_str, briefing,
     )
 
     def _hang_style(tag_width):
-        # firstLineIndent 為負值，讓第一行從 0 開始（含編號）；
-        # 之後換行的行首則落在 leftIndent（即編號後首字的位置），達成懸掛縮排。
         return ParagraphStyle(
             f"hang_{round(tag_width, 2)}", parent=S["text"],
             leftIndent=tag_width, firstLineIndent=-tag_width,
@@ -330,8 +328,7 @@ def generate_main_pdf(unit, project, time_str, briefing,
 
     def add_list_block(title_text, content):
         lines = [ln.strip() for ln in str(content).split('\n') if ln.strip()]
-        if not lines:
-            return
+        if not lines: return
 
         style_cmds = [
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -343,7 +340,7 @@ def generate_main_pdf(unit, project, time_str, briefing,
 
         has_title = bool(title_text)
         title_w = 26 * mm if has_title else 0
-        text_w  = PW - title_w  # 內容欄一律使用同一寬度，確保逐行皆與標題並列對齊
+        text_w  = PW - title_w 
 
         data = []
         for line in lines:
@@ -460,7 +457,6 @@ def generate_main_pdf(unit, project, time_str, briefing,
 
     # 陸、法令宣導
     add_section("陸、 工作重點與法令宣導")
-    # 同步套用智慧清單排版，讓法令宣導的多行內容也能完美對齊
     add_list_block("", briefing)
 
     def _footer(canvas, doc):
