@@ -199,17 +199,22 @@ def generate_universal_pdf(duty_name, project_name, meta_dict, dfs_dict):
             for line in str(v).split("\n"):
                 if line.strip(): story.append(Paragraph(line, s_txt))
 
-    def add_page_number(canvas, doc):
-    canvas.saveState()
-    canvas.setFont(font, 10)
-    canvas.drawCentredString(
-        A4[0] / 2,
-        8 * mm,
-        f"- 第 {canvas.getPageNumber()} 頁 -"
-    )
-    canvas.restoreState()
+        def add_page_number(canvas, doc):
+        canvas.saveState()
+        canvas.setFont(font, 10)
+        canvas.drawCentredString(
+            A4[0] / 2,
+            8 * mm,
+            f"- 第 {canvas.getPageNumber()} 頁 -"
+        )
+        canvas.restoreState()
 
-    doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
+    doc.build(
+        story,
+        onFirstPage=add_page_number,
+        onLaterPages=add_page_number
+    )
+
     buf.seek(0)
     return buf.getvalue()
 
