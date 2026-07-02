@@ -368,8 +368,16 @@ def generate_main_pdf(unit, project, time_str, briefing,
 
     # 壹、基本資料
     add_section("壹、 勤務基本資料")
-    date_part = _clean(time_str.split()[0] if time_str.strip() else "115年4月10日")
-    time_part = _clean(time_str.split()[1] if " " in time_str else "19時至23時")
+    
+    # --- 修改開始：精準拆分日期與時間 ---
+    date_match = re.search(r'(\d+年\d+月\d+日)', time_str)
+    # 支援「XX時至XX時」、「XX時XX分至XX時XX分」或單純「XX時」等格式
+    time_match = re.search(r'(\d+時(?:[至~\-]\d+時(?:分)?)?)', time_str)
+    
+    date_part = _clean(date_match.group(1) if date_match else "115年4月10日")
+    time_part = _clean(time_match.group(1) if time_match else "19時至23時")
+    # --- 修改結束 ---
+    
     brief_info = f"{_clean(brief_time)}<br/>{_clean(brief_loc)}"
     
     t = Table(
