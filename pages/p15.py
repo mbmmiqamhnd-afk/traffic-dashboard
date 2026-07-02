@@ -329,7 +329,8 @@ def _apply_spans(style_cmds, data_list, merge_cols):
 
 def generate_main_pdf(unit, project, time_str, briefing,
                       df_cmd, df_ptl, df_cp, stats,
-                      ptl_time, ptl_focus, cp_time, cp_focus):
+                      ptl_time, ptl_focus, cp_time, cp_focus,
+                      brief_time, brief_loc):
     font   = _get_font()
     buf    = io.BytesIO()
     PW     = A4[0] - 20 * mm
@@ -349,12 +350,14 @@ def generate_main_pdf(unit, project, time_str, briefing,
     add_section("壹、 勤務基本資料")
     date_part = _clean(time_str.split()[0] if time_str.strip() else "115年4月10日")
     time_part = _clean(time_str.split()[1] if " " in time_str else "19時至23時")
+    brief_info = f"{_clean(brief_time)}<br/>{_clean(brief_loc)}"
+    
     t = Table(
-        [_header_row(["實施日期","勤務時間","指揮官","勤務編組","聯合稽查站地點"], S["cell"]),
+        [_header_row(["實施日期","勤務時間","指揮官","勤務編組","勤前教育","聯合稽查站地點"], S["cell"]),
          [Paragraph(date_part, S["cell"]), Paragraph(time_part, S["cell"]),
           Paragraph("分局長 施宇峰", S["cell"]), Paragraph("如任務編組表", S["cell"]),
-          Paragraph("分局廣場", S["cell"])]],
-        colWidths=[PW*.14, PW*.18, PW*.32, PW*.14, PW*.22])
+          Paragraph(brief_info, S["cell"]), Paragraph("分局廣場", S["cell"])]],
+        colWidths=[PW*.13, PW*.15, PW*.20, PW*.12, PW*.22, PW*.18])
     t.setStyle(_base_table_style(font))
     story.append(t)
 
@@ -587,7 +590,8 @@ def send_email(unit, project, time_str, briefing,
         for pdf_bytes, filename in [
             (generate_main_pdf(unit, project, time_str, briefing,
                                df_cmd, df_ptl, df_cp, stats,
-                               ptl_time, ptl_focus, cp_time, cp_focus), f"{unit}規劃表.pdf"),
+                               ptl_time, ptl_focus, cp_time, cp_focus,
+                               brief_time, brief_loc), f"{unit}規劃表.pdf"),
             (generate_attendance_pdf(unit, project, time_str,
                                      brief_time, brief_loc), f"{unit}簽到表.pdf"),
         ]:
