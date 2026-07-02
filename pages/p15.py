@@ -313,7 +313,21 @@ def generate_main_pdf(unit, project, time_str, briefing,
     def add_section(title):
         story.append(Paragraph(f"<b>{title}</b>", S["section"]))
 
-    # 動態排版：標題（如有）與內容並列同一欄位起點，內容換行時維持與標題並排對齊（懸掛縮排）
+    # 動態排版：標題（如有）與內容並列同一欄位起點；若該項目編號（一、二、…）
+    # 內容超過一行，第二行起則以「懸掛縮排」對齊第一行編號後的首字。
+    _enum_re = re.compile(
+        r'^([一二三四五六七八九十]+[、。.]|\d+[、。.]|[a-zA-Z]+[、。.]|'
+        r'\([一二三四五六七八九十]+\)|\(\d+\)|\([a-zA-Z]+\))\s*(.*)$'
+    )
+
+    def _hang_style(tag_width):
+        # firstLineIndent 為負值，讓第一行從 0 開始（含編號）；
+        # 之後換行的行首則落在 leftIndent（即編號後首字的位置），達成懸掛縮排。
+        return ParagraphStyle(
+            f"hang_{round(tag_width, 2)}", parent=S["text"],
+            leftIndent=tag_width, firstLineIndent=-tag_width,
+        )
+
     def add_list_block(title_text, content):
         lines = [ln.strip() for ln in str(content).split('\n') if ln.strip()]
         if not lines:
@@ -331,23 +345,21 @@ def generate_main_pdf(unit, project, time_str, briefing,
         title_w = 26 * mm if has_title else 0
         text_w  = PW - title_w  # 內容欄一律使用同一寬度，確保逐行皆與標題並列對齊
 
-        enum_re = re.compile(
-            r'^([一二三四五六七八九十]+[、。.]|\d+[、。.]|[a-zA-Z]+[、。.]|'
-            r'\([一二三四五六七八九十]+\)|\(\d+\)|\([a-zA-Z]+\))\s*(.*)$'
-        )
-
         data = []
         for line in lines:
-            m = enum_re.match(line)
-            # 編號與內文放在同一個 Paragraph 中，讓該行內部自然對齊；
-            # 不同行（不論是否有編號）皆共用同一欄寬，確保並列對齊一致。
-            body = f"{m.group(1)}{_clean(m.group(2))}" if m else _clean(line)
+            m = _enum_re.match(line)
+            if m:
+                tag, rest = m.group(1), _clean(m.group(2))
+                tag_w = pdfmetrics.stringWidth(tag, font, 14)
+                body = Paragraph(f"{tag}{rest}", _hang_style(tag_w))
+            else:
+                body = Paragraph(_clean(line), S["text"])
 
             row = []
             if has_title:
                 prefix = Paragraph(f"<b>{title_text}：</b>", S["text"]) if len(data) == 0 else ""
                 row.append(prefix)
-            row.append(Paragraph(body, S["text"]))
+            row.append(body)
             data.append(row)
 
         cols = [title_w, text_w] if has_title else [text_w]
