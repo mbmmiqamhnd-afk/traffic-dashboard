@@ -51,6 +51,7 @@ DEFAULT_CP_TIME   = "21時30分至23時00分"
 DEFAULT_CP_FOCUS  = "由第一階段之第1至第4組機動警力，會合偵查隊專案人員，於21時20分前集結完畢，21時30分準時進入目標場所執行威力掃蕩。"
 DEFAULT_BRIEF_TIME = "19時30分至20時00分"
 DEFAULT_BRIEF_LOC  = "分局二樓會議室"
+DEFAULT_CP_LOC    = "分局廣場"
 
 DEFAULT_CMD = pd.DataFrame([
     {"項目": "指揮官",    "通訊代號": "隆安1號",    "任務目標": "勤務核定並重點機動督導",         "負責人員": "分局長 施宇峰",         "共同執行人員": "巡官陳鵬翔、警員張庭溱"},
@@ -300,7 +301,7 @@ def _apply_spans(style_cmds, data_list, merge_cols):
 def generate_main_pdf(unit, project, time_str, briefing,
                       df_cmd, df_ptl, df_cp, stats,
                       ptl_time, ptl_focus, cp_time, cp_focus,
-                      brief_time, brief_loc):
+                      brief_time, brief_loc, cp_loc):
     font   = _get_font()
     buf    = io.BytesIO()
     PW     = A4[0] - 20 * mm
@@ -313,8 +314,6 @@ def generate_main_pdf(unit, project, time_str, briefing,
     def add_section(title):
         story.append(Paragraph(f"<b>{title}</b>", S["section"]))
 
-    # 動態排版：標題（如有）與內容並列同一欄位起點；若該項目編號（一、二、…）
-    # 內容超過一行，第二行起則以「懸掛縮排」對齊第一行編號後的首字。
     _enum_re = re.compile(
         r'^([一二三四五六七八九十]+[、。.]|\d+[、。.]|[a-zA-Z]+[、。.]|'
         r'\([一二三四五六七八九十]+\)|\(\d+\)|\([a-zA-Z]+\))\s*(.*)$'
@@ -377,7 +376,7 @@ def generate_main_pdf(unit, project, time_str, briefing,
         [_header_row(["實施日期","勤務時間","指揮官","勤務編組","勤前教育","聯合稽查站地點"], S["cell"]),
          [Paragraph(date_part, S["cell"]), Paragraph(time_part, S["cell"]),
           Paragraph("分局長 施宇峰", S["cell"]), Paragraph("如任務編組表", S["cell"]),
-          Paragraph(brief_info, S["cell"]), Paragraph("分局廣場", S["cell"])]],
+          Paragraph(brief_info, S["cell"]), Paragraph(_clean(cp_loc), S["cell"])]],
         colWidths=[PW*.13, PW*.15, PW*.20, PW*.12, PW*.22, PW*.18])
     t.setStyle(_base_table_style(font))
     story.append(t)
@@ -548,7 +547,7 @@ def load_data():
         return None, None, None, None, str(e)
 
 def save_data(unit, time_str, project, briefing,
-              ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc,
+              ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc, cp_loc,
               df_cmd, df_ptl, df_cp, stats):
     client = get_client()
     if client is None:
@@ -569,6 +568,7 @@ def save_data(unit, time_str, project, briefing,
             ["cp_focus",     cp_focus],
             ["brief_time",   brief_time],
             ["brief_loc",    brief_loc],
+            ["cp_loc",       cp_loc],
             ["stats_cmd",    str(stats["cmd"])],
             ["stats_ptl_机动", str(stats["ptl_机动"])],
             ["stats_ptl_场所", str(stats["ptl_场所"])],
@@ -594,7 +594,7 @@ def save_data(unit, time_str, project, briefing,
 # 7. Email
 # ══════════════════════════════════════════════════════════════════════════════
 def send_email(unit, project, time_str, briefing,
-               ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc,
+               ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc, cp_loc,
                df_cmd, df_ptl, df_cp, stats):
     try:
         sender = st.secrets["email"]["user"]
@@ -609,7 +609,7 @@ def send_email(unit, project, time_str, briefing,
             (generate_main_pdf(unit, project, time_str, briefing,
                                df_cmd, df_ptl, df_cp, stats,
                                ptl_time, ptl_focus, cp_time, cp_focus,
-                               brief_time, brief_loc), f"{unit}規劃表.pdf"),
+                               brief_time, brief_loc, cp_loc), f"{unit}規劃表.pdf"),
             (generate_attendance_pdf(unit, project, time_str,
                                      brief_time, brief_loc), f"{unit}簽到表.pdf"),
         ]:
@@ -645,6 +645,7 @@ if "initialized" not in st.session_state:
         st.session_state.cp_focus   = cfg.get("cp_focus",     DEFAULT_CP_FOCUS)
         st.session_state.brief_time = cfg.get("brief_time",   DEFAULT_BRIEF_TIME)
         st.session_state.brief_loc  = cfg.get("brief_loc",    DEFAULT_BRIEF_LOC)
+        st.session_state.cp_loc     = cfg.get("cp_loc",       DEFAULT_CP_LOC)
         st.session_state.df_cmd = df_cmd_cl if not df_cmd_cl.empty else DEFAULT_CMD.copy()
         st.session_state.df_ptl = assign_ptl_groups(df_ptl_cl) if not df_ptl_cl.empty else assign_ptl_groups(DEFAULT_PTL.copy())
         st.session_state.df_cp  = assign_cp_groups(df_cp_cl)  if not df_cp_cl.empty  else assign_cp_groups(DEFAULT_CHECKPOINT.copy())
@@ -658,6 +659,7 @@ if "initialized" not in st.session_state:
         st.session_state.cp_focus   = DEFAULT_CP_FOCUS
         st.session_state.brief_time = DEFAULT_BRIEF_TIME
         st.session_state.brief_loc  = DEFAULT_BRIEF_LOC
+        st.session_state.cp_loc     = DEFAULT_CP_LOC
         st.session_state.df_cmd = DEFAULT_CMD.copy()
         st.session_state.df_ptl = assign_ptl_groups(DEFAULT_PTL.copy())
         st.session_state.df_cp  = assign_cp_groups(DEFAULT_CHECKPOINT.copy())
@@ -674,6 +676,7 @@ _DEFAULTS = {
     "cp_focus":   DEFAULT_CP_FOCUS,
     "brief_time": DEFAULT_BRIEF_TIME,
     "brief_loc":  DEFAULT_BRIEF_LOC,
+    "cp_loc":     DEFAULT_CP_LOC,
 }
 for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
@@ -745,13 +748,16 @@ b_info = st.text_area("陸、 工作重點與法令宣導",
 st.session_state.b_info = b_info
 
 st.subheader("簽到表設定")
-col_bt, col_bl = st.columns(2)
+col_bt, col_bl, col_cl = st.columns(3)
 with col_bt:
     brief_time = st.text_input("簽到集合時間", value=st.session_state.brief_time, key="ui_brief_time")
     st.session_state.brief_time = brief_time
 with col_bl:
     brief_loc = st.text_input("簽到集合地點", value=st.session_state.brief_loc, key="ui_brief_loc")
     st.session_state.brief_loc = brief_loc
+with col_cl:
+    cp_loc = st.text_input("聯合稽查站地點", value=st.session_state.cp_loc, key="ui_cp_loc")
+    st.session_state.cp_loc = cp_loc
 
 st.subheader("勤務執行編組（兩階段）")
 tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】場所臨檢"])
@@ -781,7 +787,7 @@ if st.button("💾 同步雲端並發送郵件", use_container_width=True, type=
     with st.spinner("⏳ 正在寫入雲端並寄送郵件，請稍候..."):
         ok, err = save_data(
             DEFAULT_UNIT, p_time, p_name, b_info,
-            ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc,
+            ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc, cp_loc,
             st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp,
             live_stats)
         if not ok:
@@ -790,7 +796,7 @@ if st.button("💾 同步雲端並發送郵件", use_container_width=True, type=
 
         mail_ok, mail_err = send_email(
             DEFAULT_UNIT, p_name, p_time, b_info,
-            ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc,
+            ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc, cp_loc,
             st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp,
             live_stats)
         if mail_ok:
