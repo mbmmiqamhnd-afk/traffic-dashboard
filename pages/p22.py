@@ -202,7 +202,7 @@ def generate_universal_pdf(duty_name, project_name, meta_dict, dfs_dict):
     def add_page_number(canvas, doc):
         canvas.saveState()
         canvas.setFont(font, 10)
-        canvas.drawCentredString(A4[0] / 2, 8*mm, f"- {canvas.f"第 {page_num} 頁"} -")
+        canvas.drawCentredString(A4[0] / 2, 8*mm, f"- {canvas.getPageNumber()} -")
         canvas.restoreState()
 
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
