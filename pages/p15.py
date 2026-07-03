@@ -48,7 +48,7 @@ DEFAULT_BRIEF = (
 DEFAULT_PTL_TIME  = "20時00分至21時30分"
 DEFAULT_PTL_FOCUS = "採取全面機動巡邏，針對酒駕熱點攔停盤查；攔獲疑似改裝噪音車，立即引導至「警政大樓廣場」交由環保局檢驗。"
 DEFAULT_CP_TIME   = "21時30分至23時00分"
-DEFAULT_CP_FOCUS = "由第一階段之第1至第4組機動警力，會合偵查隊專案人員，於21時20分前集結完畢，21時30分準時進入目標場所執行威力掃蕩。"
+DEFAULT_CP_FOCUS  = "由第一階段之第1至第4組機動警力，會合偵查隊專案人員，於21時20分前集結完畢，21時30分準時進入目標場所執行威力掃蕩。"
 DEFAULT_BRIEF_TIME = "19時30分至20時00分"
 DEFAULT_BRIEF_LOC  = "分局二樓會議室"
 DEFAULT_CP_LOC    = "分局廣場"
@@ -83,7 +83,7 @@ DEFAULT_PTL = pd.DataFrame([
 ])
 
 DEFAULT_CHECKPOINT = pd.DataFrame([
-    {"編組": "", "排序": "", "無線電代號": "", "單位": "中興所", "職別": "所長",   "姓名": "董亦文", "任務分工": "帶班",           "臨檢目標場所": "A. 鉅大撞球館 (微風廣場中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nC. 丹陽泰養生館 (中豐路281號)\nD. 溫馨汽車旅館 (中正路457號)\nE. 凱虹汽車旅館 (中正路506號)\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
+    {"編組": "", "排序": "", "無線電代號": "", "單位": "中興所", "職別": "所長",   "姓名": "董亦文", "任務分工": "帶班",           "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nC. 丹陽泰養生館 (中豐路281號)\nD. 溫馨汽車旅館 (中正路457號)\nE. 凱虹汽車旅館 (中正路506號)\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
     {"編組": "", "排序": "", "無線電代號": "", "單位": "中興所", "職別": "警員",   "姓名": "羅俊傑", "任務分工": "製作臨檢紀錄",    "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"編組": "", "排序": "", "無線電代號": "", "單位": "龍潭所", "職別": "警員",   "姓名": "張家維", "任務分工": "盤查兼蒐證",     "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"編組": "", "排序": "", "無線電代號": "", "單位": "龍潭所", "職別": "警員",   "姓名": "王采蘋", "任務分工": "盤查兼蒐證",     "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
@@ -94,6 +94,17 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"編組": "", "排序": "", "無線電代號": "", "單位": "三和所", "職別": "警員",   "姓名": "謝伯昇", "任務分工": "大門警戒",       "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
     {"編組": "", "排序": "", "無線電代號": "", "單位": "偵查隊", "職別": "小隊長", "姓名": "陳正育", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
     {"編組": "", "排序": "", "無線電代號": "", "單位": "偵查隊", "職別": "偵查佐", "姓名": "鄧正斌", "任務分工": "持DV全程蒐證",   "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
+])
+
+# 簽到表預設排列欄位佈局
+DEFAULT_ATT_ROWS = pd.DataFrame([
+    {"左側單位": "交通組", "右側單位": "聖亭派出所"},
+    {"左側單位": "督察組", "右側單位": "龍潭派出所"},
+    {"左側單位": "行政組", "右側單位": "中興派出所"},
+    {"左側單位": "保安民防組", "右側單位": "石門派出所"},
+    {"左側單位": "勤務指揮中心", "右側單位": "高平派出所"},
+    {"左側單位": "偵查隊", "右側單位": "三和派出所"},
+    {"左側單位": "", "右側單位": "龍潭交通分隊"}
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -142,7 +153,7 @@ def generate_radio_code(unit: str, rank: str, officer_seq: int = 1) -> str:
     return f"{base}{2 + officer_seq}"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. 分組、排序與自訂同步映射邏輯 (升級點：整合自訂微調排序代碼)
+# 3. 分組、排序與自訂同步映射邏輯
 # ══════════════════════════════════════════════════════════════════════════════
 PTL_UNIT_ORDER = {"聖亭所": 1, "龍潭所": 2, "中興所": 3,
                   "石門所": 4, "三和所": 5, "高平所": 6, "龍潭交分隊": 7}
@@ -162,7 +173,6 @@ def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
     res = df.copy().reset_index(drop=True)
     res = _normalize_radio_col(res)
     
-    # 確保排序欄位存在，並將空白填為999（排在最後）
     if "排序" not in res.columns: res["排序"] = ""
     res["_sort_num"] = pd.to_numeric(res["排序"], errors='coerce').fillna(999)
     
@@ -170,7 +180,6 @@ def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
     
     if not has_existing_group:
         res["_unit_ord"] = res["單位"].map(lambda x: PTL_UNIT_ORDER.get(str(x).strip(), 99))
-        # 預設依單位排序，並在單位內部結合自訂數字排序
         res = res.sort_values(["_unit_ord", "_sort_num"]).reset_index(drop=True)
         
         group_ids = []
@@ -184,7 +193,6 @@ def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
         res["編組"] = group_ids
         res = res.drop(columns=["_unit_ord"])
     else:
-        # 有自訂手動編組時，先自動向下填補空白
         res["編組"] = res["編組"].astype(str).str.strip().replace({"nan": "", "None": ""})
         current_g = ""
         group_ids = []
@@ -197,12 +205,10 @@ def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
             group_ids.append(current_g)
         res["編組"] = group_ids
         
-        # 依照「自訂編組」群聚，群組內部完全遵照「排序」數字微調前後列位置
         res = res.sort_values(["編組", "_sort_num"]).reset_index(drop=True)
 
     res = res.drop(columns=["_sort_num"])
 
-    # 依排序後的最終順序重新生成呼號序列
     radio_codes, unit_officer_count = [], {}
     for i, row in res.iterrows():
         unit = str(row["單位"]).strip()
@@ -249,7 +255,6 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
         res["_is_senior"] = res["職別"].apply(lambda x: 0 if str(x).strip() in SENIOR_RANKS else 1)
         res["_is_invest"] = res["單位"].apply(lambda x: 1 if str(x).strip() == "偵查隊" else 0)
         res["_orig_idx"] = res.index
-        # 預設排序：大組別 -> 是否刑警 -> 職等長官 -> 自訂排序欄位 -> 原始輸入序
         res = res.sort_values(["_g", "_is_invest", "_is_senior", "_sort_num", "_orig_idx"]).reset_index(drop=True)
         res["編組"] = ["第1臨檢組" if row["_g"] == 1 else "第2臨檢組" for _, row in res.iterrows()]
         res = res.drop(columns=["_g", "_is_senior", "_is_invest", "_orig_idx"])
@@ -266,7 +271,6 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
             group_ids.append(current_g)
         res["編組"] = group_ids
         
-        # 依照手動編組群聚，並在群組內部依「排序」微調位置
         res = res.sort_values(["編組", "_sort_num"]).reset_index(drop=True)
 
     res = res.drop(columns=["_sort_num"])
@@ -297,12 +301,10 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def sync_ptl_to_cp_logic(df_ptl: pd.DataFrame) -> pd.DataFrame:
-    """自動抓取第一階段名冊資料並附帶其自訂排序對應映射至第二階段"""
     if df_ptl.empty:
         return pd.DataFrame(columns=["編組", "排序", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"])
         
     new_cp = df_ptl[["單位", "職別", "姓名"]].copy()
-    # 完美將第一階段的排序權重一同複製，維持行列位置結構
     new_cp["排序"] = df_ptl["排序"].copy() if "排序" in df_ptl.columns else ""
     
     cp_groups = []
@@ -353,7 +355,7 @@ def calculate_stats(df_cmd, df_ptl, df_cp):
             "inv": inv, "civ": 0, "total": cmd + ptl_m + ptl_c + inv}
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 5. PDF 工具 (自動過濾掉「排序」欄位，不影響正式公文輸出)
+# 5. PDF 工具 (升級點：自動載入自訂簽到表單位)
 # ══════════════════════════════════════════════════════════════════════════════
 def _make_styles(font):
     def S(name, size, align, leading=None, space_after=0, space_before=0):
@@ -465,10 +467,8 @@ def generate_main_pdf(unit, project, time_str, briefing,
         t.setStyle(TableStyle(style_cmds))
         story.append(t)
 
-    # 標題
     story.append(Paragraph(f"<b>{unit}執行 {project} 勤務規劃表</b>", S["title"]))
 
-    # 壹、基本資料
     add_section("壹、 勤務基本資料")
     
     date_match = re.search(r'(\d+年\d+月\d+日)', time_str)
@@ -488,7 +488,6 @@ def generate_main_pdf(unit, project, time_str, briefing,
     t.setStyle(_base_table_style(font))
     story.append(t)
 
-    # 貳、警力統計
     add_section("貳、 警力統計及地點統計")
     t = Table(
         [_header_row(["督導組","機動攔檢組","場所臨檢組","偵訊組","小計","民力","總計"], S["cell"]),
@@ -500,7 +499,6 @@ def generate_main_pdf(unit, project, time_str, briefing,
     t.setStyle(_base_table_style(font))
     story.append(t)
 
-    # 參、督導編組
     add_section("參、 督導及其他任務編組表")
     data = [_header_row(["項目","通訊代號","任務目標","負責人員","共同人員"], S["cell"])]
     for _, r in df_cmd.iterrows():
@@ -513,7 +511,6 @@ def generate_main_pdf(unit, project, time_str, briefing,
     t.setStyle(_base_table_style(font))
     story.append(t)
 
-    # 肆、第一階段
     add_section("肆、【第一階段】機動攔查任務編組")
     story.append(Paragraph(f"<b>勤務時間：</b>{_clean(ptl_time)}", S["text"]))
     add_list_block("勤務重點", ptl_focus)
@@ -537,7 +534,6 @@ def generate_main_pdf(unit, project, time_str, briefing,
     t.setStyle(TableStyle(style_cmds))
     story.append(t)
 
-    # 伍、第二階段
     add_section("伍、【第二階段】場所臨檢任務編組")
     story.append(Paragraph(f"<b>勤務時間：</b>{_clean(cp_time)}", S["text"]))
     add_list_block("勤務重點", cp_focus)
@@ -561,7 +557,6 @@ def generate_main_pdf(unit, project, time_str, briefing,
         t.setStyle(TableStyle(style_cmds))
         story.append(t)
 
-    # 陸、法令宣導
     add_section("陸、 工作重點與法令宣導")
     add_list_block("", briefing)
 
@@ -575,7 +570,8 @@ def generate_main_pdf(unit, project, time_str, briefing,
     return buf.getvalue()
 
 
-def generate_attendance_pdf(unit, project, time_str, brief_time, brief_loc):
+def generate_attendance_pdf(unit, project, time_str, brief_time, brief_loc, df_att_units):
+    """產出簽到表 PDF（升級點：單位名冊完全由傳入的自訂 df_att_units 決定）"""
     font  = _get_font()
     buf   = io.BytesIO()
     PW    = A4[0] - 30 * mm
@@ -601,16 +597,17 @@ def generate_attendance_pdf(unit, project, time_str, brief_time, brief_loc):
     story.append(Paragraph("<b>副分局長：</b>", S["text"]))
     story.append(Spacer(1, 6*mm))
 
-    rows = [("交通組","聖亭派出所"), ("督察組","龍潭派出所"), ("行政組","中興派出所"),
-            ("保安民防組","石門派出所"), ("勤務指揮中心","高平派出所"),
-            ("偵查隊","三和派出所"), ("","龍潭交通分隊")]
     tdata = [_header_row(["單位","參加人員","單位","參加人員"], S["cell"])]
-    for l, r in rows:
-        tdata.append([Paragraph(l, S["cell"]) if l else "",
-                      "", Paragraph(r, S["cell"]) if r else "", ""])
+    for _, r in df_att_units.iterrows():
+        l_val = str(r.get("左側單位", "")).strip()
+        r_val = str(r.get("右側單位", "")).strip()
+        tdata.append([
+            Paragraph(l_val, S["cell"]) if l_val else "", "",
+            Paragraph(r_val, S["cell"]) if r_val else "", ""
+        ])
 
     t = Table(tdata, colWidths=[PW*.2, PW*.3, PW*.2, PW*.3],
-              rowHeights=[10*mm] + [26*mm]*len(rows))
+              rowHeights=[10*mm] + [26*mm]*len(df_att_units))
     t.setStyle(TableStyle([
         ("FONTNAME",   (0,0), (-1,-1), font),
         ("GRID",       (0,0), (-1,-1), 0.5, colors.black),
@@ -622,7 +619,7 @@ def generate_attendance_pdf(unit, project, time_str, brief_time, brief_loc):
     return buf.getvalue()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 6. Google Sheets
+# 6. Google Sheets (升級點：新增簽到表自訂單位分頁持久化儲存)
 # ══════════════════════════════════════════════════════════════════════════════
 @st.cache_resource
 def get_client():
@@ -640,7 +637,7 @@ def get_client():
 def load_data():
     client = get_client()
     if client is None:
-        return None, None, None, None, "無法建立 Google Sheets 連線"
+        return None, None, None, None, None, "無法建立 Google Sheets 連線"
     try:
         sh    = client.open_by_key(SHEET_ID)
         cfg   = {r["Key"]: r["Value"]
@@ -649,13 +646,19 @@ def load_data():
         df_cmd = pd.DataFrame(sh.worksheet("三合一_指揮組").get_all_records()).fillna("")
         df_ptl = pd.DataFrame(sh.worksheet("三合一_巡邏組").get_all_records()).fillna("")
         df_cp  = pd.DataFrame(sh.worksheet("三合一_擴大臨檢組").get_all_records()).fillna("")
-        return cfg, df_cmd, df_ptl, df_cp, None
+        
+        try:
+            df_att = pd.DataFrame(sh.worksheet("三合一_簽到單位").get_all_records()).fillna("")
+        except Exception:
+            df_att = pd.DataFrame()
+            
+        return cfg, df_cmd, df_ptl, df_cp, df_att, None
     except Exception as e:
-        return None, None, None, None, str(e)
+        return None, None, None, None, None, str(e)
 
 def save_data(unit, time_str, project, briefing,
               ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc, cp_loc,
-              df_cmd, df_ptl, df_cp, stats):
+              df_cmd, df_ptl, df_cp, df_att_units, stats):
     client = get_client()
     if client is None:
         return False, "無法建立連線"
@@ -684,12 +687,14 @@ def save_data(unit, time_str, project, briefing,
         ])
         for ws_name, df in [("三合一_指揮組", df_cmd),
                              ("三合一_巡邏組", df_ptl),
-                             ("三合一_擴大臨檢組", df_cp)]:
-            ws2 = sh.worksheet(ws_name)
+                             ("三合一_擴大臨檢組", df_cp),
+                             ("三合一_簽到單位", df_att_units)]:
+            try:
+                ws2 = sh.worksheet(ws_name)
+            except Exception:
+                ws2 = sh.add_worksheet(title=ws_name, rows="100", cols="10")
             ws2.clear()
             clean = df.dropna(how="all").fillna("")
-            
-            # 保留「編組」與「排序」欄位同步寫入雲端，確保自訂排版不會在下次讀取時跑掉
             if not clean.empty:
                 ws2.update([clean.columns.tolist()] + clean.astype(str).values.tolist())
         st.cache_data.clear()
@@ -702,7 +707,7 @@ def save_data(unit, time_str, project, briefing,
 # ══════════════════════════════════════════════════════════════════════════════
 def send_email(unit, project, time_str, briefing,
                ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc, cp_loc,
-               df_cmd, df_ptl, df_cp, stats):
+               df_cmd, df_ptl, df_cp, df_att_units, stats):
     try:
         sender = st.secrets["email"]["user"]
         pwd    = st.secrets["email"]["password"]
@@ -718,7 +723,7 @@ def send_email(unit, project, time_str, briefing,
                                ptl_time, ptl_focus, cp_time, cp_focus,
                                brief_time, brief_loc, cp_loc), f"{unit}規劃表.pdf"),
             (generate_attendance_pdf(unit, project, time_str,
-                                     brief_time, brief_loc), f"{unit}簽到表.pdf"),
+                                     brief_time, brief_loc, df_att_units), f"{unit}簽到表.pdf"),
         ]:
             part = MIMEBase("application", "pdf")
             part.set_payload(pdf_bytes)
@@ -738,7 +743,7 @@ def send_email(unit, project, time_str, briefing,
 # 8. Session State 初始化
 # ══════════════════════════════════════════════════════════════════════════════
 if "initialized" not in st.session_state:
-    cfg, df_cmd_cl, df_ptl_cl, df_cp_cl, err = load_data()
+    cfg, df_cmd_cl, df_ptl_cl, df_cp_cl, df_att_cl, err = load_data()
 
     if cfg and not err:
         st.session_state.p_time     = cfg.get("plan_time",    DEFAULT_TIME)
@@ -756,6 +761,7 @@ if "initialized" not in st.session_state:
         st.session_state.df_cmd = df_cmd_cl if not df_cmd_cl.empty else DEFAULT_CMD.copy()
         st.session_state.df_ptl = assign_ptl_groups(df_ptl_cl) if not df_ptl_cl.empty else assign_ptl_groups(DEFAULT_PTL.copy())
         st.session_state.df_cp  = assign_cp_groups(df_cp_cl)  if not df_cp_cl.empty  else assign_cp_groups(DEFAULT_CHECKPOINT.copy())
+        st.session_state.df_att_units = df_att_cl if not df_att_cl.empty else DEFAULT_ATT_ROWS.copy()
     else:
         st.session_state.p_time     = DEFAULT_TIME
         st.session_state.proj_body  = DEFAULT_PROJ_BODY
@@ -770,6 +776,7 @@ if "initialized" not in st.session_state:
         st.session_state.df_cmd = DEFAULT_CMD.copy()
         st.session_state.df_ptl = assign_ptl_groups(DEFAULT_PTL.copy())
         st.session_state.df_cp  = assign_cp_groups(DEFAULT_CHECKPOINT.copy())
+        st.session_state.df_att_units = DEFAULT_ATT_ROWS.copy()
 
     st.session_state.initialized = True
 
@@ -792,6 +799,7 @@ for _k, _fn in [
     ("df_cmd", lambda: DEFAULT_CMD.copy()),
     ("df_ptl", lambda: assign_ptl_groups(DEFAULT_PTL.copy())),
     ("df_cp",  lambda: assign_cp_groups(DEFAULT_CHECKPOINT.copy())),
+    ("df_att_units", lambda: DEFAULT_ATT_ROWS.copy()),
 ]:
     if _k not in st.session_state:
         st.session_state[_k] = _fn()
@@ -866,6 +874,15 @@ with col_cl:
     cp_loc = st.text_input("聯合稽查站地點", value=st.session_state.cp_loc, key="ui_cp_loc")
     st.session_state.cp_loc = cp_loc
 
+# ── 升級點：UI 介面加入動態簽到表單位編輯器 ─────────────────────────
+st.markdown("**簽到表欄位佈局設定（可自由新增、刪除列，或修改左右兩側單位名稱）**")
+edited_att = st.data_editor(st.session_state.df_att_units, num_rows="dynamic",
+                            use_container_width=True, key="ed_att")
+edited_att = edited_att.dropna(how="all").fillna("")
+if not edited_att.equals(st.session_state.df_att_units):
+    st.session_state.df_att_units = edited_att
+    st.rerun()
+
 st.subheader("勤務執行編組（兩階段）")
 tab1, tab2 = st.tabs(["肆、【第一階段】機動攔查", "伍、【第二階段】場所臨檢"])
 
@@ -880,14 +897,12 @@ with tab1:
             st.rerun()
 
 with tab2:
-    # ── 一鍵自第一階段自動映射並轉換名冊（保留排序與結構） ──────────────────
     col_sync, _ = st.columns([1, 3])
     with col_sync:
         if st.button("🔄 帶入第一階段服勤名冊", use_container_width=True, help="清除現有第二階段資料，並由第一階段人員與排序自動對應帶入"):
             if not st.session_state.df_ptl.empty:
                 synced_cp = sync_ptl_to_cp_logic(st.session_state.df_ptl)
                 
-                # 自動幫第1、2臨檢組填充對應的場所
                 for g_name in synced_cp["編組"].unique():
                     mask = synced_cp["編組"] == g_name
                     tmpl = DEFAULT_CHECKPOINT[DEFAULT_CHECKPOINT["單位"] == ("中興所" if "1" in g_name else "石門所")]
@@ -900,7 +915,6 @@ with tab2:
             else:
                 st.warning("⚠️ 第一階段目前尚無服勤人員資料可供帶入。")
 
-    # 第二階段場所臨檢數據編輯器 (新增排序微調控制)
     edited_cp = st.data_editor(st.session_state.df_cp, num_rows="dynamic",
                                 use_container_width=True, key="ed_cp")
     edited_cp = edited_cp.dropna(how="all").fillna("").reset_index(drop=True)
@@ -917,7 +931,7 @@ if st.button("💾 同步雲端並發送郵件", use_container_width=True, type=
             DEFAULT_UNIT, p_time, p_name, b_info,
             ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc, cp_loc,
             st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp,
-            live_stats)
+            st.session_state.df_att_units, live_stats)
         if not ok:
             st.error(f"❌ 雲端同步失敗：{err}")
             st.stop()
@@ -926,7 +940,7 @@ if st.button("💾 同步雲端並發送郵件", use_container_width=True, type=
             DEFAULT_UNIT, p_name, p_time, b_info,
             ptl_time, ptl_focus, cp_time, cp_focus, brief_time, brief_loc, cp_loc,
             st.session_state.df_cmd, st.session_state.df_ptl, st.session_state.df_cp,
-            live_stats)
+            st.session_state.df_att_units, live_stats)
         if mail_ok:
             st.success(f"✅ 雲端同步完成！專案：「{p_name}」，郵件已發送！")
             st.cache_data.clear()
