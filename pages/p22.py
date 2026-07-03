@@ -222,6 +222,35 @@ def generate_universal_pdf(duty_name, project_name, meta_dict, dfs_dict):
 # ==========================================
 # 3. 特定業務邏輯輔助函數
 # ==========================================
+def send_pdf_email(project_name, pdf_bytes, pdf_filename):
+    """將產出的 PDF 以附件形式寄送給自己（寄件人=收件人），設定方式比照 p15.py。"""
+    try:
+        sender = st.secrets["email"]["user"]
+        pwd = st.secrets["email"]["password"]
+
+        msg = MIMEMultipart()
+        msg["From"] = sender
+        msg["To"] = sender
+        msg["Subject"] = f"{project_name}_勤務規劃表_{datetime.now().strftime('%m%d')}"
+        msg.attach(MIMEText(f"附件為「{project_name}」勤務規劃 PDF，請查收。", "plain"))
+
+        part = MIMEBase("application", "pdf")
+        part.set_payload(pdf_bytes)
+        encoders.encode_base64(part)
+        part.add_header(
+            "Content-Disposition",
+            f"attachment; filename*=UTF-8''{_ul.quote(pdf_filename)}"
+        )
+        msg.attach(part)
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as srv:
+            srv.login(sender, pwd)
+            srv.sendmail(sender, sender, msg.as_string())
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
 def parse_monthly_workdays(month_str, holiday_str):
     """護老專案專用：產生上班日清單文字"""
     year_match = re.search(r"(\d+)年", month_str)
@@ -317,19 +346,18 @@ for tab_obj, tab_name in zip(tabs, profile["tabs"]):
         )
         result_dfs[tab_name] = edited_df
 
-# --- 產出 PDF 報表 ---
+# --- 產出 PDF 並寄送 Email ---
 st.markdown("---")
-if st.button("📄 產生綜合勤務規劃 PDF", type="primary", use_container_width=True):
-    with st.spinner("啟動泛用型 PDF 引擎進行排版計算中..."):
+if st.button("📧 產生綜合勤務規劃 PDF 並寄送給自己", type="primary", use_container_width=True):
+    with st.spinner("啟動泛用型 PDF 引擎進行排版計算，並寄送郵件中..."):
         try:
             pdf_bytes = generate_universal_pdf(selected_duty, project_name, meta_inputs, result_dfs)
-            
-            st.success("✅ PDF 產生成功！")
-            st.download_button(
-                label="⬇️ 點擊下載 PDF 報表",
-                data=pdf_bytes,
-                file_name=f"{project_name}規劃表.pdf",
-                mime="application/pdf"
-            )
+            pdf_filename = f"{project_name}規劃表.pdf"
+
+            mail_ok, mail_err = send_pdf_email(project_name, pdf_bytes, pdf_filename)
+            if mail_ok:
+                st.success(f"✅ PDF 已產生並成功寄送至你的信箱！（{pdf_filename}）")
+            else:
+                st.error(f"⚠️ PDF 產生成功，但郵件寄送失敗：{mail_err}")
         except Exception as e:
             st.error(f"產出 PDF 時發生錯誤: {str(e)}")
