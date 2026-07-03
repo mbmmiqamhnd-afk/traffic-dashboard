@@ -199,7 +199,7 @@ def generate_universal_pdf(duty_name, project_name, meta_dict, dfs_dict):
             for line in str(v).split("\n"):
                 if line.strip(): story.append(Paragraph(line, s_txt))
 
-        def add_page_number(canvas, doc):
+    def add_page_number(canvas, doc):
         canvas.saveState()
         canvas.setFont(font, 10)
         canvas.drawCentredString(
