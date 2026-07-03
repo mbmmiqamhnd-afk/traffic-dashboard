@@ -57,13 +57,13 @@ DEFAULT_CMD = pd.DataFrame([
     {"項目": "指揮官",    "通訊代號": "隆安1號",    "任務目標": "勤務核定並重點機動督導",         "負責人員": "分局長 施宇峰",         "共同執行人員": "巡官陳鵬翔、警員張庭溱"},
     {"項目": "副指揮官",  "通訊代號": "隆安2號",    "任務目標": "襄助指揮、重點機動督導",         "負責人員": "副分局長 何憶雯",        "共同執行人員": "警務佐曾威仁"},
     {"項目": "副指揮官",  "通訊代號": "隆安3號",    "任務目標": "襄助指揮、重點機動督導",         "負責人員": "副分局長 蔡志明",        "共同執行人員": "警員陳明祥"},
-    {"項目": "行政組",    "通訊代號": "隆安5號",    "任務目標": "督導場所臨檢威力掃蕩第一臨檢組",  "負責人員": "組長 周金柱",            "共同執行人員": "巡官蕭凱文"},
-    {"項目": "督察組",    "通訊代號": "隆安6號",    "任務目標": "機動督導各單位勤務紀律",          "負責人員": "組長黃長旗",             "共同執行人員": "警務員 陳冠彰"},
-    {"項目": "保安民防組", "通訊代號": "隆安9號",   "任務目標": "督導場所臨檢威力掃蕩第二臨檢組",  "負責人員": "組長林良鍾",             "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
-    {"項目": "交通組",    "通訊代號": "隆安13號",   "任務目標": "督導第一階段機動攔查",            "負責人員": "組長 楊孟竟",            "共同執行人員": "巡官郭勝隆、警務員李峯甫、警務員盧冠仁、警員吳享運"},
-    {"項目": "聯絡組",    "通訊代號": "隆安",       "任務目標": "擔任通訊聯絡、指揮管制事宜",      "負責人員": "勤務指揮中心 主任蔡奇青", "共同執行人員": "執勤官李文章、執勤員黃文興"},
-    {"項目": "偵訊組",    "通訊代號": "隆安10號",   "任務目標": "負責按捺指紋、照相及移送",        "負責人員": "偵查隊隊長 柯志賢",      "共同執行人員": "偵查隊值日小隊"},
-    {"項目": "聯合稽查站", "通訊代號": "隆安1382",  "任務目標": "配合環保局及監理站稽查車輛",      "負責人員": "交通組巡官 郭勝隆",      "共同執行人員": "環保局及監理站人員"},
+    {"項目": "行政組",    "通訊代號": "隆安5號",    "任務目標": "督導場所臨檢威力掃蕩第一臨檢組",  "負責人員": "組長 周金柱",             "共同執行人員": "巡官蕭凱文"},
+    {"項目": "督察組",    "通訊代號": "隆安6號",    "任務目標": "機動督導各單位勤務紀律",           "負責人員": "組長黃長旗",              "共同執行人員": "警務員 陳冠彰"},
+    {"項目": "保安民防組", "通訊代號": "隆安9號",   "任務目標": "督導場所臨檢威力掃蕩第二臨檢組",  "負責人員": "組長林良鍾",              "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
+    {"項目": "交通組",    "通訊代號": "隆安13號",   "任務目標": "督導第一階段機動攔查",             "負責人員": "組長 楊孟竟",             "共同執行人員": "巡官郭勝隆、警務員李峯甫、警務員盧冠仁、警員吳享運"},
+    {"項目": "聯絡組",    "通訊代號": "隆安",       "任務目標": "擔任通訊聯絡、指揮管制事宜",       "負責人員": "勤務指揮中心 主任蔡奇青", "共同執行人員": "執勤官李文章、執勤員黃文興"},
+    {"項目": "偵訊組",    "通訊代號": "隆安10號",   "任務目標": "負責按捺指紋、照相及移送",         "負責人員": "偵查隊隊長 柯志賢",       "共同執行人員": "偵查隊值日小隊"},
+    {"項目": "聯合稽查站", "通訊代號": "隆安1382",  "任務目標": "配合環保局及監理站稽查車輛",       "負責人員": "交通組巡官 郭勝隆",       "共同執行人員": "環保局及監理站人員"},
 ])
 
 DEFAULT_PTL = pd.DataFrame([
@@ -71,7 +71,7 @@ DEFAULT_PTL = pd.DataFrame([
     {"單位": "聖亭所", "無線電代號": "", "職別": "警員",   "姓名": "劉憬霖", "任務分工": "攔檢盤查",  "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "聖亭所", "無線電代號": "", "職別": "警員",   "姓名": "謝伯昇", "任務分工": "警戒兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "中正路、北龍路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員",   "姓名": "張家維", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
-    {"單位": "龍潭所", "無線電代號": "", "職別": "警員",   "姓名": "王采蘋", "任務分工": "攔檢盤查",  "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
+    {"單位": "龍潭所", "無線电代號": "", "職別": "警員",   "姓名": "王采蘋", "任務分工": "攔檢盤查",  "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "北龍路、中豐路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "中興所", "無線電代號": "", "職別": "所長",   "姓名": "董亦文", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "中興所", "無線電代號": "", "職別": "警員",   "姓名": "羅俊傑", "任務分工": "攔檢盤查",  "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "東龍路、中豐路沿線機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
     {"單位": "石門所", "無線電代號": "", "職別": "所長",   "姓名": "林育辰", "任務分工": "帶班兼蒐證", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "巡邏路段": "神龍路、文化路周邊及治安要點機動攔查。(20:00-21:30機動，後轉臨檢) *雨天備案:轄區治安要點巡邏。"},
@@ -88,7 +88,7 @@ DEFAULT_CHECKPOINT = pd.DataFrame([
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員",   "姓名": "張家維", "任務分工": "盤查兼蒐證",     "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"單位": "龍潭所", "無線電代號": "", "職別": "警員",   "姓名": "王采蘋", "任務分工": "盤查兼蒐證",     "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"單位": "偵查隊", "無線電代號": "", "職別": "警員",   "姓名": "許家洋", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
-    {"單位": "石門所", "無線電代號": "", "職別": "所長",   "姓名": "林育辰", "任務分工": "帶班",           "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nF. 憤怒鳥網咖\nG. 真情男女養生館\nH. 萬紫千紅舒壓館\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
+    {"單位": "石門所", "無線電代號": "", "職別": "所長",   "姓名": "林育辰", "任務分工": "帶班",           "臨檢目標場所": "A. 鉅大撞球館 (Chung Feng Road No. 558)\nB. 台灣麻將協會 (中豐路558之1號)\nF. 憤怒鳥網咖\nG. 真情男女養生館\nH. 萬紫千紅舒壓館\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
     {"單位": "聖亭所", "無線電代號": "", "職別": "副所長", "姓名": "邱品淳", "任務分工": "製作臨檢紀錄",    "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
     {"單位": "聖亭所", "無線電代號": "", "職別": "警員",   "姓名": "劉憬霖", "任務分工": "盤查兼蒐證",     "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
     {"單位": "三和所", "無線電代號": "", "職別": "警員",   "姓名": "謝伯昇", "任務分工": "大門警戒",       "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
@@ -142,7 +142,7 @@ def generate_radio_code(unit: str, rank: str, officer_seq: int = 1) -> str:
     return f"{base}{2 + officer_seq}"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. 分組邏輯
+# 3. 分組邏輯 (修正：允許不同單位有相同編組，尊重自訂修改)
 # ══════════════════════════════════════════════════════════════════════════════
 PTL_UNIT_ORDER = {"聖亭所": 1, "龍潭所": 2, "中興所": 3,
                   "石門所": 4, "三和所": 5, "高平所": 6, "龍潭交分隊": 7}
@@ -161,17 +161,41 @@ def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty: return df
     res = df.copy().reset_index(drop=True)
     res = _normalize_radio_col(res)
-    res["_ord"] = res["單位"].map(lambda x: PTL_UNIT_ORDER.get(str(x).strip(), 99))
-    res = res.sort_values("_ord").drop(columns=["_ord"]).reset_index(drop=True)
+    
+    # 檢查是否有手動輸入的有效編組
+    has_existing_group = "編組" in res.columns and res["編組"].astype(str).str.strip().replace({"nan": "", "None": ""}).any()
+    
+    if not has_existing_group:
+        # 只有在完全沒有手動編組時，才走原先的單位排序自動生成邏輯
+        res["_ord"] = res["單位"].map(lambda x: PTL_UNIT_ORDER.get(str(x).strip(), 99))
+        res = res.sort_values("_ord").drop(columns=["_ord"]).reset_index(drop=True)
+        
+        group_ids = []
+        prev_unit, g_idx = None, 0
+        for i, row in res.iterrows():
+            unit = str(row["單位"]).strip()
+            if unit != prev_unit:
+                g_idx += 1
+                prev_unit = unit
+            group_ids.append(f"第{g_idx}巡邏組")
+        res["編組"] = group_ids
+    else:
+        # 如果有手動設定，保留原始順序與設定，並自動向下填補留空的編組
+        res["編組"] = res["編組"].astype(str).str.strip().replace({"nan": "", "None": ""})
+        current_g = ""
+        group_ids = []
+        for i, row in res.iterrows():
+            g_val = row["編組"]
+            if g_val:
+                current_g = g_val
+            elif not current_g:
+                current_g = "第1巡邏組" # 若首列即為空則給予預設組名
+            group_ids.append(current_g)
+        res["編組"] = group_ids
 
-    group_ids, radio_codes, unit_officer_count = [], [], {}
-    prev_unit, g_idx = None, 0
+    radio_codes, unit_officer_count = [], {}
     for i, row in res.iterrows():
         unit = str(row["單位"]).strip()
-        if unit != prev_unit:
-            g_idx += 1
-            prev_unit = unit
-        group_ids.append(f"第{g_idx}巡邏組")
         existing = str(row.get("無線電代號", "")).strip()
         if existing and existing not in ("nan", "None", "0"):
             radio_codes.append(existing)
@@ -181,12 +205,19 @@ def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
             radio_codes.append(generate_radio_code(unit, row["職別"], unit_officer_count[unit]))
         else:
             radio_codes.append("")
-    res["編組"] = group_ids
     res["無線電代號"] = radio_codes
+    
+    # 無線電呼號同步：同一編組共用該組第一人的無線電呼號
     for g in res["編組"].unique():
-        mask = res["編組"] == g
-        first_radio = res.loc[mask, "無線電代號"].iloc[0]
-        res.loc[mask, "無線電代號"] = first_radio
+        if g:
+            mask = res["編組"] == g
+            non_empty_radios = res.loc[mask, "無線電代號"].str.strip().replace({"": None}).dropna()
+            if not non_empty_radios.empty:
+                first_radio = non_empty_radios.iloc[0]
+            else:
+                first_radio = ""
+            res.loc[mask, "無線電代號"] = first_radio
+
     cols = ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "攜行裝備", "巡邏路段"]
     return res[[c for c in cols if c in res.columns]]
 
@@ -195,35 +226,64 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty: return df
     res = df.copy().reset_index(drop=True)
     res = _normalize_radio_col(res)
-    def _group(row):
-        existing = str(row.get("編組", "")).strip()
-        if existing in ("第1臨檢組", "第1場所臨檢組"): return 1
-        if existing in ("第2臨檢組", "第2場所臨檢組"): return 2
-        unit = str(row.get("單位", "")).strip()
-        return 1 if unit in CP_GROUP1_UNITS else 2
-    res["_g"] = res.apply(_group, axis=1)
-    res["_is_senior"] = res["職別"].apply(lambda x: 0 if str(x).strip() in SENIOR_RANKS else 1)
-    res["_is_invest"] = res["單位"].apply(lambda x: 1 if str(x).strip() == "偵查隊" else 0)
-    res["_orig_idx"] = res.index
-    res = res.sort_values(["_g", "_is_invest", "_is_senior", "_orig_idx"]).drop(
-        columns=["_is_senior", "_is_invest", "_orig_idx"]).reset_index(drop=True)
-    res["編組"] = ["第1臨檢組" if row["_g"] == 1 else "第2臨檢組" for _, row in res.iterrows()]
-    res = res.drop(columns=["_g"])
+    
+    # 檢查是否有手動輸入的有效編組
+    has_existing_group = "編組" in res.columns and res["編組"].astype(str).str.strip().replace({"nan": "", "None": ""}).any()
+    
+    if not has_existing_group:
+        def _group(row):
+            existing = str(row.get("編組", "")).strip()
+            if existing in ("第1臨檢組", "第1場所臨檢組"): return 1
+            if existing in ("第2臨檢組", "第2場所臨檢組"): return 2
+            unit = str(row.get("單位", "")).strip()
+            return 1 if unit in CP_GROUP1_UNITS else 2
+        res["_g"] = res.apply(_group, axis=1)
+        res["_is_senior"] = res["職別"].apply(lambda x: 0 if str(x).strip() in SENIOR_RANKS else 1)
+        res["_is_invest"] = res["單位"].apply(lambda x: 1 if str(x).strip() == "偵查隊" else 0)
+        res["_orig_idx"] = res.index
+        res = res.sort_values(["_g", "_is_invest", "_is_senior", "_orig_idx"]).drop(
+            columns=["_is_senior", "_is_invest", "_orig_idx"]).reset_index(drop=True)
+        res["編組"] = ["第1臨檢組" if row["_g"] == 1 else "第2臨檢組" for _, row in res.iterrows()]
+        res = res.drop(columns=["_g"])
+    else:
+        # 如果有手動設定，保留原始順序與自訂群組，並向下填補
+        res["編組"] = res["編組"].astype(str).str.strip().replace({"nan": "", "None": ""})
+        current_g = ""
+        group_ids = []
+        for i, row in res.iterrows():
+            g_val = row["編組"]
+            if g_val:
+                current_g = g_val
+            elif not current_g:
+                current_g = "第1臨檢組"
+            group_ids.append(current_g)
+        res["編組"] = group_ids
 
     unit_officer_count, radio_codes = {}, []
     for i, row in res.iterrows():
         unit = str(row.get("單位", "")).strip()
-        if unit:
+        existing = str(row.get("無線電代號", "")).strip()
+        if existing and existing not in ("nan", "None", "0"):
+            radio_codes.append(existing)
+        elif unit:
             is_officer = row["職別"] in SENIOR_RANKS
             unit_officer_count[unit] = unit_officer_count.get(unit, 0) + (0 if is_officer else 1)
             radio_codes.append(generate_radio_code(unit, row["職別"], unit_officer_count[unit]))
         else:
             radio_codes.append("")
     res["無線電代號"] = radio_codes
+    
+    # 同一編組共用該組第一人的無線電代號
     for g in res["編組"].unique():
-        mask = res["編組"] == g
-        first_radio = res.loc[mask, "無線電代號"].iloc[0]
-        res.loc[mask, "無線電代號"] = first_radio
+        if g:
+            mask = res["編組"] == g
+            non_empty_radios = res.loc[mask, "無線電代號"].str.strip().replace({"": None}).dropna()
+            if not non_empty_radios.empty:
+                first_radio = non_empty_radios.iloc[0]
+            else:
+                first_radio = ""
+            res.loc[mask, "無線電代號"] = first_radio
+            
     cols = ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "臨檢目標場所"]
     return res[[c for c in cols if c in res.columns]]
 
@@ -369,14 +429,11 @@ def generate_main_pdf(unit, project, time_str, briefing,
     # 壹、基本資料
     add_section("壹、 勤務基本資料")
     
-    # --- 修改開始：精準拆分日期與時間 ---
     date_match = re.search(r'(\d+年\d+月\d+日)', time_str)
-    # 支援「XX時至XX時」、「XX時XX分至XX時XX分」或單純「XX時」等格式
     time_match = re.search(r'(\d+時(?:[至~\-]\d+時(?:分)?)?)', time_str)
     
     date_part = _clean(date_match.group(1) if date_match else "115年4月10日")
     time_part = _clean(time_match.group(1) if time_match else "19時至23時")
-    # --- 修改結束 ---
     
     brief_info = f"{_clean(brief_time)}<br/>{_clean(brief_loc)}"
     
@@ -589,8 +646,9 @@ def save_data(unit, time_str, project, briefing,
             ws2 = sh.worksheet(ws_name)
             ws2.clear()
             clean = df.dropna(how="all").fillna("")
-            if "編組" in clean.columns:
-                clean = clean.drop(columns=["編組"])
+            
+            # 修改：移除舊有的 clean = clean.drop(columns=["編組"])
+            # 保留「編組」欄位寫入雲端試算表，如此一來跨單位的自訂編組名稱便能被儲存下來
             if not clean.empty:
                 ws2.update([clean.columns.tolist()] + clean.astype(str).values.tolist())
         st.cache_data.clear()
@@ -748,7 +806,7 @@ with col_cp_f:
                             value=st.session_state.cp_time, key="ui_cp_time")
     st.session_state.cp_time = cp_time
     cp_focus = st.text_area("【第二階段】場所臨檢 勤務重點",
-                            value=st.session_state.cp_focus, height=100, key="ui_cp_focus")
+                             value=st.session_state.cp_focus, height=100, key="ui_cp_focus")
     st.session_state.cp_focus = cp_focus
 
 b_info = st.text_area("陸、 工作重點與法令宣導",
