@@ -133,8 +133,7 @@ def process_pptx(pptx_file, font_p):
         run.text = text
         run.font.size = Pt(font_size_pt)
         run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
-        if font_p:
-            run.font.name = "標楷體"  # 對應 kaiu.ttf 顯示名稱
+        run.font.name = "標楷體"
 
     out = io.BytesIO()
     prs.save(out)
