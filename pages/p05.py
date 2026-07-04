@@ -13,6 +13,7 @@ from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.oxml.ns import qn
 
 # --- 設定網頁標題 ---
 st.set_page_config(page_title="商標頁碼工具", page_icon="📝")
@@ -27,6 +28,15 @@ def get_font_path():
     return None
 
 font_path = get_font_path()
+
+# --- 設定 run 的東亞字型（中文顯示實際依賴這個，不是 font.name） ---
+def set_east_asian_font(run, font_name):
+    rPr = run._r.get_or_add_rPr()
+    ea = rPr.find(qn('a:ea'))
+    if ea is None:
+        ea = rPr.makeelement(qn('a:ea'), {})
+        rPr.append(ea)
+    ea.set('typeface', font_name)
 
 # --- PDF 遮蓋邏輯（動態寬度） ---
 def create_pdf_overlay(page_width, page_height, page_num, current_font):
@@ -134,6 +144,7 @@ def process_pptx(pptx_file, font_p):
         run.font.size = Pt(font_size_pt)
         run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
         run.font.name = "標楷體"
+        set_east_asian_font(run, "標楷體")
 
     out = io.BytesIO()
     prs.save(out)
