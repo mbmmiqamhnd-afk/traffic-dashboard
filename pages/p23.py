@@ -176,11 +176,9 @@ def load_data():
         try:
             df_cmd = pd.DataFrame(sh.worksheet(WS_MAP["cmd"]).get_all_records()).fillna("")
             if df_cmd.empty:
-                # 如果新表存在但沒有資料，嘗試去抓二階段的資料
                 df_cmd = pd.DataFrame(sh.worksheet("二階段_指揮組").get_all_records()).fillna("")
         except WorksheetNotFound:
             try:
-                # 如果新表連建都還沒建，直接去抓二階段的資料
                 df_cmd = pd.DataFrame(sh.worksheet("二階段_指揮組").get_all_records()).fillna("")
             except Exception:
                 df_cmd = pd.DataFrame()
@@ -476,19 +474,18 @@ p_input = c1.text_input("專案名稱", clean_p_name)
 date_code = extract_4_digit_date(p_time)
 p_name = f"{date_code}{p_input}" if date_code else p_input
 
-st.subheader("⚙️ 勤務標題與說明")
-phase1_desc = st.text_input("勤務標題說明", p1_d)
-
 st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(df_cmd, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
 b_info  = st.text_area("📢 勤前教育", b, height=70)
 
 st.subheader("2. 巡邏勤務編組")
 
+# 將標題輸入框直接放在表格正上方，移除原本唯讀的 st.info
+phase1_desc = st.text_input("📝 巡邏勤務標題 (將直接顯示於 PDF 報表中)", p1_d)
+
 # 🟢 保持勾選功能，同時兼具手動覆寫的彈性
 auto_sync_radio = st.checkbox("✨ 啟用自動填寫「無線電代號」 (若需完全手動自訂每列代號，請取消勾選)", value=True)
 
-st.info(f"當前標題：{phase1_desc}")
 raw_ptl = st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
 
 if auto_sync_radio:
