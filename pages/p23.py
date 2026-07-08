@@ -1,7 +1,7 @@
 import streamlit as st
 
 # --- 1. 頁面設定 (必須是全站第一個執行的 Streamlit 指令) ---
-st.set_page_config(page_title="巡邏勤務規劃系統", layout="wide", page_icon="🚓")
+st.set_page_config(page_title="純巡邏勤務規劃系統", layout="wide", page_icon="🚓")
 
 # 呼叫側邊欄 (確保在 config 之後)
 try:
@@ -172,9 +172,19 @@ def load_data():
         except:
             df_set = None
 
+        # --- 自動抓取舊專案(二階段)的指揮組資料 ---
         try:
             df_cmd = pd.DataFrame(sh.worksheet(WS_MAP["cmd"]).get_all_records()).fillna("")
-        except:
+            if df_cmd.empty:
+                # 如果新表存在但沒有資料，嘗試去抓二階段的資料
+                df_cmd = pd.DataFrame(sh.worksheet("二階段_指揮組").get_all_records()).fillna("")
+        except WorksheetNotFound:
+            try:
+                # 如果新表連建都還沒建，直接去抓二階段的資料
+                df_cmd = pd.DataFrame(sh.worksheet("二階段_指揮組").get_all_records()).fillna("")
+            except Exception:
+                df_cmd = pd.DataFrame()
+        except Exception:
             df_cmd = pd.DataFrame()
 
         try:
@@ -445,7 +455,7 @@ if st.sidebar.button("🔄 強制從雲端更新資料"):
     st.cache_data.clear()
     st.rerun()
 
-st.title("🚓 勤務規劃系統")
+st.title("🚓 純巡邏勤務規劃系統")
 
 df_set, df_cmd, df_ptl, err = load_data()
 
