@@ -53,17 +53,18 @@ DEFAULT_BRIEF_TIME = "19時30分至20時00分"
 DEFAULT_BRIEF_LOC  = "分局二樓會議室"
 DEFAULT_CP_LOC    = "分局廣場"
 
+# 升級點：新增「排序」欄位，讓系統能自動排列上下順序
 DEFAULT_CMD = pd.DataFrame([
-    {"編組": "指揮官",    "通訊代號": "隆安1號",    "任務": "勤務核定並重點機動督導",         "負責人員": "分局長 施宇峰",         "共同執行人員": "巡官陳鵬翔、警員張庭溱"},
-    {"編組": "副指揮官",  "通訊代號": "隆安2號",    "任務": "襄助指揮、重點機動督導",         "負責人員": "副分局長 何憶雯",        "共同執行人員": "警務佐曾威仁"},
-    {"編組": "副指揮官",  "通訊代號": "隆安3號",    "任務": "襄助指揮、重點機動督導",         "負責人員": "副分局長 蔡志明",        "共同執行人員": "警員陳明祥"},
-    {"編組": "行政組",    "通訊代號": "隆安5號",    "任務": "督導場所臨檢威力掃蕩第一臨檢組",  "負責人員": "組長 周金柱",             "共同執行人員": "巡官蕭凱文"},
-    {"編組": "督察組",    "通訊代號": "隆安6號",    "任務": "機動督導各單位勤務紀律",           "負責人員": "組長黃長旗",              "共同執行人員": "警務員 陳冠彰"},
-    {"編組": "保安民防組", "通訊代號": "隆安9號",   "任務": "督導場所臨檢威力掃蕩第二臨檢組",  "負責人員": "組長林良鍾",              "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
-    {"編組": "交通組",    "通訊代號": "隆安13號",   "任務": "督導第一階段機動攔查",             "負責人員": "組長 楊孟竟",             "共同執行人員": "巡官郭勝隆、警務員李峯甫、警務員盧冠仁、警員吳享運"},
-    {"編組": "聯絡組",    "通訊代號": "隆安",       "任務": "擔任通訊聯絡、指揮管制事宜",       "負責人員": "勤務指揮中心 主任蔡奇青", "共同執行人員": "執勤官李文章、執勤員黃文興"},
-    {"編組": "偵訊組",    "通訊代號": "隆安10號",   "任務": "負責按捺指紋、照相及移送",         "負責人員": "偵查隊隊長 柯志賢",       "共同執行人員": "偵查隊值日小隊"},
-    {"編組": "聯合稽查站", "通訊代號": "隆安1382",  "任務": "配合環保局及監理站稽查車輛",       "負責人員": "交通組巡官 郭勝隆",       "共同執行人員": "環保局及監理站人員"},
+    {"排序": "1", "編組": "指揮官",    "通訊代號": "隆安1號",   "任務": "勤務核定並重點機動督導",         "負責人員": "分局長 施宇峰",         "共同執行人員": "巡官陳鵬翔、警員張庭溱"},
+    {"排序": "2", "編組": "副指揮官",  "通訊代號": "隆安2號",   "任務": "襄助指揮、重點機動督導",         "負責人員": "副分局長 何憶雯",       "共同執行人員": "警務佐曾威仁"},
+    {"排序": "3", "編組": "副指揮官",  "通訊代號": "隆安3號",   "任務": "襄助指揮、重點機動督導",         "負責人員": "副分局長 蔡志明",       "共同執行人員": "警員陳明祥"},
+    {"排序": "4", "編組": "行政組",    "通訊代號": "隆安5號",   "任務": "督導場所臨檢威力掃蕩第一臨檢組",  "負責人員": "組長 周金柱",           "共同執行人員": "巡官蕭凱文"},
+    {"排序": "5", "編組": "督察組",    "通訊代號": "隆安6號",   "任務": "機動督導各單位勤務紀律",         "負責人員": "組長黃長旗",            "共同執行人員": "警務員 陳冠彰"},
+    {"排序": "6", "編組": "保安民防組", "通訊代號": "隆安9號",   "任務": "督導場所臨檢威力掃蕩第二臨檢組",  "負責人員": "組長林良鍾",            "共同執行人員": "警務員曾盛鉉、警務佐許榮裕、警務佐劉俊德"},
+    {"排序": "7", "編組": "交通組",    "通訊代號": "隆安13號",  "任務": "督導第一階段機動攔查",           "負責人員": "組長 楊孟竟",           "共同執行人員": "巡官郭勝隆、警務員李峯甫、警務員盧冠仁、警員吳享運"},
+    {"排序": "8", "編組": "聯絡組",    "通訊代號": "隆安",      "任務": "擔任通訊聯絡、指揮管制事宜",     "負責人員": "勤務指揮中心 主任蔡奇青", "共同執行人員": "執勤官李文章、執勤員黃文興"},
+    {"排序": "9", "編組": "偵訊組",    "通訊代號": "隆安10號",  "任務": "負責按捺指紋、照相及移送",       "負責人員": "偵查隊隊長 柯志賢",     "共同執行人員": "偵查隊值日小隊"},
+    {"排序": "10", "編組": "聯合稽查站", "通訊代號": "隆安1382", "任務": "配合環保局及監理站稽查車輛",     "負責人員": "交通組巡官 郭勝隆",     "共同執行人員": "環保局及監理站人員"},
 ])
 
 DEFAULT_PTL = pd.DataFrame([
@@ -84,19 +85,18 @@ DEFAULT_PTL = pd.DataFrame([
 
 DEFAULT_CHECKPOINT = pd.DataFrame([
     {"編組": "", "排序": "", "無線電代號": "", "單位": "中興所", "職別": "所長",   "姓名": "董亦文", "任務分工": "帶班",           "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nC. 丹陽泰養生館 (中豐路281號)\nD. 溫馨汽車旅館 (中正路457號)\nE. 凱虹汽車旅館 (中正路506號)\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
-    {"編組": "", "排序": "", "無線電代號": "", "單位": "中興所", "職別": "警員",   "姓名": "羅俊傑", "任務分工": "製作臨檢紀錄",    "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
-    {"編組": "", "排序": "", "無線電代號": "", "單位": "龍潭所", "職別": "警員",   "姓名": "張家維", "任務分工": "盤查兼蒐證",     "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
-    {"編組": "", "排序": "", "無線電代號": "", "單位": "龍潭所", "職別": "警員",   "姓名": "王采蘋", "任務分工": "盤查兼蒐證",     "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
+    {"編組": "", "排序": "", "無線電代號": "", "單位": "中興所", "職別": "警員",   "姓名": "羅俊傑", "任務分工": "製作臨檢紀錄",     "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
+    {"編組": "", "排序": "", "無線電代號": "", "單位": "龍潭所", "職別": "警員",   "姓名": "張家維", "任務分工": "盤查兼蒐證",      "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
+    {"編組": "", "排序": "", "無線電代號": "", "單位": "龍潭所", "職別": "警員",   "姓名": "王采蘋", "任務分工": "盤查兼蒐證",      "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"編組": "", "排序": "", "無線電代號": "", "單位": "偵查隊", "職別": "警員",   "姓名": "許家洋", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、C. 丹陽泰養生館、D. 溫馨汽車旅館、E. 凱虹汽車旅館"},
     {"編組": "", "排序": "", "無線電代號": "", "單位": "石門所", "職別": "所長",   "姓名": "林育辰", "任務分工": "帶班",           "臨檢目標場所": "A. 鉅大撞球館 (中豐路558號)\nB. 台灣麻將協會 (中豐路558之1號)\nF. 憤怒鳥網咖\nG. 真情男女養生館\nH. 萬紫千紅舒壓館\n*(各員均需著防彈衣，攜帶槍彈、小電腦、密錄器)*"},
-    {"編組": "", "排序": "", "無線電代號": "", "單位": "聖亭所", "職別": "副所長", "姓名": "邱品淳", "任務分工": "製作臨檢紀錄",    "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
-    {"編組": "", "排序": "", "無線電代號": "", "單位": "聖亭所", "職別": "警員",   "姓名": "劉憬霖", "任務分工": "盤查兼蒐證",     "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
-    {"編組": "", "排序": "", "無線電代號": "", "單位": "三和所", "職別": "警員",   "姓名": "謝伯昇", "任務分工": "大門警戒",       "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
+    {"編組": "", "排序": "", "無線電代號": "", "單位": "聖亭所", "職別": "副所長", "姓名": "邱品淳", "任務分工": "製作臨檢紀錄",     "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
+    {"編組": "", "排序": "", "無線電代號": "", "單位": "聖亭所", "職別": "警員",   "姓名": "劉憬霖", "任務分工": "盤查兼蒐證",      "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
+    {"編組": "", "排序": "", "無線電代號": "", "單位": "三和所", "職別": "警員",   "姓名": "謝伯昇", "任務分工": "大門警戒",        "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
     {"編組": "", "排序": "", "無線電代號": "", "單位": "偵查隊", "職別": "小隊長", "姓名": "陳正育", "任務分工": "刑案偵防、社維法案件查處", "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
     {"編組": "", "排序": "", "無線電代號": "", "單位": "偵查隊", "職別": "偵查佐", "姓名": "鄧正斌", "任務分工": "持DV全程蒐證",   "臨檢目標場所": "A. 鉅大撞球館、B. 台灣麻將協會、F. 憤怒鳥網咖、G. 真情男女養生館、H. 萬紫千紅舒壓館"},
 ])
 
-# 簽到表預設排列欄位佈局
 DEFAULT_ATT_ROWS = pd.DataFrame([
     {"左側單位": "交通組", "右側單位": "聖亭派出所"},
     {"左側單位": "督察組", "右側單位": "龍潭派出所"},
@@ -159,6 +159,23 @@ PTL_UNIT_ORDER = {"聖亭所": 1, "龍潭所": 2, "中興所": 3,
                   "石門所": 4, "三和所": 5, "高平所": 6, "龍潭交分隊": 7}
 
 CP_GROUP1_UNITS = {"中興所", "龍潭所"}
+
+def sort_cmd_group(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty: return df
+    res = df.copy().reset_index(drop=True)
+    
+    # 確保有排序欄位
+    if "排序" not in res.columns: 
+        res["排序"] = ""
+        
+    # 將排序轉為數字，空白或無效值當作 999 (排到最後面)
+    res["_sort_num"] = pd.to_numeric(res["排序"], errors='coerce').fillna(999)
+    res = res.sort_values(["_sort_num"]).reset_index(drop=True)
+    res = res.drop(columns=["_sort_num"])
+    
+    # 固定欄位顯示順序
+    cols = ["排序", "編組", "通訊代號", "任務", "負責人員", "共同執行人員"]
+    return res[[c for c in cols if c in res.columns]]
 
 def _normalize_radio_col(res: pd.DataFrame) -> pd.DataFrame:
     if "無線電代號" in res.columns:
@@ -337,7 +354,7 @@ def sync_ptl_to_cp_logic(df_ptl: pd.DataFrame) -> pd.DataFrame:
 def calculate_stats(df_cmd, df_ptl, df_cp):
     supervisors = set()
     for _, row in df_cmd.iterrows():
-        aim = str(row.get("任務目標", ""))
+        aim = str(row.get("任務", ""))
         if "督導" in aim or "指導" in aim:
             leader = re.sub(r'(分局長|副分局長|組長|主任|巡官|教官|警務員|警務佐|偵查隊隊長)\s*', '',
                             str(row.get("負責人員", ""))).strip()
@@ -355,7 +372,7 @@ def calculate_stats(df_cmd, df_ptl, df_cp):
             "inv": inv, "civ": 0, "total": cmd + ptl_m + ptl_c + inv}
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 5. PDF 工具 (升級點：自動載入自訂簽到表單位)
+# 5. PDF 工具
 # ══════════════════════════════════════════════════════════════════════════════
 def _make_styles(font):
     def S(name, size, align, leading=None, space_after=0, space_before=0):
@@ -502,9 +519,10 @@ def generate_main_pdf(unit, project, time_str, briefing,
     add_section("參、 督導及其他任務編組表")
     data = [_header_row(["項目","通訊代號","任務目標","負責人員","共同人員"], S["cell"])]
     for _, r in df_cmd.iterrows():
-        data.append([Paragraph(_clean(r.get("項目","")),      S["cell"]),
+        # 修正：將 PDF 抓取的欄位對應到 DataFrame 實際的名稱 ("編組" 和 "任務")
+        data.append([Paragraph(_clean(r.get("編組","")),      S["cell"]),
                      Paragraph(_clean(r.get("通訊代號","")),  S["cell"]),
-                     Paragraph(_clean(r.get("任務目標","")),  S["cell_left"]),
+                     Paragraph(_clean(r.get("任務","")),      S["cell_left"]),
                      Paragraph(_clean(r.get("負責人員","")),  S["cell"]),
                      Paragraph(_clean(r.get("共同執行人員","")), S["cell"])])
     t = Table(data, colWidths=[PW*.12, PW*.14, PW*.28, PW*.26, PW*.20])
@@ -571,7 +589,6 @@ def generate_main_pdf(unit, project, time_str, briefing,
 
 
 def generate_attendance_pdf(unit, project, time_str, brief_time, brief_loc, df_att_units):
-    """產出簽到表 PDF（升級點：單位名冊完全由傳入的自訂 df_att_units 決定）"""
     font  = _get_font()
     buf   = io.BytesIO()
     PW    = A4[0] - 30 * mm
@@ -612,14 +629,14 @@ def generate_attendance_pdf(unit, project, time_str, brief_time, brief_loc, df_a
         ("FONTNAME",   (0,0), (-1,-1), font),
         ("GRID",       (0,0), (-1,-1), 0.5, colors.black),
         ("VALIGN",     (0,0), (-1,-1), "MIDDLE"),
-        ("BACKGROUND", (0,0), (3,   0), colors.whitesmoke),
+        ("BACKGROUND", (0,0), (3,  0), colors.whitesmoke),
     ]))
     story.append(t)
     doc.build(story)
     return buf.getvalue()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 6. Google Sheets (升級點：新增簽到表自訂單位分頁持久化儲存)
+# 6. Google Sheets
 # ══════════════════════════════════════════════════════════════════════════════
 @st.cache_resource
 def get_client():
@@ -758,7 +775,7 @@ if "initialized" not in st.session_state:
         st.session_state.brief_time = cfg.get("brief_time",   DEFAULT_BRIEF_TIME)
         st.session_state.brief_loc  = cfg.get("brief_loc",    DEFAULT_BRIEF_LOC)
         st.session_state.cp_loc     = cfg.get("cp_loc",       DEFAULT_CP_LOC)
-        st.session_state.df_cmd = df_cmd_cl if not df_cmd_cl.empty else DEFAULT_CMD.copy()
+        st.session_state.df_cmd = sort_cmd_group(df_cmd_cl) if not df_cmd_cl.empty else sort_cmd_group(DEFAULT_CMD.copy())
         st.session_state.df_ptl = assign_ptl_groups(df_ptl_cl) if not df_ptl_cl.empty else assign_ptl_groups(DEFAULT_PTL.copy())
         st.session_state.df_cp  = assign_cp_groups(df_cp_cl)  if not df_cp_cl.empty  else assign_cp_groups(DEFAULT_CHECKPOINT.copy())
         st.session_state.df_att_units = df_att_cl if not df_att_cl.empty else DEFAULT_ATT_ROWS.copy()
@@ -773,7 +790,7 @@ if "initialized" not in st.session_state:
         st.session_state.brief_time = DEFAULT_BRIEF_TIME
         st.session_state.brief_loc  = DEFAULT_BRIEF_LOC
         st.session_state.cp_loc     = DEFAULT_CP_LOC
-        st.session_state.df_cmd = DEFAULT_CMD.copy()
+        st.session_state.df_cmd = sort_cmd_group(DEFAULT_CMD.copy())
         st.session_state.df_ptl = assign_ptl_groups(DEFAULT_PTL.copy())
         st.session_state.df_cp  = assign_cp_groups(DEFAULT_CHECKPOINT.copy())
         st.session_state.df_att_units = DEFAULT_ATT_ROWS.copy()
@@ -796,7 +813,7 @@ for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
 for _k, _fn in [
-    ("df_cmd", lambda: DEFAULT_CMD.copy()),
+    ("df_cmd", lambda: sort_cmd_group(DEFAULT_CMD.copy())),
     ("df_ptl", lambda: assign_ptl_groups(DEFAULT_PTL.copy())),
     ("df_cp",  lambda: assign_cp_groups(DEFAULT_CHECKPOINT.copy())),
     ("df_att_units", lambda: DEFAULT_ATT_ROWS.copy()),
@@ -833,13 +850,17 @@ c3.metric("場所臨檢組", f"{live_stats['ptl_场所']} 人")
 c4.metric("偵訊組/民力", f"{live_stats['inv']}人 / {live_stats['civ']}人")
 c5.metric("總計服勤警力", f"{live_stats['total']} 人")
 
+# 升級點：指揮編組套用動態排序邏輯
 st.subheader("參、 督導及指揮編組")
 edited_cmd = st.data_editor(st.session_state.df_cmd, num_rows="dynamic",
                             use_container_width=True, key="ed_cmd")
-edited_cmd = edited_cmd.dropna(how="all").fillna("")
-if not edited_cmd.equals(st.session_state.df_cmd):
-    st.session_state.df_cmd = edited_cmd
-    st.rerun()
+edited_cmd = edited_cmd.dropna(how="all").fillna("").reset_index(drop=True)
+
+if not edited_cmd.empty:
+    re_cmd = sort_cmd_group(edited_cmd) # 套用排序邏輯
+    if not re_cmd.equals(st.session_state.df_cmd):
+        st.session_state.df_cmd = re_cmd
+        st.rerun()
 
 st.subheader("勤務時間與重點設定")
 col_ptl_f, col_cp_f = st.columns(2)
@@ -874,7 +895,6 @@ with col_cl:
     cp_loc = st.text_input("聯合稽查站地點", value=st.session_state.cp_loc, key="ui_cp_loc")
     st.session_state.cp_loc = cp_loc
 
-# ── 升級點：UI 介面加入動態簽到表單位編輯器 ─────────────────────────
 st.markdown("**簽到表欄位佈局設定（可自由新增、刪除列，或修改左右兩側單位名稱）**")
 edited_att = st.data_editor(st.session_state.df_att_units, num_rows="dynamic",
                             use_container_width=True, key="ed_att")
