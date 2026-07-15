@@ -53,7 +53,6 @@ DEFAULT_BRIEF_TIME = "19時30分至20時00分"
 DEFAULT_BRIEF_LOC  = "分局二樓會議室"
 DEFAULT_CP_LOC    = "分局廣場"
 
-# 升級點：新增「排序」欄位，讓系統能自動排列上下順序
 DEFAULT_CMD = pd.DataFrame([
     {"排序": "1", "編組": "指揮官",    "通訊代號": "隆安1號",   "任務": "勤務核定並重點機動督導",         "負責人員": "分局長 施宇峰",         "共同執行人員": "巡官陳鵬翔、警員張庭溱"},
     {"排序": "2", "編組": "副指揮官",  "通訊代號": "隆安2號",   "任務": "襄助指揮、重點機動督導",         "負責人員": "副分局長 何憶雯",       "共同執行人員": "警務佐曾威仁"},
@@ -164,16 +163,13 @@ def sort_cmd_group(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty: return df
     res = df.copy().reset_index(drop=True)
     
-    # 確保有排序欄位
     if "排序" not in res.columns: 
         res["排序"] = ""
         
-    # 將排序轉為數字，空白或無效值當作 999 (排到最後面)
     res["_sort_num"] = pd.to_numeric(res["排序"], errors='coerce').fillna(999)
     res = res.sort_values(["_sort_num"]).reset_index(drop=True)
     res = res.drop(columns=["_sort_num"])
     
-    # 固定欄位顯示順序
     cols = ["排序", "編組", "通訊代號", "任務", "負責人員", "共同執行人員"]
     return res[[c for c in cols if c in res.columns]]
 
@@ -519,7 +515,6 @@ def generate_main_pdf(unit, project, time_str, briefing,
     add_section("參、 督導及其他任務編組表")
     data = [_header_row(["項目","通訊代號","任務目標","負責人員","共同人員"], S["cell"])]
     for _, r in df_cmd.iterrows():
-        # 修正：將 PDF 抓取的欄位對應到 DataFrame 實際的名稱 ("編組" 和 "任務")
         data.append([Paragraph(_clean(r.get("編組","")),      S["cell"]),
                      Paragraph(_clean(r.get("通訊代號","")),  S["cell"]),
                      Paragraph(_clean(r.get("任務","")),      S["cell_left"]),
@@ -593,8 +588,6 @@ def generate_attendance_pdf(unit, project, time_str, brief_time, brief_loc, df_a
     buf   = io.BytesIO()
     # A4 尺寸扣除左右邊界
     PW    = A4[0] - 30 * mm
-    # A4 尺寸扣除上下邊界 (10mm + 10mm) 取出實際可用高度
-    PH    = A4[1] - 20 * mm 
     doc   = SimpleDocTemplate(buf, pagesize=A4,
                                leftMargin=15*mm, rightMargin=15*mm,
                                topMargin=10*mm,  bottomMargin=10*mm)
@@ -607,15 +600,17 @@ def generate_attendance_pdf(unit, project, time_str, brief_time, brief_loc, df_a
     story.append(Paragraph(f"地點：{brief_loc}", S["text"]))
     story.append(Spacer(1, 3*mm))
 
-    t = Table([[Paragraph("<b>分局長：</b>", S["cell_left"]),
+    t1 = Table([[Paragraph("<b>分局長：</b>", S["cell_left"]),
                 Paragraph("<b>上級督導：</b>", S["cell"]), ""]],
               colWidths=[PW*.3, PW*.4, PW*.3])
-    t.setStyle(TableStyle([("FONTNAME", (0,0), (-1,-1), font),
-                            ("VALIGN",   (0,0), (-1,-1), "TOP")]))
-    story.append(t)
-    story.append(Spacer(1, 6*mm))
+    # 略為壓縮表頭區塊
+    t1.setStyle(TableStyle([("FONTNAME", (0,0), (-1,-1), font),
+                            ("VALIGN",   (0,0), (-1,-1), "TOP"),
+                            ("BOTTOMPADDING", (0,0), (-1,-1), 1)])) 
+    story.append(t1)
+    story.append(Spacer(1, 4*mm))
     story.append(Paragraph("<b>副分局長：</b>", S["text"]))
-    story.append(Spacer(1, 6*mm))
+    story.append(Spacer(1, 4*mm))
 
     tdata = [_header_row(["單位","參加人員","單位","參加人員"], S["cell"])]
     for _, r in df_att_units.iterrows():
@@ -626,21 +621,19 @@ def generate_attendance_pdf(unit, project, time_str, brief_time, brief_loc, df_a
             Paragraph(r_val, S["cell"]) if r_val else "", ""
         ])
 
-    # 升級點：動態計算簽到格高度，確保單頁輸出
     num_units = len(df_att_units)
     
-    # 估算其他固定排版元件（標題、分局長、Spacer、表頭等）約佔 80 mm
-    max_available_height = PH - 80 * mm
+    # 【關鍵修正 1】加大安全緩衝區
+    # A4 高度為 297mm。我們預扣 120mm 給上下邊距、標題、長官簽名與各種 Spacer，避免觸發自動換頁。
+    max_available_height = A4[1] - 120 * mm 
     
     if num_units > 0:
-        # 將剩餘空間平均分配給每一列
         dynamic_row_h = max_available_height / num_units
-        # 設置保險閥值：單列高度不超過 26mm (避免格數少時太空曠)，不低於 12mm (確保有足夠空間簽名)
-        row_h = max(12 * mm, min(dynamic_row_h, 26 * mm))
+        # 將最小極限設為 10mm (約1公分，能擠進極多單位且字體不會破版)，最大維持 25mm
+        row_h = max(10 * mm, min(dynamic_row_h, 25 * mm))
     else:
-        row_h = 26 * mm
+        row_h = 25 * mm
 
-    # 套用動態計算的高度
     t = Table(tdata, colWidths=[PW*.2, PW*.3, PW*.2, PW*.3],
               rowHeights=[10*mm] + [row_h] * num_units)
     
@@ -649,6 +642,13 @@ def generate_attendance_pdf(unit, project, time_str, brief_time, brief_loc, df_a
         ("GRID",       (0,0), (-1,-1), 0.5, colors.black),
         ("VALIGN",     (0,0), (-1,-1), "MIDDLE"),
         ("BACKGROUND", (0,0), (3,  0), colors.whitesmoke),
+        
+        # 【關鍵修正 2】封印 ReportLab 的自動擴張功能
+        # 強制將儲存格內部的上下邊距壓到最低 (預設約為 6)，這樣它才會完全聽命於我們給定的 row_h
+        ("TOPPADDING",    (0,0), (-1,-1), 1),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 1),
+        ("LEFTPADDING",   (0,0), (-1,-1), 2),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 2),
     ]))
     story.append(t)
     doc.build(story)
@@ -869,14 +869,13 @@ c3.metric("場所臨檢組", f"{live_stats['ptl_场所']} 人")
 c4.metric("偵訊組/民力", f"{live_stats['inv']}人 / {live_stats['civ']}人")
 c5.metric("總計服勤警力", f"{live_stats['total']} 人")
 
-# 升級點：指揮編組套用動態排序邏輯
 st.subheader("參、 督導及指揮編組")
 edited_cmd = st.data_editor(st.session_state.df_cmd, num_rows="dynamic",
                             use_container_width=True, key="ed_cmd")
 edited_cmd = edited_cmd.dropna(how="all").fillna("").reset_index(drop=True)
 
 if not edited_cmd.empty:
-    re_cmd = sort_cmd_group(edited_cmd) # 套用排序邏輯
+    re_cmd = sort_cmd_group(edited_cmd) 
     if not re_cmd.equals(st.session_state.df_cmd):
         st.session_state.df_cmd = re_cmd
         st.rerun()
