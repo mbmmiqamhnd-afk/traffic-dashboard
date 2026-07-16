@@ -232,10 +232,10 @@ def assign_ptl_groups(df: pd.DataFrame) -> pd.DataFrame:
             is_officer = rank in SENIOR_RANKS
             unit_officer_count[unit] = unit_officer_count.get(unit, 0) + (0 if is_officer else 1)
             
-            # 核心修正：強制重新計算幹部代號，或者當現有代號為空時才計算
-            if is_officer or not existing or existing in ("nan", "None", "0"):
+            # 【關鍵修正】：完全信任手動輸入的值，僅在空值時重算
+            if not existing or existing in ("nan", "None", "0"):
                 new_code = generate_radio_code(unit, rank, unit_officer_count[unit])
-                radio_codes.append(new_code if new_code else existing)
+                radio_codes.append(new_code)
             else:
                 radio_codes.append(existing)
         else:
@@ -305,10 +305,10 @@ def assign_cp_groups(df: pd.DataFrame) -> pd.DataFrame:
             is_officer = rank in SENIOR_RANKS
             unit_officer_count[unit] = unit_officer_count.get(unit, 0) + (0 if is_officer else 1)
             
-            # 核心修正：強制重新計算幹部代號，或者當現有代號為空時才計算
-            if is_officer or not existing or existing in ("nan", "None", "0"):
+            # 【關鍵修正】：完全信任手動輸入的值，僅在空值時重算
+            if not existing or existing in ("nan", "None", "0"):
                 new_code = generate_radio_code(unit, rank, unit_officer_count[unit])
-                radio_codes.append(new_code if new_code else existing)
+                radio_codes.append(new_code)
             else:
                 radio_codes.append(existing)
         else:
