@@ -49,7 +49,6 @@ DEFAULT_BRIEF   = "20時30分於分局二樓會議室召開"
 DEFAULT_P1_DESC = "第一階段：21時至22時30分，機動巡邏"
 DEFAULT_P2_DESC = "第二階段：22時30分至24時，定點路檢及機動攔檢"
 
-# 新增 "排序" 欄位作為首欄
 EXPECTED_PTL_COLS = ["排序", "編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]
 EXPECTED_CP_COLS  = ["排序", "編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "路檢地點"]
 
@@ -128,11 +127,10 @@ def get_merge_styles(df, merge_cols):
     for col_name in merge_cols:
         if col_name not in cols_list:
             continue
-        c_idx = cols_list.index(col_name) - 1 # 扣除隱藏的排序欄位位移（PDF 渲染時專用）
+        c_idx = cols_list.index(col_name) - 1 # 扣除隱藏的排序欄位位移
         
-        # 若傳入的 df 包含「排序」，在 PDF 處理時需進行欄位索引平移
         if '排序' in df.columns and col_name != '排序':
-            pass # 後續 PDF 表格已將排序欄位移除，因此合併樣式應針對新表格的 index
+            pass 
             
         start_idx = 0
         while start_idx < len(df):
@@ -155,6 +153,30 @@ def get_merge_styles(df, merge_cols):
             start_idx = end_idx + 1
             
     return span_styles
+
+# 🟢 新增：編組內排序功能
+def sort_within_group(df):
+    if df is None or df.empty: 
+        return df
+    
+    df_sorted = df.copy()
+    # 確保排序欄位是數值
+    df_sorted['排序'] = pd.to_numeric(df_sorted['排序'], errors='coerce').fillna(9999)
+    
+    # 向下填補 (ffill) 編組欄位，確保空白編組被正確歸類到上一個編組
+    temp_group = df_sorted['編組'].replace(r'^\s*$', pd.NA, regex=True).ffill().fillna("")
+    
+    # 紀錄編組出現的原始先後順序，避免被依照筆畫或字母亂序
+    unique_groups = temp_group.unique()
+    group_order = {g: idx for idx, g in enumerate(unique_groups)}
+    
+    # 建立隱藏的群組排序依據
+    df_sorted['_group_order'] = temp_group.map(group_order)
+    
+    # 第一優先依照群組順序，第二優先依照使用者輸入的排序數值
+    df_sorted = df_sorted.sort_values(by=['_group_order', '排序']).drop(columns=['_group_order']).reset_index(drop=True)
+    return df_sorted
+
 
 # --- Google 授權 ---
 @st.cache_resource
@@ -443,10 +465,8 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 def auto_assign_radio_code(df):
     if df is None or df.empty: return df
     df_copy = df.copy()
-    # 基礎代碼對應表
     base_prefixes = {"交通分隊": "99", "聖亭": "5", "龍潭": "6", "中興": "7", "石門": "8", "高平": "9", "三和": "3"}
     
-    # 暫存當前處理中的群組名稱與其對應的無線電代號，確保同一編組代號一致
     active_group_name = ""
     active_group_radio = ""
     
@@ -457,25 +477,20 @@ def auto_assign_radio_code(df):
         rank = safe_str(row.get('職別')).strip()
         current_radio = safe_str(row.get('無線電代號')).strip()
         
-        # 整理文字用於判斷
         clean_unit = re.sub(r'\s+', '', unit)
         clean_rank = re.sub(r'\s+', '', rank)
         clean_person = re.sub(r'\s+', '', person)
         
-        # 判斷是否進入新編組，或者編組名稱雖然相同但需要重新確認該編組的「領隊代號」
         if idx == 0 or (group_name != "" and group_name != active_group_name) or group_name == "":
             if group_name != "":
                 active_group_name = group_name
             
-            # 優先判斷手動值：若該列已有輸入，則以該輸入為該組基準代號
             if current_radio != "":
                 active_group_radio = current_radio
             else:
-                # 取得基礎代碼
                 base_pfx = next((v for k, v in base_prefixes.items() if k in clean_unit), "")
                 
                 if base_pfx:
-                    # 邏輯判斷：所長/分隊長 -> 1, 副所長/小隊長 -> 2, 其餘 -> 0
                     if any(x in clean_rank or x in clean_person for x in ["所長", "分隊長"]):
                         suffix = "1"
                     elif any(x in clean_rank or x in clean_person for x in ["副所長", "小隊長"]):
@@ -485,11 +500,9 @@ def auto_assign_radio_code(df):
                     
                     active_group_radio = f"隆安{base_pfx}{suffix}"
                 else:
-                    active_group_radio = current_radio # 若無法匹配單位，則保持現狀
+                    active_group_radio = current_radio 
         
-        # 應用代號到該行
         if '無線電代號' in df_copy.columns:
-            # 只有當該行原本沒有代號時，才自動寫入；若該行已有特定代號則不強制覆寫
             if df_copy.at[idx, '無線電代號'] == "":
                 df_copy.at[idx, '無線電代號'] = active_group_radio
             
@@ -514,7 +527,6 @@ if err:
 df_set = df_set if isinstance(df_set, pd.DataFrame) else pd.DataFrame()
 df_cmd = df_cmd if (isinstance(df_cmd, pd.DataFrame) and not df_cmd.empty) else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
 
-# --- 舊版本試算表欄位轉換與相容機制 (自動插入排序欄位) ---
 if isinstance(df_ptl, pd.DataFrame) and not df_ptl.empty:
     if '排序' not in df_ptl.columns:
         df_ptl.insert(0, '排序', range(1, len(df_ptl) + 1))
@@ -523,7 +535,6 @@ if isinstance(df_ptl, pd.DataFrame) and not df_ptl.empty:
     if '任務分工' in df_ptl.columns and '巡邏路段' not in df_ptl.columns:
         df_ptl['巡邏路段'] = df_ptl['任務分工']
         df_ptl['任務分工'] = ""
-    # 新增相容: 無線電 -> 無線電代號
     if '無線電' in df_ptl.columns and '無線電代號' not in df_ptl.columns:
         df_ptl['無線電代號'] = df_ptl['無線電']
     for c in EXPECTED_PTL_COLS:
@@ -540,7 +551,6 @@ if isinstance(df_cp, pd.DataFrame) and not df_cp.empty:
     if '任務分工' in df_cp.columns and '路檢地點' not in df_cp.columns:
         df_cp['路檢地點'] = df_cp['任務分工']
         df_cp['任務分工'] = ""
-    # 新增相容: 無線電 -> 無線電代號
     if '無線電' in df_cp.columns and '無線電代號' not in df_cp.columns:
         df_cp['無線電代號'] = df_cp['無線電']
     for c in EXPECTED_CP_COLS:
@@ -578,7 +588,6 @@ b_info  = st.text_area("📢 勤前教育", b, height=70)
 
 st.subheader("2. 勤務編組")
 
-# 🟢 保持勾選功能，同時兼具手動覆寫的彈性
 auto_sync_radio = st.checkbox("✨ 啟用自動推算與統一同編組「無線電代號」 (若需完全手動自訂每列代號，請取消勾選)", value=True)
 
 tab1, tab2 = st.tabs(["📍 第一階段 (巡邏)", "🚧 第二階段 (路檢)"])
@@ -587,9 +596,8 @@ with tab1:
     st.info(f"當前標題：{phase1_desc}")
     raw_ptl = st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
     
-    # 將使用者輸入的排序資料轉換為數值進行排序，避免文字順序錯亂
-    raw_ptl['排序'] = pd.to_numeric(raw_ptl['排序'], errors='coerce').fillna(9999)
-    raw_ptl = raw_ptl.sort_values(by='排序').reset_index(drop=True)
+    # 改用新的群組內排序機制
+    raw_ptl = sort_within_group(raw_ptl)
     
     if auto_sync_radio:
         res_ptl = auto_assign_radio_code(raw_ptl).dropna(how="all").fillna("")
@@ -600,9 +608,8 @@ with tab2:
     st.info(f"當前標題：{phase2_desc}")
     raw_cp = st.data_editor(df_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     
-    # 將使用者輸入的排序資料轉換為數值進行排序，避免文字順序錯亂
-    raw_cp['排序'] = pd.to_numeric(raw_cp['排序'], errors='coerce').fillna(9999)
-    raw_cp = raw_cp.sort_values(by='排序').reset_index(drop=True)
+    # 改用新的群組內排序機制
+    raw_cp = sort_within_group(raw_cp)
     
     if auto_sync_radio:
         res_cp = auto_assign_radio_code(raw_cp).dropna(how="all").fillna("")
@@ -611,7 +618,6 @@ with tab2:
 
 st.markdown("---")
 
-# --- 移除原本的下載按鈕欄位，直接保留雲端備份與發信功能 ---
 if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True):
     with st.spinner("同步中，請稍候…"):
         if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc):
@@ -619,6 +625,6 @@ if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True
                 ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
             if ok:
                 st.success(f"✅ 同步與發信成功！已在後台為專案自動補上「{date_code}」代碼。")
-                st.rerun()  # 同步成功後重整前端，確保畫面立即更新最新配發的呼叫代碼
+                st.rerun()  
             else:
                 st.error(f"❌ 發信失敗: {mail_err}")
