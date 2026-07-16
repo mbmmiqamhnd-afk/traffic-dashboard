@@ -154,7 +154,7 @@ def get_merge_styles(df, merge_cols):
             
     return span_styles
 
-# 🟢 新增：編組內排序功能
+# 編組內排序功能
 def sort_within_group(df):
     if df is None or df.empty: 
         return df
@@ -176,7 +176,6 @@ def sort_within_group(df):
     # 第一優先依照群組順序，第二優先依照使用者輸入的排序數值
     df_sorted = df_sorted.sort_values(by=['_group_order', '排序']).drop(columns=['_group_order']).reset_index(drop=True)
     return df_sorted
-
 
 # --- Google 授權 ---
 @st.cache_resource
@@ -462,6 +461,46 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
         return False, str(e)
 
 # --- 核心邏輯區 ---
+
+# 🟢 新增：將第一階段人員依單位對應並補入第二階段
+def sync_personnel_by_unit(df_1, df_2):
+    if df_1 is None or df_1.empty or df_2 is None or df_2.empty:
+        return df_2
+    
+    df_2_copy = df_2.copy()
+    
+    # 1. 建立「單位」與「人員名單」的對應表 (依序存放)
+    unit_personnel = {}
+    for _, row in df_1.iterrows():
+        u = safe_str(row.get('單位')).strip()
+        r = safe_str(row.get('職別')).strip()
+        n = safe_str(row.get('姓名')).strip()
+        
+        # 若該列有填寫單位，且有填寫職別或姓名
+        if u and (r or n):
+            if u not in unit_personnel:
+                unit_personnel[u] = []
+            unit_personnel[u].append({'職別': r, '姓名': n})
+            
+    # 2. 將名單依序填入第二階段的空白處
+    usage_count = {u: 0 for u in unit_personnel}
+    
+    for idx, row in df_2_copy.iterrows():
+        u = safe_str(row.get('單位')).strip()
+        curr_r = safe_str(row.get('職別')).strip()
+        curr_n = safe_str(row.get('姓名')).strip()
+        
+        # 若遇到單位相符，且職別與姓名目前都是「空白」的列
+        if u in unit_personnel and not curr_r and not curr_n:
+            # 確保還有剩下的人員名額可以帶入
+            if usage_count[u] < len(unit_personnel[u]):
+                person = unit_personnel[u][usage_count[u]]
+                df_2_copy.at[idx, '職別'] = person['職別']
+                df_2_copy.at[idx, '姓名'] = person['姓名']
+                usage_count[u] += 1
+                
+    return df_2_copy
+
 def auto_assign_radio_code(df):
     if df is None or df.empty: return df
     df_copy = df.copy()
@@ -596,7 +635,6 @@ with tab1:
     st.info(f"當前標題：{phase1_desc}")
     raw_ptl = st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
     
-    # 改用新的群組內排序機制
     raw_ptl = sort_within_group(raw_ptl)
     
     if auto_sync_radio:
@@ -606,9 +644,22 @@ with tab1:
 
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
+    
+    # --- 🟢 新增：同步人員按鈕區域 ---
+    col_btn, col_hint = st.columns([1, 2])
+    with col_btn:
+        if st.button("🔄 自動依單位帶入第一階段人員"):
+            # 在渲染 data_editor 之前，直接將 raw_ptl 的資料填補至 df_cp 中
+            df_cp = sync_personnel_by_unit(raw_ptl, df_cp)
+            # 刪除 session_state 強制讓 data_editor 讀取更新後的 df_cp
+            if "cp_editor" in st.session_state:
+                del st.session_state["cp_editor"]
+    with col_hint:
+        st.caption("※ 提示：點擊將依「單位」比對，把第一階段的人員填入第二階段的空白列 (注意：將會重置第二階段尚未儲存的手動變更)。")
+    # ---------------------------------
+    
     raw_cp = st.data_editor(df_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     
-    # 改用新的群組內排序機制
     raw_cp = sort_within_group(raw_cp)
     
     if auto_sync_radio:
