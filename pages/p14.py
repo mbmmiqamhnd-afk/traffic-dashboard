@@ -160,20 +160,11 @@ def sort_within_group(df):
         return df
     
     df_sorted = df.copy()
-    # 確保排序欄位是數值
     df_sorted['排序'] = pd.to_numeric(df_sorted['排序'], errors='coerce').fillna(9999)
-    
-    # 向下填補 (ffill) 編組欄位，確保空白編組被正確歸類到上一個編組
     temp_group = df_sorted['編組'].replace(r'^\s*$', pd.NA, regex=True).ffill().fillna("")
-    
-    # 紀錄編組出現的原始先後順序，避免被依照筆畫或字母亂序
     unique_groups = temp_group.unique()
     group_order = {g: idx for idx, g in enumerate(unique_groups)}
-    
-    # 建立隱藏的群組排序依據
     df_sorted['_group_order'] = temp_group.map(group_order)
-    
-    # 第一優先依照群組順序，第二優先依照使用者輸入的排序數值
     df_sorted = df_sorted.sort_values(by=['_group_order', '排序']).drop(columns=['_group_order']).reset_index(drop=True)
     return df_sorted
 
@@ -327,7 +318,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     df_ptl = clean_df(df_ptl)
     story.append(Paragraph(f"<b>{p1_desc}</b>", style_middle_block))
     
-    # 產出 PDF 時過濾掉 "排序" 欄位
     pdf_ptl_cols = [h for h in EXPECTED_PTL_COLS if h != "排序"]
     span_styles_ptl = get_merge_styles(df_ptl, ["編組", "無線電代號", "單位", "巡邏路段"])
     
@@ -358,7 +348,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     df_cp = clean_df(df_cp)
     story.append(Paragraph(f"<b>{p2_desc}</b>", style_middle_block))
     
-    # 產出 PDF 時過濾掉 "排序" 欄位
     pdf_cp_cols = [h for h in EXPECTED_CP_COLS if h != "排序"]
     span_styles_cp = get_merge_styles(df_cp, ["編組", "無線電代號", "單位", "路檢地點"])
     
@@ -462,44 +451,45 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 
 # --- 核心邏輯區 ---
 
-# 🟢 新增：將第一階段人員依單位對應並補入第二階段
-def sync_personnel_by_unit(df_1, df_2):
-    if df_1 is None or df_1.empty or df_2 is None or df_2.empty:
-        return df_2
-    
-    df_2_copy = df_2.copy()
+# 🟢 新增：依單位保留第二階段現有資料（任務、地點），僅將第一階段的「職別」與「姓名」更新覆蓋過去
+def update_personnel_by_unit(df_ptl, df_cp):
+    if df_ptl is None or df_ptl.empty or df_cp is None or df_cp.empty:
+        return df_cp
+        
+    df_cp_updated = df_cp.copy()
     
     # 1. 建立「單位」與「人員名單」的對應表 (依序存放)
     unit_personnel = {}
-    for _, row in df_1.iterrows():
+    for _, row in df_ptl.iterrows():
         u = safe_str(row.get('單位')).strip()
         r = safe_str(row.get('職別')).strip()
         n = safe_str(row.get('姓名')).strip()
         
-        # 若該列有填寫單位，且有填寫職別或姓名
         if u and (r or n):
             if u not in unit_personnel:
                 unit_personnel[u] = []
             unit_personnel[u].append({'職別': r, '姓名': n})
             
-    # 2. 將名單依序填入第二階段的空白處
+    # 2. 走訪第二階段，依據單位依序填入最新人員（直接覆蓋舊有姓名與職別）
     usage_count = {u: 0 for u in unit_personnel}
     
-    for idx, row in df_2_copy.iterrows():
+    for idx, row in df_cp_updated.iterrows():
         u = safe_str(row.get('單位')).strip()
-        curr_r = safe_str(row.get('職別')).strip()
-        curr_n = safe_str(row.get('姓名')).strip()
         
-        # 若遇到單位相符，且職別與姓名目前都是「空白」的列
-        if u in unit_personnel and not curr_r and not curr_n:
-            # 確保還有剩下的人員名額可以帶入
-            if usage_count[u] < len(unit_personnel[u]):
+        # 若第二階段的該列有填寫單位
+        if u:
+            if u in unit_personnel and usage_count[u] < len(unit_personnel[u]):
+                # 還有該單位的人員名額，則帶入第一階段最新的資料
                 person = unit_personnel[u][usage_count[u]]
-                df_2_copy.at[idx, '職別'] = person['職別']
-                df_2_copy.at[idx, '姓名'] = person['姓名']
+                df_cp_updated.at[idx, '職別'] = person['職別']
+                df_cp_updated.at[idx, '姓名'] = person['姓名']
                 usage_count[u] += 1
+            else:
+                # 若該單位在第一階段已無多餘人員，則清空舊資料，確保名單與第一階段一致
+                df_cp_updated.at[idx, '職別'] = ""
+                df_cp_updated.at[idx, '姓名'] = ""
                 
-    return df_2_copy
+    return df_cp_updated
 
 def auto_assign_radio_code(df):
     if df is None or df.empty: return df
@@ -598,6 +588,10 @@ if isinstance(df_cp, pd.DataFrame) and not df_cp.empty:
 else:
     df_cp = pd.DataFrame(columns=EXPECTED_CP_COLS)
 
+# 🌟 插入點：套用同步名單的資料覆寫 🌟
+if 'synced_cp_data' in st.session_state:
+    df_cp = st.session_state['synced_cp_data']
+
 d = dict(zip(df_set.iloc[:, 0].astype(str), df_set.iloc[:, 1].astype(str))) if not df_set.empty else {}
 
 u    = d.get("unit_name",      DEFAULT_UNIT)
@@ -645,18 +639,16 @@ with tab1:
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
     
-    # --- 🟢 新增：同步人員按鈕區域 ---
     col_btn, col_hint = st.columns([1, 2])
     with col_btn:
-        if st.button("🔄 自動依單位帶入第一階段人員"):
-            # 在渲染 data_editor 之前，直接將 raw_ptl 的資料填補至 df_cp 中
-            df_cp = sync_personnel_by_unit(raw_ptl, df_cp)
-            # 刪除 session_state 強制讓 data_editor 讀取更新後的 df_cp
+        if st.button("🔄 依單位更新人員名單 (保留任務與地點)"):
+            # 觸發更新邏輯：保留舊資料架構，僅依單位替換為第一階段最新人員
+            st.session_state['synced_cp_data'] = update_personnel_by_unit(raw_ptl, df_cp)
             if "cp_editor" in st.session_state:
                 del st.session_state["cp_editor"]
+            st.rerun()
     with col_hint:
-        st.caption("※ 提示：點擊將依「單位」比對，把第一階段的人員填入第二階段的空白列 (注意：將會重置第二階段尚未儲存的手動變更)。")
-    # ---------------------------------
+        st.caption("※ 提示：保留第二階段已建立的地點與任務，依「單位」直接將舊有的人員名單替換為第一階段的最新陣容。")
     
     raw_cp = st.data_editor(df_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     
@@ -675,6 +667,8 @@ if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True
             with st.spinner("同步成功，正在寄送郵件…"):
                 ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
             if ok:
+                if 'synced_cp_data' in st.session_state:
+                    del st.session_state['synced_cp_data']
                 st.success(f"✅ 同步與發信成功！已在後台為專案自動補上「{date_code}」代碼。")
                 st.rerun()  
             else:
