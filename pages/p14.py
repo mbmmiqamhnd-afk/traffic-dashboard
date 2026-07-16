@@ -49,8 +49,9 @@ DEFAULT_BRIEF   = "20時30分於分局二樓會議室召開"
 DEFAULT_P1_DESC = "第一階段：21時至22時30分，機動巡邏"
 DEFAULT_P2_DESC = "第二階段：22時30分至24時，定點路檢及機動攔檢"
 
-EXPECTED_PTL_COLS = ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]
-EXPECTED_CP_COLS  = ["編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "路檢地點"]
+# 新增 "排序" 欄位作為首欄
+EXPECTED_PTL_COLS = ["排序", "編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]
+EXPECTED_CP_COLS  = ["排序", "編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "路檢地點"]
 
 # --- 2. 輔助函數 ---
 def _get_font():
@@ -127,8 +128,12 @@ def get_merge_styles(df, merge_cols):
     for col_name in merge_cols:
         if col_name not in cols_list:
             continue
-        c_idx = cols_list.index(col_name)
+        c_idx = cols_list.index(col_name) - 1 # 扣除隱藏的排序欄位位移（PDF 渲染時專用）
         
+        # 若傳入的 df 包含「排序」，在 PDF 處理時需進行欄位索引平移
+        if '排序' in df.columns and col_name != '排序':
+            pass # 後續 PDF 表格已將排序欄位移除，因此合併樣式應針對新表格的 index
+            
         start_idx = 0
         while start_idx < len(df):
             val = str(df.iloc[start_idx][col_name]).strip()
@@ -301,9 +306,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     df_ptl = clean_df(df_ptl)
     story.append(Paragraph(f"<b>{p1_desc}</b>", style_middle_block))
     
+    # 產出 PDF 時過濾掉 "排序" 欄位
+    pdf_ptl_cols = [h for h in EXPECTED_PTL_COLS if h != "排序"]
     span_styles_ptl = get_merge_styles(df_ptl, ["編組", "無線電代號", "單位", "巡邏路段"])
     
-    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in EXPECTED_PTL_COLS]]
+    data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in pdf_ptl_cols]]
     for _, r in df_ptl.iterrows():
         data_ptl.append([
             Paragraph(clean_text_only(r.get('編組')), style_cell),
@@ -330,9 +337,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     df_cp = clean_df(df_cp)
     story.append(Paragraph(f"<b>{p2_desc}</b>", style_middle_block))
     
+    # 產出 PDF 時過濾掉 "排序" 欄位
+    pdf_cp_cols = [h for h in EXPECTED_CP_COLS if h != "排序"]
     span_styles_cp = get_merge_styles(df_cp, ["編組", "無線電代號", "單位", "路檢地點"])
     
-    data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in EXPECTED_CP_COLS]]
+    data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in pdf_cp_cols]]
     for _, r in df_cp.iterrows():
         data_cp.append([
             Paragraph(clean_text_only(r.get('編組')), style_cell),
@@ -505,8 +514,10 @@ if err:
 df_set = df_set if isinstance(df_set, pd.DataFrame) else pd.DataFrame()
 df_cmd = df_cmd if (isinstance(df_cmd, pd.DataFrame) and not df_cmd.empty) else pd.DataFrame(columns=["職稱", "代號", "姓名", "任務"])
 
-# --- 舊版本試算表欄位轉換與相容機制 ---
+# --- 舊版本試算表欄位轉換與相容機制 (自動插入排序欄位) ---
 if isinstance(df_ptl, pd.DataFrame) and not df_ptl.empty:
+    if '排序' not in df_ptl.columns:
+        df_ptl.insert(0, '排序', range(1, len(df_ptl) + 1))
     if '服勤人員' in df_ptl.columns and '姓名' not in df_ptl.columns:
         df_ptl['姓名'] = df_ptl['服勤人員']
     if '任務分工' in df_ptl.columns and '巡邏路段' not in df_ptl.columns:
@@ -522,6 +533,8 @@ else:
     df_ptl = pd.DataFrame(columns=EXPECTED_PTL_COLS)
 
 if isinstance(df_cp, pd.DataFrame) and not df_cp.empty:
+    if '排序' not in df_cp.columns:
+        df_cp.insert(0, '排序', range(1, len(df_cp) + 1))
     if '服勤人員' in df_cp.columns and '姓名' not in df_cp.columns:
         df_cp['姓名'] = df_cp['服勤人員']
     if '任務分工' in df_cp.columns and '路檢地點' not in df_cp.columns:
@@ -574,6 +587,10 @@ with tab1:
     st.info(f"當前標題：{phase1_desc}")
     raw_ptl = st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
     
+    # 將使用者輸入的排序資料轉換為數值進行排序，避免文字順序錯亂
+    raw_ptl['排序'] = pd.to_numeric(raw_ptl['排序'], errors='coerce').fillna(9999)
+    raw_ptl = raw_ptl.sort_values(by='排序').reset_index(drop=True)
+    
     if auto_sync_radio:
         res_ptl = auto_assign_radio_code(raw_ptl).dropna(how="all").fillna("")
     else:
@@ -582,6 +599,10 @@ with tab1:
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
     raw_cp = st.data_editor(df_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
+    
+    # 將使用者輸入的排序資料轉換為數值進行排序，避免文字順序錯亂
+    raw_cp['排序'] = pd.to_numeric(raw_cp['排序'], errors='coerce').fillna(9999)
+    raw_cp = raw_cp.sort_values(by='排序').reset_index(drop=True)
     
     if auto_sync_radio:
         res_cp = auto_assign_radio_code(raw_cp).dropna(how="all").fillna("")
