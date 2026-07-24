@@ -52,11 +52,9 @@ def send_csv_email(df, mode_name):
         msg = MIMEMultipart()
         msg["From"], msg["To"] = sender, sender
         
-        # 信件主旨自動帶入單位與日期
         date_str = datetime.now().strftime('%Y%m%d')
         msg["Subject"] = f"龍潭分局_{mode_name}噪音改裝車輛嘉獎統計結果_{date_str}"
         
-        # 信件內文
         body_text = (
             f"您好，\n\n"
             f"附件為系統自動產生的「{mode_name}」噪音改裝車輛嘉獎次數統計結果（CSV格式），請查收。\n\n"
@@ -64,7 +62,6 @@ def send_csv_email(df, mode_name):
         )
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
 
-        # 處理 CSV 附件 (加入 BOM 避免 Excel 開啟亂碼)
         filename = f"{mode_name}嘉獎次數統計結果.csv"
         csv_str = df.to_csv(index=False, encoding='utf-8-sig')
         
@@ -74,7 +71,6 @@ def send_csv_email(df, mode_name):
         part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(filename)}")
         msg.attach(part)
 
-        # 透過 SMTP 發送
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
             server.sendmail(sender, sender, msg.as_string())
@@ -87,13 +83,12 @@ def send_csv_email(df, mode_name):
 # 主程式
 # ==========================================
 st.set_page_config(page_title="噪音改裝車輛嘉獎統計系統", layout="wide")
-st.title("🚓 噪音改裝車輛嘉獎次數統計系統 (自動偵測版)")
+st.title("🚓 噪音改裝車輛嘉獎次數統計系統 (內容偵測版)")
 
 st.markdown("""
-💡 **系統會自動判斷統計模式與工作表：**
-*   **自動抓取工作表**：上傳 Excel 後，系統會自動尋找並鎖定對應的資料表 (如：受理明細、靜桃)，您無須手動點選。
-*   **上半年統計**：只需上傳前兩個檔案，第三個留空即可。
-*   **下半年統計**：上傳全部三個檔案，系統會自動將「前期明細」納入合計。
+💡 **系統具備全方位自動偵測能力：**
+*   **資料年度辨識**：自動掃描上傳的資料內容，擷取「年度」(如114年、115年)；透過有無第三個檔案判斷「上下半年」。
+*   **工作表鎖定**：上傳 Excel 後，系統會自動尋找並鎖定對應的資料表。
 """)
 
 # --- 側邊欄設定區 ---
@@ -144,6 +139,20 @@ if file_tgt and file_src1:
                 df_tgt_filtered = df_tgt.iloc[start_row_tgt - 2:]
                 df_src1_filtered = df_src1.iloc[start_row_src1 - 2:]
 
+                # -------------------------------------------
+                # 自動從「受理明細」資料內容中擷取年度
+                # -------------------------------------------
+                auto_year = "115" # 預設防呆值
+                found_year = False
+                # 掃描前 50 筆資料，尋找包含「數字+年」的格式 (例如 114年, 115年)
+                for _, row in df_tgt_filtered.head(50).iterrows():
+                    row_content = " ".join([str(val) for val in row if pd.notna(val)])
+                    match = re.search(r'(\d{2,3})年', row_content)
+                    if match:
+                        auto_year = match.group(1)
+                        found_year = True
+                        break
+
                 plate_to_reporter = {}
                 for _, row in df_src1_filtered.iterrows():
                     if len(row) > 6:
@@ -188,21 +197,24 @@ if file_tgt and file_src1:
                         reward_count = count_total // 6
                         output_data.append([name, count_current, count_total, reward_count])
 
+                # 將從資料抓取到的年度套用到最終名稱
+                year_str = f"{auto_year}年"
+                
                 if is_second_half:
                     cols = ['通報人(A)', '本期件數(B)', '前期件數(C)', '合計件數(D)', '嘉獎數(E)']
                     sort_col = '嘉獎數(E)'
-                    mode_name = "下半年"
+                    mode_name = f"{year_str}下半年"
                 else:
                     cols = ['通報人(A)', '本期件數(B)', '合計件數(C)', '嘉獎數(D)']
                     sort_col = '嘉獎數(D)'
-                    mode_name = "上半年"
+                    mode_name = f"{year_str}上半年"
 
                 df_result = pd.DataFrame(output_data, columns=cols)
                 df_result = df_result.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
                 
-                # 將計算結果存入 session_state 以便後續操作按鈕使用
                 st.session_state['df_result'] = df_result
                 st.session_state['mode_name'] = mode_name
+                st.session_state['auto_year'] = auto_year
                 st.session_state['calc_done'] = True
 
             except Exception as e:
@@ -212,14 +224,15 @@ if file_tgt and file_src1:
 if st.session_state.get('calc_done', False):
     df_result = st.session_state['df_result']
     mode_name = st.session_state['mode_name']
+    auto_year = st.session_state['auto_year']
     
+    st.info(f"🔎 系統已從資料內容自動偵測出年度為：**{auto_year} 年**")
     st.success(f"✅ 統計完成！已自動採用「{mode_name}模式」，共計算 {len(df_result)} 位通報人。")
     st.dataframe(df_result, use_container_width=True)
 
     st.markdown("### 💾 儲存與備份")
     d_col1, d_col2 = st.columns(2)
     
-    # 按鈕一：下載檔案
     with d_col1:
         csv_buffer = io.StringIO()
         df_result.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
@@ -233,7 +246,6 @@ if st.session_state.get('calc_done', False):
             use_container_width=True
         )
 
-    # 按鈕二：發送 Email
     with d_col2:
         if st.button("📧 將統計結果寄至我的信箱 (備份)", use_container_width=True):
             with st.spinner("信件寄送中，請稍候…"):
