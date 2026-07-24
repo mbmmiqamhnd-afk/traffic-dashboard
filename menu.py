@@ -13,6 +13,7 @@ def show_sidebar():
         st.page_link("app.py", label="回首頁 / 批次處理中心", icon="⚙️")
         st.page_link("pages/p17.py", label="交通疏導時數彙整", icon="⏱️")
         st.page_link("pages/p18.py", label="獎勵金點數統計表", icon="💰")
+        st.page_link("pages/p24.py", label="噪音改裝車輛嘉獎統計", icon="🏍️") # 🆕 新增：噪音車嘉獎統計
 
         st.divider()
 
@@ -28,7 +29,7 @@ def show_sidebar():
         st.page_link("pages/p15.py", label="三合一勤務規劃系統", icon="📋") # 原有功能
         st.page_link("pages/p19.py", label="二合一勤務規劃系統", icon="📋")
         st.page_link("pages/p21.py", label="三階段專案勤務規劃系統", icon="🚀") # 🆕 全新功能
-        st.sidebar.page_link("pages/p22.py", label="綜合勤務規劃(新)")
+        st.page_link("pages/p22.py", label="綜合勤務規劃(新)", icon="📋")
         st.page_link("pages/p23.py", label="純巡邏勤務規劃", icon="🚓") # 🆕 新增：純巡邏版本
 
         st.divider()
@@ -47,6 +48,7 @@ def main():
     請從左側選單選擇您要使用的功能。
 
     ✅ **最新系統更新：**
+    * 已於「數據與分析」專區新增 **[噪音改裝車輛嘉獎統計]**，支援上、下半年自動偵測模式，並提供一鍵比對與商數計算匯出功能。
     * 已於「勤務與專案規劃」專區新增 **[純巡邏勤務規劃]**，提供專注於機動巡邏與交通稽查的獨立表單介面。
     * 已於「勤務與專案規劃」專區新增 **[三階段專案勤務規劃系統]**，支援第一階段「機動攔檢」、第二階段「場所臨檢」與第三階段「定點路檢」的獨立表單規劃。
     * 已於「勤務與專案規劃」專區新增 **[聯合稽查(二階段)勤務規劃]**，完美融合環保局臨時檢驗站開設功能與二階段定點路檢排班機制。
