@@ -12,14 +12,30 @@ def normalize_plate(plate):
     return re.sub(r'[^A-Z0-9]', '', str(plate)).upper()
 
 # ==========================================
-# 輔助函式：讀取檔案 (處理編碼問題)
+# 輔助函式：讀取檔案 (支援 Excel 指定工作表與 CSV 編碼容錯)
 # ==========================================
-def load_data(file):
-    try:
-        return pd.read_csv(file, encoding='utf-8-sig')
-    except UnicodeDecodeError:
-        file.seek(0)
-        return pd.read_csv(file, encoding='big5')
+def load_data(file, sheet_name=None):
+    file.seek(0) 
+    
+    if file.name.endswith('.xlsx'):
+        return pd.read_excel(file, sheet_name=sheet_name, engine='openpyxl')
+    else:
+        try:
+            return pd.read_csv(file, encoding='utf-8-sig')
+        except UnicodeDecodeError:
+            file.seek(0)
+            return pd.read_csv(file, encoding='big5')
+
+# ==========================================
+# 輔助函式：自動尋找預設工作表索引
+# ==========================================
+def get_default_sheet_index(sheet_names, keywords):
+    """根據關鍵字自動尋找最相符的工作表，若無則預設回傳第一個(0)"""
+    for i, sheet_name in enumerate(sheet_names):
+        for kw in keywords:
+            if kw in sheet_name:
+                return i
+    return 0
 
 # ==========================================
 # 主程式
@@ -28,7 +44,8 @@ st.set_page_config(page_title="噪音改裝車輛嘉獎統計系統", layout="wi
 st.title("🚓 噪音改裝車輛嘉獎次數統計系統 (自動偵測版)")
 
 st.markdown("""
-💡 **系統會自動判斷統計模式：**
+💡 **系統會自動判斷統計模式與工作表：**
+*   **自動抓取工作表**：上傳 Excel 後，系統會自動尋找並鎖定對應的資料表 (如：受理明細、靜桃)，您無須手動點選。
 *   **上半年統計**：只需上傳前兩個檔案，第三個留空即可。
 *   **下半年統計**：上傳全部三個檔案，系統會自動將「前期明細」納入合計。
 """)
@@ -40,27 +57,49 @@ start_row_src1 = st.sidebar.number_input("[靜桃清冊] 起始列", min_value=2
 start_row_tgt = st.sidebar.number_input("[受理明細] 起始列", min_value=2, value=2, step=1)
 start_row_src2 = st.sidebar.number_input("[前期明細] 起始列 (下半年專用)", min_value=2, value=2, step=1)
 
-# --- 檔案上傳區 ---
+# --- 檔案上傳區與工作表選擇 ---
 st.markdown("### 📥 上傳資料檔案")
 col1, col2, col3 = st.columns(3)
-with col1: 
-    file_tgt = st.file_uploader("1. 上傳 [受理明細] (必填)", type=['csv'])
-with col2: 
-    file_src1 = st.file_uploader("2. 上傳 [靜桃清冊] (必填)", type=['csv'])
-with col3: 
-    file_src2 = st.file_uploader("3. 上傳 [前期明細] (上半年請留空)", type=['csv'])
 
-# 只要前兩個必填檔案有上傳，就可以執行
+# 1. 受理明細 (目標表)
+with col1: 
+    file_tgt = st.file_uploader("1. 上傳 [受理明細] (必填)", type=['csv', 'xlsx'])
+    sheet_tgt = None
+    if file_tgt and file_tgt.name.endswith('.xlsx'):
+        xls_tgt = pd.ExcelFile(file_tgt, engine='openpyxl')
+        # 自動尋找包含「受理明細」的工作表
+        default_idx = get_default_sheet_index(xls_tgt.sheet_names, ['受理明細'])
+        sheet_tgt = st.selectbox("📂 選擇工作表 (已自動辨識)", xls_tgt.sheet_names, index=default_idx, key="sheet_tgt")
+
+# 2. 靜桃清冊 (本期來源)
+with col2: 
+    file_src1 = st.file_uploader("2. 上傳 [靜桃清冊] (必填)", type=['csv', 'xlsx'])
+    sheet_src1 = None
+    if file_src1 and file_src1.name.endswith('.xlsx'):
+        xls_src1 = pd.ExcelFile(file_src1, engine='openpyxl')
+        # 自動尋找包含「靜桃」的工作表
+        default_idx = get_default_sheet_index(xls_src1.sheet_names, ['靜桃'])
+        sheet_src1 = st.selectbox("📂 選擇工作表 (已自動辨識)", xls_src1.sheet_names, index=default_idx, key="sheet_src1")
+
+# 3. 前期明細 (前期來源)
+with col3: 
+    file_src2 = st.file_uploader("3. 上傳 [前期明細] (上半年請留空)", type=['csv', 'xlsx'])
+    sheet_src2 = None
+    if file_src2 and file_src2.name.endswith('.xlsx'):
+        xls_src2 = pd.ExcelFile(file_src2, engine='openpyxl')
+        # 自動尋找包含「嘉獎」或「明細」的工作表
+        default_idx = get_default_sheet_index(xls_src2.sheet_names, ['嘉獎', '明細'])
+        sheet_src2 = st.selectbox("📂 選擇工作表 (已自動辨識)", xls_src2.sheet_names, index=default_idx, key="sheet_src2")
+
+# --- 執行統計區塊 ---
 if file_tgt and file_src1:
     if st.button("🚀 開始執行統計", type="primary"):
-        with st.spinner('資料處理中...'):
+        with st.spinner('資料讀取與處理中...'):
             try:
-                # 判斷是否為下半年模式 (是否有上傳第三個檔案)
                 is_second_half = file_src2 is not None
 
-                # 讀取必填檔案
-                df_tgt = load_data(file_tgt)
-                df_src1 = load_data(file_src1)
+                df_tgt = load_data(file_tgt, sheet_tgt)
+                df_src1 = load_data(file_src1, sheet_src1)
 
                 df_tgt_filtered = df_tgt.iloc[start_row_tgt - 2:]
                 df_src1_filtered = df_src1.iloc[start_row_src1 - 2:]
@@ -90,12 +129,12 @@ if file_tgt and file_src1:
                             current_counts[reporter] = current_counts.get(reporter, 0) + 1
 
                 # -------------------------------------------
-                # 步驟 3：讀取前期資料 (僅在有上傳第三個檔案時執行)
+                # 步驟 3：讀取前期資料
                 # -------------------------------------------
                 history_map = {}
                 if is_second_half:
-                    df_src2 = load_data(file_src2)
-                    df_src2_filtered = df_src2.iloc[start_row_src2 - 2:]
+                    df_src2_data = load_data(file_src2, sheet_src2)
+                    df_src2_filtered = df_src2_data.iloc[start_row_src2 - 2:]
                     for _, row in df_src2_filtered.iterrows():
                         if len(row) > 4:
                             h_name = str(row.iloc[0]).strip()
@@ -121,7 +160,6 @@ if file_tgt and file_src1:
                         reward_count = count_total // 6
                         output_data.append([name, count_current, count_total, reward_count])
 
-                # 依據自動判斷的結果設定欄位標題與排序基準
                 if is_second_half:
                     cols = ['通報人(A)', '本期件數(B)', '前期件數(C)', '合計件數(D)', '嘉獎數(E)']
                     sort_col = '嘉獎數(E)'
@@ -131,14 +169,12 @@ if file_tgt and file_src1:
                     sort_col = '嘉獎數(D)'
                     mode_name = "上半年"
 
-                # 轉換並排序 DataFrame
                 df_result = pd.DataFrame(output_data, columns=cols)
                 df_result = df_result.sort_values(by=sort_col, ascending=False).reset_index(drop=True)
 
                 st.success(f"✅ 統計完成！已自動採用「{mode_name}模式」，共計算 {len(df_result)} 位通報人。")
                 st.dataframe(df_result, use_container_width=True)
 
-                # 下載檔案設定
                 csv_buffer = io.StringIO()
                 df_result.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
                 filename = f"{mode_name}嘉獎次數統計結果.csv"
@@ -152,6 +188,6 @@ if file_tgt and file_src1:
                 )
 
             except Exception as e:
-                st.error(f"❌ 發生錯誤，請檢查檔案格式或設定的起始列。\n錯誤訊息：{e}")
+                st.error(f"❌ 發生錯誤，請檢查檔案格式或設定的起始列。\n詳細錯誤訊息：{e}")
 else:
-    st.info("請至少上傳「受理明細」與「靜桃清冊」兩個 CSV 檔案，以啟動統計按鈕。")
+    st.info("請至少上傳「受理明細」與「靜桃清冊」兩個檔案，以啟動統計按鈕。支援 CSV 與 Excel 格式。")
