@@ -11,7 +11,18 @@ from email import encoders
 from datetime import datetime
 
 # ==========================================
-# 固定參數設定 (隱藏於後台執行)
+# 0. 頁面設定與側邊欄選單 (串接您的 menu.py)
+# ==========================================
+st.set_page_config(page_title="噪音改裝車輛嘉獎統計系統", layout="wide")
+
+try:
+    from menu import show_sidebar
+    show_sidebar()
+except ImportError:
+    st.sidebar.warning("無法載入 menu.py，請確認檔案位置。")
+
+# ==========================================
+# 1. 固定參數設定 (隱藏於後台執行)
 # ==========================================
 START_ROW_TGT = 2   # [受理明細] 起始列
 START_ROW_SRC1 = 2  # [靜桃清冊] 起始列
@@ -23,16 +34,13 @@ COL_NAME = 6        # 通報人 所在欄位 (G欄)
 COL_UNIT = 7        # 單位 所在欄位 (H欄)
 
 # ==========================================
-# 輔助函式：車號標準化
+# 2. 輔助函式區
 # ==========================================
 def normalize_plate(plate):
     if pd.isna(plate):
         return ""
     return re.sub(r'[^A-Z0-9]', '', str(plate)).upper()
 
-# ==========================================
-# 輔助函式：年度與月份智慧解析 (嚴格雙重過濾版)
-# ==========================================
 def extract_year_month(date_val):
     if pd.isna(date_val): return None, None
     
@@ -65,9 +73,6 @@ def extract_year_month(date_val):
         
     return None, None
 
-# ==========================================
-# 輔助函式：讀取檔案 
-# ==========================================
 def load_data(file, sheet_name=None):
     file.seek(0) 
     if file.name.endswith('.xlsx'):
@@ -86,9 +91,6 @@ def get_default_sheet_index(sheet_names, keywords):
                 return i
     return 0
 
-# ==========================================
-# 輔助函式：寄送 Email 備份
-# ==========================================
 def send_csv_email(df_person, df_unit, mode_name):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
@@ -132,15 +134,13 @@ def send_csv_email(df_person, df_unit, mode_name):
         return False, str(e)
 
 # ==========================================
-# 主程式
+# 3. 主程式介面與邏輯
 # ==========================================
-st.set_page_config(page_title="噪音改裝車輛嘉獎統計系統", layout="wide")
-
 st.title("🚓 噪音改裝車輛嘉獎與績效統計系統")
 
 st.markdown("""
 💡 **系統已進入全自動極簡模式：**
-只需依序上傳檔案並點擊執行，系統將自動偵測年度、過濾歷史無效資料，並產出個人與單位績效雙報表。（系統參數皆已於背景固定，不干擾您的頁面導覽）
+只需依序上傳檔案並點擊執行，系統將自動偵測年度、過濾歷史無效資料，並產出個人與單位績效雙報表。
 """)
 
 # --- 檔案上傳區與工作表選擇 ---
@@ -184,9 +184,7 @@ if file_tgt and file_src1:
                 df_tgt_filtered = df_tgt.iloc[START_ROW_TGT - 2:]
                 df_src1_filtered = df_src1.iloc[START_ROW_SRC1 - 2:]
 
-                # -------------------------------------------
                 # 自動擷取基準年度 (從受理明細)
-                # -------------------------------------------
                 auto_year = "115"
                 for _, row in df_tgt_filtered.head(50).iterrows():
                     row_content = " ".join([str(val) for val in row if pd.notna(val)])
@@ -197,9 +195,7 @@ if file_tgt and file_src1:
                 
                 target_months = [7, 8, 9, 10, 11, 12] if is_second_half else [1, 2, 3, 4, 5, 6]
 
-                # -------------------------------------------
                 # 掃描靜桃清冊：嚴格雙重過濾
-                # -------------------------------------------
                 plate_to_reporter = {}
                 unit_counts = {}
                 max_needed_col = max(COL_PLATE, COL_NAME, COL_UNIT, COL_DATE)
@@ -210,11 +206,9 @@ if file_tgt and file_src1:
                         name = str(row.iloc[COL_NAME]).strip()
                         unit = str(row.iloc[COL_UNIT]).strip()
                         
-                        # 1. 建立嘉獎比對名單
                         if plate and name and name != 'nan':
                             plate_to_reporter[plate] = name
 
-                        # 2. 單位件數：年度與月份雙重吻合才計入
                         raw_date = row.iloc[COL_DATE]
                         y, m = extract_year_month(raw_date)
                         
@@ -227,9 +221,7 @@ if file_tgt and file_src1:
                             if unit and unit != 'nan' and unit.strip() != "":
                                 unit_counts[unit] = unit_counts.get(unit, 0) + 1
 
-                # -------------------------------------------
                 # 掃描受理明細：計算個人成案數
-                # -------------------------------------------
                 current_counts = {}
                 for _, row in df_tgt_filtered.iterrows():
                     if len(row) > 1:
@@ -240,9 +232,7 @@ if file_tgt and file_src1:
                             reporter = plate_to_reporter[plate]
                             current_counts[reporter] = current_counts.get(reporter, 0) + 1
 
-                # -------------------------------------------
-                # 讀取前期資料 (個人嘉獎跨期用)
-                # -------------------------------------------
+                # 讀取前期資料
                 history_map = {}
                 if is_second_half:
                     df_src2_data = load_data(file_src2, sheet_src2)
@@ -257,9 +247,7 @@ if file_tgt and file_src1:
                                 except ValueError:
                                     pass
 
-                # -------------------------------------------
                 # 整合資料
-                # -------------------------------------------
                 output_data = []
                 for name, count_current in current_counts.items():
                     if is_second_half:
