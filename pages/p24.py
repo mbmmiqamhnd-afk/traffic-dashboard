@@ -24,27 +24,23 @@ def normalize_plate(plate):
 def extract_year_month(date_val):
     if pd.isna(date_val): return None, None
     
-    # 處理 Excel 被自動轉成 datetime 的情況
     if isinstance(date_val, (datetime, pd.Timestamp)): 
         y = date_val.year
-        if y > 1911: y -= 1911  # 轉回民國年
+        if y > 1911: y -= 1911
         return y, date_val.month
     
     s = str(date_val).strip()
     
-    # 處理 115/01/19, 115.1.19, 115-01-19 等標準格式
     parts = re.split(r'[/.-]', s.split(' ')[0])
     if len(parts) >= 2:
         try:
             y = int(parts[0])
             m = int(parts[1])
-            # 防呆：如果抓到西元年，轉回民國年
             if y > 1911: y -= 1911
             if 1 <= m <= 12: 
                 return y, m
         except: pass
     
-    # 處理中文字格式 115年1月19日
     match = re.search(r'(\d{2,4})年(\d{1,2})月', s)
     if match:
         try:
@@ -138,7 +134,7 @@ start_row_src2 = st.sidebar.number_input("[前期明細] 起始列 (下半年專
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("請確認 [靜桃清冊] 的**欄位位置** (A欄=0, B欄=1, C欄=2...)：")
-col_date = st.sidebar.number_input("通報時間 所在欄位", value=1, step=1)    # 預設 B 欄 (符合您的 115/01/19 格式)
+col_date = st.sidebar.number_input("通報時間 所在欄位", value=1, step=1)    # 預設 B 欄 
 col_plate = st.sidebar.number_input("車號 所在欄位", value=4, step=1)    # 預設 E 欄
 col_name = st.sidebar.number_input("通報人 所在欄位", value=6, step=1)  # 預設 G 欄
 col_unit = st.sidebar.number_input("單位 所在欄位", value=7, step=1)    # 預設 H 欄
@@ -204,8 +200,6 @@ if file_tgt and file_src1:
                 unit_counts = {}
                 max_needed_col = max(col_plate, col_name, col_unit, col_date)
                 
-                debug_logs = []
-
                 for _, row in df_src1_filtered.iterrows():
                     if len(row) > max_needed_col:
                         plate = normalize_plate(row.iloc[col_plate])
@@ -224,15 +218,6 @@ if file_tgt and file_src1:
                         if y is not None and m is not None:
                             if str(y) == str(auto_year) and m in target_months:
                                 is_valid_time = True
-                        
-                        # 紀錄前 100 筆供除錯
-                        if len(debug_logs) < 100:
-                            debug_logs.append({
-                                "Excel原始字串 (B欄)": raw_date,
-                                "系統判斷年度": f"{y}年" if y else "⚠️ 無法判斷",
-                                "系統判斷月份": f"{m}月" if m else "⚠️ 無法判斷",
-                                "是否計入單位件數": "✅ 是" if is_valid_time else "❌ 否 (年度/月份不符)"
-                            })
 
                         if is_valid_time:
                             if unit and unit != 'nan' and unit.strip() != "":
@@ -303,7 +288,6 @@ if file_tgt and file_src1:
                 
                 st.session_state['df_person'] = df_person
                 st.session_state['df_unit'] = df_unit
-                st.session_state['debug_logs'] = pd.DataFrame(debug_logs)
                 st.session_state['mode_name'] = mode_name
                 st.session_state['auto_year'] = auto_year
                 st.session_state['calc_done'] = True
@@ -315,17 +299,11 @@ if file_tgt and file_src1:
 if st.session_state.get('calc_done', False):
     df_person = st.session_state['df_person']
     df_unit = st.session_state['df_unit']
-    df_debug = st.session_state['debug_logs']
     mode_name = st.session_state['mode_name']
     auto_year = st.session_state['auto_year']
     
     st.info(f"🔎 系統基準年度鎖定為：**{auto_year} 年**，已自動濾除所有跨年度歷史資料。")
     st.success(f"✅ 統計完成！已自動採用「{mode_name}模式」。")
-
-    # 除錯面板
-    with st.expander("🛠️ 如果單位件數還是不對？點我查看【系統日期辨識除錯報告】"):
-        st.markdown(f"系統只會計算被標示為「✅ 是」的案件。非 {auto_year} 年，或非本半年度的案件均會被自動擋下。")
-        st.dataframe(df_debug, use_container_width=True)
 
     tab1, tab2 = st.tabs(["👮 個人嘉獎次數統計 (僅計算成案)", "🏢 各單位通報統計 (含所有通報)"])
     
