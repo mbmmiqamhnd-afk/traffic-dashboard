@@ -11,7 +11,7 @@ from email import encoders
 from datetime import datetime
 
 # ==========================================
-# 輔助函式：車號標準化 (去空白、特殊符號、轉大寫)
+# 輔助函式：車號標準化 
 # ==========================================
 def normalize_plate(plate):
     if pd.isna(plate):
@@ -19,7 +19,32 @@ def normalize_plate(plate):
     return re.sub(r'[^A-Z0-9]', '', str(plate)).upper()
 
 # ==========================================
-# 輔助函式：讀取檔案 (支援 Excel 指定工作表與 CSV 編碼容錯)
+# 輔助函式：月份智慧解析 (相容公部門常見格式)
+# ==========================================
+def extract_month(date_val):
+    if pd.isna(date_val): return None
+    if isinstance(date_val, (datetime, pd.Timestamp)): 
+        return date_val.month
+    
+    s = str(date_val).strip()
+    # 處理 115/05/12, 115.5.12, 115-05-12 等格式
+    parts = re.split(r'[/.-]', s.split(' ')[0])
+    if len(parts) >= 2:
+        try:
+            m = int(parts[1])
+            if 1 <= m <= 12: return m
+        except: pass
+    
+    # 處理 115年5月12日 等中文格式
+    match = re.search(r'(\d{1,2})月', s)
+    if match:
+        m = int(match.group(1))
+        if 1 <= m <= 12: return m
+        
+    return None
+
+# ==========================================
+# 輔助函式：讀取檔案 
 # ==========================================
 def load_data(file, sheet_name=None):
     file.seek(0) 
@@ -33,9 +58,6 @@ def load_data(file, sheet_name=None):
             file.seek(0)
             return pd.read_csv(file, encoding='big5')
 
-# ==========================================
-# 輔助函式：自動尋找預設工作表索引
-# ==========================================
 def get_default_sheet_index(sheet_names, keywords):
     for i, sheet_name in enumerate(sheet_names):
         for kw in keywords:
@@ -59,12 +81,11 @@ def send_csv_email(df_person, df_unit, mode_name):
             f"您好，\n\n"
             f"附件為系統自動產生的「{mode_name}」噪音改裝車輛統計結果，包含：\n"
             f"1. 個人嘉獎次數統計 (僅計算成案)\n"
-            f"2. 各單位通報件數統計 (含所有通報紀錄)\n\n"
+            f"2. 各單位通報件數統計 (含所有通報紀錄，已精準過濾該半年度)\n\n"
             f"本信件由交通執法自動化分析引擎發送。"
         )
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
 
-        # 附件 1：個人嘉獎
         filename_p = f"{mode_name}個人嘉獎統計.csv"
         csv_str_p = df_person.to_csv(index=False, encoding='utf-8-sig')
         part1 = MIMEBase("application", "csv")
@@ -73,7 +94,6 @@ def send_csv_email(df_person, df_unit, mode_name):
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(filename_p)}")
         msg.attach(part1)
 
-        # 附件 2：單位統計
         filename_u = f"{mode_name}單位通報件數統計.csv"
         csv_str_u = df_unit.to_csv(index=False, encoding='utf-8-sig')
         part2 = MIMEBase("application", "csv")
@@ -94,11 +114,12 @@ def send_csv_email(df_person, df_unit, mode_name):
 # 主程式
 # ==========================================
 st.set_page_config(page_title="噪音改裝車輛嘉獎統計系統", layout="wide")
-st.title("🚓 噪音改裝車輛嘉獎與績效統計系統 (內容偵測版)")
+st.title("🚓 噪音改裝車輛嘉獎與績效統計系統 (精準過濾版)")
 
 st.markdown("""
 💡 **系統具備全方位自動偵測能力：**
-*   **資料年度辨識**：自動掃描上傳的資料內容，擷取「年度」(如114年、115年)；透過有無第三個檔案判斷「上下半年」。
+*   **資料年度辨識**：自動掃描上傳的資料內容，擷取「年度」(如114年、115年)。
+*   **時間精準過濾**：自動解析通報日期，確保單位件數不會算到其他月份或無效資料。
 *   **雙重視角統計**：同時計算「個人成案嘉獎數」與「單位總通報件數」。
 """)
 
@@ -111,6 +132,7 @@ start_row_src2 = st.sidebar.number_input("[前期明細] 起始列 (下半年專
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("請確認 [靜桃清冊] 的**欄位位置** (A欄=0, B欄=1, C欄=2...)：")
+col_date = st.sidebar.number_input("通報時間 所在欄位", value=1, step=1)    # 預設 B 欄 (新增此欄位用於過濾)
 col_plate = st.sidebar.number_input("車號 所在欄位", value=4, step=1)    # 預設 E 欄
 col_name = st.sidebar.number_input("通報人 所在欄位", value=6, step=1)  # 預設 G 欄
 col_unit = st.sidebar.number_input("單位 所在欄位", value=7, step=1)    # 預設 H 欄
@@ -157,24 +179,25 @@ if file_tgt and file_src1:
                 df_src1_filtered = df_src1.iloc[start_row_src1 - 2:]
 
                 # -------------------------------------------
-                # 自動從「受理明細」資料內容中擷取年度
+                # 自動從「受理明細」擷取年度，並定義目標月份
                 # -------------------------------------------
-                auto_year = "115" # 預設防呆值
-                found_year = False
+                auto_year = "115"
                 for _, row in df_tgt_filtered.head(50).iterrows():
                     row_content = " ".join([str(val) for val in row if pd.notna(val)])
                     match = re.search(r'(\d{2,3})年', row_content)
                     if match:
                         auto_year = match.group(1)
-                        found_year = True
                         break
+                
+                # 依據有無第三個檔案，判定要抓取 1-6月 還是 7-12月
+                target_months = [7, 8, 9, 10, 11, 12] if is_second_half else [1, 2, 3, 4, 5, 6]
 
                 # -------------------------------------------
                 # 掃描靜桃清冊：記錄單位通報數 & 建立車號對照表
                 # -------------------------------------------
                 plate_to_reporter = {}
                 unit_counts = {}
-                max_needed_col = max(col_plate, col_name, col_unit)
+                max_needed_col = max(col_plate, col_name, col_unit, col_date)
 
                 for _, row in df_src1_filtered.iterrows():
                     if len(row) > max_needed_col:
@@ -182,13 +205,15 @@ if file_tgt and file_src1:
                         name = str(row.iloc[col_name]).strip()
                         unit = str(row.iloc[col_unit]).strip()
                         
-                        # 只要有通報，單位件數即 +1
-                        if unit and unit != 'nan':
-                            unit_counts[unit] = unit_counts.get(unit, 0) + 1
-                            
-                        # 建立個人嘉獎比對用的字典
+                        # 1. 建立個人嘉獎比對用的字典 (保留所有，以免跨月成案找不到人)
                         if plate and name and name != 'nan':
                             plate_to_reporter[plate] = name
+
+                        # 2. 單位通報件數：嚴格判斷通報月份是否在該半年度
+                        m = extract_month(row.iloc[col_date])
+                        if m is not None and m in target_months:
+                            if unit and unit != 'nan' and unit.strip() != "":
+                                unit_counts[unit] = unit_counts.get(unit, 0) + 1
 
                 # -------------------------------------------
                 # 掃描受理明細：計算個人成案數
@@ -199,7 +224,6 @@ if file_tgt and file_src1:
                         doc_num = str(row.iloc[0])
                         plate = normalize_plate(row.iloc[1])
                         
-                        # 嚴格條件：公文含字號 且 車號在通報名冊內
                         if "龍警分交字" in doc_num and plate in plate_to_reporter:
                             reporter = plate_to_reporter[plate]
                             current_counts[reporter] = current_counts.get(reporter, 0) + 1
@@ -273,10 +297,9 @@ if st.session_state.get('calc_done', False):
     mode_name = st.session_state['mode_name']
     auto_year = st.session_state['auto_year']
     
-    st.info(f"🔎 系統已從資料內容自動偵測出年度為：**{auto_year} 年**")
+    st.info(f"🔎 系統已從資料內容自動偵測出年度為：**{auto_year} 年**，並依此過濾各單位通報月份。")
     st.success(f"✅ 統計完成！已自動採用「{mode_name}模式」。")
 
-    # --- 雙分頁顯示 ---
     tab1, tab2 = st.tabs(["👮 個人嘉獎次數統計 (僅計算成案)", "🏢 各單位通報統計 (含所有通報)"])
     
     with tab1:
