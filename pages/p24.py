@@ -11,6 +11,18 @@ from email import encoders
 from datetime import datetime
 
 # ==========================================
+# 固定參數設定 (已隱藏側邊欄，直接寫入後台)
+# ==========================================
+START_ROW_TGT = 2   # [受理明細] 起始列
+START_ROW_SRC1 = 2  # [靜桃清冊] 起始列
+START_ROW_SRC2 = 2  # [前期明細] 起始列
+
+COL_DATE = 1        # 通報時間 所在欄位 (B欄)
+COL_PLATE = 4       # 車號 所在欄位 (E欄)
+COL_NAME = 6        # 通報人 所在欄位 (G欄)
+COL_UNIT = 7        # 單位 所在欄位 (H欄)
+
+# ==========================================
 # 輔助函式：車號標準化
 # ==========================================
 def normalize_plate(plate):
@@ -123,21 +135,12 @@ def send_csv_email(df_person, df_unit, mode_name):
 # 主程式
 # ==========================================
 st.set_page_config(page_title="噪音改裝車輛嘉獎統計系統", layout="wide")
-st.title("🚓 噪音改裝車輛嘉獎與績效統計系統 (精準雙重過濾版)")
+st.title("🚓 噪音改裝車輛嘉獎與績效統計系統")
 
-# --- 側邊欄設定區 ---
-st.sidebar.header("⚙️ 參數設定")
-st.sidebar.markdown("請設定各檔案要從**第幾列**開始讀取資料：")
-start_row_src1 = st.sidebar.number_input("[靜桃清冊] 起始列", min_value=2, value=2, step=1)
-start_row_tgt = st.sidebar.number_input("[受理明細] 起始列", min_value=2, value=2, step=1)
-start_row_src2 = st.sidebar.number_input("[前期明細] 起始列 (下半年專用)", min_value=2, value=2, step=1)
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("請確認 [靜桃清冊] 的**欄位位置** (A欄=0, B欄=1, C欄=2...)：")
-col_date = st.sidebar.number_input("通報時間 所在欄位", value=1, step=1)    # 預設 B 欄 
-col_plate = st.sidebar.number_input("車號 所在欄位", value=4, step=1)    # 預設 E 欄
-col_name = st.sidebar.number_input("通報人 所在欄位", value=6, step=1)  # 預設 G 欄
-col_unit = st.sidebar.number_input("單位 所在欄位", value=7, step=1)    # 預設 H 欄
+st.markdown("""
+💡 **系統已進入全自動極簡模式：**
+只需依序上傳檔案並點擊執行，系統將自動偵測年度、過濾歷史無效資料，並產出個人與單位績效雙報表。
+""")
 
 # --- 檔案上傳區與工作表選擇 ---
 st.markdown("### 📥 上傳資料檔案")
@@ -177,8 +180,8 @@ if file_tgt and file_src1:
                 df_tgt = load_data(file_tgt, sheet_tgt)
                 df_src1 = load_data(file_src1, sheet_src1)
 
-                df_tgt_filtered = df_tgt.iloc[start_row_tgt - 2:]
-                df_src1_filtered = df_src1.iloc[start_row_src1 - 2:]
+                df_tgt_filtered = df_tgt.iloc[START_ROW_TGT - 2:]
+                df_src1_filtered = df_src1.iloc[START_ROW_SRC1 - 2:]
 
                 # -------------------------------------------
                 # 自動擷取基準年度 (從受理明細)
@@ -198,20 +201,20 @@ if file_tgt and file_src1:
                 # -------------------------------------------
                 plate_to_reporter = {}
                 unit_counts = {}
-                max_needed_col = max(col_plate, col_name, col_unit, col_date)
+                max_needed_col = max(COL_PLATE, COL_NAME, COL_UNIT, COL_DATE)
                 
                 for _, row in df_src1_filtered.iterrows():
                     if len(row) > max_needed_col:
-                        plate = normalize_plate(row.iloc[col_plate])
-                        name = str(row.iloc[col_name]).strip()
-                        unit = str(row.iloc[col_unit]).strip()
+                        plate = normalize_plate(row.iloc[COL_PLATE])
+                        name = str(row.iloc[COL_NAME]).strip()
+                        unit = str(row.iloc[COL_UNIT]).strip()
                         
-                        # 1. 建立嘉獎比對名單 (保留所有，以免跨月成案)
+                        # 1. 建立嘉獎比對名單
                         if plate and name and name != 'nan':
                             plate_to_reporter[plate] = name
 
-                        # 2. 單位件數：必須「年度」與「月份」雙重吻合才計入
-                        raw_date = row.iloc[col_date]
+                        # 2. 單位件數：年度與月份雙重吻合才計入
+                        raw_date = row.iloc[COL_DATE]
                         y, m = extract_year_month(raw_date)
                         
                         is_valid_time = False
@@ -242,7 +245,7 @@ if file_tgt and file_src1:
                 history_map = {}
                 if is_second_half:
                     df_src2_data = load_data(file_src2, sheet_src2)
-                    df_src2_filtered = df_src2_data.iloc[start_row_src2 - 2:]
+                    df_src2_filtered = df_src2_data.iloc[START_ROW_SRC2 - 2:]
                     for _, row in df_src2_filtered.iterrows():
                         if len(row) > 4:
                             h_name = str(row.iloc[0]).strip()
@@ -293,7 +296,7 @@ if file_tgt and file_src1:
                 st.session_state['calc_done'] = True
 
             except Exception as e:
-                st.error(f"❌ 發生錯誤，請檢查檔案格式或設定的起始列/欄位位置。\n詳細錯誤訊息：{e}")
+                st.error(f"❌ 發生錯誤，請檢查檔案格式。\n詳細錯誤訊息：{e}")
 
 # --- 結果顯示與後續操作區塊 ---
 if st.session_state.get('calc_done', False):
