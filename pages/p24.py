@@ -11,7 +11,7 @@ from email import encoders
 from datetime import datetime
 
 # ==========================================
-# 固定參數設定 (已隱藏側邊欄，直接寫入後台)
+# 固定參數設定 (隱藏於後台執行)
 # ==========================================
 START_ROW_TGT = 2   # [受理明細] 起始列
 START_ROW_SRC1 = 2  # [靜桃清冊] 起始列
@@ -135,6 +135,19 @@ def send_csv_email(df_person, df_unit, mode_name):
 # 主程式
 # ==========================================
 st.set_page_config(page_title="噪音改裝車輛嘉獎統計系統", layout="wide")
+
+# --- 側邊欄：導覽功能 (保留側邊欄給主頁面切換使用) ---
+st.sidebar.header("🏠 系統導覽")
+
+# 這裡為您預留了返回主頁的按鈕，如果您有特定的主頁檔名 (例如 app.py 或 Home.py)
+# 只要把下面的註解拿掉，並改成您的主頁檔名就可以一鍵跳轉了！
+# if st.sidebar.button("⬅️ 回到系統主頁", use_container_width=True):
+#     st.switch_page("app.py")
+
+# 提示訊息，讓側邊欄不會太空曠
+st.sidebar.info("💡 統計參數已於系統背景固定，無需手動設定即可直接執行統計。")
+st.sidebar.markdown("---")
+
 st.title("🚓 噪音改裝車輛嘉獎與績效統計系統")
 
 st.markdown("""
