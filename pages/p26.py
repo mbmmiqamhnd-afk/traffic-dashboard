@@ -4,7 +4,11 @@ from openpyxl.styles import Alignment, Font
 import io
 import os
 import smtplib
-from email.message import EmailMessage
+import urllib.parse as _ul
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 # 匯入系統原本的側邊欄設定
 try:
@@ -13,35 +17,34 @@ except ImportError:
     def show_sidebar():
         pass
 
-def send_email_with_attachment(recipient_email, file_bytes, file_name):
+def send_csv_email(file_bytes, file_name):
     try:
-        sender_email = st.secrets["email"]["sender"]
-        sender_password = st.secrets["email"]["password"]
-
-        msg = EmailMessage()
-        msg['Subject'] = f"督勤表自動產出結果：{file_name}"
-        msg['From'] = sender_email
-        msg['To'] = recipient_email
-        msg.set_content("您好，\n\n系統已完成督勤表產出，請查收附件。\n\n交通執法自動化分析引擎 敬上")
-
-        msg.add_attachment(
-            file_bytes.getvalue(), 
-            maintype='application', 
-            subtype='vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
-            filename=file_name
+        sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
+        msg = MIMEMultipart()
+        msg["From"], msg["To"] = sender, sender
+        
+        msg["Subject"] = f"龍潭分局_行人及護老專案督勤表自動產出結果_{file_name}"
+        
+        body_text = (
+            f"您好，\n\n"
+            f"系統已自動產出「115年上半年行人及護老專案督勤表」，附件為對應的 Excel 統計檔案。\n\n"
+            f"本信件由交通執法自動化分析引擎發送。"
         )
+        msg.attach(MIMEText(body_text, "plain", "utf-8"))
 
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-            smtp.login(sender_email, sender_password)
-            smtp.send_message(msg)
+        part = MIMEBase("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        part.set_payload(file_bytes.getvalue())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(file_name)}")
+        msg.attach(part)
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, pwd)
+            server.sendmail(sender, sender, msg.as_string())
             
-        return True
-    except KeyError:
-        st.error("⚠️ 錯誤：找不到 Streamlit Secrets 中的信箱設定。請確認 `.streamlit/secrets.toml` 已正確配置。")
-        return False
+        return True, None
     except Exception as e:
-        st.error(f"⚠️ 寄件失敗：{e}")
-        return False
+        return False, str(e)
 
 def generate_excel_file(combined_date_str, total_hours):
     file_path = '376431843C_1150087037_ATTACH4.xlsx'
@@ -123,18 +126,18 @@ def main():
                     label="📥 下載督勤日期表 (Excel)",
                     data=excel_data,
                     file_name=file_name,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
                 )
             
             with col2:
-                target_email = st.text_input("✉️ 將報表寄至信箱 (p26)：", value="your_email@example.com")
-                if st.button("🚀 立即寄送 (p26)"):
-                    if target_email:
-                        with st.spinner("信件寄送中，請稍候..."):
-                            if send_email_with_attachment(target_email, excel_data, file_name):
-                                st.success("✅ 信件已成功寄出！請至信箱確認。")
-                    else:
-                        st.warning("⚠️ 請輸入收件人信箱！")
+                if st.button("📧 將此報表一鍵寄至我的信箱", use_container_width=True):
+                    with st.spinner("信件發送中，請稍候…"):
+                        ok, mail_err = send_csv_email(excel_data, file_name)
+                        if ok:
+                            st.success("✅ 信件發送成功！報表已隨信夾帶至您的信箱。")
+                        else:
+                            st.error(f"❌ 發信失敗: {mail_err}")
 
         except FileNotFoundError as fnf_err:
             st.error(f"⚠️ 錯誤：{fnf_err}。請確認 `376431843C_1150087037_ATTACH4.xlsx` 檔案是否存在於主目錄中。")
