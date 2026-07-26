@@ -73,7 +73,7 @@ def main():
     show_sidebar()
 
     st.title("👵 行人及護老專案督勤表生成")
-    st.info("此系統專為「行人及護老交通安全專案」設計。預設為每月排定 4 日，每日涵蓋 06-10 及 16-20 兩個時段。")
+    st.info("此系統專為「行人及護老交通安全專案」設計。預設為每月排定 4 日，每日涵蓋 06-10 及 16-20 兩個時段（每時段固定 4 小時）。")
 
     st.subheader("📝 勤務日期與時段設定")
     
@@ -91,7 +91,8 @@ def main():
         height=250
     )
 
-    hours_per_shift = st.number_input("單一時段勤務時數 (小時)：", min_value=1, max_value=12, value=4, step=1)
+    # 固定每個時段為 4 小時
+    hours_per_shift = 4
 
     if combined_date_str.strip() == "":
         total_shifts = 0
