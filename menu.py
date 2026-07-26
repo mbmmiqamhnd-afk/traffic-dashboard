@@ -15,6 +15,7 @@ def show_sidebar():
         st.page_link("pages/p18.py", label="獎勵金點數統計表", icon="💰")
         st.page_link("pages/p24.py", label="噪音改裝車輛嘉獎統計", icon="🏍️")
         st.page_link("pages/p25.py", label="連假專案督勤表生成", icon="🗓️") # 🆕 移至數據與分析專區
+        st.page_link("pages/p26.py", label="行人及護老專案督勤表生成", icon="👵")
 
         st.divider()
 
