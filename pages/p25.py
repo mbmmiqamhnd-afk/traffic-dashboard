@@ -6,6 +6,15 @@ from openpyxl.styles import Alignment, Font
 import io
 import os
 
+# 匯入您系統原本的側邊欄設定
+# (假設您包含 show_sidebar 的主檔名為 menu.py，若為 app.py 請自行修改)
+try:
+    from menu import show_sidebar
+except ImportError:
+    # 容錯處理：若檔名不同或找不到，則暫時略過以防程式崩潰
+    def show_sidebar():
+        pass
+
 def generate_excel_file(combined_date_str, total_hours):
     # 載入指定的上傳範本檔案
     file_path = '376431843C_1150087034_ATTACH3.xlsx'
@@ -35,6 +44,9 @@ def generate_excel_file(combined_date_str, total_hours):
     return output
 
 def main():
+    # 載入系統專屬側邊欄
+    show_sidebar()
+
     st.title("🗓️ 115年上半年連假專案督勤表生成")
     st.info("此系統將自動運算 115 年上半年各週末與連續假期（含收假前一日），並匯出符合公文書格式之督勤日期表。")
 
