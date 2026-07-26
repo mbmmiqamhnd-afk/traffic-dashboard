@@ -44,46 +44,52 @@ def main():
     show_sidebar()
 
     st.title("👵 行人及護老專案督勤表生成")
-    st.info("此系統專為「行人及護老交通安全專案」設計。請直接貼上排定的督勤日期字串，系統將自動為您結算總時數並匯出報表。")
+    st.info("此系統專為「行人及護老交通安全專案」設計。預設為每月排定 4 日，每日涵蓋 06-10 及 16-20 兩個時段。")
 
-    # 1. 提供彈性的輸入介面
     st.subheader("📝 勤務日期與時段設定")
     
-    # 預設提供一個範例字串，您可以直接刪除並貼上新的
-    default_str = "1/5(08-10)、1/12(08-10)、1/19(16-18)"
+    # 預設自動產生上半年 (1~6月)，每月 4 天 (暫以 5, 12, 19, 26 日為例)，分為 06-10 與 16-20 兩時段
+    default_dates = []
+    for m in range(1, 7):
+        for d in [5, 12, 19, 26]: # 預設每月4日的佔位日期，可於介面中直接修改
+            default_dates.append(f"{m}/{d}(06-10)")
+            default_dates.append(f"{m}/{d}(16-20)")
+            
+    default_str = "、".join(default_dates)
+
+    # 提供文字框讓使用者核對與修改日期
     combined_date_str = st.text_area(
-        "請貼上或輸入督勤日期清單 (請以頓號「、」分隔)：", 
+        "請確認或修改督勤日期清單 (各時段請以頓號「、」分隔)：", 
         value=default_str, 
-        height=100
+        height=250
     )
 
-    # 讓使用者彈性選擇該專案單次勤務的時數 (通常護老勤務為 2 小時或 4 小時)
-    hours_per_shift = st.number_input("單次勤務時數 (小時)：", min_value=1, max_value=12, value=2, step=1)
+    # 每個時段為 4 小時 (06-10 或 16-20)
+    hours_per_shift = st.number_input("單一時段勤務時數 (小時)：", min_value=1, max_value=12, value=4, step=1)
 
-    # 2. 自動計算天數與時數
-    # 透過計算頓號「、」的數量來反推總天數 (空字串防呆)
+    # 自動計算班次、天數與總時數
     if combined_date_str.strip() == "":
-        total_days = 0
+        total_shifts = 0
     else:
-        total_days = len(combined_date_str.split("、"))
+        total_shifts = len(combined_date_str.split("、"))
         
-    total_hours = total_days * hours_per_shift
+    total_hours = total_shifts * hours_per_shift
+    total_days = total_shifts // 2 # 每日2班，換算為天數供參考
 
-    # 3. 顯示運算結果供使用者預覽
     st.subheader("📋 運算結果預覽")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric(label="合計督勤次數", value=f"{total_days} 次")
+        st.metric(label="合計排定天數", value=f"{total_days} 天")
     with col2:
+        st.metric(label="合計督勤班次", value=f"{total_shifts} 班")
+    with col3:
         st.metric(label="總計時數 (D欄輸出值)", value=f"{total_hours} 小時")
 
     st.divider()
 
-    # 4. 提供 Excel 下載按鈕
     st.subheader("📥 匯出督勤表")
     
-    # 只有當有輸入資料時才允許下載
-    if total_days > 0:
+    if total_shifts > 0:
         try:
             excel_data = generate_excel_file(combined_date_str, total_hours)
             st.download_button(
