@@ -4,34 +4,38 @@ from datetime import timedelta
 import openpyxl
 from openpyxl.styles import Border, Side, Alignment, Font
 import io
+import os
 
 def generate_excel_file(records):
     # 載入指定的上傳範本檔案
-    # 確保 376431843C_1150087034_ATTACH3.xlsx 與 p25.py 在可被相對路徑存取的位置，
-    # 若您的 app.py 在外層目錄，這裡的路徑通常寫相對於 app.py 的位置。
-    wb = openpyxl.load_workbook('376431843C_1150087034_ATTACH3.xlsx')
+    # 確保 376431843C_1150087034_ATTACH3.xlsx 存在於專案主目錄
+    file_path = '376431843C_1150087034_ATTACH3.xlsx'
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"找不到範本檔案 {file_path}")
+
+    wb = openpyxl.load_workbook(file_path)
     ws = wb['警力統計']
 
-    # 解除注意事項的合併儲存格
+    # 1. 解除注意事項的合併儲存格
     ws.unmerge_cells('A11:A15')
     ws.unmerge_cells('B11:D15')
     ws.unmerge_cells('A16:D17')
     ws.unmerge_cells('A18:D20')
 
-    # 插入 15 列，擴充表格空間
-    ws.insert_rows(11, 15)
+    # 2. 插入 16 列（因為從第4列開始寫入23筆資料，需擴充至第26列才夠放，故往下推遲16列）
+    ws.insert_rows(11, 16)
 
-    # 重新合併注意事項 (往下位移 15 列)
-    ws.merge_cells('A26:A30')
-    ws.merge_cells('B26:D30')
-    ws.merge_cells('A31:D32')
-    ws.merge_cells('A33:D35')
+    # 3. 重新合併注意事項 (往下位移 16 列)
+    ws.merge_cells('A27:A31')
+    ws.merge_cells('B27:D31')
+    ws.merge_cells('A32:D33')
+    ws.merge_cells('A34:D36')
 
     # 設定邊框與字體
     thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), 
                          top=Side(style='thin'), bottom=Side(style='thin'))
 
-    # 開始寫入資料 (從 A4 開始)
+    # 開始寫入資料 (從 A4 開始寫入)
     current_row = 4
     for r in records:
         ws.cell(row=current_row, column=1, value=r["name"])
@@ -78,6 +82,7 @@ def main():
         
         date_range = pd.date_range(start=target_start, end=target_end)
         for d in date_range:
+            # 轉換為範本中的格式： M/D(08:00-12:00)，確保時段與冒號皆保留
             formatted_date = f"{d.month}/{d.day}(08:00-12:00)"
             records.append({
                 "name": h["name"],
@@ -103,8 +108,8 @@ def main():
             file_name="115年上半年督導防制危險駕車勤務表.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-    except FileNotFoundError:
-        st.error("⚠️ 錯誤：找不到範本檔案 `376431843C_1150087034_ATTACH3.xlsx`。請確認檔案是否存在於主目錄中。")
+    except FileNotFoundError as fnf_err:
+        st.error(f"⚠️ 錯誤：{fnf_err}。請確認 `376431843C_1150087034_ATTACH3.xlsx` 檔案是否存在於主目錄中。")
     except Exception as e:
         st.error(f"⚠️ 發生未知的錯誤：{e}")
 
