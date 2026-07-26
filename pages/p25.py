@@ -2,11 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import timedelta
 import openpyxl
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, Font
 import io
 import os
 
-def generate_excel_file(combined_date_str):
+def generate_excel_file(combined_date_str, total_hours):
     # 載入指定的上傳範本檔案
     file_path = '376431843C_1150087034_ATTACH3.xlsx'
     if not os.path.exists(file_path):
@@ -15,12 +15,18 @@ def generate_excel_file(combined_date_str):
     wb = openpyxl.load_workbook(file_path)
     ws = wb['警力統計']
 
-    # 直接寫入標題列(第2列)下方的 4 列儲存格：C3, C4, C5, C6
+    # 直接寫入標題列(第2列)下方的 4 列儲存格：第 3, 4, 5, 6 列
     for row in range(3, 7):
-        cell = ws.cell(row=row, column=3)
-        cell.value = combined_date_str
-        # 開啟自動換行，讓長字串能在儲存格內完整顯示
-        cell.alignment = Alignment(wrapText=True, vertical='center', horizontal='left')
+        # C 欄：寫入合併後的日期清單
+        cell_c = ws.cell(row=row, column=3)
+        cell_c.value = combined_date_str
+        cell_c.alignment = Alignment(wrapText=True, vertical='center', horizontal='left')
+        
+        # D 欄：寫入合計時數
+        cell_d = ws.cell(row=row, column=4)
+        cell_d.value = total_hours
+        cell_d.alignment = Alignment(vertical='center', horizontal='center')
+        cell_d.font = Font(name='微軟正黑體', size=12)
 
     # 存入 BytesIO 以供 Streamlit 下載
     output = io.BytesIO()
@@ -62,7 +68,7 @@ def main():
         {"name": "一般假日", "start": "2026-06-27", "end": "2026-06-28"}
     ]
 
-    # 2. 運算「起始日-1 至 結束日-1」的日期資料，並合併為單一字串
+    # 2. 運算「起始日-1 至 結束日-1」的日期資料
     date_list = []
     for h in holidays_115_H1:
         start_date = pd.to_datetime(h["start"])
@@ -73,24 +79,31 @@ def main():
         
         date_range = pd.date_range(start=target_start, end=target_end)
         for d in date_range:
-            # 依據格式要求，時段轉換為帶有冒號的 22:00-06:00
-            date_list.append(f"{d.month}/{d.day}(22:00-06:00)")
+            # 轉換為指定格式，例如： 8/1(22-06)
+            date_list.append(f"{d.month}/{d.day}(22-06)")
 
+    # 3. 彙整字串與計算總時數
     # 將所有日期使用頓號「、」合併
     combined_date_str = "、".join(date_list)
+    
+    # 計算總時數 (天數 × 8小時)
+    total_days = len(date_list)
+    total_hours = total_days * 8
 
-    # 3. 顯示運算結果供使用者預覽
+    # 4. 顯示運算結果供使用者預覽
     st.subheader("📋 運算結果預覽")
+    st.metric(label="合計督勤天數", value=f"{total_days} 天")
+    st.metric(label="總計時數 (D欄輸出值)", value=f"{total_hours} 小時")
     st.text_area("即將寫入 C 欄的日期清單：", value=combined_date_str, height=200)
 
     st.divider()
 
-    # 4. 提供 Excel 下載按鈕
+    # 5. 提供 Excel 下載按鈕
     st.subheader("📥 匯出督勤表")
     st.write("點擊下方按鈕，下載自動排版完成的 Excel 範本。")
     
     try:
-        excel_data = generate_excel_file(combined_date_str)
+        excel_data = generate_excel_file(combined_date_str, total_hours)
         st.download_button(
             label="下載督勤日期表 (Excel)",
             data=excel_data,
