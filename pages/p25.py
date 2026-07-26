@@ -5,18 +5,47 @@ import openpyxl
 from openpyxl.styles import Alignment, Font
 import io
 import os
+import smtplib
+from email.message import EmailMessage
 
-# 匯入您系統原本的側邊欄設定
-# (假設您包含 show_sidebar 的主檔名為 menu.py，若為 app.py 請自行修改)
+# 匯入系統原本的側邊欄設定
 try:
     from menu import show_sidebar
 except ImportError:
-    # 容錯處理：若檔名不同或找不到，則暫時略過以防程式崩潰
     def show_sidebar():
         pass
 
+def send_email_with_attachment(recipient_email, file_bytes, file_name):
+    try:
+        sender_email = st.secrets["email"]["sender"]
+        sender_password = st.secrets["email"]["password"]
+
+        msg = EmailMessage()
+        msg['Subject'] = f"督勤表自動產出結果：{file_name}"
+        msg['From'] = sender_email
+        msg['To'] = recipient_email
+        msg.set_content("您好，\n\n系統已完成督勤表產出，請查收附件。\n\n交通執法自動化分析引擎 敬上")
+
+        msg.add_attachment(
+            file_bytes.getvalue(), 
+            maintype='application', 
+            subtype='vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+            filename=file_name
+        )
+
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(sender_email, sender_password)
+            smtp.send_message(msg)
+            
+        return True
+    except KeyError:
+        st.error("⚠️ 錯誤：找不到 Streamlit Secrets 中的信箱設定。請確認 `.streamlit/secrets.toml` 已正確配置。")
+        return False
+    except Exception as e:
+        st.error(f"⚠️ 寄件失敗：{e}")
+        return False
+
 def generate_excel_file(combined_date_str, total_hours):
-    # 載入指定的上傳範本檔案
     file_path = '376431843C_1150087034_ATTACH3.xlsx'
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"找不到範本檔案 {file_path}")
@@ -24,33 +53,27 @@ def generate_excel_file(combined_date_str, total_hours):
     wb = openpyxl.load_workbook(file_path)
     ws = wb['警力統計']
 
-    # 直接寫入標題列(第2列)下方的 4 列儲存格：第 3, 4, 5, 6 列
     for row in range(3, 7):
-        # C 欄：寫入合併後的日期清單
         cell_c = ws.cell(row=row, column=3)
         cell_c.value = combined_date_str
         cell_c.alignment = Alignment(wrapText=True, vertical='center', horizontal='left')
         
-        # D 欄：寫入合計時數
         cell_d = ws.cell(row=row, column=4)
         cell_d.value = total_hours
         cell_d.alignment = Alignment(vertical='center', horizontal='center')
         cell_d.font = Font(name='微軟正黑體', size=12)
 
-    # 存入 BytesIO 以供 Streamlit 下載
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
     return output
 
 def main():
-    # 載入系統專屬側邊欄
     show_sidebar()
 
     st.title("🗓️ 115年上半年連假專案督勤表生成")
     st.info("此系統將自動運算 115 年上半年各週末與連續假期（含收假前一日），並匯出符合公文書格式之督勤日期表。")
 
-    # 1. 設定假日區間 (包含所有國定連假與一般週末)
     holidays_115_H1 = [
         {"name": "元旦", "start": "2026-01-01", "end": "2026-01-01"},
         {"name": "一般假日", "start": "2026-01-03", "end": "2026-01-04"},
@@ -80,7 +103,6 @@ def main():
         {"name": "一般假日", "start": "2026-06-27", "end": "2026-06-28"}
     ]
 
-    # 2. 運算「起始日-1 至 結束日-1」的日期資料
     date_list = []
     for h in holidays_115_H1:
         start_date = pd.to_datetime(h["start"])
@@ -91,37 +113,48 @@ def main():
         
         date_range = pd.date_range(start=target_start, end=target_end)
         for d in date_range:
-            # 轉換為指定格式，例如： 8/1(22-06)
             date_list.append(f"{d.month}/{d.day}(22-06)")
 
-    # 3. 彙整字串與計算總時數
-    # 將所有日期使用頓號「、」合併
     combined_date_str = "、".join(date_list)
-    
-    # 計算總時數 (天數 × 8小時)
     total_days = len(date_list)
     total_hours = total_days * 8
 
-    # 4. 顯示運算結果供使用者預覽
     st.subheader("📋 運算結果預覽")
-    st.metric(label="合計督勤天數", value=f"{total_days} 天")
-    st.metric(label="總計時數 (D欄輸出值)", value=f"{total_hours} 小時")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(label="合計督勤天數", value=f"{total_days} 天")
+    with col2:
+        st.metric(label="總計時數 (D欄輸出值)", value=f"{total_hours} 小時")
     st.text_area("即將寫入 C 欄的日期清單：", value=combined_date_str, height=200)
 
     st.divider()
 
-    # 5. 提供 Excel 下載按鈕
-    st.subheader("📥 匯出督勤表")
-    st.write("點擊下方按鈕，下載自動排版完成的 Excel 範本。")
+    st.subheader("📥 匯出與寄送督勤表")
     
     try:
         excel_data = generate_excel_file(combined_date_str, total_hours)
-        st.download_button(
-            label="下載督勤日期表 (Excel)",
-            data=excel_data,
-            file_name="115年上半年督導防制危險駕車勤務表.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        file_name = "115年上半年督導防制危險駕車勤務表.xlsx"
+
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.download_button(
+                label="📥 下載督勤日期表 (Excel)",
+                data=excel_data,
+                file_name=file_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        
+        with col2:
+            target_email = st.text_input("✉️ 將報表寄至信箱 (p25)：", value="your_email@example.com")
+            if st.button("🚀 立即寄送 (p25)"):
+                if target_email:
+                    with st.spinner("信件寄送中，請稍候..."):
+                        if send_email_with_attachment(target_email, excel_data, file_name):
+                            st.success("✅ 信件已成功寄出！請至信箱確認。")
+                else:
+                    st.warning("⚠️ 請輸入收件人信箱！")
+
     except FileNotFoundError as fnf_err:
         st.error(f"⚠️ 錯誤：{fnf_err}。請確認 `376431843C_1150087034_ATTACH3.xlsx` 檔案是否存在於主目錄中。")
     except Exception as e:
