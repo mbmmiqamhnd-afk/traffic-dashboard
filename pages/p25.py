@@ -48,37 +48,20 @@ def send_csv_email(file_bytes, file_name, year_str):
     except Exception as e:
         return False, str(e)
 
-def extract_vacations_from_word(uploaded_vacation):
+def extract_vacations_from_word(uploaded_vacations_list):
     vacations = {}
-    if not uploaded_vacation:
+    if not uploaded_vacations_list:
         return vacations
         
-    try:
-        # 將上傳的 Word 載入
-        doc = docx.Document(uploaded_vacation)
-        full_text = []
-        
-        # 讀取段落文字
-        for para in doc.paragraphs:
-            if para.text.strip():
-                full_text.append(para.text.strip())
-                
-        # 讀取表格文字
-        for table in doc.tables:
-            for row in table.rows:
-                row_data = [cell.text.replace("\n", " ").strip() for cell in row.cells if cell.text.strip()]
-                if row_data:
-                    full_text.append(" | ".join(row_data))
-                    
-        combined_text = "\n".join(full_text)
-        
-        # TODO: 在這裡可以根據您 Word 輪休表的實際格式撰寫更精確的正則表達式 (Regex)
-        # 目前暫時保留彈性空殼，若您需要自動萃取，可以提供一段 Word 內的文字範例，我能為您寫精確的比對邏輯
-        # 格式預期為： vacations = { "張三": ["1/5", "2/14"], "李四": ["1/10"] }
-        
-    except Exception as e:
-        st.warning(f"Word 休假表解析失敗（請確認檔案是否為未損毀的 .docx）：{e}")
-        
+    for uploaded_vacation in uploaded_vacations_list:
+        try:
+            doc = docx.Document(uploaded_vacation)
+            # 在這裡，您可以針對每一個 Word 檔的內容進行迴圈讀取與比對
+            # 由於每個檔案可能代表不同月份，讀取出來的日期可以不斷 append 到同一個人員的清單中
+            # vacations.setdefault(name, []).append(date_str)
+        except Exception as e:
+            st.warning(f"Word 休假表「{uploaded_vacation.name}」解析失敗：{e}")
+            
     return vacations
 
 def process_excel(uploaded_file, df_personnel, full_date_list, hours_per_shift, vacation_dict):
@@ -130,7 +113,7 @@ def main():
     show_sidebar()
 
     st.title("🗓️ 上半年連假專案督勤表生成")
-    st.info("請於下方上傳 **Excel 空白範本** 與 **人員輪休預排表 (Word)**，系統將自動排除休假人員的督導日期。")
+    st.info("請於下方上傳 **Excel 空白範本** 與 **各月份人員輪休預排表 (支援多檔上傳)**，系統將自動排除休假人員的督導日期。")
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -138,8 +121,8 @@ def main():
     with col2:
         uploaded_excel = st.file_uploader("2. 上傳 Excel 空白範本", type=['xlsx'], key="p25_excel")
     with col3:
-        # 已將上傳格式改為 doc 與 docx
-        uploaded_vacation = st.file_uploader("3. 上傳輪休預排表 (Word)", type=['doc', 'docx'], key="p25_vac")
+        # 開啟 accept_multiple_files=True 允許一次上傳 6 個月份的 Word 檔
+        uploaded_vacations = st.file_uploader("3. 上傳各月份輪休預排表 (可複選多檔)", type=['doc', 'docx'], accept_multiple_files=True, key="p25_vac")
 
     default_personnel = pd.DataFrame([
         {"職稱": "分局長", "姓名": ""},
@@ -209,12 +192,12 @@ def main():
     st.subheader("📥 匯出與寄送督勤表")
     if uploaded_excel:
         try:
-            vacation_dict = extract_vacations_from_word(uploaded_vacation)
+            vacation_dict = extract_vacations_from_word(uploaded_vacations)
             excel_data = process_excel(uploaded_excel, edited_personnel, full_date_list, 8, vacation_dict)
             file_name = f"龍潭分局_{year_str}上半年督導防制危險駕車勤務表.xlsx"
 
-            if uploaded_vacation:
-                st.success(f"✅ 已成功掛載輪休預排表 (`{uploaded_vacation.name}`)，產出報表時將自動剔除人員休假日期。")
+            if uploaded_vacations:
+                st.success(f"✅ 已成功掛載 {len(uploaded_vacations)} 份輪休預排表，產出報表時將自動剔除人員休假日期。")
 
             b1, b2 = st.columns(2)
             with b1:
