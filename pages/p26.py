@@ -47,6 +47,11 @@ def send_csv_email(file_bytes, file_name, year_str):
     except Exception as e:
         return False, str(e)
 
+def clean_text(text):
+    if not text:
+        return ""
+    return re.sub(r'\s+', '', str(text))
+
 def extract_vacations_from_word(uploaded_vacations_list):
     vacations = {}
     if not uploaded_vacations_list:
@@ -64,10 +69,10 @@ def extract_vacations_from_word(uploaded_vacations_list):
                 start_row_idx = 0
                 
                 for i, row in enumerate(table.rows):
-                    cells = [cell.text.replace("\n", "").strip() for cell in row.cells]
-                    if any("分局長" in c for c in cells):
-                        for col_idx, text in enumerate(cells):
-                            if text and text not in ["日期", "星期", "輪休"]:
+                    cells_text = [clean_text(cell.text) for cell in row.cells]
+                    if any("分局長" in c for c in cells_text):
+                        for col_idx, text in enumerate(cells_text):
+                            if text and "日期" not in text and "星期" not in text and "輪休" not in text:
                                 col_names[col_idx] = text
                         start_row_idx = i + 1
                         break
@@ -76,17 +81,17 @@ def extract_vacations_from_word(uploaded_vacations_list):
                     continue
                 
                 for i in range(start_row_idx, len(table.rows)):
-                    cells = [cell.text.replace("\n", "").strip() for cell in table.rows[i].cells]
-                    if not cells or not cells[0].isdigit():
+                    cells_text = [clean_text(cell.text) for cell in table.rows[i].cells]
+                    if not cells_text or not cells_text[0].isdigit():
                         continue
                         
-                    day = int(cells[0])
+                    day = int(cells_text[0])
                     date_val = f"{month}/{day}"
                     
                     for col_idx, officer_name in col_names.items():
-                        if col_idx < len(cells):
-                            mark = cells[col_idx]
-                            if mark:
+                        if col_idx < len(cells_text):
+                            mark = cells_text[col_idx]
+                            if mark and mark.strip() != "":
                                 vacations.setdefault(officer_name, []).append(date_val)
                                 
         except Exception as e:
@@ -104,12 +109,15 @@ def process_excel(uploaded_file, df_personnel, full_date_list, hours_per_shift, 
 
     current_row = 3
     for _, row in df_personnel.iterrows():
-        title = str(row.get("職稱", "")).strip()
-        name = str(row.get("姓名", "")).strip()
+        title = clean_text(row.get("職稱", ""))
+        name = clean_text(row.get("姓名", ""))
         
-        if title or name:
-            ws.cell(row=current_row, column=1, value=title)
-            ws.cell(row=current_row, column=2, value=name)
+        raw_title = str(row.get("職稱", "")).strip()
+        raw_name = str(row.get("姓名", "")).strip()
+        
+        if raw_title or raw_name:
+            ws.cell(row=current_row, column=1, value=raw_title)
+            ws.cell(row=current_row, column=2, value=raw_name)
             
             person_dates = []
             user_vacations = []
@@ -179,7 +187,7 @@ def main():
     ])
 
     st.subheader("👥 督導人員名單設定 (可自由新增、刪除或修改職稱與姓名)")
-    st.markdown("💡 **小撇步**：為了讓系統精準排除副分局長的休假，請務必在「姓名」欄填寫長官的姓氏（例如：`何` 或 `蔡`），系統會自動對齊 Word 表格裡的「何副分局長」與「蔡副分局長」。")
+    st.markdown("💡 **關鍵提醒**：為了讓系統成功辨識並排除副分局長的休假，請務必在下方「姓名」欄填寫長官的姓氏（例如：`何XX` 或 `蔡XX`）。")
     edited_personnel = st.data_editor(default_personnel, num_rows="dynamic", use_container_width=True, key="p26_editor")
 
     year_str = get_year_from_excel(uploaded_excel)
@@ -214,7 +222,7 @@ def main():
 
             if uploaded_vacations:
                 st.success(f"✅ 已成功掛載 {len(uploaded_vacations)} 份輪休預排表！系統已自動剔除排定之休假日。")
-                with st.expander("🔍 點此查看系統抓取的長官休假清單（除錯用）"):
+                with st.expander("🔍 點此查看系統抓取到的「各長官休假清單」（若有缺漏請檢查上方姓名是否輸入正確）"):
                     st.write(vacation_dict)
 
             b1, b2 = st.columns(2)
