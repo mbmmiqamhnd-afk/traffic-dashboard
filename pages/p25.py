@@ -48,6 +48,12 @@ def send_csv_email(file_bytes, file_name, year_str):
     except Exception as e:
         return False, str(e)
 
+def clean_text(text):
+    """清除字串中的所有空白與換行，方便比對"""
+    if not text:
+        return ""
+    return re.sub(r'\s+', '', str(text))
+
 def extract_vacations_from_word(uploaded_vacations_list):
     vacations = {}
     if not uploaded_vacations_list:
@@ -65,12 +71,12 @@ def extract_vacations_from_word(uploaded_vacations_list):
                 col_names = {}
                 start_row_idx = 0
                 
-                # 找出包含長官稱謂的表頭列 (例如 分局長, 何副分局長)
+                # 尋找表頭 (過濾掉空白，尋找 "分局長")
                 for i, row in enumerate(table.rows):
-                    cells = [cell.text.replace("\n", "").strip() for cell in row.cells]
-                    if any("分局長" in c for c in cells):
-                        for col_idx, text in enumerate(cells):
-                            if text and text not in ["日期", "星期", "輪休"]:
+                    cells_text = [clean_text(cell.text) for cell in row.cells]
+                    if any("分局長" in c for c in cells_text):
+                        for col_idx, text in enumerate(cells_text):
+                            if text and "日期" not in text and "星期" not in text and "輪休" not in text:
                                 col_names[col_idx] = text
                         start_row_idx = i + 1
                         break
@@ -80,19 +86,20 @@ def extract_vacations_from_word(uploaded_vacations_list):
                 
                 # 從表頭的下一列開始讀取日期與記號
                 for i in range(start_row_idx, len(table.rows)):
-                    cells = [cell.text.replace("\n", "").strip() for cell in table.rows[i].cells]
-                    # 如果第一欄不是數字 (例如是 備註 或 總計)，就跳過
-                    if not cells or not cells[0].isdigit():
+                    cells_text = [clean_text(cell.text) for cell in table.rows[i].cells]
+                    
+                    # 確保第一欄是日期數字
+                    if not cells_text or not cells_text[0].isdigit():
                         continue
                         
-                    day = int(cells[0])
+                    day = int(cells_text[0])
                     date_val = f"{month}/{day}"
                     
                     for col_idx, officer_name in col_names.items():
-                        if col_idx < len(cells):
-                            mark = cells[col_idx]
-                            # 如果格子裡有任何符號 (休假記號)
-                            if mark:
+                        if col_idx < len(cells_text):
+                            mark = cells_text[col_idx]
+                            # 如果格子裡有任何非空白字元 (例如 ●)，就視為休假
+                            if mark and mark.strip() != "":
                                 vacations.setdefault(officer_name, []).append(date_val)
                                 
         except Exception as e:
@@ -110,26 +117,30 @@ def process_excel(uploaded_file, df_personnel, full_date_list, hours_per_shift, 
 
     current_row = 3
     for _, row in df_personnel.iterrows():
-        title = str(row.get("職稱", "")).strip()
-        name = str(row.get("姓名", "")).strip()
+        title = clean_text(row.get("職稱", ""))
+        name = clean_text(row.get("姓名", ""))
         
-        if title or name:
-            ws.cell(row=current_row, column=1, value=title)
-            ws.cell(row=current_row, column=2, value=name)
+        # 寫入 Excel 時保留原有的顯示格式 (含空白)
+        raw_title = str(row.get("職稱", "")).strip()
+        raw_name = str(row.get("姓名", "")).strip()
+        
+        if raw_title or raw_name:
+            ws.cell(row=current_row, column=1, value=raw_title)
+            ws.cell(row=current_row, column=2, value=raw_name)
             
             person_dates = []
             user_vacations = []
             
-            # 智慧對位邏輯：媒合介面輸入的名字與 Word 表格裡的名字
+            # 智慧對位邏輯
             for v_name, dates in vacation_dict.items():
                 is_match = False
-                # 1. 如果職稱完全相符 (例如 "分局長" == "分局長")
+                # 1. 職稱完全相符 (例如 分局長)
                 if title and title == v_name:
                     is_match = True
-                # 2. 如果姓名第一個字出現在 Word 欄位名 (例如 "何XX" 的 "何" 對應 "何副分局長")
+                # 2. 姓名第一個字出現在 Word 欄位名 (例如 "何" 出現在 "何副分局長")
                 elif name and name[0] in v_name:
                     is_match = True
-                # 3. 避免誤判：如果介面只打 "分局長" 且沒名字，確保抓的是純 "分局長" 而不是 "何副分局長"
+                # 3. 如果介面只有打職稱，沒有名字，確保不要抓錯人
                 elif title == "分局長" and "副" not in v_name and "分局長" in v_name:
                     is_match = True
                     
@@ -138,7 +149,6 @@ def process_excel(uploaded_file, df_personnel, full_date_list, hours_per_shift, 
             
             # 過濾休假日期
             for date_str in full_date_list:
-                # date_str 格式為 "1/5(22-06)"，切出 "1/5" 進行比對
                 raw_date = date_str.split('(')[0]
                 if raw_date not in user_vacations:
                     person_dates.append(date_str)
@@ -184,7 +194,7 @@ def main():
     ])
 
     st.subheader("👥 督導人員名單設定 (可自由新增、刪除或修改職稱與姓名)")
-    st.markdown("💡 **小撇步**：為了讓系統精準排除副分局長的休假，請務必在「姓名」欄填寫長官的姓氏（例如：`何` 或 `蔡`），系統會自動對齊 Word 表格裡的「何副分局長」與「蔡副分局長」。")
+    st.markdown("💡 **關鍵提醒**：為了讓系統成功辨識並排除副分局長的休假，請務必在下方「姓名」欄填寫長官的姓氏（例如：`何XX` 或 `蔡XX`）。")
     edited_personnel = st.data_editor(default_personnel, num_rows="dynamic", use_container_width=True, key="p25_editor")
 
     year_str = "115年"
@@ -247,9 +257,8 @@ def main():
             file_name = f"龍潭分局_{year_str}上半年督導防制危險駕車勤務表.xlsx"
 
             if uploaded_vacations:
-                # 展示抓到哪些假，方便您驗證
                 st.success(f"✅ 已成功掛載 {len(uploaded_vacations)} 份輪休預排表！系統已自動剔除排定之休假日。")
-                with st.expander("🔍 點此查看系統抓取的長官休假清單（除錯用）"):
+                with st.expander("🔍 點此查看系統抓取到的「各長官休假清單」（若有缺漏請檢查上方姓名是否輸入正確）"):
                     st.write(vacation_dict)
 
             b1, b2 = st.columns(2)
