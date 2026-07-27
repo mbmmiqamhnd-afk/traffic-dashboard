@@ -117,13 +117,12 @@ def main():
     st.title("👵 行人及護老專案督勤表生成")
     st.info("請於下方上傳 **Excel 空白範本** 與 **人員輪休預排表 (Word)**，系統將自動排除休假人員的督導日期。")
 
-    col1, col2, col3 = st.columns(3)
+    # 移除 PDF 上傳，改為只剩 2 個欄位
+    col1, col2 = st.columns(2)
     with col1:
-        uploaded_pdf = st.file_uploader("1. 上傳辦公日曆表 (PDF)", type=['pdf'], key="p26_pdf")
+        uploaded_excel = st.file_uploader("1. 上傳 Excel 空白範本", type=['xlsx'], key="p26_excel")
     with col2:
-        uploaded_excel = st.file_uploader("2. 上傳 Excel 空白範本", type=['xlsx'], key="p26_excel")
-    with col3:
-        uploaded_vacation = st.file_uploader("3. 上傳輪休預排表 (Word)", type=['doc', 'docx'], key="p26_vac")
+        uploaded_vacation = st.file_uploader("2. 上傳輪休預排表 (Word)", type=['doc', 'docx'], key="p26_vac")
 
     default_personnel = pd.DataFrame([
         {"職稱": "分局長", "姓名": ""},
