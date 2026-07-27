@@ -31,9 +31,11 @@ Pillow
 opencv-python-headless
 google-cloud-vision
 
-
 # --- AI API 連接 ---
 google-generativeai
 
 # --- PPT 生成 ---
 python-pptx
+
+# --- Word 文件讀取 ---
+python-docx
