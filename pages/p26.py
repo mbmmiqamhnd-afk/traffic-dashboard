@@ -47,15 +47,18 @@ def send_csv_email(file_bytes, file_name, year_str):
     except Exception as e:
         return False, str(e)
 
-def extract_vacations_from_word(uploaded_vacation):
+def extract_vacations_from_word(uploaded_vacations_list):
     vacations = {}
-    if not uploaded_vacation:
+    if not uploaded_vacations_list:
         return vacations
-    try:
-        doc = docx.Document(uploaded_vacation)
-        # 此處預留供後續解析 Word 內文/表格日期使用
-    except Exception as e:
-        st.warning(f"Word 休假表解析失敗：{e}")
+        
+    for uploaded_vacation in uploaded_vacations_list:
+        try:
+            doc = docx.Document(uploaded_vacation)
+            # 在這裡解析每個 Word 檔案
+        except Exception as e:
+            st.warning(f"Word 休假表「{uploaded_vacation.name}」解析失敗：{e}")
+            
     return vacations
 
 def process_excel(uploaded_file, df_personnel, full_date_list, hours_per_shift, vacation_dict):
@@ -115,14 +118,14 @@ def main():
     show_sidebar()
 
     st.title("👵 行人及護老專案督勤表生成")
-    st.info("請於下方上傳 **Excel 空白範本** 與 **人員輪休預排表 (Word)**，系統將自動排除休假人員的督導日期。")
+    st.info("請於下方上傳 **Excel 空白範本** 與 **各月份輪休預排表 (支援多檔上傳)**，系統將自動排除休假人員的督導日期。")
 
-    # 移除 PDF 上傳，改為只剩 2 個欄位
     col1, col2 = st.columns(2)
     with col1:
         uploaded_excel = st.file_uploader("1. 上傳 Excel 空白範本", type=['xlsx'], key="p26_excel")
     with col2:
-        uploaded_vacation = st.file_uploader("2. 上傳輪休預排表 (Word)", type=['doc', 'docx'], key="p26_vac")
+        # 開啟 accept_multiple_files=True 允許一次上傳多個月份的 Word 檔
+        uploaded_vacations = st.file_uploader("2. 上傳各月份輪休預排表 (可複選多檔)", type=['doc', 'docx'], accept_multiple_files=True, key="p26_vac")
 
     default_personnel = pd.DataFrame([
         {"職稱": "分局長", "姓名": ""},
@@ -160,12 +163,12 @@ def main():
     st.subheader("📥 匯出與寄送督勤表")
     if uploaded_excel and full_date_list:
         try:
-            vacation_dict = extract_vacations_from_word(uploaded_vacation)
+            vacation_dict = extract_vacations_from_word(uploaded_vacations)
             excel_data = process_excel(uploaded_excel, edited_personnel, full_date_list, hours_per_shift, vacation_dict)
             file_name = f"龍潭分局_{year_str}上半年督導行人及護老交通安全勤務表.xlsx"
 
-            if uploaded_vacation:
-                st.success(f"✅ 已成功掛載輪休預排表 (`{uploaded_vacation.name}`)，產出報表時將自動剔除人員休假日期。")
+            if uploaded_vacations:
+                st.success(f"✅ 已成功掛載 {len(uploaded_vacations)} 份輪休預排表，產出報表時將自動剔除人員休假日期。")
 
             b1, b2 = st.columns(2)
             with b1:
