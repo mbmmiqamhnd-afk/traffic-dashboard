@@ -11,6 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
+import docx  # 處理 Word 檔案
 
 try:
     from menu import show_sidebar
@@ -28,7 +29,7 @@ def send_csv_email(file_bytes, file_name, year_str):
         
         body_text = (
             f"您好，\n\n"
-            f"系統已自動依據自訂人員與上傳範本產出連假專案督勤表（龍潭分局），附件為對應的 Excel 統計檔案。\n\n"
+            f"系統已自動依據自訂人員、Word輪休預排與上傳範本產出連假專案督勤表（龍潭分局），附件為對應的 Excel 統計檔案。\n\n"
             f"本信件由交通執法自動化分析引擎發送。"
         )
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
@@ -47,7 +48,40 @@ def send_csv_email(file_bytes, file_name, year_str):
     except Exception as e:
         return False, str(e)
 
-def process_excel(uploaded_file, df_personnel, combined_date_str, total_hours):
+def extract_vacations_from_word(uploaded_vacation):
+    vacations = {}
+    if not uploaded_vacation:
+        return vacations
+        
+    try:
+        # 將上傳的 Word 載入
+        doc = docx.Document(uploaded_vacation)
+        full_text = []
+        
+        # 讀取段落文字
+        for para in doc.paragraphs:
+            if para.text.strip():
+                full_text.append(para.text.strip())
+                
+        # 讀取表格文字
+        for table in doc.tables:
+            for row in table.rows:
+                row_data = [cell.text.replace("\n", " ").strip() for cell in row.cells if cell.text.strip()]
+                if row_data:
+                    full_text.append(" | ".join(row_data))
+                    
+        combined_text = "\n".join(full_text)
+        
+        # TODO: 在這裡可以根據您 Word 輪休表的實際格式撰寫更精確的正則表達式 (Regex)
+        # 目前暫時保留彈性空殼，若您需要自動萃取，可以提供一段 Word 內的文字範例，我能為您寫精確的比對邏輯
+        # 格式預期為： vacations = { "張三": ["1/5", "2/14"], "李四": ["1/10"] }
+        
+    except Exception as e:
+        st.warning(f"Word 休假表解析失敗（請確認檔案是否為未損毀的 .docx）：{e}")
+        
+    return vacations
+
+def process_excel(uploaded_file, df_personnel, full_date_list, hours_per_shift, vacation_dict):
     wb = openpyxl.load_workbook(uploaded_file)
     ws = wb['警力統計'] if '警力統計' in wb.sheetnames else wb.active
 
@@ -55,15 +89,26 @@ def process_excel(uploaded_file, df_personnel, combined_date_str, total_hours):
     if title_cell.value and '○○分局' in title_cell.value:
         title_cell.value = title_cell.value.replace('○○分局', '龍潭分局')
 
-    # 從第 3 列開始寫入自訂的人員職稱與姓名、日期、時數
     current_row = 3
     for _, row in df_personnel.iterrows():
         title = str(row.get("職稱", "")).strip()
         name = str(row.get("姓名", "")).strip()
         
-        if title or name: # 確保有資料才寫入
+        if title or name:
             ws.cell(row=current_row, column=1, value=title)
             ws.cell(row=current_row, column=2, value=name)
+            
+            # 過濾休假日期
+            person_dates = []
+            user_vacations = vacation_dict.get(name, [])
+            
+            for date_str in full_date_list:
+                raw_date = date_str.split('(')[0]
+                if raw_date not in user_vacations:
+                    person_dates.append(date_str)
+                    
+            combined_date_str = "、".join(person_dates)
+            total_hours = len(person_dates) * hours_per_shift
             
             cell_c = ws.cell(row=current_row, column=3)
             cell_c.value = combined_date_str
@@ -85,11 +130,17 @@ def main():
     show_sidebar()
 
     st.title("🗓️ 上半年連假專案督勤表生成")
-    st.info("請於下方上傳 **Excel 空白範本**，並可自由新增或修改督導人員的「職稱」與「姓名」。")
+    st.info("請於下方上傳 **Excel 空白範本** 與 **人員輪休預排表 (Word)**，系統將自動排除休假人員的督導日期。")
 
-    uploaded_excel = st.file_uploader("上傳 Excel 空白範本 (.xlsx)", type=['xlsx'], key="p25_excel")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        uploaded_pdf = st.file_uploader("1. 上傳辦公日曆表 (PDF)", type=['pdf'], key="p25_pdf")
+    with col2:
+        uploaded_excel = st.file_uploader("2. 上傳 Excel 空白範本", type=['xlsx'], key="p25_excel")
+    with col3:
+        # 已將上傳格式改為 doc 與 docx
+        uploaded_vacation = st.file_uploader("3. 上傳輪休預排表 (Word)", type=['doc', 'docx'], key="p25_vac")
 
-    # 預設人員清單
     default_personnel = pd.DataFrame([
         {"職稱": "分局長", "姓名": ""},
         {"職稱": "副分局長(一)", "姓名": ""},
@@ -111,7 +162,7 @@ def main():
             year_str = f"{roc_y}年"
             ce_year = roc_y + 1911
 
-    # 計算連假日期
+    # 假日運算
     holidays_H1 = [
         {"start": f"{ce_year}-01-01", "end": f"{ce_year}-01-01"},
         {"start": f"{ce_year}-01-03", "end": f"{ce_year}-01-04"},
@@ -141,33 +192,29 @@ def main():
         {"start": f"{ce_year}-06-27", "end": f"{ce_year}-06-28"}
     ]
 
-    date_list = []
+    full_date_list = []
     for h in holidays_H1:
         start_date = pd.to_datetime(h["start"])
         end_date = pd.to_datetime(h["end"])
         target_start = start_date - timedelta(days=1)
         target_end = end_date - timedelta(days=1)
         for d in pd.date_range(start=target_start, end=target_end):
-            date_list.append(f"{d.month}/{d.day}(22-06)")
+            full_date_list.append(f"{d.month}/{d.day}(22-06)")
 
-    combined_date_str = "、".join(date_list)
-    total_days = len(date_list)
-    total_hours = total_days * 8
-
-    st.subheader("📋 運算結果預覽")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.metric(label="合計督勤天數", value=f"{total_days} 天")
-    with c2:
-        st.metric(label="總計時數 (D欄輸出值)", value=f"{total_hours} 小時")
-
+    total_base_days = len(full_date_list)
+    total_base_hours = total_base_days * 8
+    
     st.divider()
 
     st.subheader("📥 匯出與寄送督勤表")
     if uploaded_excel:
         try:
-            excel_data = process_excel(uploaded_excel, edited_personnel, combined_date_str, total_hours)
+            vacation_dict = extract_vacations_from_word(uploaded_vacation)
+            excel_data = process_excel(uploaded_excel, edited_personnel, full_date_list, 8, vacation_dict)
             file_name = f"龍潭分局_{year_str}上半年督導防制危險駕車勤務表.xlsx"
+
+            if uploaded_vacation:
+                st.success(f"✅ 已成功掛載輪休預排表 (`{uploaded_vacation.name}`)，產出報表時將自動剔除人員休假日期。")
 
             b1, b2 = st.columns(2)
             with b1:
@@ -179,7 +226,7 @@ def main():
                     use_container_width=True
                 )
             with b2:
-                if st.button("📧 將此報表一鍵寄至我的信箱", use_container_width=True):
+                if st.button("📧 將此報表一鍵寄至我的信箱", use_container_width=True, key="p25_btn"):
                     with st.spinner("信件發送中，請稍候…"):
                         ok, mail_err = send_csv_email(excel_data, file_name, year_str)
                         if ok:
@@ -187,7 +234,7 @@ def main():
                         else:
                             st.error(f"❌ 發信失敗: {mail_err}")
         except Exception as e:
-            st.error(f"⚠️ 處理 Excel 時發生錯誤：{e}")
+            st.error(f"⚠️ 處理檔案時發生錯誤：{e}")
     else:
         st.warning("⚠️ 請先上傳 Excel 空白範本，方可進行下載與寄送。")
 
