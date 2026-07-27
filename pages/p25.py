@@ -56,9 +56,45 @@ def extract_vacations_from_word(uploaded_vacations_list):
     for uploaded_vacation in uploaded_vacations_list:
         try:
             doc = docx.Document(uploaded_vacation)
-            # 在這裡，您可以針對每一個 Word 檔的內容進行迴圈讀取與比對
-            # 由於每個檔案可能代表不同月份，讀取出來的日期可以不斷 append 到同一個人員的清單中
-            # vacations.setdefault(name, []).append(date_str)
+            
+            # 從檔名自動抓取月份 (例如 "115-1月分局長輪休預排表範本" -> 抓取 "1")
+            month_match = re.search(r'(\d+)月', uploaded_vacation.name)
+            month = month_match.group(1) if month_match else "1"
+
+            for table in doc.tables:
+                col_names = {}
+                start_row_idx = 0
+                
+                # 找出包含長官稱謂的表頭列 (例如 分局長, 何副分局長)
+                for i, row in enumerate(table.rows):
+                    cells = [cell.text.replace("\n", "").strip() for cell in row.cells]
+                    if any("分局長" in c for c in cells):
+                        for col_idx, text in enumerate(cells):
+                            if text and text not in ["日期", "星期", "輪休"]:
+                                col_names[col_idx] = text
+                        start_row_idx = i + 1
+                        break
+                
+                if not col_names:
+                    continue
+                
+                # 從表頭的下一列開始讀取日期與記號
+                for i in range(start_row_idx, len(table.rows)):
+                    cells = [cell.text.replace("\n", "").strip() for cell in table.rows[i].cells]
+                    # 如果第一欄不是數字 (例如是 備註 或 總計)，就跳過
+                    if not cells or not cells[0].isdigit():
+                        continue
+                        
+                    day = int(cells[0])
+                    date_val = f"{month}/{day}"
+                    
+                    for col_idx, officer_name in col_names.items():
+                        if col_idx < len(cells):
+                            mark = cells[col_idx]
+                            # 如果格子裡有任何符號 (休假記號)
+                            if mark:
+                                vacations.setdefault(officer_name, []).append(date_val)
+                                
         except Exception as e:
             st.warning(f"Word 休假表「{uploaded_vacation.name}」解析失敗：{e}")
             
@@ -81,11 +117,28 @@ def process_excel(uploaded_file, df_personnel, full_date_list, hours_per_shift, 
             ws.cell(row=current_row, column=1, value=title)
             ws.cell(row=current_row, column=2, value=name)
             
-            # 過濾休假日期
             person_dates = []
-            user_vacations = vacation_dict.get(name, [])
+            user_vacations = []
             
+            # 智慧對位邏輯：媒合介面輸入的名字與 Word 表格裡的名字
+            for v_name, dates in vacation_dict.items():
+                is_match = False
+                # 1. 如果職稱完全相符 (例如 "分局長" == "分局長")
+                if title and title == v_name:
+                    is_match = True
+                # 2. 如果姓名第一個字出現在 Word 欄位名 (例如 "何XX" 的 "何" 對應 "何副分局長")
+                elif name and name[0] in v_name:
+                    is_match = True
+                # 3. 避免誤判：如果介面只打 "分局長" 且沒名字，確保抓的是純 "分局長" 而不是 "何副分局長"
+                elif title == "分局長" and "副" not in v_name and "分局長" in v_name:
+                    is_match = True
+                    
+                if is_match:
+                    user_vacations.extend(dates)
+            
+            # 過濾休假日期
             for date_str in full_date_list:
+                # date_str 格式為 "1/5(22-06)"，切出 "1/5" 進行比對
                 raw_date = date_str.split('(')[0]
                 if raw_date not in user_vacations:
                     person_dates.append(date_str)
@@ -113,7 +166,7 @@ def main():
     show_sidebar()
 
     st.title("🗓️ 上半年連假專案督勤表生成")
-    st.info("請於下方上傳 **Excel 空白範本** 與 **各月份人員輪休預排表 (支援多檔上傳)**，系統將自動排除休假人員的督導日期。")
+    st.info("請於下方上傳 **Excel 空白範本** 與 **各月份人員輪休預排表 (.docx)**，系統將自動排除休假人員的督導日期。")
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -121,8 +174,7 @@ def main():
     with col2:
         uploaded_excel = st.file_uploader("2. 上傳 Excel 空白範本", type=['xlsx'], key="p25_excel")
     with col3:
-        # 開啟 accept_multiple_files=True 允許一次上傳 6 個月份的 Word 檔
-        uploaded_vacations = st.file_uploader("3. 上傳各月份輪休預排表 (可複選多檔)", type=['doc', 'docx'], accept_multiple_files=True, key="p25_vac")
+        uploaded_vacations = st.file_uploader("3. 上傳各月份輪休預排表 (請上傳 .docx 格式，可複選)", type=['docx'], accept_multiple_files=True, key="p25_vac")
 
     default_personnel = pd.DataFrame([
         {"職稱": "分局長", "姓名": ""},
@@ -132,6 +184,7 @@ def main():
     ])
 
     st.subheader("👥 督導人員名單設定 (可自由新增、刪除或修改職稱與姓名)")
+    st.markdown("💡 **小撇步**：為了讓系統精準排除副分局長的休假，請務必在「姓名」欄填寫長官的姓氏（例如：`何` 或 `蔡`），系統會自動對齊 Word 表格裡的「何副分局長」與「蔡副分局長」。")
     edited_personnel = st.data_editor(default_personnel, num_rows="dynamic", use_container_width=True, key="p25_editor")
 
     year_str = "115年"
@@ -183,10 +236,7 @@ def main():
         target_end = end_date - timedelta(days=1)
         for d in pd.date_range(start=target_start, end=target_end):
             full_date_list.append(f"{d.month}/{d.day}(22-06)")
-
-    total_base_days = len(full_date_list)
-    total_base_hours = total_base_days * 8
-    
+            
     st.divider()
 
     st.subheader("📥 匯出與寄送督勤表")
@@ -197,7 +247,10 @@ def main():
             file_name = f"龍潭分局_{year_str}上半年督導防制危險駕車勤務表.xlsx"
 
             if uploaded_vacations:
-                st.success(f"✅ 已成功掛載 {len(uploaded_vacations)} 份輪休預排表，產出報表時將自動剔除人員休假日期。")
+                # 展示抓到哪些假，方便您驗證
+                st.success(f"✅ 已成功掛載 {len(uploaded_vacations)} 份輪休預排表！系統已自動剔除排定之休假日。")
+                with st.expander("🔍 點此查看系統抓取的長官休假清單（除錯用）"):
+                    st.write(vacation_dict)
 
             b1, b2 = st.columns(2)
             with b1:
