@@ -25,8 +25,9 @@ def send_csv_email(file_bytes, file_name, year_str):
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
         msg["From"], msg["To"] = sender, sender
-        msg["Subject"] = f"龍潭分局_{year_str}連假專案督勤表自動產出結果_{file_name}"
-        body_text = "您好，\n\n系統已自動依據輪休預排與上傳範本產出連假專案督勤表（龍潭分局），附件為對應的 Excel 統計檔案。\n\n本信件由交通執法自動化分析引擎發送。"
+        # 信件標題直接使用動態生成的完整檔名
+        msg["Subject"] = f"{file_name}"
+        body_text = "您好，\n\n系統已自動依據輪休預排與上傳範本產出防制危險駕車專案督勤表，附件為對應的 Excel 統計檔案。\n\n本信件由交通執法自動化分析引擎發送。"
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
         part = MIMEBase("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         part.set_payload(file_bytes.getvalue())
@@ -216,7 +217,8 @@ def main():
     default_personnel = pd.DataFrame([
         {"職稱": "分局長", "姓名": ""},
         {"職稱": "副分局長(一)", "姓名": ""},
-        {"職稱": "副分局長(二)", "姓名": ""}
+        {"職稱": "副分局長(二)", "姓名": ""},
+        {"職稱": "交通組組長", "姓名": ""}
     ])
 
     st.subheader("👥 督導人員名單設定 (防呆已啟動：不填姓名亦可自動對位)")
@@ -261,17 +263,31 @@ def main():
     ]
 
     full_date_list = []
+    active_months = set() # 紀錄運算涵蓋的月份
+    
     for h in holidays_H1:
         date_range = pd.date_range(start=pd.to_datetime(h["start"]) - timedelta(days=1), end=pd.to_datetime(h["end"]) - timedelta(days=1))
-        for d in date_range: full_date_list.append(f"{d.month}/{d.day}(22-06)")
+        for d in date_range: 
+            full_date_list.append(f"{d.month}/{d.day}(22-06)")
+            active_months.add(d.month)
             
     st.divider()
     st.subheader("📥 匯出與寄送督勤表")
+    
     if uploaded_excel:
         try:
             vacation_dict = extract_vacations_from_files(uploaded_vacations)
             excel_data = process_excel(uploaded_excel, edited_personnel, full_date_list, 8, vacation_dict)
-            file_name = f"龍潭分局_{year_str}上半年督導防制危險駕車勤務表.xlsx"
+            
+            # 🔥 自動依據涵蓋的月份決定檔名中的「區間」
+            if active_months:
+                min_m, max_m = min(active_months), max(active_months)
+                period_str = f"{min_m}至{max_m}月" if min_m != max_m else f"{min_m}月"
+            else:
+                period_str = "未定期間"
+                
+            # 正式組合標準檔名
+            file_name = f"桃園市政府警察局龍潭分局{year_str}{period_str}6序列以上人員督導防制危險駕車勤務時數統計表.xlsx"
 
             if uploaded_vacations:
                 st.success(f"✅ 已掛載 {len(uploaded_vacations)} 份輪休預排表！")
@@ -285,7 +301,7 @@ def main():
                 if st.button("📧 將此報表一鍵寄至我的信箱", use_container_width=True, key="p25_btn"):
                     with st.spinner("信件發送中，請稍候…"):
                         ok, mail_err = send_csv_email(excel_data, file_name, year_str)
-                        if ok: st.success("✅ 信件發送成功！報表已隨信夾帶至您的信箱。")
+                        if ok: st.success("✅ 信件發送成功！")
                         else: st.error(f"❌ 發信失敗: {mail_err}")
         except Exception as e:
             st.error(f"⚠️ 處理檔案時發生錯誤：{e}")
