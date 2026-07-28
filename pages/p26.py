@@ -24,8 +24,8 @@ def send_csv_email(file_bytes, file_name, year_str):
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
         msg["From"], msg["To"] = sender, sender
-        msg["Subject"] = f"龍潭分局_{year_str}行人及護老專案督勤表自動產出結果_{file_name}"
-        body_text = "您好，\n\n系統已自動依據輪休預排與上傳範本產出行人及護老專案督勤表（龍潭分局），附件為對應的 Excel 統計檔案。\n\n本信件由交通執法自動化分析引擎發送。"
+        msg["Subject"] = f"{file_name}" # 信件標題直接使用動態生成的完整檔名
+        body_text = "您好，\n\n系統已自動依據輪休預排與上傳範本產出行人及護老專案督勤表，附件為對應的 Excel 統計檔案。\n\n本信件由交通執法自動化分析引擎發送。"
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
         part = MIMEBase("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         part.set_payload(file_bytes.getvalue())
@@ -215,38 +215,44 @@ def main():
 
     year_str = "115年"
     if uploaded_excel:
-        wb_temp = openpyxl.load_workbook(uploaded_excel, read_only=True)
-        ws_temp = wb_temp['警力統計'] if '警力統計' in wb_temp.sheetnames else wb_temp.active
-        match = re.search(r'(\d{2,3})年', ws_temp['A1'].value or "")
-        if match: year_str = f"{match.group(1)}年"
+        year_str = get_year_from_excel(uploaded_excel)
 
     # ==========================
-    # 🔥 全新極簡輸入介面
+    # 🔥 動態期間與極簡輸入介面
     # ==========================
     st.subheader("📝 基準勤務日期設定")
-    st.markdown("💡 **極簡輸入**：您只需輸入每個月排定的 **4天** 數字（以逗號或空白分隔），系統會自動將其擴充為 `(06-10)` 與 `(16-20)` 兩個時段。")
+    
+    # 增加上下半年切換開關
+    semester = st.radio("選擇統計區間 (決定顯示的月份)：", ["上半年 (1至6月)", "下半年 (7至12月)"], horizontal=True)
+    is_h1 = "上" in semester
+    start_m = 1 if is_h1 else 7
+    
+    st.markdown("💡 **極簡輸入**：您只需輸入每個月排定的 **4天** 數字（以逗號或空白分隔），系統會自動轉換並排除休假。如果某個月不需排班，**將文字框清空即可**。")
     
     col_m1, col_m2, col_m3 = st.columns(3)
     month_days = {}
+    default_days = "5, 12, 19, 26"
     
     with col_m1:
-        month_days[1] = st.text_input("1月 督勤日期", value="5, 12, 19, 26", key="m_1")
-        month_days[4] = st.text_input("4月 督勤日期", value="5, 12, 19, 26", key="m_4")
+        month_days[start_m] = st.text_input(f"{start_m}月 督勤日期", value=default_days, key=f"m_{start_m}")
+        month_days[start_m+3] = st.text_input(f"{start_m+3}月 督勤日期", value=default_days, key=f"m_{start_m+3}")
     with col_m2:
-        month_days[2] = st.text_input("2月 督勤日期", value="5, 12, 19, 26", key="m_2")
-        month_days[5] = st.text_input("5月 督勤日期", value="5, 12, 19, 26", key="m_5")
+        month_days[start_m+1] = st.text_input(f"{start_m+1}月 督勤日期", value=default_days, key=f"m_{start_m+1}")
+        month_days[start_m+4] = st.text_input(f"{start_m+4}月 督勤日期", value=default_days, key=f"m_{start_m+4}")
     with col_m3:
-        month_days[3] = st.text_input("3月 督勤日期", value="5, 12, 19, 26", key="m_3")
-        month_days[6] = st.text_input("6月 督勤日期", value="5, 12, 19, 26", key="m_6")
+        month_days[start_m+2] = st.text_input(f"{start_m+2}月 督勤日期", value=default_days, key=f"m_{start_m+2}")
+        month_days[start_m+5] = st.text_input(f"{start_m+5}月 督勤日期", value=default_days, key=f"m_{start_m+5}")
 
-    # 在背景自動將數字擴充為包含時段的格式
+    # 在背景自動將數字擴充為包含時段的格式，並過濾掉沒有輸入資料的月份
     full_date_list = []
+    active_months = []
     for m, days_str in month_days.items():
-        # 自動過濾掉逗號、頓號、中文等雜訊，只取出純數字
         days = re.findall(r'\d+', days_str)
-        for d in days:
-            full_date_list.append(f"{m}/{d}(06-10)")
-            full_date_list.append(f"{m}/{d}(16-20)")
+        if days:
+            active_months.append(m) # 紀錄該月有資料
+            for d in days:
+                full_date_list.append(f"{m}/{d}(06-10)")
+                full_date_list.append(f"{m}/{d}(16-20)")
 
     with st.expander("👁️ 點此預覽系統為您自動擴充的完整時段清單（除錯用）"):
         st.code("、".join(full_date_list))
@@ -257,7 +263,16 @@ def main():
         try:
             vacation_dict = extract_vacations_from_files(uploaded_vacations)
             excel_data = process_excel(uploaded_excel, edited_personnel, full_date_list, 4, vacation_dict)
-            file_name = f"龍潭分局_{year_str}上半年督導行人及護老交通安全勤務表.xlsx"
+            
+            # 🔥 自動依據輸入的月份決定檔名中的「區間」
+            if active_months:
+                min_m, max_m = min(active_months), max(active_months)
+                period_str = f"{min_m}至{max_m}月" if min_m != max_m else f"{min_m}月"
+            else:
+                period_str = "未定期間"
+                
+            # 正式組合您指定的完整檔名格式
+            file_name = f"桃園市政府警察局龍潭分局{year_str}{period_str}6序列以上人員督導行人及護老交通安全專案勤務時數統計表.xlsx"
 
             if uploaded_vacations:
                 st.success(f"✅ 已掛載 {len(uploaded_vacations)} 份輪休預排表！")
@@ -266,7 +281,13 @@ def main():
 
             b1, b2 = st.columns(2)
             with b1:
-                st.download_button("📥 下載督勤日期表 (Excel)", excel_data, file_name, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                st.download_button(
+                    label="📥 下載督勤日期表 (Excel)", 
+                    data=excel_data, 
+                    file_name=file_name, 
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                    use_container_width=True
+                )
             with b2:
                 if st.button("📧 將此報表一鍵寄至我的信箱", use_container_width=True, key="p26_btn"):
                     with st.spinner("信件發送中，請稍候…"):
@@ -276,7 +297,7 @@ def main():
         except Exception as e:
             st.error(f"⚠️ 處理檔案時發生錯誤：{e}")
     else:
-        st.warning("⚠️ 請先上傳 Excel 空白範本並確認排定日期。")
+        st.warning("⚠️ 請先上傳 Excel 空白範本並確認至少有一個月有排定日期。")
 
 if __name__ == "__main__":
     main()
