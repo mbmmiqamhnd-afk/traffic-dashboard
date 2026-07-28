@@ -186,6 +186,15 @@ def process_excel(uploaded_file, df_personnel, full_date_list, hours_per_shift, 
     output.seek(0)
     return output
 
+def get_year_from_excel(uploaded_file):
+    if not uploaded_file:
+        return "115年"
+    wb = openpyxl.load_workbook(uploaded_file, read_only=True)
+    ws = wb['警力統計'] if '警力統計' in wb.sheetnames else wb.active
+    title = ws['A1'].value or ""
+    match = re.search(r'(\d{2,3})年', title)
+    return f"{match.group(1)}年" if match else "115年"
+
 def main():
     show_sidebar()
     st.title("👵 行人及護老專案督勤表生成")
@@ -211,15 +220,36 @@ def main():
         match = re.search(r'(\d{2,3})年', ws_temp['A1'].value or "")
         if match: year_str = f"{match.group(1)}年"
 
-    st.subheader("📝 基準勤務日期與時段設定")
-    default_dates = []
-    for m in range(1, 7):
-        for d in [5, 12, 19, 26]:
-            default_dates.append(f"{m}/{d}(06-10)")
-            default_dates.append(f"{m}/{d}(16-20)")
-            
-    combined_date_str = st.text_area("此為「未扣除休假前」的基準日期清單：", value="、".join(default_dates), height=150)
-    full_date_list = [d.strip() for d in combined_date_str.split("、") if d.strip()]
+    # ==========================
+    # 🔥 全新極簡輸入介面
+    # ==========================
+    st.subheader("📝 基準勤務日期設定")
+    st.markdown("💡 **極簡輸入**：您只需輸入每個月排定的 **4天** 數字（以逗號或空白分隔），系統會自動將其擴充為 `(06-10)` 與 `(16-20)` 兩個時段。")
+    
+    col_m1, col_m2, col_m3 = st.columns(3)
+    month_days = {}
+    
+    with col_m1:
+        month_days[1] = st.text_input("1月 督勤日期", value="5, 12, 19, 26", key="m_1")
+        month_days[4] = st.text_input("4月 督勤日期", value="5, 12, 19, 26", key="m_4")
+    with col_m2:
+        month_days[2] = st.text_input("2月 督勤日期", value="5, 12, 19, 26", key="m_2")
+        month_days[5] = st.text_input("5月 督勤日期", value="5, 12, 19, 26", key="m_5")
+    with col_m3:
+        month_days[3] = st.text_input("3月 督勤日期", value="5, 12, 19, 26", key="m_3")
+        month_days[6] = st.text_input("6月 督勤日期", value="5, 12, 19, 26", key="m_6")
+
+    # 在背景自動將數字擴充為包含時段的格式
+    full_date_list = []
+    for m, days_str in month_days.items():
+        # 自動過濾掉逗號、頓號、中文等雜訊，只取出純數字
+        days = re.findall(r'\d+', days_str)
+        for d in days:
+            full_date_list.append(f"{m}/{d}(06-10)")
+            full_date_list.append(f"{m}/{d}(16-20)")
+
+    with st.expander("👁️ 點此預覽系統為您自動擴充的完整時段清單（除錯用）"):
+        st.code("、".join(full_date_list))
 
     st.divider()
     st.subheader("📥 匯出與寄送督勤表")
