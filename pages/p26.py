@@ -9,6 +9,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
+import datetime
 
 # ReportLab 相關匯入 (用於生成正式交辦單 PDF)
 from reportlab.lib.pagesizes import A4
@@ -92,6 +93,11 @@ def generate_all_slips_pdf():
     body_l3 = ParagraphStyle('BodyL3', parent=body_style, leftIndent=char_w*6, firstLineIndent=-char_w*3)
     body_step = ParagraphStyle('BodyStep', parent=body_style, leftIndent=char_w*2, firstLineIndent=0)
 
+    # 取得當下日期並轉為民國年格式
+    now = datetime.datetime.now()
+    roc_year = now.year - 1911
+    current_date_str = f"{roc_year}年{now.month}月{now.day}日"
+
     # 所有受文單位清單
     units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
 
@@ -118,7 +124,7 @@ def generate_all_slips_pdf():
         data = [
             [
                 Paragraph("受文者", header_style), Paragraph(unit_name, header_style), 
-                Paragraph("交辦日期", header_style), Paragraph("115年7月21日", header_style), 
+                Paragraph("交辦日期", header_style), Paragraph(current_date_str, header_style), 
                 Paragraph("承辦人", header_style), Paragraph("", header_style), 
                 Paragraph("單位主管", header_style), Paragraph("組長楊孟竟", header_style)
             ],
@@ -128,15 +134,12 @@ def generate_all_slips_pdf():
             ],
             [
                 Paragraph("承辦內容", header_style), 
-                Paragraph("承辦人：<br/><br/>所(隊)長：<br/><br/>年 月 日", body_style), '', '', '', '', '', ''
+                # 將「所(隊)長」改為「單位主管」，並加寬年月日的間距
+                Paragraph("承辦人：<br/><br/>單位主管：<br/><br/>  年  月  日", body_style), '', '', '', '', '', ''
             ]
         ]
         
-        # 【精算寬度調整】：
-        # 總寬維持 535。
-        # 受文單位設為 45 (3個字)
-        # 交辦日期設為 56 (精準容納 4 個中文字寬: 13*4 + 4 padding)
-        # 將多出的空間補給右側日期值欄位 (拓寬至 101)
+        # 【精算寬度調整】：總寬維持 535
         t = Table(data, colWidths=[56, 45, 56, 101, 45, 102, 56, 74])
         
         # 加入左右微小內縮 (PADDING=2) 確保字體緊湊服貼
@@ -197,15 +200,20 @@ def main():
     # ==========================================
     with tab1:
         st.subheader("📋 桃市警龍潭分局交通組交辦單 (PDF 全單位一次匯出)")
-        st.write("已將「交辦日期」欄寬精準限制在容納「4個中文字寬」，並完美分配表格其餘空間。點擊下方按鈕即可一鍵產出包含所有單位的 PDF（共 7 頁）。")
+        st.write("已將「交辦日期」連動為產出當下之日期，並將簽核欄位改為「單位主管」及「加寬手寫日期空格」。點擊下方按鈕即可一鍵產出包含所有單位的 PDF（共 7 頁）。")
         
         # 產生包含所有單位的 PDF
         pdf_data = generate_all_slips_pdf()
         
+        # 產出檔案名稱也會帶上今天日期
+        now = datetime.datetime.now()
+        roc_year = now.year - 1911
+        file_name = f"{roc_year}年上半年行人及護老專案交辦單_全單位.pdf"
+        
         st.download_button(
             label="📥 一鍵下載【全單位】正式交辦單 (PDF)",
             data=pdf_data,
-            file_name="115年上半年行人及護老專案交辦單_全單位.pdf",
+            file_name=file_name,
             mime="application/pdf",
             use_container_width=True,
             type="primary"
