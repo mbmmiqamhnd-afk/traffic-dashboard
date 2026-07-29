@@ -86,6 +86,11 @@ def generate_all_slips_pdf():
         'BodyStyle', fontName=FONT_NAME, fontSize=13, leading=18, alignment=4
     )
     
+    # 建立簽核區專屬樣式 (靠左對齊，避免空白被拉扯)
+    sign_style = ParagraphStyle(
+        'SignStyle', fontName=FONT_NAME, fontSize=13, leading=18, alignment=0
+    )
+    
     # 針對 13pt 字體設定懸掛縮排
     char_w = 13
     body_l1 = ParagraphStyle('BodyL1', parent=body_style, leftIndent=char_w*2, firstLineIndent=-char_w*2)
@@ -120,6 +125,10 @@ def generate_all_slips_pdf():
             Spacer(1, 5),
             Paragraph("辦理期限：115年7月28日前辦理完畢連同原件具報。", body_style)
         ]
+        
+        # 解決 ReportLab 吃掉行首空白的問題：使用白色隱形文字作為開頭 + 6個全形空白 = 完美右移 7 個中文字
+        # 年月日之間則精準安插 3 個全形空白
+        sign_content = '承辦人：<br/><br/>單位主管：<br/><br/><font color="white">白</font>      年   月   日'
 
         data = [
             [
@@ -134,8 +143,7 @@ def generate_all_slips_pdf():
             ],
             [
                 Paragraph("承辦內容", header_style), 
-                # 前方 7 個全形空白，年月日之間各 3 個全形空白
-                Paragraph("承辦人：<br/><br/>單位主管：<br/><br/>       年   月   日", body_style), '', '', '', '', '', ''
+                Paragraph(sign_content, sign_style), '', '', '', '', '', ''
             ]
         ]
         
@@ -199,7 +207,7 @@ def main():
     # ==========================================
     with tab1:
         st.subheader("📋 桃市警龍潭分局交通組交辦單 (PDF 全單位一次匯出)")
-        st.write("已將「年月日」右移7個中文字，並在年月日之間預留3個中文字的填寫空間。點擊下方按鈕即可一鍵產出包含所有單位的 PDF（共 7 頁）。")
+        st.write("已透過強制對齊與隱形字元技術，完美解決系統吃字元問題，確保「年月日」精準右移並等距留白。點擊下方按鈕即可一鍵產出 PDF。")
         
         # 產生包含所有單位的 PDF
         pdf_data = generate_all_slips_pdf()
