@@ -10,6 +10,18 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 
+# ReportLab 相關匯入 (用於生成正式交辦單 PDF)
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+
+# 註冊內建中文 CID 字型 (完美解決 Linux 環境黑方塊亂碼問題)
+pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
+FONT_NAME = 'STSong-Light'
+
 # 匯入系統原本的側邊欄設定
 try:
     from menu import show_sidebar
@@ -46,6 +58,83 @@ def send_csv_email(file_bytes, file_name):
     except Exception as e:
         return False, str(e)
 
+def generate_slip_pdf(unit_name):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, right_margin=30, left_margin=30, top_margin=30, bottom_margin=30)
+    story = []
+    
+    title_style = ParagraphStyle(
+        'TitleStyle',
+        fontName=FONT_NAME,
+        fontSize=15,
+        leading=22,
+        alignment=1 # Center
+    )
+    
+    body_style = ParagraphStyle(
+        'BodyStyle',
+        fontName=FONT_NAME,
+        fontSize=10,
+        leading=15,
+        alignment=4 # Justified
+    )
+    
+    header_style = ParagraphStyle(
+        'HeaderStyle',
+        fontName=FONT_NAME,
+        fontSize=10,
+        leading=14,
+        alignment=1
+    )
+
+    story.append(Paragraph("桃園市政府警察局龍潭分局交通組交(會)辦單", title_style))
+    story.append(Spacer(1, 15))
+    
+    notice_text = (
+        "一、為辦理本分局115年1至6月各單位執行「行人及護老交通安全實施計畫」工作出力人員敘獎案，請統計所屬執勤時數並彙整敘獎人員名冊[cite: 1]。<br/>"
+        "二、獎勵規則：<br/>"
+        "  1、行人及護老交通安全實施計畫：<br/>"
+        "  (一)本案專責勤務人員執行成效良好，每半年執勤時數累計達40小時以上者核予嘉獎一次、80小時以上者核予嘉獎二次[cite: 1]。<br/>"
+        "  (二)略.......[cite: 1]<br/>"
+        "  (三)本案專責勤務及督導人員每人每半年獎勵額度以嘉獎二次為限，其中上半年未達獎勵額度之時數(勤務人員未達40小時或督導人員未達60小時)，得累計至當年度下半年計算[cite: 1]。<br/>"
+        "三、請至網路硬碟/交通組/巡官郭勝隆的資料夾/☆115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員敘獎區☆，下載115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊，再依「115年辦公日曆表」，「1月至6月非假日之每日06-10時段及16-20時段，凡勤務分配表有顯示「護老專案」之服勤時數均得計算，再請於人事資訊整合管理系統登錄獎懲資料[cite: 1]。<br/>"
+        "四、115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊由主管核章後附交辦單，逕送本組[cite: 1]。<br/>"
+        "五、登錄獎懲資料的流程：<br/>"
+        "  新增 > 主旨事由: 115年1至6月執行「行人及護老交通安全實施計畫」出力人員獎勵案 > 受理單位代碼: 交通組 > 受理人員代碼: 郭勝隆 > 再按新增 > 加入獎懲人員 > 獎懲事由: 115年1至6月執行「行人及護老交通安全」專責勤務達幾小時[cite: 1]。<br/>"
+        "六、請不用寫辛勞得力及備極辛勞，系統會自動帶入[cite: 1]。<br/>"
+        "<br/><b>辦理期限：115年7月28日前辦理完畢連同原件具報[cite: 1]。</b>"
+    )
+
+    data = [
+        [
+            Paragraph("受文者", header_style), Paragraph(unit_name, header_style), 
+            Paragraph("交(會)辦日期", header_style), Paragraph("115年7月21日[cite: 1]", header_style), 
+            Paragraph("承辦人", header_style), Paragraph("", header_style), 
+            Paragraph("單位主管", header_style), Paragraph("組長楊孟竟[cite: 1]", header_style)
+        ],
+        [
+            Paragraph("交<br/><br/>辦<br/><br/>事<br/><br/>由", header_style), 
+            Paragraph(notice_text, body_style), '', '', '', '', '', ''
+        ],
+        [
+            Paragraph("承辦內容", header_style), 
+            Paragraph("承辦人：<br/><br/>所(隊)長：<br/>(職務報告請核章)<br/><br/>年 月 日", body_style), '', '', '', '', '', ''
+        ]
+    ]
+    
+    t = Table(data, colWidths=[55, 60, 75, 75, 55, 65, 65, 85])
+    t.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 1, colors.black),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('SPAN', (1,1), (7,1)),
+        ('SPAN', (1,2), (7,2)),
+    ]))
+    
+    story.append(t)
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
 def generate_excel_file(combined_date_str, total_hours):
     file_path = '376431843C_1150087037_ATTACH4.xlsx'
     if not os.path.exists(file_path):
@@ -72,60 +161,28 @@ def generate_excel_file(combined_date_str, total_hours):
 def main():
     show_sidebar()
 
-    # 注入 CSS 讓網頁預覽文字強制採用「標楷體」
-    st.markdown("""
-        <style>
-        .kaiti-box {
-            font-family: 'DFKai-SB', 'BiauKai', 'KaiTi', '標楷體', serif !important;
-            font-size: 16px !important;
-            line-height: 1.6 !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
     st.title("👵 行人及護老專案交辦單與時數統計系統")
-    st.info("本系統整合了「正式交辦單文字檔產生器（支援標楷體預覽）」與「護老專案時數統計與報表匯出」功能。")
+    st.info("本系統整合了「正式交辦單 PDF 產生器」與「護老專案時數統計與報表匯出」功能。")
 
-    tab1, tab2 = st.tabs(["📄 1. 各單位交辦單產生器", "📊 2. 護老專案時數統計與匯出"])
+    tab1, tab2 = st.tabs(["📄 1. 各單位交辦單 PDF 產生器", "📊 2. 護老專案時數統計與匯出"])
 
     # ==========================================
-    # TAB 1: 交辦單產生器 (標楷體預覽與純文字下載)
+    # TAB 1: 交辦單 PDF 產生器
     # ==========================================
     with tab1:
-        st.subheader("📋 桃市警龍潭分局交通組交(會)辦單")
-        st.write("依據警察局來文指示[cite: 1]，選擇受文單位即可直接預覽標準標楷體格式之正式交辦單並下載檔案。")
+        st.subheader("📋 桃市警龍潭分局交通組交(會)辦單 (PDF 匯出)")
+        st.write("依據警察局來文指示[cite: 1]，選擇受文單位即可直接產生格式完全相同的正式交辦單 PDF 檔供列印或發送。")
 
         units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
         selected_unit = st.selectbox("選擇受文單位：", units, key="slip_unit")
         
-        notice_content = f"""桃園市政府警察局龍潭分局交通組交(會)辦單
-受文者：{selected_unit}[cite: 1]
-交(會)辦日期：115年7月21日[cite: 1]
-單位主管：組長楊孟竟[cite: 1]
-
-交辦事項：
-一、為辦理本分局115年1至6月各單位執行「行人及護老交通安全實施計畫」工作出力人員敘獎案，請統計所屬執勤時數並彙整敘獎人員名冊[cite: 1]。
-二、獎勵規則：
-    1、行人及護老交通安全實施計畫：
-    (一)本案專責勤務人員執行成效良好，每半年執勤時數累計達40小時以上者核予嘉獎一次、80小時以上者核予嘉獎二次[cite: 1]。
-    (二)略.......[cite: 1]
-    (三)本案專責勤務及督導人員每人每半年獎勵額度以嘉獎二次為限，其中上半年未達獎勵額度之時數(勤務人員未達40小時或督導人員未達60小時)，得累計至當年度下半年計算[cite: 1]。
-三、請至網路硬碟/交通組/巡官郭勝隆的資料夾/☆115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員敘獎區☆，下載115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊，再依「115年辦公日曆表」，「1月至6月非假日之每日06-10時段及16-20時段，凡勤務分配表有顯示「護老專案」之服勤時數均得計算，再請於人事資訊整合管理系統登錄獎懲資料[cite: 1]。
-四、115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊由主管核章後附交辦單，逕送本組[cite: 1]。
-五、登錄獎懲資料的流程：
-    新增 > 主旨事由: 115年1至6月執行「行人及護老交通安全實施計畫」出力人員獎勵案 > 受理單位代碼: 交通組 > 受理人員代碼: 郭勝隆 > 再按新增 > 加入獎懲人員 > 獎懲事由: 115年1至6月執行「行人及護老交通安全」專責勤務達幾小時[cite: 1]。
-六、請不用寫辛勞得力及備極辛勞，系統會自動帶入[cite: 1]。
-
-辦理期限：115年7月28日前辦理完畢連同原件具報[cite: 1]。"""
-        
-        # 使用 HTML 容器強制套用標楷體樣式進行預覽
-        st.markdown(f'<div class="kaiti-box"><pre style="font-family: inherit; white-space: pre-wrap;">{notice_content}</pre></div>', unsafe_allow_html=True)
+        pdf_data = generate_slip_pdf(selected_unit)
         
         st.download_button(
-            label=f"📥 下載【{selected_unit}】正式交辦單 (純文字檔)",
-            data=notice_content.strip().encode('utf-8-sig'),
-            file_name=f"115年上半年行人及護老專案交辦單_{selected_unit}.txt",
-            mime="text/plain",
+            label=f"📥 下載【{selected_unit}】正式交辦單 (PDF)",
+            data=pdf_data,
+            file_name=f"115年上半年行人及護老專案交辦單_{selected_unit}.pdf",
+            mime="application/pdf",
             use_container_width=True
         )
 
