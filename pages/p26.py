@@ -18,7 +18,7 @@ from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
-# 註冊中文字型 (支援 Linux 部署環境)
+# 註冊中文字型以解決黑方塊亂碼問題
 font_path = '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf'
 if os.path.exists(font_path):
     pdfmetrics.registerFont(TTFont('DroidFallback', font_path))
@@ -70,10 +70,9 @@ def generate_slip_pdf(unit_name):
     title_style = ParagraphStyle(
         'TitleStyle',
         fontName=FONT_NAME,
-        fontSize=16,
+        fontSize=15,
         leading=22,
-        alignment=1, # Center
-        fontNameBold=True
+        alignment=1 # Center
     )
     
     body_style = ParagraphStyle(
@@ -131,8 +130,8 @@ def generate_slip_pdf(unit_name):
     t.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 1, colors.black),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('SPAN', (1,1), (7,1)), # 內容跨欄
-        ('SPAN', (1,2), (7,2)), # 承辦內容跨欄
+        ('SPAN', (1,1), (7,1)),
+        ('SPAN', (1,2), (7,2)),
     ]))
     
     story.append(t)
@@ -181,7 +180,6 @@ def main():
         units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
         selected_unit = st.selectbox("選擇受文單位：", units, key="slip_unit")
         
-        # 產生對應單位的 PDF
         pdf_data = generate_slip_pdf(selected_unit)
         
         st.download_button(
