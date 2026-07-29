@@ -40,7 +40,7 @@ except ImportError:
     def show_sidebar():
         pass
 
-def send_csv_email(file_bytes, file_name):
+def send_file_email(file_bytes, file_name, mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
@@ -50,12 +50,14 @@ def send_csv_email(file_bytes, file_name):
         
         body_text = (
             f"您好，\n\n"
-            f"系統已自動產出「115年上半年行人及護老專案」相關檔案，附件為對應的 Excel 統計檔案。\n\n"
+            f"系統已自動產出「115年上半年行人及護老專案」相關檔案，附件為您要求的 {file_name}。\n\n"
             f"本信件由交通執法自動化分析引擎發送。"
         )
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
 
-        part = MIMEBase("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        # 動態設定 MIME Type (相容 Excel 與 PDF)
+        main_type, sub_type = mime_type.split('/') if '/' in mime_type else ("application", "octet-stream")
+        part = MIMEBase(main_type, sub_type)
         part.set_payload(file_bytes.getvalue())
         encoders.encode_base64(part)
         part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(file_name)}")
@@ -212,24 +214,35 @@ def main():
     # ==========================================
     with tab1:
         st.subheader("📋 桃市警龍潭分局交通組交辦單 (PDF 全單位一次匯出)")
-        st.write("已將「承辦人」與「單位主管」之間的空白區域擴增兩行，提供更充裕的簽核與蓋章空間。點擊下方按鈕即可一鍵產出 PDF。")
+        st.write("已將所有單位合併為一份 PDF，並可一鍵寄送至您的信箱。")
         
         # 產生包含所有單位的 PDF
         pdf_data = generate_all_slips_pdf()
         
-        # 產出檔案名稱也會帶上今天日期
         now = datetime.datetime.now()
         roc_year = now.year - 1911
-        file_name = f"{roc_year}年上半年行人及護老專案交辦單_全單位.pdf"
+        pdf_file_name = f"{roc_year}年上半年行人及護老專案交辦單_全單位.pdf"
         
-        st.download_button(
-            label="📥 一鍵下載【全單位】正式交辦單 (PDF)",
-            data=pdf_data,
-            file_name=file_name,
-            mime="application/pdf",
-            use_container_width=True,
-            type="primary"
-        )
+        # 使用雙欄版面來放置下載與寄件按鈕
+        col_pdf1, col_pdf2 = st.columns(2)
+        
+        with col_pdf1:
+            st.download_button(
+                label="📥 下載【全單位】交辦單 (PDF)",
+                data=pdf_data,
+                file_name=pdf_file_name,
+                mime="application/pdf",
+                use_container_width=True
+            )
+            
+        with col_pdf2:
+            if st.button("📧 將此 PDF 一鍵寄至我的信箱", use_container_width=True):
+                with st.spinner("信件發送中，請稍候…"):
+                    ok, mail_err = send_file_email(pdf_data, pdf_file_name, mime_type="application/pdf")
+                    if ok:
+                        st.success("✅ 信件發送成功！交辦單 PDF 已夾帶至您的信箱。")
+                    else:
+                        st.error(f"❌ 發信失敗: {mail_err}")
 
     # ==========================================
     # TAB 2: 時數統計與匯出
@@ -291,9 +304,9 @@ def main():
                     )
                 
                 with col2:
-                    if st.button("📧 將此報表一鍵寄至我的信箱", use_container_width=True):
+                    if st.button("📧 將此 Excel 一鍵寄至我的信箱", use_container_width=True):
                         with st.spinner("信件發送中，請稍候…"):
-                            ok, mail_err = send_csv_email(excel_data, file_name)
+                            ok, mail_err = send_file_email(excel_data, file_name, mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                             if ok:
                                 st.success("✅ 信件發送成功！報表已隨信夾帶至您的信箱。")
                             else:
