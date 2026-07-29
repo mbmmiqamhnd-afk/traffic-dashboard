@@ -70,11 +70,9 @@ def send_csv_email(file_bytes, file_name):
 
 def generate_all_slips_pdf():
     buffer = io.BytesIO()
-    # 【關鍵調整】：將上下邊界縮小至 15 (原本為25/30)
     doc = SimpleDocTemplate(buffer, pagesize=A4, right_margin=30, left_margin=30, top_margin=15, bottom_margin=15)
     story = []
     
-    # --- 樣式設定：維持字體大，但稍微收緊行距 (leading) ---
     title_style = ParagraphStyle(
         'TitleStyle', fontName=FONT_NAME, fontSize=17, leading=22, alignment=1
     )
@@ -99,7 +97,7 @@ def generate_all_slips_pdf():
 
     for idx, unit_name in enumerate(units):
         story.append(Paragraph("桃園市政府警察局龍潭分局交通組交(會)辦單", title_style))
-        story.append(Spacer(1, 8)) # 稍微縮減標題與表格之間的空隙
+        story.append(Spacer(1, 8)) 
         
         notice_paragraphs = [
             Paragraph("一、為辦理本分局115年1至6月各單位執行「行人及護老交通安全實施計畫」工作出力人員敘獎案，請統計所屬執勤時數並彙整敘獎人員名冊。", body_l1),
@@ -130,14 +128,14 @@ def generate_all_slips_pdf():
             ],
             [
                 Paragraph("承辦內容", header_style), 
-                Paragraph("承辦人：<br/><br/>所(隊)長：<br/>(職務報告請核章)<br/><br/>年 月 日", body_style), '', '', '', '', '', ''
+                # 已經將 (職務報告請核章) 移除，並保留充足換行空間
+                Paragraph("承辦人：<br/><br/>所(隊)長：<br/><br/>年 月 日", body_style), '', '', '', '', '', ''
             ]
         ]
         
-        # 總寬 535，確保內容在版面內
-        t = Table(data, colWidths=[45, 90, 75, 90, 45, 45, 60, 85])
+        # 總寬維持 535，重新分配欄寬 (將 承辦人 設為 42，右側空白格設為 84，達到兩倍寬度)
+        t = Table(data, colWidths=[42, 80, 78, 80, 42, 84, 55, 74])
         
-        # 【關鍵調整】：加入 TOPPADDING 與 BOTTOMPADDING 收縮單元格留白空間
         t.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 1, colors.black),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -149,7 +147,7 @@ def generate_all_slips_pdf():
         
         story.append(t)
         
-        # 除最後一個單位外，其他單位後面都加入換頁符號 (確保每單位完美卡在一頁)
+        # 除最後一個單位外，其他單位後面都加入換頁符號
         if idx < len(units) - 1:
             story.append(PageBreak())
 
@@ -189,11 +187,11 @@ def main():
     tab1, tab2 = st.tabs(["📄 1. 各單位交辦單 PDF 產生器", "📊 2. 護老專案時數統計與匯出"])
 
     # ==========================================
-    # TAB 1: 交辦單 PDF 產生器 (一次匯出全部單位，保證每單位一頁)
+    # TAB 1: 交辦單 PDF 產生器
     # ==========================================
     with tab1:
         st.subheader("📋 桃市警龍潭分局交通組交(會)辦單 (PDF 全單位一次匯出)")
-        st.write("已將上下邊界與行距縮減到最完美尺寸。點擊下方按鈕即可一鍵產出包含**龍潭所、聖亭所、中興所、石門所、高平所、勤務指揮中心、龍潭交通分隊**的 PDF，**絕對保證每個單位獨立佔據剛好一頁**（共 7 頁）。")
+        st.write("已將上下邊界與行距縮減到最完美尺寸，並調整了儲存格寬度。點擊下方按鈕即可一鍵產出包含**龍潭所、聖亭所、中興所、石門所、高平所、勤務指揮中心、龍潭交通分隊**的 PDF（共 7 頁）。")
         
         # 產生包含所有單位的 PDF
         pdf_data = generate_all_slips_pdf()
