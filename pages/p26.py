@@ -96,7 +96,8 @@ def generate_all_slips_pdf():
     units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
 
     for idx, unit_name in enumerate(units):
-        story.append(Paragraph("桃園市政府警察局龍潭分局交通組交(會)辦單", title_style))
+        # 移除標題的 (會)
+        story.append(Paragraph("桃園市政府警察局龍潭分局交通組交辦單", title_style))
         story.append(Spacer(1, 8)) 
         
         notice_paragraphs = [
@@ -118,7 +119,8 @@ def generate_all_slips_pdf():
         data = [
             [
                 Paragraph("受文者", header_style), Paragraph(unit_name, header_style), 
-                Paragraph("交(會)辦日期", header_style), Paragraph("115年7月21日", header_style), 
+                # 移除表格欄位的 (會)
+                Paragraph("交辦日期", header_style), Paragraph("115年7月21日", header_style), 
                 Paragraph("承辦人", header_style), Paragraph("", header_style), 
                 Paragraph("單位主管", header_style), Paragraph("組長楊孟竟", header_style)
             ],
@@ -194,7 +196,7 @@ def main():
     # TAB 1: 交辦單 PDF 產生器
     # ==========================================
     with tab1:
-        st.subheader("📋 桃市警龍潭分局交通組交(會)辦單 (PDF 全單位一次匯出)")
+        st.subheader("📋 桃市警龍潭分局交通組交辦單 (PDF 全單位一次匯出)")
         st.write("已將單位欄寬精準限制在「3個中文字寬」，遇「勤務指揮中心」等長字串將自動斷行。點擊下方按鈕即可一鍵產出包含所有單位的 PDF（共 7 頁）。")
         
         # 產生包含所有單位的 PDF
