@@ -72,25 +72,33 @@ def generate_excel_file(combined_date_str, total_hours):
 def main():
     show_sidebar()
 
+    # 注入 CSS 讓網頁預覽文字強制採用「標楷體」
+    st.markdown("""
+        <style>
+        .kaiti-box {
+            font-family: 'DFKai-SB', 'BiauKai', 'KaiTi', '標楷體', serif !important;
+            font-size: 16px !important;
+            line-height: 1.6 !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.title("👵 行人及護老專案交辦單與時數統計系統")
-    st.info("本系統整合了「正式交辦單文字檔產生器」與「護老專案時數統計與報表匯出」功能。")
+    st.info("本系統整合了「正式交辦單文字檔產生器（支援標楷體預覽）」與「護老專案時數統計與報表匯出」功能。")
 
     tab1, tab2 = st.tabs(["📄 1. 各單位交辦單產生器", "📊 2. 護老專案時數統計與匯出"])
 
     # ==========================================
-    # TAB 1: 交辦單產生器 (使用 100% 無亂碼純文字格式)
+    # TAB 1: 交辦單產生器 (標楷體預覽與純文字下載)
     # ==========================================
     with tab1:
         st.subheader("📋 桃市警龍潭分局交通組交(會)辦單")
-        st.write("依據警察局來文指示[cite: 1]，選擇受文單位即可直接產生格式完整的正式交辦單文字檔供複製或列印。")
+        st.write("依據警察局來文指示[cite: 1]，選擇受文單位即可直接預覽標準標楷體格式之正式交辦單並下載檔案。")
 
         units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
         selected_unit = st.selectbox("選擇受文單位：", units, key="slip_unit")
         
-        notice_content = f"""
-==================================================
-桃園市政府警察局龍潭分局交通組交(會)辦單
-==================================================
+        notice_content = f"""桃園市政府警察局龍潭分局交通組交(會)辦單
 受文者：{selected_unit}[cite: 1]
 交(會)辦日期：115年7月21日[cite: 1]
 單位主管：組長楊孟竟[cite: 1]
@@ -108,11 +116,11 @@ def main():
     新增 > 主旨事由: 115年1至6月執行「行人及護老交通安全實施計畫」出力人員獎勵案 > 受理單位代碼: 交通組 > 受理人員代碼: 郭勝隆 > 再按新增 > 加入獎懲人員 > 獎懲事由: 115年1至6月執行「行人及護老交通安全」專責勤務達幾小時[cite: 1]。
 六、請不用寫辛勞得力及備極辛勞，系統會自動帶入[cite: 1]。
 
-辦理期限：115年7月28日前辦理完畢連同原件具報[cite: 1]。
-==================================================
-"""
+辦理期限：115年7月28日前辦理完畢連同原件具報[cite: 1]。"""
         
-        st.text_area("交辦單預覽內容：", value=notice_content.strip(), height=380)
+        # 使用 HTML 容器強制套用標楷體樣式進行預覽
+        st.markdown(f'<div class="kaiti-box"><pre style="font-family: inherit; white-space: pre-wrap;">{notice_content}</pre></div>', unsafe_allow_html=True)
+        
         st.download_button(
             label=f"📥 下載【{selected_unit}】正式交辦單 (純文字檔)",
             data=notice_content.strip().encode('utf-8-sig'),
