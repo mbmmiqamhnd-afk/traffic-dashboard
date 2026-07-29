@@ -16,11 +16,21 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase.ttfonts import TTFont
 
-# 註冊內建中文 CID 字型 (完美解決 Linux 環境黑方塊亂碼問題)
-pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
-FONT_NAME = 'STSong-Light'
+# 優先載入專案資料夾中的 kaiu.ttf (標楷體)
+font_path = 'kaiu.ttf'
+if os.path.exists(font_path):
+    pdfmetrics.registerFont(TTFont('KaiTi', font_path))
+    FONT_NAME = 'KaiTi'
+else:
+    # 若找不到則嘗試 Linux 系統備援路徑或內建字型
+    fallback_path = '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf'
+    if os.path.exists(fallback_path):
+        pdfmetrics.registerFont(TTFont('KaiTi', fallback_path))
+        FONT_NAME = 'KaiTi'
+    else:
+        FONT_NAME = 'Helvetica'
 
 # 匯入系統原本的側邊欄設定
 try:
@@ -162,7 +172,7 @@ def main():
     show_sidebar()
 
     st.title("👵 行人及護老專案交辦單與時數統計系統")
-    st.info("本系統整合了「正式交辦單 PDF 產生器」與「護老專案時數統計與報表匯出」功能。")
+    st.info("本系統整合了「正式交辦單 PDF 產生器（已套用專案標楷體）」與「護老專案時數統計與報表匯出」功能。")
 
     tab1, tab2 = st.tabs(["📄 1. 各單位交辦單 PDF 產生器", "📊 2. 護老專案時數統計與匯出"])
 
@@ -171,7 +181,7 @@ def main():
     # ==========================================
     with tab1:
         st.subheader("📋 桃市警龍潭分局交通組交(會)辦單 (PDF 匯出)")
-        st.write("依據警察局來文指示[cite: 1]，選擇受文單位即可直接產生格式完全相同的正式交辦單 PDF 檔供列印或發送。")
+        st.write("依據警察局來文指示[cite: 1]，選擇受文單位即可直接產生採用**標楷體**的正式交辦單 PDF 檔。")
 
         units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
         selected_unit = st.selectbox("選擇受文單位：", units, key="slip_unit")
