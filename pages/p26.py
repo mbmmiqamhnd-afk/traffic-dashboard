@@ -96,7 +96,6 @@ def generate_all_slips_pdf():
     units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
 
     for idx, unit_name in enumerate(units):
-        # 移除標題的 (會)
         story.append(Paragraph("桃園市政府警察局龍潭分局交通組交辦單", title_style))
         story.append(Spacer(1, 8)) 
         
@@ -119,7 +118,6 @@ def generate_all_slips_pdf():
         data = [
             [
                 Paragraph("受文者", header_style), Paragraph(unit_name, header_style), 
-                # 移除表格欄位的 (會)
                 Paragraph("交辦日期", header_style), Paragraph("115年7月21日", header_style), 
                 Paragraph("承辦人", header_style), Paragraph("", header_style), 
                 Paragraph("單位主管", header_style), Paragraph("組長楊孟竟", header_style)
@@ -135,11 +133,13 @@ def generate_all_slips_pdf():
         ]
         
         # 【精算寬度調整】：
-        # 總寬維持 535。將單位儲存格寬度設為 45 (精準容納 3 個中文字寬)
-        # 剩餘的空間撥給承辦人右側空白儲存格 (拓寬至 102)
-        t = Table(data, colWidths=[56, 45, 82, 75, 45, 102, 56, 74])
+        # 總寬維持 535。
+        # 受文單位設為 45 (3個字)
+        # 交辦日期設為 56 (精準容納 4 個中文字寬: 13*4 + 4 padding)
+        # 將多出的空間補給右側日期值欄位 (拓寬至 101)
+        t = Table(data, colWidths=[56, 45, 56, 101, 45, 102, 56, 74])
         
-        # 加入左右微小內縮 (PADDING=2) 確保字體緊湊服貼，觸發完美自動換行
+        # 加入左右微小內縮 (PADDING=2) 確保字體緊湊服貼
         t.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 1, colors.black),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -197,7 +197,7 @@ def main():
     # ==========================================
     with tab1:
         st.subheader("📋 桃市警龍潭分局交通組交辦單 (PDF 全單位一次匯出)")
-        st.write("已將單位欄寬精準限制在「3個中文字寬」，遇「勤務指揮中心」等長字串將自動斷行。點擊下方按鈕即可一鍵產出包含所有單位的 PDF（共 7 頁）。")
+        st.write("已將「交辦日期」欄寬精準限制在容納「4個中文字寬」，並完美分配表格其餘空間。點擊下方按鈕即可一鍵產出包含所有單位的 PDF（共 7 頁）。")
         
         # 產生包含所有單位的 PDF
         pdf_data = generate_all_slips_pdf()
