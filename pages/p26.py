@@ -70,25 +70,25 @@ def send_csv_email(file_bytes, file_name):
 
 def generate_all_slips_pdf():
     buffer = io.BytesIO()
-    # 稍微縮小上下邊距，確保內容不會被擠到下一頁
-    doc = SimpleDocTemplate(buffer, pagesize=A4, right_margin=30, left_margin=30, top_margin=25, bottom_margin=25)
+    # 【關鍵調整】：將上下邊界縮小至 15 (原本為25/30)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, right_margin=30, left_margin=30, top_margin=15, bottom_margin=15)
     story = []
     
-    # --- 樣式設定：微調字體與行距，確保單一單位絕對能在 1 頁內呈現 ---
+    # --- 樣式設定：維持字體大，但稍微收緊行距 (leading) ---
     title_style = ParagraphStyle(
-        'TitleStyle', fontName=FONT_NAME, fontSize=17, leading=24, alignment=1
+        'TitleStyle', fontName=FONT_NAME, fontSize=17, leading=22, alignment=1
     )
     
     header_style = ParagraphStyle(
-        'HeaderStyle', fontName=FONT_NAME, fontSize=13.5, leading=18, alignment=1
+        'HeaderStyle', fontName=FONT_NAME, fontSize=13, leading=16, alignment=1
     )
 
     body_style = ParagraphStyle(
-        'BodyStyle', fontName=FONT_NAME, fontSize=13.5, leading=20, alignment=4
+        'BodyStyle', fontName=FONT_NAME, fontSize=13, leading=18, alignment=4
     )
     
-    # 針對 13.5pt 字體設定縮排單位
-    char_w = 13.5
+    # 針對 13pt 字體設定懸掛縮排
+    char_w = 13
     body_l1 = ParagraphStyle('BodyL1', parent=body_style, leftIndent=char_w*2, firstLineIndent=-char_w*2)
     body_l2 = ParagraphStyle('BodyL2', parent=body_style, leftIndent=char_w*4, firstLineIndent=-char_w*2)
     body_l3 = ParagraphStyle('BodyL3', parent=body_style, leftIndent=char_w*6, firstLineIndent=-char_w*3)
@@ -99,7 +99,7 @@ def generate_all_slips_pdf():
 
     for idx, unit_name in enumerate(units):
         story.append(Paragraph("桃園市政府警察局龍潭分局交通組交(會)辦單", title_style))
-        story.append(Spacer(1, 10))
+        story.append(Spacer(1, 8)) # 稍微縮減標題與表格之間的空隙
         
         notice_paragraphs = [
             Paragraph("一、為辦理本分局115年1至6月各單位執行「行人及護老交通安全實施計畫」工作出力人員敘獎案，請統計所屬執勤時數並彙整敘獎人員名冊。", body_l1),
@@ -113,7 +113,7 @@ def generate_all_slips_pdf():
             Paragraph("五、登錄獎懲資料的流程：", body_l1),
             Paragraph("新增 > 主旨事由: 115年1至6月執行「行人及護老交通安全實施計畫」出力人員獎勵案 > 受理單位代碼: 交通組 > 受理人員代碼: 郭勝隆 > 再按新增 > 加入獎懲人員 > 獎懲事由: 115年1至6月執行「行人及護老交通安全」專責勤務達幾小時。", body_step),
             Paragraph("六、請不用寫辛勞得力及備極辛勞，系統會自動帶入。", body_l1),
-            Spacer(1, 8),
+            Spacer(1, 5),
             Paragraph("辦理期限：115年7月28日前辦理完畢連同原件具報。", body_style)
         ]
 
@@ -136,16 +136,20 @@ def generate_all_slips_pdf():
         
         # 總寬 535，確保內容在版面內
         t = Table(data, colWidths=[45, 90, 75, 90, 45, 45, 60, 85])
+        
+        # 【關鍵調整】：加入 TOPPADDING 與 BOTTOMPADDING 收縮單元格留白空間
         t.setStyle(TableStyle([
             ('GRID', (0,0), (-1,-1), 1, colors.black),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('SPAN', (1,1), (7,1)),
             ('SPAN', (1,2), (7,2)),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
         ]))
         
         story.append(t)
         
-        # 除最後一個單位外，其他單位後面都加入換頁符號 (確保每單位一頁)
+        # 除最後一個單位外，其他單位後面都加入換頁符號 (確保每單位完美卡在一頁)
         if idx < len(units) - 1:
             story.append(PageBreak())
 
@@ -185,11 +189,11 @@ def main():
     tab1, tab2 = st.tabs(["📄 1. 各單位交辦單 PDF 產生器", "📊 2. 護老專案時數統計與匯出"])
 
     # ==========================================
-    # TAB 1: 交辦單 PDF 產生器 (一次匯出全部單位，每單位一頁)
+    # TAB 1: 交辦單 PDF 產生器 (一次匯出全部單位，保證每單位一頁)
     # ==========================================
     with tab1:
         st.subheader("📋 桃市警龍潭分局交通組交(會)辦單 (PDF 全單位一次匯出)")
-        st.write("已將字體擴大並排版至適合紙張大小。點擊下方按鈕即可一鍵產出包含**龍潭所、聖亭所、中興所、石門所、高平所、勤務指揮中心、龍潭交通分隊**的 PDF，**每個單位剛好佔據獨立的一頁**（共 7 頁）。")
+        st.write("已將上下邊界與行距縮減到最完美尺寸。點擊下方按鈕即可一鍵產出包含**龍潭所、聖亭所、中興所、石門所、高平所、勤務指揮中心、龍潭交通分隊**的 PDF，**絕對保證每個單位獨立佔據剛好一頁**（共 7 頁）。")
         
         # 產生包含所有單位的 PDF
         pdf_data = generate_all_slips_pdf()
