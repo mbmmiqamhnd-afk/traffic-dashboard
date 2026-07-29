@@ -1,203 +1,211 @@
 import streamlit as st
-import pandas as pd
-from datetime import timedelta
 import openpyxl
 from openpyxl.styles import Alignment, Font
 import io
-import re
+import os
 import smtplib
 import urllib.parse as _ul
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-import docx
-import pdfplumber
+import datetime
 
+# ReportLab 相關匯入 (用於生成正式交辦單 PDF)
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+# 優先載入專案資料夾中的 kaiu.ttf (標楷體)
+font_path = 'kaiu.ttf'
+if os.path.exists(font_path):
+    pdfmetrics.registerFont(TTFont('KaiTi', font_path))
+    FONT_NAME = 'KaiTi'
+else:
+    # 若找不到則嘗試 Linux 系統備援路徑或內建字型
+    fallback_path = '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf'
+    if os.path.exists(fallback_path):
+        pdfmetrics.registerFont(TTFont('KaiTi', fallback_path))
+        FONT_NAME = 'KaiTi'
+    else:
+        FONT_NAME = 'Helvetica'
+
+# 匯入系統原本的側邊欄設定
 try:
     from menu import show_sidebar
 except ImportError:
     def show_sidebar():
         pass
 
-def send_csv_email(file_bytes, file_name, year_str):
+# --- 動態判斷期程與名稱 ---
+now = datetime.datetime.now()
+CURRENT_ROC_YEAR = now.year - 1911
+
+if now.month <= 6:
+    HALF_YEAR_TEXT = "上半年"
+    MONTH_RANGE_TEXT = "1至6月"
+else:
+    HALF_YEAR_TEXT = "下半年"
+    MONTH_RANGE_TEXT = "7至12月"
+
+def send_file_email(file_bytes, file_name, mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
         msg["From"], msg["To"] = sender, sender
-        # 信件標題直接使用動態生成的完整檔名
-        msg["Subject"] = f"{file_name}"
-        body_text = "您好，\n\n系統已自動依據輪休預排與上傳範本產出防制危險駕車專案督勤表，附件為對應的 Excel 統計檔案。\n\n本信件由交通執法自動化分析引擎發送。"
+        
+        # 信件標題動態置換
+        msg["Subject"] = f"龍潭分局_防制危險駕車勤務自動產出結果_{file_name}"
+        
+        body_text = (
+            f"您好，\n\n"
+            f"系統已自動產出「{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}防制危險駕車勤務」相關檔案，附件為您要求的 {file_name}。\n\n"
+            f"本信件由交通執法自動化分析引擎發送。"
+        )
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
-        part = MIMEBase("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        # 動態設定 MIME Type (相容 Excel 與 PDF)
+        main_type, sub_type = mime_type.split('/') if '/' in mime_type else ("application", "octet-stream")
+        part = MIMEBase(main_type, sub_type)
         part.set_payload(file_bytes.getvalue())
         encoders.encode_base64(part)
         part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(file_name)}")
         msg.attach(part)
+
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
             server.sendmail(sender, sender, msg.as_string())
+            
         return True, None
     except Exception as e:
         return False, str(e)
 
-def clean_text(text):
-    if not text:
-        return ""
-    return re.sub(r'\s+', '', str(text))
+def generate_all_slips_pdf():
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, right_margin=30, left_margin=30, top_margin=15, bottom_margin=15)
+    story = []
+    
+    title_style = ParagraphStyle(
+        'TitleStyle', fontName=FONT_NAME, fontSize=17, leading=22, alignment=1
+    )
+    
+    header_style = ParagraphStyle(
+        'HeaderStyle', fontName=FONT_NAME, fontSize=13, leading=16, alignment=1
+    )
 
-def extract_vacations_from_files(uploaded_vacations_list):
-    vacations = {}
-    if not uploaded_vacations_list:
-        return vacations
+    body_style = ParagraphStyle(
+        'BodyStyle', fontName=FONT_NAME, fontSize=13, leading=18, alignment=4
+    )
+    
+    # 建立簽核區專屬樣式 (靠左對齊，避免空白被拉扯)
+    sign_style = ParagraphStyle(
+        'SignStyle', fontName=FONT_NAME, fontSize=13, leading=18, alignment=0
+    )
+    
+    # 針對 13pt 字體設定懸掛縮排
+    char_w = 13
+    body_l1 = ParagraphStyle('BodyL1', parent=body_style, leftIndent=char_w*2, firstLineIndent=-char_w*2)
+    # 流程步驟無編號或條文內容直接對齊首字
+    body_step = ParagraphStyle('BodyStep', parent=body_style, leftIndent=char_w*2, firstLineIndent=0)
+
+    current_date_str = f"{CURRENT_ROC_YEAR}年{now.month}月{now.day}日"
+    
+    # 計算辦理期限：預設為產出日期的後7天
+    deadline_date = now + datetime.timedelta(days=7)
+    deadline_roc_year = deadline_date.year - 1911
+    deadline_str = f"{deadline_roc_year}年{deadline_date.month}月{deadline_date.day}日"
+
+    # 所有受文單位清單
+    units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
+
+    for idx, unit_name in enumerate(units):
+        story.append(Paragraph("桃園市政府警察局龍潭分局交通組交辦單", title_style))
+        story.append(Spacer(1, 8)) 
         
-    for uploaded_file in uploaded_vacations_list:
-        try:
-            month = "1"
-            month_match = re.search(r'(\d+)月', uploaded_file.name)
-            if month_match:
-                month = str(int(month_match.group(1)))
-                
-            ext = uploaded_file.name.lower().split('.')[-1]
-
-            if ext == "pdf":
-                with pdfplumber.open(uploaded_file) as pdf:
-                    for page in pdf.pages:
-                        text = page.extract_text() or ""
-                        m_match = re.search(r'年\s*(\d+)\s*月', text)
-                        if m_match:
-                            month = str(int(m_match.group(1)))
-                            
-                        # 強制使用垂直水平線條辨識策略
-                        tables = page.extract_tables(table_settings={"vertical_strategy": "text", "horizontal_strategy": "text"})
-                        if not tables:
-                            tables = page.extract_tables() # fallback
-                            
-                        for table in tables:
-                            col_names = {}
-                            start_row_idx = 0
-                            
-                            for i, row in enumerate(table):
-                                cells_text = [clean_text(c) if c else "" for c in row]
-                                if any("分局長" in c for c in cells_text):
-                                    for col_idx, txt in enumerate(cells_text):
-                                        if txt and "日期" not in txt and "星期" not in txt and "輪休" not in txt:
-                                            col_names[col_idx] = txt
-                                    start_row_idx = i + 1
-                                    break
-                            
-                            if not col_names: continue
-                            
-                            for i in range(start_row_idx, len(table)):
-                                cells_text = [clean_text(c) if c else "" for c in table[i]]
-                                if not cells_text or not cells_text[0].isdigit():
-                                    continue
-                                day = int(cells_text[0])
-                                date_val = f"{month}/{day}"
-                                
-                                for col_idx, officer_name in col_names.items():
-                                    if col_idx < len(cells_text):
-                                        mark = cells_text[col_idx]
-                                        if mark and mark.strip() != "":
-                                            vacations.setdefault(officer_name, []).append(date_val)
-                                            
-            elif ext in ["docx", "doc"]:
-                doc = docx.Document(uploaded_file)
-                if doc.paragraphs:
-                    m_match = re.search(r'年\s*(\d+)\s*月', doc.paragraphs[0].text)
-                    if m_match:
-                        month = str(int(m_match.group(1)))
-                        
-                for table in doc.tables:
-                    col_names = {}
-                    start_row_idx = 0
-                    for i, row in enumerate(table.rows):
-                        cells_text = [clean_text(cell.text) for cell in row.cells]
-                        if any("分局長" in c for c in cells_text):
-                            for col_idx, txt in enumerate(cells_text):
-                                if txt and "日期" not in txt and "星期" not in txt and "輪休" not in txt:
-                                    col_names[col_idx] = txt
-                            start_row_idx = i + 1
-                            break
-                    if not col_names: continue
-                    for i in range(start_row_idx, len(table.rows)):
-                        cells_text = [clean_text(cell.text) for cell in table.rows[i].cells]
-                        if not cells_text or not cells_text[0].isdigit(): continue
-                        day = int(cells_text[0])
-                        date_val = f"{month}/{day}"
-                        for col_idx, officer_name in col_names.items():
-                            if col_idx < len(cells_text):
-                                mark = cells_text[col_idx]
-                                if mark and mark.strip() != "":
-                                    vacations.setdefault(officer_name, []).append(date_val)
-        except Exception as e:
-            st.warning(f"休假表「{uploaded_file.name}」解析失敗：{e}")
-            
-    for k in vacations: vacations[k] = list(set(vacations[k]))
-    return vacations
-
-def process_excel(uploaded_file, df_personnel, full_date_list, hours_per_shift, vacation_dict):
-    wb = openpyxl.load_workbook(uploaded_file)
-    ws = wb['警力統計'] if '警力統計' in wb.sheetnames else wb.active
-    title_cell = ws['A1']
-    if title_cell.value and '○○分局' in title_cell.value:
-        title_cell.value = title_cell.value.replace('○○分局', '龍潭分局')
-
-    # 先取得排休表上有哪些副分局長，確保按照欄位順序排序
-    deputy_list = [k for k in vacation_dict.keys() if "副分局長" in k]
-
-    current_row = 3
-    deputy_counter = 0 # 紀錄目前處理到第幾個副分局長
-
-    for _, row in df_personnel.iterrows():
-        title = clean_text(row.get("職稱", ""))
-        name = clean_text(row.get("姓名", ""))
-        raw_title = str(row.get("職稱", "")).strip()
-        raw_name = str(row.get("姓名", "")).strip()
+        # 內文動態置換年份與月份，並套用防制危險駕車之文字內容
+        notice_paragraphs = [
+            Paragraph(f"一、為辦理本分局{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}執行「防制危險駕車勤務」工作出力人員獎勵案，請統計所屬執勤時數並彙整敘獎人員名冊。", body_l1),
+            Paragraph("二、獎勵規則：", body_l1),
+            Paragraph("執行「防制危險駕車勤務」，勤務、帶班人員每半年達20小時嘉獎一次，督導人員達40小時嘉獎一次，每半年以嘉獎三次為限。日勤務時數，不予核計。同年度上半年執勤總時數，扣除業經敘獎時數，其餘時數得併入下半年計算，惟不得跨年度累計。", body_step),
+            Paragraph(f"三、請至網路硬碟/交通組/巡官郭勝隆/☆{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}「防制危險駕車勤務」出力人員敘獎區☆資料夾內，下載{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}「防制危險駕車勤務」工作出力人員獎勵清冊，依「{CURRENT_ROC_YEAR}年辦公日曆表」，凡休假日之前一日22:00起至當日上午06:00止，均為防制危險駕車勤務時段，統計彙整敘獎人員擔服防制危險駕車勤務時數，再請於人事資訊整合管理系統登錄獎懲資料。", body_l1),
+            Paragraph(f"四、{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}「防制危險駕車勤務」工作出力人員獎勵清冊由主管核章附交辦單逕送本組。", body_l1),
+            Paragraph("五、登錄獎懲資料的流程：", body_l1),
+            Paragraph(f"新增 > 主旨事由：{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}執行「防制危險駕車勤務」工作出力人員獎勵案 > 受理單位代碼：交通組 > 受理人員代碼：郭勝隆 > 再按新增 > 加入獎懲人員 > 獎懲事由：{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}執行「防制危險駕車勤務」，帶班人員或勤務人員達幾小時。", body_step),
+            Spacer(1, 5),
+            Paragraph(f"辦理期限：{deadline_str}前辦理完畢連同原件具報。", body_style)
+        ]
         
-        if raw_title or raw_name:
-            ws.cell(row=current_row, column=1, value=raw_title)
-            ws.cell(row=current_row, column=2, value=raw_name)
-            
-            user_vacations = []
-            
-            # 【智慧與防呆對位邏輯】
-            if title == "分局長":
-                for v_name, dates in vacation_dict.items():
-                    if "分局長" in v_name and "副" not in v_name:
-                        user_vacations.extend(dates)
-            
-            elif "副分局長" in title:
-                matched = False
-                # 先嘗試用姓名對位 (例如 姓名有"何")
-                if name:
-                    for v_name, dates in vacation_dict.items():
-                        if name[0] in v_name:
-                            user_vacations.extend(dates)
-                            matched = True
-                # 如果沒填名字，或是名字沒對到，自動依照順序給予休假資料
-                if not matched and deputy_counter < len(deputy_list):
-                    v_name = deputy_list[deputy_counter]
-                    user_vacations.extend(vacation_dict[v_name])
-                deputy_counter += 1
-            
-            # 過濾休假日期
-            person_dates = []
-            for date_str in full_date_list:
-                raw_date = date_str.split('(')[0]
-                if raw_date not in user_vacations:
-                    person_dates.append(date_str)
-                    
-            cell_c = ws.cell(row=current_row, column=3)
-            cell_c.value = "、".join(person_dates)
-            cell_c.alignment = Alignment(wrapText=True, vertical='center', horizontal='left')
-            
-            cell_d = ws.cell(row=current_row, column=4)
-            cell_d.value = len(person_dates) * hours_per_shift
-            cell_d.alignment = Alignment(vertical='center', horizontal='center')
-            cell_d.font = Font(name='微軟正黑體', size=12)
-            
-            current_row += 1
+        # 增加兩行空間: 在「承辦人」與「單位主管」之間使用 <br/><br/><br/><br/> 來創造四個斷行 (等於多出兩行空白)
+        # 年之前 7 個字，年月日之間各 3 個字 (使用白字強制佔位)
+        sign_content = (
+            '承辦人：<br/><br/><br/><br/>單位主管：<br/><br/>'
+            '<font color="white">白白白白白白白</font>年'
+            '<font color="white">白白白</font>月'
+            '<font color="white">白白白</font>日'
+        )
+
+        data = [
+            [
+                Paragraph("受文者", header_style), Paragraph(unit_name, header_style), 
+                Paragraph("交辦日期", header_style), Paragraph(current_date_str, header_style), 
+                Paragraph("承辦人", header_style), Paragraph("", header_style), 
+                Paragraph("單位主管", header_style), Paragraph("組長楊孟竟", header_style)
+            ],
+            [
+                Paragraph("交<br/><br/>辦<br/><br/>事<br/><br/>由", header_style), 
+                notice_paragraphs, '', '', '', '', '', ''
+            ],
+            [
+                Paragraph("承辦內容", header_style), 
+                Paragraph(sign_content, sign_style), '', '', '', '', '', ''
+            ]
+        ]
+        
+        # 總寬維持 535，交辦日期4個字(56)、單位3個字(45)
+        t = Table(data, colWidths=[56, 45, 56, 101, 45, 102, 56, 74])
+        
+        t.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 1, colors.black),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('SPAN', (1,1), (7,1)),
+            ('SPAN', (1,2), (7,2)),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('LEFTPADDING', (0,0), (-1,-1), 2),
+            ('RIGHTPADDING', (0,0), (-1,-1), 2),
+        ]))
+        
+        story.append(t)
+        
+        # 除最後一個單位外，其他單位後面都加入換頁符號
+        if idx < len(units) - 1:
+            story.append(PageBreak())
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+def generate_excel_file(combined_date_str, total_hours):
+    # 若您有專屬於防制危險駕車的 Excel 範本檔案，可以將下方檔名替換
+    file_path = '376431843C_1150087037_ATTACH4.xlsx'
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"找不到範本檔案 {file_path}")
+
+    wb = openpyxl.load_workbook(file_path)
+    ws = wb['警力統計']
+
+    for row in range(3, 7):
+        cell_c = ws.cell(row=row, column=3)
+        cell_c.value = combined_date_str
+        cell_c.alignment = Alignment(wrapText=True, vertical='center', horizontal='left')
+        
+        cell_d = ws.cell(row=row, column=4)
+        cell_d.value = total_hours
+        cell_d.alignment = Alignment(vertical='center', horizontal='center')
+        cell_d.font = Font(name='微軟正黑體', size=12)
 
     output = io.BytesIO()
     wb.save(output)
@@ -206,107 +214,123 @@ def process_excel(uploaded_file, df_personnel, full_date_list, hours_per_shift, 
 
 def main():
     show_sidebar()
-    st.title("🗓️ 上半年連假專案督勤表生成")
-    st.info("請上傳空白範本與輪休表，系統將自動解析 PDF 並排除休假人員。")
 
-    col1, col2, col3 = st.columns(3)
-    with col1: uploaded_pdf = st.file_uploader("1. 辦公日曆表 (PDF)", type=['pdf'], key="p25_pdf")
-    with col2: uploaded_excel = st.file_uploader("2. Excel 空白範本", type=['xlsx'], key="p25_excel")
-    with col3: uploaded_vacations = st.file_uploader("3. 輪休預排表 (多檔 PDF/Word)", type=['pdf', 'docx', 'doc'], accept_multiple_files=True, key="p25_vac")
+    st.title("🚗 防制危險駕車勤務交辦單與時數統計系統")
+    st.info(f"智慧期程辨識：目前系統判定為【{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}】。交辦單內容與檔名皆已自動同步修改。")
 
-    default_personnel = pd.DataFrame([
-        {"職稱": "分局長", "姓名": ""},
-        {"職稱": "副分局長(一)", "姓名": ""},
-        {"職稱": "副分局長(二)", "姓名": ""},
-        {"職稱": "交通組組長", "姓名": ""}
-    ])
+    tab1, tab2 = st.tabs(["📄 1. 各單位交辦單 PDF 產生器", "📊 2. 勤務時數統計與匯出"])
 
-    st.subheader("👥 督導人員名單設定 (防呆已啟動：不填姓名亦可自動對位)")
-    edited_personnel = st.data_editor(default_personnel, num_rows="dynamic", use_container_width=True, key="p25_editor")
-
-    year_str, ce_year = "115年", 2026
-    if uploaded_excel:
-        wb_temp = openpyxl.load_workbook(uploaded_excel, read_only=True)
-        ws_temp = wb_temp['警力統計'] if '警力統計' in wb_temp.sheetnames else wb_temp.active
-        match = re.search(r'(\d{2,3})年', ws_temp['A1'].value or "")
-        if match:
-            year_str, ce_year = f"{match.group(1)}年", int(match.group(1)) + 1911
-
-    # 假日運算
-    holidays_H1 = [
-        {"start": f"{ce_year}-01-01", "end": f"{ce_year}-01-01"},
-        {"start": f"{ce_year}-01-03", "end": f"{ce_year}-01-04"},
-        {"start": f"{ce_year}-01-10", "end": f"{ce_year}-01-11"},
-        {"start": f"{ce_year}-01-17", "end": f"{ce_year}-01-18"},
-        {"start": f"{ce_year}-01-24", "end": f"{ce_year}-01-25"},
-        {"start": f"{ce_year}-01-31", "end": f"{ce_year}-02-01"},
-        {"start": f"{ce_year}-02-07", "end": f"{ce_year}-02-08"},
-        {"start": f"{ce_year}-02-14", "end": f"{ce_year}-02-22"},
-        {"start": f"{ce_year}-02-27", "end": f"{ce_year}-03-01"},
-        {"start": f"{ce_year}-03-07", "end": f"{ce_year}-03-08"},
-        {"start": f"{ce_year}-03-14", "end": f"{ce_year}-03-15"},
-        {"start": f"{ce_year}-03-21", "end": f"{ce_year}-03-22"},
-        {"start": f"{ce_year}-03-28", "end": f"{ce_year}-03-29"},
-        {"start": f"{ce_year}-04-03", "end": f"{ce_year}-04-06"},
-        {"start": f"{ce_year}-04-11", "end": f"{ce_year}-04-12"},
-        {"start": f"{ce_year}-04-18", "end": f"{ce_year}-04-19"},
-        {"start": f"{ce_year}-04-25", "end": f"{ce_year}-04-26"},
-        {"start": f"{ce_year}-05-01", "end": f"{ce_year}-05-03"},
-        {"start": f"{ce_year}-05-09", "end": f"{ce_year}-05-10"},
-        {"start": f"{ce_year}-05-16", "end": f"{ce_year}-05-17"},
-        {"start": f"{ce_year}-05-23", "end": f"{ce_year}-05-24"},
-        {"start": f"{ce_year}-05-30", "end": f"{ce_year}-05-31"},
-        {"start": f"{ce_year}-06-06", "end": f"{ce_year}-06-07"},
-        {"start": f"{ce_year}-06-13", "end": f"{ce_year}-06-14"},
-        {"start": f"{ce_year}-06-19", "end": f"{ce_year}-06-21"},
-        {"start": f"{ce_year}-06-27", "end": f"{ce_year}-06-28"}
-    ]
-
-    full_date_list = []
-    active_months = set() # 紀錄運算涵蓋的月份
-    
-    for h in holidays_H1:
-        date_range = pd.date_range(start=pd.to_datetime(h["start"]) - timedelta(days=1), end=pd.to_datetime(h["end"]) - timedelta(days=1))
-        for d in date_range: 
-            full_date_list.append(f"{d.month}/{d.day}(22-06)")
-            active_months.add(d.month)
+    # ==========================================
+    # TAB 1: 交辦單 PDF 產生器
+    # ==========================================
+    with tab1:
+        st.subheader("📋 桃市警龍潭分局交通組交辦單 (PDF 全單位一次匯出)")
+        st.write("已完美套用防制危險駕車勤務之文字，並包含動態期程辨識與隱形空格排版。")
+        
+        # 產生包含所有單位的 PDF
+        pdf_data = generate_all_slips_pdf()
+        
+        pdf_file_name = f"{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}防制危險駕車勤務交辦單_全單位.pdf"
+        
+        # 使用雙欄版面來放置下載與寄件按鈕
+        col_pdf1, col_pdf2 = st.columns(2)
+        
+        with col_pdf1:
+            st.download_button(
+                label="📥 下載【全單位】交辦單 (PDF)",
+                data=pdf_data,
+                file_name=pdf_file_name,
+                mime="application/pdf",
+                use_container_width=True
+            )
             
-    st.divider()
-    st.subheader("📥 匯出與寄送督勤表")
-    
-    if uploaded_excel:
-        try:
-            vacation_dict = extract_vacations_from_files(uploaded_vacations)
-            excel_data = process_excel(uploaded_excel, edited_personnel, full_date_list, 8, vacation_dict)
-            
-            # 🔥 自動依據涵蓋的月份決定檔名中的「區間」
-            if active_months:
-                min_m, max_m = min(active_months), max(active_months)
-                period_str = f"{min_m}至{max_m}月" if min_m != max_m else f"{min_m}月"
-            else:
-                period_str = "未定期間"
+        with col_pdf2:
+            if st.button("📧 將此 PDF 一鍵寄至我的信箱", use_container_width=True):
+                with st.spinner("信件發送中，請稍候…"):
+                    ok, mail_err = send_file_email(pdf_data, pdf_file_name, mime_type="application/pdf")
+                    if ok:
+                        st.success("✅ 信件發送成功！交辦單 PDF 已夾帶至您的信箱。")
+                    else:
+                        st.error(f"❌ 發信失敗: {mail_err}")
+
+    # ==========================================
+    # TAB 2: 時數統計與匯出
+    # ==========================================
+    with tab2:
+        st.subheader("📝 勤務日期與時段設定")
+        
+        # 動態產生預設日期範例
+        default_dates = []
+        start_m = 1 if HALF_YEAR_TEXT == "上半年" else 7
+        end_m = 7 if HALF_YEAR_TEXT == "上半年" else 13
+        for m in range(start_m, end_m):
+            for d in [5, 12, 19, 26]:
+                # 依據防制危險駕車勤務特性，預設為夜間至凌晨時段
+                default_dates.append(f"{m}/{d}(22-02)")
+                default_dates.append(f"{m}/{d}(02-06)")
                 
-            # 正式組合標準檔名
-            file_name = f"桃園市政府警察局龍潭分局{year_str}{period_str}6序列以上人員督導防制危險駕車勤務時數統計表.xlsx"
+        default_str = "、".join(default_dates)
 
-            if uploaded_vacations:
-                st.success(f"✅ 已掛載 {len(uploaded_vacations)} 份輪休預排表！")
-                with st.expander("🔍 點此查看系統抓取的長官休假清單（除錯用，空陣列代表沒抓到假）"):
-                    st.write(vacation_dict)
+        combined_date_str = st.text_area(
+            "請確認或修改督勤日期清單 (各時段請以頓號「、」分隔)：", 
+            value=default_str, 
+            height=200
+        )
 
-            b1, b2 = st.columns(2)
-            with b1:
-                st.download_button("📥 下載督勤日期表 (Excel)", excel_data, file_name, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            with b2:
-                if st.button("📧 將此報表一鍵寄至我的信箱", use_container_width=True, key="p25_btn"):
-                    with st.spinner("信件發送中，請稍候…"):
-                        ok, mail_err = send_csv_email(excel_data, file_name, year_str)
-                        if ok: st.success("✅ 信件發送成功！")
-                        else: st.error(f"❌ 發信失敗: {mail_err}")
-        except Exception as e:
-            st.error(f"⚠️ 處理檔案時發生錯誤：{e}")
-    else:
-        st.warning("⚠️ 請先上傳 Excel 空白範本，方可進行下載與寄送。")
+        hours_per_shift = 4
+
+        if combined_date_str.strip() == "":
+            total_shifts = 0
+        else:
+            total_shifts = len(combined_date_str.split("、"))
+            
+        total_hours = total_shifts * hours_per_shift
+        total_days = total_shifts // 2
+
+        st.subheader("📋 運算結果預覽")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(label="合計排定天數", value=f"{total_days} 天")
+        with col2:
+            st.metric(label="合計督勤班次", value=f"{total_shifts} 班")
+        with col3:
+            st.metric(label="總計時數 (D欄輸出值)", value=f"{total_hours} 小時")
+
+        st.divider()
+
+        st.subheader("📥 匯出與寄送督勤表")
+        
+        if total_shifts > 0:
+            try:
+                excel_data = generate_excel_file(combined_date_str, total_hours)
+                file_name = f"{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}防制危險駕車勤務表.xlsx"
+
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.download_button(
+                        label="📥 下載督勤日期表 (Excel)",
+                        data=excel_data,
+                        file_name=file_name,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                
+                with col2:
+                    if st.button("📧 將此 Excel 一鍵寄至我的信箱", use_container_width=True):
+                        with st.spinner("信件發送中，請稍候…"):
+                            ok, mail_err = send_file_email(excel_data, file_name, mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                            if ok:
+                                st.success("✅ 信件發送成功！報表已隨信夾帶至您的信箱。")
+                            else:
+                                st.error(f"❌ 發信失敗: {mail_err}")
+
+            except FileNotFoundError as fnf_err:
+                st.error(f"⚠️ 錯誤：{fnf_err}。請確認 `376431843C_1150087037_ATTACH4.xlsx` 檔案是否存在於主目錄中。")
+            except Exception as e:
+                st.error(f"⚠️ 發生未知的錯誤：{e}")
+        else:
+            st.warning("請先於上方輸入督勤日期，方可匯出表單。")
 
 if __name__ == "__main__":
     main()
