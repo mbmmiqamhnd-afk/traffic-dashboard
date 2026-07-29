@@ -12,7 +12,7 @@ from email import encoders
 
 # ReportLab 相關匯入 (用於生成正式交辦單 PDF)
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
@@ -68,94 +68,86 @@ def send_csv_email(file_bytes, file_name):
     except Exception as e:
         return False, str(e)
 
-def generate_slip_pdf(unit_name):
+def generate_all_slips_pdf():
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, right_margin=30, left_margin=30, top_margin=30, bottom_margin=30)
     story = []
     
+    # --- 樣式設定：字體全面擴大以滿版 A4 ---
     title_style = ParagraphStyle(
-        'TitleStyle',
-        fontName=FONT_NAME,
-        fontSize=15,
-        leading=22,
-        alignment=1 # 置中
+        'TitleStyle', fontName=FONT_NAME, fontSize=18, leading=26, alignment=1
     )
     
     header_style = ParagraphStyle(
-        'HeaderStyle',
-        fontName=FONT_NAME,
-        fontSize=10,
-        leading=14,
-        alignment=1
+        'HeaderStyle', fontName=FONT_NAME, fontSize=14, leading=20, alignment=1
     )
 
-    # --- 定義懸掛式縮排段落樣式 ---
     body_style = ParagraphStyle(
-        'BodyStyle',
-        fontName=FONT_NAME,
-        fontSize=10,
-        leading=15,
-        alignment=4 # 左右對齊
+        'BodyStyle', fontName=FONT_NAME, fontSize=14, leading=22, alignment=4
     )
     
-    # 第一層級 (一、)：字元寬20pt，左縮20，首行退20
-    body_l1 = ParagraphStyle('BodyL1', parent=body_style, leftIndent=20, firstLineIndent=-20)
-    
-    # 第二層級 (1、)：左縮40，首行退20
-    body_l2 = ParagraphStyle('BodyL2', parent=body_style, leftIndent=40, firstLineIndent=-20)
-    
-    # 第三層級 ((一))：左縮70，首行退30
-    body_l3 = ParagraphStyle('BodyL3', parent=body_style, leftIndent=70, firstLineIndent=-30)
-    
-    # 流程步驟無編號，直接對齊上一層的第一字
-    body_step = ParagraphStyle('BodyStep', parent=body_style, leftIndent=20, firstLineIndent=0)
+    # 針對 14pt 字體設定縮排單位 (每字寬約 14pt)
+    char_w = 14
+    body_l1 = ParagraphStyle('BodyL1', parent=body_style, leftIndent=char_w*2, firstLineIndent=-char_w*2)
+    body_l2 = ParagraphStyle('BodyL2', parent=body_style, leftIndent=char_w*4, firstLineIndent=-char_w*2)
+    body_l3 = ParagraphStyle('BodyL3', parent=body_style, leftIndent=char_w*6, firstLineIndent=-char_w*3)
+    body_step = ParagraphStyle('BodyStep', parent=body_style, leftIndent=char_w*2, firstLineIndent=0)
 
-    story.append(Paragraph("桃園市政府警察局龍潭分局交通組交(會)辦單", title_style))
-    story.append(Spacer(1, 15))
-    
-    # 拆分交辦內容，套用對應的層級樣式以達成對齊首字效果
-    notice_paragraphs = [
-        Paragraph("一、為辦理本分局115年1至6月各單位執行「行人及護老交通安全實施計畫」工作出力人員敘獎案，請統計所屬執勤時數並彙整敘獎人員名冊。", body_l1),
-        Paragraph("二、獎勵規則：", body_l1),
-        Paragraph("1、行人及護老交通安全實施計畫：", body_l2),
-        Paragraph("(一)本案專責勤務人員執行成效良好，每半年執勤時數累計達40小時以上者核予嘉獎一次、80小時以上者核予嘉獎二次。", body_l3),
-        Paragraph("(二)略.......", body_l3),
-        Paragraph("(三)本案專責勤務及督導人員每人每半年獎勵額度以嘉獎二次為限，其中上半年未達獎勵額度之時數(勤務人員未達40小時或督導人員未達60小時)，得累計至當年度下半年計算。", body_l3),
-        Paragraph("三、請至網路硬碟/交通組/巡官郭勝隆的資料夾/☆115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員敘獎區☆，下載115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊，再依「115年辦公日曆表」，「1月至6月非假日之每日06-10時段及16-20時段，凡勤務分配表有顯示「護老專案」之服勤時數均得計算，再請於人事資訊整合管理系統登錄獎懲資料。", body_l1),
-        Paragraph("四、115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊由主管核章後附交辦單，逕送本組。", body_l1),
-        Paragraph("五、登錄獎懲資料的流程：", body_l1),
-        Paragraph("新增 > 主旨事由: 115年1至6月執行「行人及護老交通安全實施計畫」出力人員獎勵案 > 受理單位代碼: 交通組 > 受理人員代碼: 郭勝隆 > 再按新增 > 加入獎懲人員 > 獎懲事由: 115年1至6月執行「行人及護老交通安全」專責勤務達幾小時。", body_step),
-        Paragraph("六、請不用寫辛勞得力及備極辛勞，系統會自動帶入。", body_l1),
-        Spacer(1, 10),
-        Paragraph("辦理期限：115年7月28日前辦理完畢連同原件具報。", body_style)
-    ]
+    # 所有受文單位清單
+    units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
 
-    data = [
-        [
-            Paragraph("受文者", header_style), Paragraph(unit_name, header_style), 
-            Paragraph("交(會)辦日期", header_style), Paragraph("115年7月21日", header_style), 
-            Paragraph("承辦人", header_style), Paragraph("", header_style), 
-            Paragraph("單位主管", header_style), Paragraph("組長楊孟竟", header_style)
-        ],
-        [
-            Paragraph("交<br/><br/>辦<br/><br/>事<br/><br/>由", header_style), 
-            notice_paragraphs, '', '', '', '', '', ''
-        ],
-        [
-            Paragraph("承辦內容", header_style), 
-            Paragraph("承辦人：<br/><br/>所(隊)長：<br/>(職務報告請核章)<br/><br/>年 月 日", body_style), '', '', '', '', '', ''
+    for idx, unit_name in enumerate(units):
+        story.append(Paragraph("桃園市政府警察局龍潭分局交通組交(會)辦單", title_style))
+        story.append(Spacer(1, 15))
+        
+        notice_paragraphs = [
+            Paragraph("一、為辦理本分局115年1至6月各單位執行「行人及護老交通安全實施計畫」工作出力人員敘獎案，請統計所屬執勤時數並彙整敘獎人員名冊。", body_l1),
+            Paragraph("二、獎勵規則：", body_l1),
+            Paragraph("1、行人及護老交通安全實施計畫：", body_l2),
+            Paragraph("(一)本案專責勤務人員執行成效良好，每半年執勤時數累計達40小時以上者核予嘉獎一次、80小時以上者核予嘉獎二次。", body_l3),
+            Paragraph("(二)略.......", body_l3),
+            Paragraph("(三)本案專責勤務及督導人員每人每半年獎勵額度以嘉獎二次為限，其中上半年未達獎勵額度之時數(勤務人員未達40小時或督導人員未達60小時)，得累計至當年度下半年計算。", body_l3),
+            Paragraph("三、請至網路硬碟/交通組/巡官郭勝隆的資料夾/☆115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員敘獎區☆，下載115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊，再依「115年辦公日曆表」，「1月至6月非假日之每日06-10時段及16-20時段，凡勤務分配表有顯示「護老專案」之服勤時數均得計算，再請於人事資訊整合管理系統登錄獎懲資料。", body_l1),
+            Paragraph("四、115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊由主管核章後附交辦單，逕送本組。", body_l1),
+            Paragraph("五、登錄獎懲資料的流程：", body_l1),
+            Paragraph("新增 > 主旨事由: 115年1至6月執行「行人及護老交通安全實施計畫」出力人員獎勵案 > 受理單位代碼: 交通組 > 受理人員代碼: 郭勝隆 > 再按新增 > 加入獎懲人員 > 獎懲事由: 115年1至6月執行「行人及護老交通安全」專責勤務達幾小時。", body_step),
+            Paragraph("六、請不用寫辛勞得力及備極辛勞，系統會自動帶入。", body_l1),
+            Spacer(1, 10),
+            Paragraph("辦理期限：115年7月28日前辦理完畢連同原件具報。", body_style)
         ]
-    ]
-    
-    t = Table(data, colWidths=[55, 60, 75, 75, 55, 65, 65, 85])
-    t.setStyle(TableStyle([
-        ('GRID', (0,0), (-1,-1), 1, colors.black),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('SPAN', (1,1), (7,1)),
-        ('SPAN', (1,2), (7,2)),
-    ]))
-    
-    story.append(t)
+
+        data = [
+            [
+                Paragraph("受文者", header_style), Paragraph(unit_name, header_style), 
+                Paragraph("交(會)辦日期", header_style), Paragraph("115年7月21日", header_style), 
+                Paragraph("承辦人", header_style), Paragraph("", header_style), 
+                Paragraph("單位主管", header_style), Paragraph("組長楊孟竟", header_style)
+            ],
+            [
+                Paragraph("交<br/><br/>辦<br/><br/>事<br/><br/>由", header_style), 
+                notice_paragraphs, '', '', '', '', '', ''
+            ],
+            [
+                Paragraph("承辦內容", header_style), 
+                Paragraph("承辦人：<br/><br/>所(隊)長：<br/>(職務報告請核章)<br/><br/>年 月 日", body_style), '', '', '', '', '', ''
+            ]
+        ]
+        
+        # 重新分配欄寬度(總寬535)，加大單位名稱欄位以塞下「勤務指揮中心」等字眼
+        t = Table(data, colWidths=[45, 90, 75, 90, 45, 45, 60, 85])
+        t.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 1, colors.black),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('SPAN', (1,1), (7,1)),
+            ('SPAN', (1,2), (7,2)),
+        ]))
+        
+        story.append(t)
+        
+        # 除最後一個單位外，其他單位後面都加入換頁符號
+        if idx < len(units) - 1:
+            story.append(PageBreak())
+
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -187,28 +179,27 @@ def main():
     show_sidebar()
 
     st.title("👵 行人及護老專案交辦單與時數統計系統")
-    st.info("本系統整合了「正式交辦單 PDF 產生器（已套用專案標楷體與懸掛縮排）」與「護老專案時數統計與報表匯出」功能。")
+    st.info("本系統整合了「全單位交辦單 PDF 批量產出」與「護老專案時數統計與報表匯出」功能。")
 
     tab1, tab2 = st.tabs(["📄 1. 各單位交辦單 PDF 產生器", "📊 2. 護老專案時數統計與匯出"])
 
     # ==========================================
-    # TAB 1: 交辦單 PDF 產生器
+    # TAB 1: 交辦單 PDF 產生器 (一次匯出全部單位)
     # ==========================================
     with tab1:
-        st.subheader("📋 桃市警龍潭分局交通組交(會)辦單 (PDF 匯出)")
-        st.write("依據警察局來文指示，選擇受文單位即可直接產生格式完全符合公文排版（自動縮排對齊首字）的 PDF 檔。")
-
-        units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
-        selected_unit = st.selectbox("選擇受文單位：", units, key="slip_unit")
+        st.subheader("📋 桃市警龍潭分局交通組交(會)辦單 (PDF 全單位一次匯出)")
+        st.write("已將字體擴大並排版至適合紙張大小。點擊下方按鈕即可一鍵產出包含**龍潭所、聖亭所、中興所、石門所、高平所、勤務指揮中心、龍潭交通分隊**共 7 頁的完整 PDF。")
         
-        pdf_data = generate_slip_pdf(selected_unit)
+        # 產生包含所有單位的 PDF
+        pdf_data = generate_all_slips_pdf()
         
         st.download_button(
-            label=f"📥 下載【{selected_unit}】正式交辦單 (PDF)",
+            label="📥 一鍵下載【全單位】正式交辦單 (PDF)",
             data=pdf_data,
-            file_name=f"115年上半年行人及護老專案交辦單_{selected_unit}.pdf",
+            file_name="115年上半年行人及護老專案交辦單_全單位.pdf",
             mime="application/pdf",
-            use_container_width=True
+            use_container_width=True,
+            type="primary"
         )
 
     # ==========================================
