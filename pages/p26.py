@@ -40,17 +40,29 @@ except ImportError:
     def show_sidebar():
         pass
 
+# --- 動態判斷期程與名稱 ---
+now = datetime.datetime.now()
+CURRENT_ROC_YEAR = now.year - 1911
+
+if now.month <= 6:
+    HALF_YEAR_TEXT = "上半年"
+    MONTH_RANGE_TEXT = "1至6月"
+else:
+    HALF_YEAR_TEXT = "下半年"
+    MONTH_RANGE_TEXT = "7至12月"
+
 def send_file_email(file_bytes, file_name, mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
         msg["From"], msg["To"] = sender, sender
         
+        # 信件標題動態置換
         msg["Subject"] = f"龍潭分局_行人及護老專案自動產出結果_{file_name}"
         
         body_text = (
             f"您好，\n\n"
-            f"系統已自動產出「115年上半年行人及護老專案」相關檔案，附件為您要求的 {file_name}。\n\n"
+            f"系統已自動產出「{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}行人及護老專案」相關檔案，附件為您要求的 {file_name}。\n\n"
             f"本信件由交通執法自動化分析引擎發送。"
         )
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
@@ -100,10 +112,12 @@ def generate_all_slips_pdf():
     body_l3 = ParagraphStyle('BodyL3', parent=body_style, leftIndent=char_w*6, firstLineIndent=-char_w*3)
     body_step = ParagraphStyle('BodyStep', parent=body_style, leftIndent=char_w*2, firstLineIndent=0)
 
-    # 取得當下日期並轉為民國年格式
-    now = datetime.datetime.now()
-    roc_year = now.year - 1911
-    current_date_str = f"{roc_year}年{now.month}月{now.day}日"
+    current_date_str = f"{CURRENT_ROC_YEAR}年{now.month}月{now.day}日"
+    
+    # 計算辦理期限：預設為產出日期的後7天
+    deadline_date = now + datetime.timedelta(days=7)
+    deadline_roc_year = deadline_date.year - 1911
+    deadline_str = f"{deadline_roc_year}年{deadline_date.month}月{deadline_date.day}日"
 
     # 所有受文單位清單
     units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
@@ -112,23 +126,23 @@ def generate_all_slips_pdf():
         story.append(Paragraph("桃園市政府警察局龍潭分局交通組交辦單", title_style))
         story.append(Spacer(1, 8)) 
         
+        # 內文動態置換年份與月份
         notice_paragraphs = [
-            Paragraph("一、為辦理本分局115年1至6月各單位執行「行人及護老交通安全實施計畫」工作出力人員敘獎案，請統計所屬執勤時數並彙整敘獎人員名冊。", body_l1),
+            Paragraph(f"一、為辦理本分局{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}各單位執行「行人及護老交通安全實施計畫」工作出力人員敘獎案，請統計所屬執勤時數並彙整敘獎人員名冊。", body_l1),
             Paragraph("二、獎勵規則：", body_l1),
             Paragraph("1、行人及護老交通安全實施計畫：", body_l2),
             Paragraph("(一)本案專責勤務人員執行成效良好，每半年執勤時數累計達40小時以上者核予嘉獎一次、80小時以上者核予嘉獎二次。", body_l3),
             Paragraph("(二)略.......", body_l3),
             Paragraph("(三)本案專責勤務及督導人員每人每半年獎勵額度以嘉獎二次為限，其中上半年未達獎勵額度之時數(勤務人員未達40小時或督導人員未達60小時)，得累計至當年度下半年計算。", body_l3),
-            Paragraph("三、請至網路硬碟/交通組/巡官郭勝隆的資料夾/☆115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員敘獎區☆，下載115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊，再依「115年辦公日曆表」，「1月至6月非假日之每日06-10時段及16-20時段，凡勤務分配表有顯示「護老專案」之服勤時數均得計算，再請於人事資訊整合管理系統登錄獎懲資料。", body_l1),
-            Paragraph("四、115年1至6月「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊由主管核章後附交辦單，逕送本組。", body_l1),
+            Paragraph(f"三、請至網路硬碟/交通組/巡官郭勝隆的資料夾/☆{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}「行人及護老交通安全勤務實施計畫」工作出力人員敘獎區☆，下載{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊，再依「{CURRENT_ROC_YEAR}年辦公日曆表」，「{MONTH_RANGE_TEXT}非假日之每日06-10時段及16-20時段，凡勤務分配表有顯示「護老專案」之服勤時數均得計算，再請於人事資訊整合管理系統登錄獎懲資料。", body_l1),
+            Paragraph(f"四、{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊由主管核章後附交辦單，逕送本組。", body_l1),
             Paragraph("五、登錄獎懲資料的流程：", body_l1),
-            Paragraph("新增 > 主旨事由: 115年1至6月執行「行人及護老交通安全實施計畫」出力人員獎勵案 > 受理單位代碼: 交通組 > 受理人員代碼: 郭勝隆 > 再按新增 > 加入獎懲人員 > 獎懲事由: 115年1至6月執行「行人及護老交通安全」專責勤務達幾小時。", body_step),
+            Paragraph(f"新增 > 主旨事由: {CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}執行「行人及護老交通安全實施計畫」出力人員獎勵案 > 受理單位代碼: 交通組 > 受理人員代碼: 郭勝隆 > 再按新增 > 加入獎懲人員 > 獎懲事由: {CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}執行「行人及護老交通安全」專責勤務達幾小時。", body_step),
             Paragraph("六、請不用寫辛勞得力及備極辛勞，系統會自動帶入。", body_l1),
             Spacer(1, 5),
-            Paragraph("辦理期限：115年7月28日前辦理完畢連同原件具報。", body_style)
+            Paragraph(f"辦理期限：{deadline_str}前辦理完畢連同原件具報。", body_style)
         ]
         
-        # 增加兩行空間: 在「承辦人」與「單位主管」之間使用 <br/><br/><br/><br/> 來創造四個斷行 (等於多出兩行空白)
         # 年之前 7 個字，年月日之間各 3 個字 (使用白字強制佔位)
         sign_content = (
             '承辦人：<br/><br/><br/><br/>單位主管：<br/><br/>'
@@ -205,7 +219,7 @@ def main():
     show_sidebar()
 
     st.title("👵 行人及護老專案交辦單與時數統計系統")
-    st.info("本系統整合了「全單位交辦單 PDF 批量產出」與「護老專案時數統計與報表匯出」功能。")
+    st.info(f"智慧期程辨識：目前系統判定為【{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}】。交辦單內容與檔名皆已自動同步修改。")
 
     tab1, tab2 = st.tabs(["📄 1. 各單位交辦單 PDF 產生器", "📊 2. 護老專案時數統計與匯出"])
 
@@ -214,14 +228,12 @@ def main():
     # ==========================================
     with tab1:
         st.subheader("📋 桃市警龍潭分局交通組交辦單 (PDF 全單位一次匯出)")
-        st.write("已將所有單位合併為一份 PDF，並可一鍵寄送至您的信箱。")
+        st.write("已導入動態期程辨識，交辦內容的年份與期程(1-6月/7-12月)將完全自動更新，辦理期限也預設為產出日期的後7天。")
         
         # 產生包含所有單位的 PDF
         pdf_data = generate_all_slips_pdf()
         
-        now = datetime.datetime.now()
-        roc_year = now.year - 1911
-        pdf_file_name = f"{roc_year}年上半年行人及護老專案交辦單_全單位.pdf"
+        pdf_file_name = f"{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}行人及護老專案交辦單_全單位.pdf"
         
         # 使用雙欄版面來放置下載與寄件按鈕
         col_pdf1, col_pdf2 = st.columns(2)
@@ -250,8 +262,11 @@ def main():
     with tab2:
         st.subheader("📝 勤務日期與時段設定")
         
+        # 動態產生預設日期範例
         default_dates = []
-        for m in range(1, 7):
+        start_m = 1 if HALF_YEAR_TEXT == "上半年" else 7
+        end_m = 7 if HALF_YEAR_TEXT == "上半年" else 13
+        for m in range(start_m, end_m):
             for d in [5, 12, 19, 26]:
                 default_dates.append(f"{m}/{d}(06-10)")
                 default_dates.append(f"{m}/{d}(16-20)")
@@ -290,7 +305,7 @@ def main():
         if total_shifts > 0:
             try:
                 excel_data = generate_excel_file(combined_date_str, total_hours)
-                file_name = "115年上半年督導行人及護老交通安全勤務表.xlsx"
+                file_name = f"{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}督導行人及護老交通安全勤務表.xlsx"
 
                 col1, col2 = st.columns(2)
                 
