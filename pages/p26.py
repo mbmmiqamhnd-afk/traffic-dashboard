@@ -126,9 +126,14 @@ def generate_all_slips_pdf():
             Paragraph("辦理期限：115年7月28日前辦理完畢連同原件具報。", body_style)
         ]
         
-        # 解決 ReportLab 吃掉行首空白的問題：使用白色隱形文字作為開頭 + 6個全形空白 = 完美右移 7 個中文字
-        # 年月日之間則精準安插 3 個全形空白
-        sign_content = '承辦人：<br/><br/>單位主管：<br/><br/><font color="white">白</font>      年   月   日'
+        # 【終極解法】：把所有空白都換成「白色的字」，這樣 ReportLab 就絕對不會壓縮它們！
+        # 年之前 7 個字，年月日之間各 3 個字
+        sign_content = (
+            '承辦人：<br/><br/>單位主管：<br/><br/>'
+            '<font color="white">白白白白白白白</font>年'
+            '<font color="white">白白白</font>月'
+            '<font color="white">白白白</font>日'
+        )
 
         data = [
             [
@@ -207,7 +212,7 @@ def main():
     # ==========================================
     with tab1:
         st.subheader("📋 桃市警龍潭分局交通組交辦單 (PDF 全單位一次匯出)")
-        st.write("已透過強制對齊與隱形字元技術，完美解決系統吃字元問題，確保「年月日」精準右移並等距留白。點擊下方按鈕即可一鍵產出 PDF。")
+        st.write("已將所有「空格」替換為隱形的文字，確保排版引擎絕對不會壓縮距離，完美達成 7 個字右移與 3 個字間距！點擊下方按鈕即可一鍵產出 PDF。")
         
         # 產生包含所有單位的 PDF
         pdf_data = generate_all_slips_pdf()
