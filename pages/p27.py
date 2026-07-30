@@ -85,9 +85,9 @@ if db_file and data_files:
             try:
                 xls = pd.ExcelFile(f)
                 for sheet_name in xls.sheet_names:
-                    # 讀取整張表並將 NaN 補成空字串
+                    # 💡 修正 1：轉為 object 型態，允許整數與文字混合存在，不使用 fillna("")
                     raw_df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
-                    raw_df = raw_df.fillna("")
+                    raw_df = raw_df.astype('object')
                     
                     header_idx = -1
                     officer_name = extract_officer_name(raw_df.head(20))
@@ -118,11 +118,11 @@ if db_file and data_files:
                     if col_rule == -1 or col_s_cnt == -1 or col_d_cnt == -1:
                         continue
 
-                    # 💡 核心升級：若原始檔案缺少配分欄位，自動動態插入
+                    # 💡 修正 2：動態插入欄位時使用 None 而非空字串，避免型別鎖定
                     if col_s_score == -1:
                         # 1. 插入「攔舉配分」
                         idx_s_score = col_s_cnt + 1
-                        raw_df.insert(idx_s_score, f'new_{idx_s_score}', "")
+                        raw_df.insert(idx_s_score, f'new_{idx_s_score}', None)
                         raw_df.iat[header_idx, idx_s_score] = "攔舉配分"
                         col_s_score = idx_s_score
                         
@@ -132,7 +132,7 @@ if db_file and data_files:
                         
                         # 2. 插入「逕舉配分」
                         idx_d_score = col_d_cnt + 1
-                        raw_df.insert(idx_d_score, f'new_{idx_d_score}', "")
+                        raw_df.insert(idx_d_score, f'new_{idx_d_score}', None)
                         raw_df.iat[header_idx, idx_d_score] = "逕舉配分"
                         col_d_score = idx_d_score
                         
@@ -140,7 +140,7 @@ if db_file and data_files:
                         
                         # 3. 插入「小計」
                         idx_subtotal = idx_d_score + 1
-                        raw_df.insert(idx_subtotal, f'new_{idx_subtotal}', "")
+                        raw_df.insert(idx_subtotal, f'new_{idx_subtotal}', None)
                         raw_df.iat[header_idx, idx_subtotal] = "小計"
                         col_subtotal = idx_subtotal
                         
@@ -153,7 +153,7 @@ if db_file and data_files:
                     # 遍歷資料列計算分數與配分
                     for r in range(header_idx + 1, len(raw_df)):
                         rule = str(raw_df.iloc[r, col_rule]).strip()
-                        if not rule or "合計" in rule or "製表" in rule or "舉發單張數" in rule:
+                        if not rule or "合計" in rule or "製表" in rule or "舉發單張數" in rule or rule.lower() == 'nan':
                             continue
                             
                         def safe_int(val):
@@ -171,7 +171,7 @@ if db_file and data_files:
                             s_score = 0
                             d_score = 0
                             
-                        # 填寫配分
+                        # 填寫配分 (型別已轉為 object，寫入整數絕對安全)
                         raw_df.iat[r, col_s_score] = s_score if s_score != 0 else 0
                         raw_df.iat[r, col_d_score] = d_score if d_score != 0 else 0
                         
@@ -263,9 +263,10 @@ if db_file and data_files:
                     
                 ws_officer = wb.create_sheet(title=final_name)
                 
-                # 寫入保留原格式的資料
+                # 💡 修正 3：寫入保留原格式的資料，透過 pd.notna 確保真正的空白保留
                 for r_idx, row in s["df"].iterrows():
-                    ws_officer.append([val if val != "" else None for val in row.tolist()])
+                    cleaned_row = [val if pd.notna(val) else None for val in row.tolist()]
+                    ws_officer.append(cleaned_row)
                     
                 # 標示無配分的黃色警示區塊
                 for r, c in s["yellow_cells"]:
