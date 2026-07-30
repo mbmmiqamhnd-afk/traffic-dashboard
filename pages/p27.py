@@ -62,7 +62,7 @@ def send_multiple_files_email(file_buffers_dict):
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
 st.title("⚡ 員警交通違規舉發績效結算")
-st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會依據您上傳的檔案**逐一產出各單位的獨立報表**，並自動判斷結算基準。")
+st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會依據您上傳的檔案**逐一產出各單位的獨立報表**，並自動過濾無關欄位以維持版面純淨。")
 
 st.sidebar.header("⚙️ 結算參數設定")
 st.sidebar.info("💡 **智慧基準偵測**：\n系統將自動分析上傳的檔名。若檔名包含「交通分隊」，將自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
@@ -145,7 +145,16 @@ if db_file and data_files:
                     
                     if header_idx == -1:
                         continue
+                    
+                    # 💡 清理無關欄位：找出標題為空或 nan 的欄位並刪除
+                    header_row_temp = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
+                    cols_to_keep = [c for c, val in enumerate(header_row_temp) if val not in ["nan", "None", ""]]
+                    
+                    # 只保留有效欄位，並重置索引
+                    raw_df = raw_df.iloc[:, cols_to_keep]
+                    raw_df.columns = range(raw_df.shape[1])
 
+                    # 重新取得清理後的標題列
                     header_row = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
                     col_rule = header_row.index("違規條款") if "違規條款" in header_row else -1
                     col_s_cnt = header_row.index("攔停數") if "攔停數" in header_row else -1
@@ -158,6 +167,7 @@ if db_file and data_files:
                     if col_rule == -1 or col_s_cnt == -1 or col_d_cnt == -1:
                         continue
 
+                    # 動態插入欄位 (若缺少配分欄位)
                     if col_s_score == -1:
                         idx_s_score = col_s_cnt + 1
                         raw_df.insert(idx_s_score, f'new_{idx_s_score}', None)
@@ -307,8 +317,9 @@ if db_file and data_files:
                     write_footer(2, "上半年剩餘分數：", int(officer_summary["上半年剩餘分數"]), "0000FF")
                     write_footer(3, "總分：", int(officer_summary["最終總分"]), "FF0000")
                     
+                    # 依據資料長度動態調整欄寬，讓版面更緊湊
                     for col_idx in range(1, len(s["df"].columns) + 1):
-                        ws_officer.column_dimensions[get_column_letter(col_idx)].width = 12
+                        ws_officer.column_dimensions[get_column_letter(col_idx)].width = 14
 
                 wb.save(output)
                 all_output_buffers[f"績效結算_{unit_name}.xlsx"] = output
