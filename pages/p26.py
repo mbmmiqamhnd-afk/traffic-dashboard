@@ -1,6 +1,6 @@
 import streamlit as st
-import openpyxl
-from openpyxl.styles import Alignment, Font
+import pandas as pd
+import re
 import io
 import os
 import smtplib
@@ -9,65 +9,33 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-import datetime
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill, Font
+from openpyxl.utils import get_column_letter
 
-# ReportLab 相關匯入 (用於生成正式交辦單 PDF)
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-
-# 優先載入專案資料夾中的 kaiu.ttf (標楷體)
-font_path = 'kaiu.ttf'
-if os.path.exists(font_path):
-    pdfmetrics.registerFont(TTFont('KaiTi', font_path))
-    FONT_NAME = 'KaiTi'
-else:
-    # 若找不到則嘗試 Linux 系統備援路徑或內建字型
-    fallback_path = '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf'
-    if os.path.exists(fallback_path):
-        pdfmetrics.registerFont(TTFont('KaiTi', fallback_path))
-        FONT_NAME = 'KaiTi'
-    else:
-        FONT_NAME = 'Helvetica'
-
-# 匯入系統原本的側邊欄設定
-try:
-    from menu import show_sidebar
-except ImportError:
-    def show_sidebar():
-        pass
-
-# --- 動態判斷期程與名稱 ---
-now = datetime.datetime.now()
-CURRENT_ROC_YEAR = now.year - 1911
-
-if now.month <= 6:
-    HALF_YEAR_TEXT = "上半年"
-    MONTH_RANGE_TEXT = "1至6月"
-else:
-    HALF_YEAR_TEXT = "下半年"
-    MONTH_RANGE_TEXT = "7至12月"
-
-def send_file_email(file_bytes, file_name, mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"):
+# ==========================================
+# 0. 輔助函式：發送信件至自己的信箱
+# ==========================================
+def send_file_email(file_bytes, file_name, unit_name, mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"):
     try:
-        sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
-        msg = MIMEMultipart()
-        msg["From"], msg["To"] = sender, sender
+        # 完全參照您的設定，讀取 user (sender) 與 password，並寄給自己
+        sender = st.secrets["email"]["user"]
+        pwd = st.secrets["email"]["password"]
         
-        # 信件標題動態置換
-        msg["Subject"] = f"龍潭分局_行人及護老專案自動產出結果_{file_name}"
+        msg = MIMEMultipart()
+        msg["From"] = sender
+        msg["To"] = sender
+        
+        msg["Subject"] = f"🚔 交通違規舉發績效結算表 - {unit_name}"
         
         body_text = (
-            f"您好，\n\n"
-            f"系統已自動產出「{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}行人及護老專案」相關檔案，附件為您要求的 {file_name}。\n\n"
-            f"本信件由交通執法自動化分析引擎發送。"
+            f"長官您好，\n\n"
+            f"系統已自動產出最新結算的【交通違規舉發績效結算表與個人明細】。\n\n"
+            f"結算單位：{unit_name}\n\n"
+            "本信件由交通執法自動化分析引擎發送。"
         )
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
 
-        # 動態設定 MIME Type (相容 Excel 與 PDF)
         main_type, sub_type = mime_type.split('/') if '/' in mime_type else ("application", "octet-stream")
         part = MIMEBase(main_type, sub_type)
         part.set_payload(file_bytes.getvalue())
@@ -80,259 +48,296 @@ def send_file_email(file_bytes, file_name, mime_type="application/vnd.openxmlfor
             server.sendmail(sender, sender, msg.as_string())
             
         return True, None
+    except KeyError:
+        return False, "系統找不到 Email 寄件設定。請確認 `secrets.toml` 中已設定 `[email]` 區塊，並包含 `user` 與 `password`。"
+    except smtplib.SMTPAuthenticationError:
+        return False, "Email 帳號或密碼驗證失敗！請確認使用的是「應用程式密碼」而非一般登入密碼。"
     except Exception as e:
         return False, str(e)
 
-def generate_all_slips_pdf():
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, right_margin=30, left_margin=30, top_margin=15, bottom_margin=15)
-    story = []
-    
-    title_style = ParagraphStyle(
-        'TitleStyle', fontName=FONT_NAME, fontSize=17, leading=22, alignment=1
-    )
-    
-    header_style = ParagraphStyle(
-        'HeaderStyle', fontName=FONT_NAME, fontSize=13, leading=16, alignment=1
-    )
+# ==========================================
+# 1. 頁面基本設定與側邊欄
+# ==========================================
+st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
-    body_style = ParagraphStyle(
-        'BodyStyle', fontName=FONT_NAME, fontSize=13, leading=18, alignment=4
-    )
-    
-    # 建立簽核區專屬樣式 (靠左對齊，避免空白被拉扯)
-    sign_style = ParagraphStyle(
-        'SignStyle', fontName=FONT_NAME, fontSize=13, leading=18, alignment=0
-    )
-    
-    # 針對 13pt 字體設定懸掛縮排
-    char_w = 13
-    body_l1 = ParagraphStyle('BodyL1', parent=body_style, leftIndent=char_w*2, firstLineIndent=-char_w*2)
-    body_l2 = ParagraphStyle('BodyL2', parent=body_style, leftIndent=char_w*4, firstLineIndent=-char_w*2)
-    body_l3 = ParagraphStyle('BodyL3', parent=body_style, leftIndent=char_w*6, firstLineIndent=-char_w*3)
-    body_step = ParagraphStyle('BodyStep', parent=body_style, leftIndent=char_w*2, firstLineIndent=0)
+st.title("⚡ 員警交通違規舉發績效結算")
+st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。匯出的報表將保留原始格式，若原始檔案缺少配分欄位，系統將自動安插並結算。算完後可下載或直接寄至您的信箱。")
 
-    current_date_str = f"{CURRENT_ROC_YEAR}年{now.month}月{now.day}日"
-    
-    # 計算辦理期限：預設為產出日期的後7天
-    deadline_date = now + datetime.timedelta(days=7)
-    deadline_roc_year = deadline_date.year - 1911
-    deadline_str = f"{deadline_roc_year}年{deadline_date.month}月{deadline_date.day}日"
+st.sidebar.header("⚙️ 結算參數設定")
+unit_type = st.sidebar.radio(
+    "🏢 選擇單位與基準", 
+    ["龍潭交通分隊 (基準800)", "一般單位 (基準400)"],
+    index=0 
+)
+quota = 800 if "龍潭" in unit_type else 400
+threshold_7x = quota * 7
 
-    # 所有受文單位清單
-    units = ["龍潭所", "聖亭所", "中興所", "石門所", "高平所", "勤務指揮中心", "龍潭交通分隊"]
+st.sidebar.markdown("---")
+st.sidebar.subheader("📂 步驟 1：上傳配分表")
+db_file = st.sidebar.file_uploader("外部配分表 (如：檔案 B)", type=["xlsx"], key="db_file")
 
-    for idx, unit_name in enumerate(units):
-        story.append(Paragraph("桃園市政府警察局龍潭分局交通組交辦單", title_style))
-        story.append(Spacer(1, 8)) 
+st.sidebar.subheader("📂 步驟 2：上傳原始舉發資料")
+data_files = st.sidebar.file_uploader("批次選擇多個員警的半年期 Excel 檔案 (支援原始無配分欄位格式)", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
+
+# ==========================================
+# 2. 核心結算邏輯
+# ==========================================
+if db_file and data_files:
+    with st.spinner("🔄 正在讀取與比對資料..."):
+        try:
+            df_db = pd.read_excel(db_file)
+            if '違規條款' not in df_db.columns:
+                st.error("❌ 配分表缺少『違規條款』欄位！請檢查檔案格式。")
+                st.stop()
+        except Exception as e:
+            st.error(f"❌ 讀取配分表失敗：{e}")
+            st.stop()
+
+        db_map = {}
+        for _, row in df_db.iterrows():
+            rule = str(row.get('違規條款', '')).strip()
+            if rule:
+                s = pd.to_numeric(row.get('攔舉配分', 0), errors='coerce')
+                d = pd.to_numeric(row.get('逕舉配分', 0), errors='coerce')
+                db_map[rule] = {
+                    'stop': 0 if pd.isna(s) else int(s),
+                    'dir': 0 if pd.isna(d) else int(d)
+                }
+
+        processed_sheets = []
         
-        # 內文動態置換年份與月份
-        notice_paragraphs = [
-            Paragraph(f"一、為辦理本分局{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}各單位執行「行人及護老交通安全實施計畫」工作出力人員敘獎案，請統計所屬執勤時數並彙整敘獎人員名冊。", body_l1),
-            Paragraph("二、獎勵規則：", body_l1),
-            Paragraph("1、行人及護老交通安全實施計畫：", body_l2),
-            Paragraph("(一)本案專責勤務人員執行成效良好，每半年執勤時數累計達40小時以上者核予嘉獎一次、80小時以上者核予嘉獎二次。", body_l3),
-            Paragraph("(二)略.......", body_l3),
-            Paragraph("(三)本案專責勤務及督導人員每人每半年獎勵額度以嘉獎二次為限，其中上半年未達獎勵額度之時數(勤務人員未達40小時或督導人員未達60小時)，得累計至當年度下半年計算。", body_l3),
-            Paragraph(f"三、請至網路硬碟/交通組/巡官郭勝隆的資料夾/☆{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}「行人及護老交通安全勤務實施計畫」工作出力人員敘獎區☆，下載{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊，再依「{CURRENT_ROC_YEAR}年辦公日曆表」，「{MONTH_RANGE_TEXT}非假日之每日06-10時段及16-20時段，凡勤務分配表有顯示「護老專案」之服勤時數均得計算，再請於人事資訊整合管理系統登錄獎懲資料。", body_l1),
-            Paragraph(f"四、{CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}「行人及護老交通安全勤務實施計畫」工作出力人員獎勵清冊由主管核章後附交辦單，逕送本組。", body_l1),
-            Paragraph("五、登錄獎懲資料的流程：", body_l1),
-            Paragraph(f"新增 > 主旨事由: {CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}執行「行人及護老交通安全實施計畫」出力人員獎勵案 > 受理單位代碼: 交通組 > 受理人員代碼: 郭勝隆 > 再按新增 > 加入獎懲人員 > 獎懲事由: {CURRENT_ROC_YEAR}年{MONTH_RANGE_TEXT}執行「行人及護老交通安全」專責勤務達幾小時。", body_step),
-            Paragraph("六、請不用寫辛勞得力及備極辛勞，系統會自動帶入。", body_l1),
-            Spacer(1, 5),
-            Paragraph(f"辦理期限：{deadline_str}前辦理完畢連同原件具報。", body_style)
-        ]
-        
-        # 年之前 7 個字，年月日之間各 3 個字 (使用白字強制佔位)
-        sign_content = (
-            '承辦人：<br/><br/><br/><br/>單位主管：<br/><br/>'
-            '<font color="white">白白白白白白白</font>年'
-            '<font color="white">白白白</font>月'
-            '<font color="white">白白白</font>日'
-        )
+        def extract_officer_name(df_head):
+            for r_idx, row in df_head.iterrows():
+                for c_idx, val in enumerate(row.values):
+                    val_str = str(val).strip()
+                    if "舉發員警" in val_str:
+                        clean = re.sub(r'舉發員警[:：]?', '', val_str).strip()
+                        if clean: return clean
+                        if c_idx + 1 < len(row.values):
+                            next_val = str(row.values[c_idx + 1]).strip()
+                            if next_val and next_val.lower() != 'nan':
+                                return next_val
+            return ""
 
-        data = [
-            [
-                Paragraph("受文者", header_style), Paragraph(unit_name, header_style), 
-                Paragraph("交辦日期", header_style), Paragraph(current_date_str, header_style), 
-                Paragraph("承辦人", header_style), Paragraph("", header_style), 
-                Paragraph("單位主管", header_style), Paragraph("組長楊孟竟", header_style)
-            ],
-            [
-                Paragraph("交<br/><br/>辦<br/><br/>事<br/><br/>由", header_style), 
-                notice_paragraphs, '', '', '', '', '', ''
-            ],
-            [
-                Paragraph("承辦內容", header_style), 
-                Paragraph(sign_content, sign_style), '', '', '', '', '', ''
-            ]
-        ]
-        
-        # 總寬維持 535
-        t = Table(data, colWidths=[56, 45, 56, 101, 45, 102, 56, 74])
-        
-        t.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 1, colors.black),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('SPAN', (1,1), (7,1)),
-            ('SPAN', (1,2), (7,2)),
-            ('TOPPADDING', (0,0), (-1,-1), 4),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-            ('LEFTPADDING', (0,0), (-1,-1), 2),
-            ('RIGHTPADDING', (0,0), (-1,-1), 2),
-        ]))
-        
-        story.append(t)
-        
-        # 除最後一個單位外，其他單位後面都加入換頁符號
-        if idx < len(units) - 1:
-            story.append(PageBreak())
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
-def generate_excel_file(combined_date_str, total_hours):
-    file_path = '376431843C_1150087037_ATTACH4.xlsx'
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"找不到範本檔案 {file_path}")
-
-    wb = openpyxl.load_workbook(file_path)
-    ws = wb['警力統計']
-
-    for row in range(3, 7):
-        cell_c = ws.cell(row=row, column=3)
-        cell_c.value = combined_date_str
-        cell_c.alignment = Alignment(wrapText=True, vertical='center', horizontal='left')
-        
-        cell_d = ws.cell(row=row, column=4)
-        cell_d.value = total_hours
-        cell_d.alignment = Alignment(vertical='center', horizontal='center')
-        cell_d.font = Font(name='微軟正黑體', size=12)
-
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return output
-
-def main():
-    show_sidebar()
-
-    st.title("👵 行人及護老專案交辦單與時數統計系統")
-    st.info(f"智慧期程辨識：目前系統判定為【{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}】。交辦單內容與檔名皆已自動同步修改。")
-
-    tab1, tab2 = st.tabs(["📄 1. 各單位交辦單 PDF 產生器", "📊 2. 護老專案時數統計與匯出"])
-
-    # ==========================================
-    # TAB 1: 交辦單 PDF 產生器
-    # ==========================================
-    with tab1:
-        st.subheader("📋 桃市警龍潭分局交通組交辦單 (PDF 全單位一次匯出)")
-        st.write("已導入動態期程辨識，交辦內容的年份與期程(1-6月/7-12月)將完全自動更新，辦理期限也預設為產出日期的後7天。")
-        
-        # 產生包含所有單位的 PDF
-        pdf_data = generate_all_slips_pdf()
-        
-        pdf_file_name = f"{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}行人及護老專案交辦單_全單位.pdf"
-        
-        # 使用雙欄版面來放置下載與寄件按鈕
-        col_pdf1, col_pdf2 = st.columns(2)
-        
-        with col_pdf1:
-            st.download_button(
-                label="📥 下載【全單位】交辦單 (PDF)",
-                data=pdf_data,
-                file_name=pdf_file_name,
-                mime="application/pdf",
-                use_container_width=True
-            )
-            
-        with col_pdf2:
-            if st.button("📧 將此 PDF 一鍵寄至我的信箱", use_container_width=True):
-                with st.spinner("信件發送中，請稍候…"):
-                    ok, mail_err = send_file_email(pdf_data, pdf_file_name, mime_type="application/pdf")
-                    if ok:
-                        st.success("✅ 信件發送成功！交辦單 PDF 已夾帶至您的信箱。")
-                    else:
-                        st.error(f"❌ 發信失敗: {mail_err}")
-
-    # ==========================================
-    # TAB 2: 時數統計與匯出
-    # ==========================================
-    with tab2:
-        st.subheader("📝 勤務日期與時段設定")
-        
-        # 動態產生預設日期範例
-        default_dates = []
-        start_m = 1 if HALF_YEAR_TEXT == "上半年" else 7
-        end_m = 7 if HALF_YEAR_TEXT == "上半年" else 13
-        for m in range(start_m, end_m):
-            for d in [5, 12, 19, 26]:
-                default_dates.append(f"{m}/{d}(06-10)")
-                default_dates.append(f"{m}/{d}(16-20)")
-                
-        default_str = "、".join(default_dates)
-
-        combined_date_str = st.text_area(
-            "請確認或修改督勤日期清單 (各時段請以頓號「、」分隔)：", 
-            value=default_str, 
-            height=200
-        )
-
-        hours_per_shift = 4
-
-        if combined_date_str.strip() == "":
-            total_shifts = 0
-        else:
-            total_shifts = len(combined_date_str.split("、"))
-            
-        total_hours = total_shifts * hours_per_shift
-        total_days = total_shifts // 2
-
-        st.subheader("📋 運算結果預覽")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric(label="合計排定天數", value=f"{total_days} 天")
-        with col2:
-            st.metric(label="合計督勤班次", value=f"{total_shifts} 班")
-        with col3:
-            st.metric(label="總計時數 (D欄輸出值)", value=f"{total_hours} 小時")
-
-        st.divider()
-
-        st.subheader("📥 匯出與寄送督勤表")
-        
-        if total_shifts > 0:
+        for f in data_files:
+            f.seek(0)
             try:
-                excel_data = generate_excel_file(combined_date_str, total_hours)
-                file_name = f"{CURRENT_ROC_YEAR}年{HALF_YEAR_TEXT}督導行人及護老交通安全勤務表.xlsx"
+                xls = pd.ExcelFile(f)
+                for sheet_name in xls.sheet_names:
+                    raw_df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
+                    raw_df = raw_df.astype('object')
+                    
+                    header_idx = -1
+                    officer_name = extract_officer_name(raw_df.head(20))
+                    if not officer_name:
+                        officer_name = sheet_name.strip()
+                    
+                    for idx, row in raw_df.iterrows():
+                        if "違規條款" in row.astype(str).str.replace(" ", "").values:
+                            header_idx = idx
+                            break
+                    
+                    if header_idx == -1:
+                        continue
 
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.download_button(
-                        label="📥 下載督勤日期表 (Excel)",
-                        data=excel_data,
-                        file_name=file_name,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-                
-                with col2:
-                    if st.button("📧 將此 Excel 一鍵寄至我的信箱", use_container_width=True):
-                        with st.spinner("信件發送中，請稍候…"):
-                            ok, mail_err = send_file_email(excel_data, file_name, mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                            if ok:
-                                st.success("✅ 信件發送成功！報表已隨信夾帶至您的信箱。")
-                            else:
-                                st.error(f"❌ 發信失敗: {mail_err}")
+                    header_row = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
+                    col_rule = header_row.index("違規條款") if "違規條款" in header_row else -1
+                    col_s_cnt = header_row.index("攔停數") if "攔停數" in header_row else -1
+                    col_d_cnt = header_row.index("逕舉數") if "逕舉數" in header_row else -1
+                    
+                    col_s_score = header_row.index("攔舉配分") if "攔舉配分" in header_row else -1
+                    col_d_score = header_row.index("逕舉配分") if "逕舉配分" in header_row else -1
+                    col_subtotal = header_row.index("小計") if "小計" in header_row else -1
+                    
+                    if col_rule == -1 or col_s_cnt == -1 or col_d_cnt == -1:
+                        continue
 
-            except FileNotFoundError as fnf_err:
-                st.error(f"⚠️ 錯誤：{fnf_err}。請確認 `376431843C_1150087037_ATTACH4.xlsx` 檔案是否存在於主目錄中。")
+                    # 動態插入欄位
+                    if col_s_score == -1:
+                        idx_s_score = col_s_cnt + 1
+                        raw_df.insert(idx_s_score, f'new_{idx_s_score}', None)
+                        raw_df.iat[header_idx, idx_s_score] = "攔舉配分"
+                        col_s_score = idx_s_score
+                        
+                        if col_d_cnt >= idx_s_score: col_d_cnt += 1
+                        if col_subtotal >= idx_s_score: col_subtotal += 1
+                        
+                        idx_d_score = col_d_cnt + 1
+                        raw_df.insert(idx_d_score, f'new_{idx_d_score}', None)
+                        raw_df.iat[header_idx, idx_d_score] = "逕舉配分"
+                        col_d_score = idx_d_score
+                        
+                        if col_subtotal >= idx_d_score: col_subtotal += 1
+                        
+                        idx_subtotal = idx_d_score + 1
+                        raw_df.insert(idx_subtotal, f'new_{idx_subtotal}', None)
+                        raw_df.iat[header_idx, idx_subtotal] = "小計"
+                        col_subtotal = idx_subtotal
+                        raw_df.columns = range(raw_df.shape[1])
+
+                    grand_total = 0
+                    yellow_cells = []
+                    
+                    for r in range(header_idx + 1, len(raw_df)):
+                        rule = str(raw_df.iloc[r, col_rule]).strip()
+                        if not rule or "合計" in rule or "製表" in rule or "舉發單張數" in rule or rule.lower() == 'nan':
+                            continue
+                            
+                        def safe_int(val):
+                            try: return int(float(str(val).replace(",", "")))
+                            except: return 0
+                                
+                        stop_cnt = safe_int(raw_df.iloc[r, col_s_cnt])
+                        dir_cnt = safe_int(raw_df.iloc[r, col_d_cnt])
+                        
+                        if rule in db_map:
+                            s_score = db_map[rule]['stop']
+                            d_score = db_map[rule]['dir']
+                        else:
+                            s_score = 0
+                            d_score = 0
+                            
+                        raw_df.iat[r, col_s_score] = s_score if s_score != 0 else 0
+                        raw_df.iat[r, col_d_score] = d_score if d_score != 0 else 0
+                        
+                        row_subtotal = (s_score * stop_cnt) + (d_score * dir_cnt)
+                        if col_subtotal != -1:
+                            raw_df.iat[r, col_subtotal] = row_subtotal
+                        
+                        if s_score == 0 and d_score == 0:
+                            yellow_cells.append((r + 1, col_s_score + 1))
+                            yellow_cells.append((r + 1, col_d_score + 1))
+                            
+                        grand_total += row_subtotal
+                        
+                    processed_sheets.append({
+                        "officer": officer_name.replace(" ", ""),
+                        "df": raw_df,
+                        "yellow_cells": yellow_cells,
+                        "grand_total": grand_total,
+                        "col_d_score": col_d_score
+                    })
+                    
             except Exception as e:
-                st.error(f"⚠️ 發生未知的錯誤：{e}")
-        else:
-            st.warning("請先於上方輸入督勤日期，方可匯出表單。")
+                st.error(f"❌ 處理 {f.name} 時發生錯誤：{e}")
 
-if __name__ == "__main__":
-    main()
+        # ==========================================
+        # 3. 結算彙整與報表產出
+        # ==========================================
+        if processed_sheets:
+            df_raw_summary = pd.DataFrame([{
+                "員警姓名": s["officer"],
+                "本期總分": s["grand_total"]
+            } for s in processed_sheets])
+            
+            df_summary = df_raw_summary.groupby('員警姓名', as_index=False)['本期總分'].sum()
+            df_summary['上半年分數'] = 5800  
+            
+            def calc_rem(score):
+                if score >= threshold_7x: return score - threshold_7x
+                return score % quota
+                
+            df_summary['上半年剩餘分數'] = df_summary['上半年分數'].apply(calc_rem)
+            df_summary['最終總分'] = df_summary['本期總分'] + df_summary['上半年剩餘分數']
+
+            st.success("✅ 所有原始報表已自動擴充欄位、結算並重建完畢！")
+            st.subheader("📊 員警績效結算總表")
+            st.dataframe(df_summary, use_container_width=True, hide_index=True)
+
+            # --- 產出 Excel 檔案 ---
+            output = io.BytesIO()
+            wb = Workbook()
+            
+            ws_summary = wb.active
+            ws_summary.title = "績效結算總表"
+            ws_summary['A1'] = "交通違規舉發績效結算表"
+            ws_summary['A1'].font = Font(size=14, bold=True)
+            ws_summary['A2'] = f"結算單位：{unit_type}"
+            
+            header = list(df_summary.columns)
+            header_fill = PatternFill(start_color="34495E", end_color="34495E", fill_type="solid")
+            for c_idx, title in enumerate(header, 1):
+                cell = ws_summary.cell(row=4, column=c_idx, value=title)
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = header_fill
+                ws_summary.column_dimensions[get_column_letter(c_idx)].width = 16
+                
+            for r_idx, row_data in enumerate(df_summary.values, 5):
+                for c_idx, val in enumerate(row_data, 1):
+                    ws_summary.cell(row=r_idx, column=c_idx, value=val)
+
+            yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+            sheet_name_counts = {}
+            
+            for s in processed_sheets:
+                base_name = s["officer"][:25]
+                if base_name not in sheet_name_counts:
+                    sheet_name_counts[base_name] = 1
+                    final_name = base_name
+                else:
+                    sheet_name_counts[base_name] += 1
+                    final_name = f"{base_name}({sheet_name_counts[base_name]})"
+                    
+                ws_officer = wb.create_sheet(title=final_name)
+                
+                for r_idx, row in s["df"].iterrows():
+                    cleaned_row = [val if pd.notna(val) else None for val in row.tolist()]
+                    ws_officer.append(cleaned_row)
+                    
+                for r, c in s["yellow_cells"]:
+                    ws_officer.cell(row=r, column=c).fill = yellow_fill
+                    
+                officer_summary = df_summary[df_summary['員警姓名'] == s['officer']].iloc[0]
+                
+                footer_start_row = ws_officer.max_row + 2
+                write_col = s["col_d_score"] + 1 if s["col_d_score"] != -1 else 5
+                
+                def write_footer(row_offset, title, val, color="000000"):
+                    c_title = ws_officer.cell(row=footer_start_row + row_offset, column=write_col - 1, value=title)
+                    c_title.font = Font(bold=True)
+                    c_val = ws_officer.cell(row=footer_start_row + row_offset, column=write_col, value=val)
+                    c_val.font = Font(bold=True, color=color)
+                
+                write_footer(0, "本期分數：", int(officer_summary["本期總分"]), "0000FF")
+                write_footer(1, "上半年分數：", int(officer_summary["上半年分數"]), "0000FF")
+                write_footer(2, "上半年剩餘分數：", int(officer_summary["上半年剩餘分數"]), "0000FF")
+                write_footer(3, "總分：", int(officer_summary["最終總分"]), "FF0000")
+                
+                for col_idx in range(1, len(s["df"].columns) + 1):
+                    ws_officer.column_dimensions[get_column_letter(col_idx)].width = 12
+
+            wb.save(output)
+            
+            # ==========================================
+            # 4. 檔案下載與信件寄送區塊
+            # ==========================================
+            st.divider()
+            col1, col2 = st.columns(2)
+            
+            excel_filename = f"舉發績效結算與個人明細表_{unit_type[:2]}.xlsx"
+            
+            with col1:
+                st.markdown("### 📥 下載報表")
+                st.download_button(
+                    label="下載完整報表 (含總表與明細)",
+                    data=output.getvalue(),
+                    file_name=excel_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+
+            with col2:
+                st.markdown("### 📧 寄送報表至我的信箱")
+                
+                if st.button("🚀 一鍵寄送報表", use_container_width=True):
+                    with st.spinner("信件發送中，請稍候…"):
+                        ok, mail_err = send_file_email(
+                            file_bytes=output, 
+                            file_name=excel_filename, 
+                            unit_name=unit_type
+                        )
+                        if ok:
+                            st.success("✅ 信件發送成功！報表已隨信夾帶至您的信箱。")
+                            st.balloons()
+                        else:
+                            st.error(f"❌ 發信失敗: {mail_err}")
