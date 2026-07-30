@@ -2,27 +2,27 @@ import streamlit as st
 import pandas as pd
 import re
 import io
-import time
-import traceback
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font
 
-# 嘗試從主程式匯入 Google Sheets 連線工具 (請依據您的主程式檔名修改，例如 app 或 main)
-# 這樣可以共用同一組 GCP_CREDS 與連線快取
+# ==========================================
+# 0. 嘗試載入主程式的 Google Sheets 連線工具
+# ==========================================
+# 假設您的主程式命名為 app.py，這樣能共用您的 GCP_CREDS 與連線快取
 try:
     from app import get_gsheet_connection, get_or_create_ws, _ws_clear, _ws_update, _sh_batch_update
     HAS_GSHEET = True
 except ImportError:
     HAS_GSHEET = False
 
+# ==========================================
+# 1. 頁面基本設定與側邊欄
+# ==========================================
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
 st.title("⚡ 員警交通違規舉發績效結算")
-st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。請上傳當月資料與配分表。")
+st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會自動掃描檔案中所有的工作表並精準合併員警成績。")
 
-# ==========================================
-# 1. 側邊欄：參數設定與檔案上傳
-# ==========================================
 st.sidebar.header("⚙️ 結算參數設定")
 unit_type = st.sidebar.radio(
     "🏢 選擇單位與基準", 
@@ -44,6 +44,7 @@ data_files = st.sidebar.file_uploader("批次選擇多個員警的 Excel 檔案"
 # ==========================================
 if db_file and data_files:
     with st.spinner("🔄 正在讀取與比對資料..."):
+        # 讀取配分表
         try:
             df_db = pd.read_excel(db_file)
             if '違規條款' not in df_db.columns:
@@ -55,45 +56,72 @@ if db_file and data_files:
 
         all_results = []
         
+        # 尋找員警姓名輔助函數 (對應原本 GAS 的 findOfficerNameStrict)
+        def extract_officer_name(df_head):
+            for r_idx, row in df_head.iterrows():
+                for c_idx, val in enumerate(row.values):
+                    val_str = str(val).strip()
+                    if "舉發員警" in val_str:
+                        # 嘗試把同一格內的 "舉發員警：" 清除
+                        clean = re.sub(r'舉發員警[:：]?', '', val_str).strip()
+                        if clean:
+                            return clean
+                        # 如果名字寫在相鄰的下一格
+                        if c_idx + 1 < len(row.values):
+                            next_val = str(row.values[c_idx + 1]).strip()
+                            if next_val and next_val.lower() != 'nan':
+                                return next_val
+            return ""
+
+        # 遍歷所有上傳的檔案
         for f in data_files:
             f.seek(0)
             try:
-                # 尋找標頭列 (包含 '違規條款')
-                raw_df = pd.read_excel(f, header=None)
-                header_idx = -1
-                for idx, row in raw_df.iterrows():
-                    if "違規條款" in row.astype(str).values:
-                        header_idx = idx
-                        break
-                
-                if header_idx != -1:
-                    f.seek(0)
-                    df_officer = pd.read_excel(f, header=header_idx)
-                else:
-                    st.warning(f"檔案 {f.name} 找不到『違規條款』標題列，已略過。")
-                    continue
+                xls = pd.ExcelFile(f)
+                # 遍歷檔案中的所有工作表
+                for sheet_name in xls.sheet_names:
+                    # 先讀取前 20 列尋找標頭與姓名
+                    raw_df = pd.read_excel(xls, sheet_name=sheet_name, header=None, nrows=20)
+                    
+                    header_idx = -1
+                    officer_name = extract_officer_name(raw_df)
+                    
+                    # 若無法從表格內容提取姓名，則使用工作表名稱
+                    if not officer_name:
+                        officer_name = sheet_name.strip()
+                    
+                    # 尋找真正的資料標題列
+                    for idx, row in raw_df.iterrows():
+                        if "違規條款" in row.astype(str).values:
+                            header_idx = idx
+                            break
+                    
+                    if header_idx != -1:
+                        # 找到標頭後，正式讀取該工作表完整資料
+                        df_officer = pd.read_excel(xls, sheet_name=sheet_name, header=header_idx)
+                    else:
+                        st.warning(f"檔案 {f.name} 的工作表『{sheet_name}』找不到違規條款標題，已略過。")
+                        continue
 
-                # 查表合併配分
-                df_merged = pd.merge(df_officer, df_db[['違規條款', '攔舉配分', '逕舉配分']], on='違規條款', how='left')
+                    # 查表合併配分
+                    df_merged = pd.merge(df_officer, df_db[['違規條款', '攔舉配分', '逕舉配分']], on='違規條款', how='left')
 
-                # 數值處理與計算
-                for col in ['攔停數', '逕舉數', '攔舉配分_y', '逕舉配分_y', '攔舉配分', '逕舉配分']:
-                    if col in df_merged.columns:
-                        df_merged[col] = pd.to_numeric(df_merged[col], errors='coerce').fillna(0)
-                        
-                p_stop = df_merged.get('攔舉配分_y', df_merged.get('攔舉配分', 0))
-                p_dir = df_merged.get('逕舉配分_y', df_merged.get('逕舉配分', 0))
-                
-                df_merged['單項總分'] = (df_merged.get('攔停數', 0) * p_stop) + (df_merged.get('逕舉數', 0) * p_dir)
-                monthly_total = df_merged['單項總分'].sum()
-                
-                # 從檔名萃取姓名
-                officer_name = re.sub(r'\.[a-zA-Z0-9]+$', '', f.name)
-                all_results.append({
-                    "員警姓名": officer_name,
-                    "當月總分": monthly_total
-                })
-                
+                    # 數值處理與計算
+                    for col in ['攔停數', '逕舉數', '攔舉配分_y', '逕舉配分_y', '攔舉配分', '逕舉配分']:
+                        if col in df_merged.columns:
+                            df_merged[col] = pd.to_numeric(df_merged[col], errors='coerce').fillna(0)
+                            
+                    p_stop = df_merged.get('攔舉配分_y', df_merged.get('攔舉配分', 0))
+                    p_dir = df_merged.get('逕舉配分_y', df_merged.get('逕舉配分', 0))
+                    
+                    df_merged['單項總分'] = (df_merged.get('攔停數', 0) * p_stop) + (df_merged.get('逕舉數', 0) * p_dir)
+                    monthly_total = df_merged['單項總分'].sum()
+                    
+                    all_results.append({
+                        "員警姓名": officer_name.replace(" ", ""), # 統一去除姓名內的空白
+                        "當月總分": monthly_total
+                    })
+                    
             except Exception as e:
                 st.error(f"❌ 處理 {f.name} 時發生錯誤：{e}")
 
@@ -101,12 +129,15 @@ if db_file and data_files:
         # 3. 結算彙整與報表產出
         # ==========================================
         if all_results:
-            df_summary = pd.DataFrame(all_results)
+            # 轉換為 DataFrame 並進行姓名分組加總 (處理同姓名分散多工作表的問題)
+            df_raw_summary = pd.DataFrame(all_results)
+            df_summary = df_raw_summary.groupby('員警姓名', as_index=False)['當月總分'].sum()
             
-            # TODO: 實務上您可以串接另一個資料庫或讀取雲端硬碟，取得真正的上半年分數
-            # 目前以 5800 作為模擬範例
+            # --- 模擬上半年歷史分數 ---
+            # 實務上這裡可以透過讀取外部資料夾或另一個 Sheet 來動態獲取
             df_summary['上半年分數'] = 5800  
             
+            # 剩餘分數結算邏輯
             def calc_rem(score):
                 if score >= threshold_7x: return score - threshold_7x
                 return score % quota
@@ -114,13 +145,13 @@ if db_file and data_files:
             df_summary['上半年剩餘分數'] = df_summary['上半年分數'].apply(calc_rem)
             df_summary['最終總分'] = df_summary['當月總分'] + df_summary['上半年剩餘分數']
 
-            st.success("✅ 所有檔案結算完畢！")
+            st.success("✅ 所有員警檔案結算完畢！")
             
-            # --- 畫面展示 ---
-            st.subheader("📊 績效結算結果")
+            # 畫面展示
+            st.subheader("📊 員警績效結算結果")
             st.dataframe(df_summary, use_container_width=True, hide_index=True)
 
-            # --- 產出 Excel 下載 (檔案流模式核心) ---
+            # --- 產出 Excel 下載 ---
             output = io.BytesIO()
             wb = Workbook()
             ws = wb.active
@@ -165,6 +196,7 @@ if db_file and data_files:
                                 sh = get_gsheet_connection()
                                 if sh:
                                     ws_name = "績效結算總表"
+                                    # 確保留有足夠的儲存格空間
                                     ws = get_or_create_ws(sh, ws_name, rows=max(30, len(df_summary) + 10), cols=10)
                                     _ws_clear(ws)
                                     
