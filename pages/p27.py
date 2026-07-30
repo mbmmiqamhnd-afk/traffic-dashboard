@@ -53,7 +53,6 @@ if db_file and data_files:
             st.error(f"❌ 讀取配分表失敗：{e}")
             st.stop()
 
-        # 建立配分查找字典，提升比對速度
         db_map = {}
         for _, row in df_db.iterrows():
             rule = str(row.get('違規條款', '')).strip()
@@ -85,7 +84,6 @@ if db_file and data_files:
             try:
                 xls = pd.ExcelFile(f)
                 for sheet_name in xls.sheet_names:
-                    # 💡 修正 1：轉為 object 型態，允許整數與文字混合存在，不使用 fillna("")
                     raw_df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
                     raw_df = raw_df.astype('object')
                     
@@ -94,17 +92,13 @@ if db_file and data_files:
                     if not officer_name:
                         officer_name = sheet_name.strip()
                     
-                    # 尋找資料標題列
                     for idx, row in raw_df.iterrows():
                         if "違規條款" in row.astype(str).str.replace(" ", "").values:
                             header_idx = idx
                             break
                     
-                    # 若為無效工作表，靜默略過
-                    if header_idx == -1:
-                        continue
+                    if header_idx == -1: continue
 
-                    # 解析標題列的欄位位置
                     header_row = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
                     col_rule = header_row.index("違規條款") if "違規條款" in header_row else -1
                     col_s_cnt = header_row.index("攔停數") if "攔停數" in header_row else -1
@@ -114,23 +108,17 @@ if db_file and data_files:
                     col_d_score = header_row.index("逕舉配分") if "逕舉配分" in header_row else -1
                     col_subtotal = header_row.index("小計") if "小計" in header_row else -1
                     
-                    # 若缺少最基本的違規條款與數量欄位，靜默略過
-                    if col_rule == -1 or col_s_cnt == -1 or col_d_cnt == -1:
-                        continue
+                    if col_rule == -1 or col_s_cnt == -1 or col_d_cnt == -1: continue
 
-                    # 💡 修正 2：動態插入欄位時使用 None 而非空字串，避免型別鎖定
                     if col_s_score == -1:
-                        # 1. 插入「攔舉配分」
                         idx_s_score = col_s_cnt + 1
                         raw_df.insert(idx_s_score, f'new_{idx_s_score}', None)
                         raw_df.iat[header_idx, idx_s_score] = "攔舉配分"
                         col_s_score = idx_s_score
                         
-                        # 同步調整後方欄位 index
                         if col_d_cnt >= idx_s_score: col_d_cnt += 1
                         if col_subtotal >= idx_s_score: col_subtotal += 1
                         
-                        # 2. 插入「逕舉配分」
                         idx_d_score = col_d_cnt + 1
                         raw_df.insert(idx_d_score, f'new_{idx_d_score}', None)
                         raw_df.iat[header_idx, idx_d_score] = "逕舉配分"
@@ -138,19 +126,15 @@ if db_file and data_files:
                         
                         if col_subtotal >= idx_d_score: col_subtotal += 1
                         
-                        # 3. 插入「小計」
                         idx_subtotal = idx_d_score + 1
                         raw_df.insert(idx_subtotal, f'new_{idx_subtotal}', None)
                         raw_df.iat[header_idx, idx_subtotal] = "小計"
                         col_subtotal = idx_subtotal
-                        
-                        # 重設 DataFrame 欄位索引名稱
                         raw_df.columns = range(raw_df.shape[1])
 
                     grand_total = 0
                     yellow_cells = []
                     
-                    # 遍歷資料列計算分數與配分
                     for r in range(header_idx + 1, len(raw_df)):
                         rule = str(raw_df.iloc[r, col_rule]).strip()
                         if not rule or "合計" in rule or "製表" in rule or "舉發單張數" in rule or rule.lower() == 'nan':
@@ -163,7 +147,6 @@ if db_file and data_files:
                         stop_cnt = safe_int(raw_df.iloc[r, col_s_cnt])
                         dir_cnt = safe_int(raw_df.iloc[r, col_d_cnt])
                         
-                        # 查表
                         if rule in db_map:
                             s_score = db_map[rule]['stop']
                             d_score = db_map[rule]['dir']
@@ -171,16 +154,13 @@ if db_file and data_files:
                             s_score = 0
                             d_score = 0
                             
-                        # 填寫配分 (型別已轉為 object，寫入整數絕對安全)
                         raw_df.iat[r, col_s_score] = s_score if s_score != 0 else 0
                         raw_df.iat[r, col_d_score] = d_score if d_score != 0 else 0
                         
-                        # 計算單列小計
                         row_subtotal = (s_score * stop_cnt) + (d_score * dir_cnt)
                         if col_subtotal != -1:
                             raw_df.iat[r, col_subtotal] = row_subtotal
                         
-                        # 記錄無配分的黃色警示儲存格 (1-based index)
                         if s_score == 0 and d_score == 0:
                             yellow_cells.append((r + 1, col_s_score + 1))
                             yellow_cells.append((r + 1, col_d_score + 1))
@@ -202,16 +182,12 @@ if db_file and data_files:
         # 3. 結算彙整與報表產出
         # ==========================================
         if processed_sheets:
-            # 將所有工作表的結果進行群組加總 (計算總表用)
             df_raw_summary = pd.DataFrame([{
                 "員警姓名": s["officer"],
                 "本期總分": s["grand_total"]
             } for s in processed_sheets])
             
             df_summary = df_raw_summary.groupby('員警姓名', as_index=False)['本期總分'].sum()
-            
-            # --- 上半年歷史分數 ---
-            # 實務上這裡可以透過讀取外部資料庫動態獲取
             df_summary['上半年分數'] = 5800  
             
             def calc_rem(score):
@@ -225,11 +201,10 @@ if db_file and data_files:
             st.subheader("📊 員警績效結算總表")
             st.dataframe(df_summary, use_container_width=True, hide_index=True)
 
-            # --- 產出 Excel 下載 (含總表與所有個人明細表) ---
+            # --- 產出 Excel 下載 ---
             output = io.BytesIO()
             wb = Workbook()
             
-            # 1. 建立總表
             ws_summary = wb.active
             ws_summary.title = "績效結算總表"
             ws_summary['A1'] = "交通違規舉發績效結算表"
@@ -248,7 +223,6 @@ if db_file and data_files:
                 for c_idx, val in enumerate(row_data, 1):
                     ws_summary.cell(row=r_idx, column=c_idx, value=val)
 
-            # 2. 建立各員警的原始明細表 (附帶四層結算結構)
             yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
             sheet_name_counts = {}
             
@@ -263,19 +237,15 @@ if db_file and data_files:
                     
                 ws_officer = wb.create_sheet(title=final_name)
                 
-                # 💡 修正 3：寫入保留原格式的資料，透過 pd.notna 確保真正的空白保留
                 for r_idx, row in s["df"].iterrows():
                     cleaned_row = [val if pd.notna(val) else None for val in row.tolist()]
                     ws_officer.append(cleaned_row)
                     
-                # 標示無配分的黃色警示區塊
                 for r, c in s["yellow_cells"]:
                     ws_officer.cell(row=r, column=c).fill = yellow_fill
                     
-                # 取得該員警在總表中的結算數據
                 officer_summary = df_summary[df_summary['員警姓名'] == s['officer']].iloc[0]
                 
-                # 在表尾寫入 4 層結算結構
                 footer_start_row = ws_officer.max_row + 2
                 write_col = s["col_d_score"] + 1 if s["col_d_score"] != -1 else 5
                 
@@ -290,7 +260,6 @@ if db_file and data_files:
                 write_footer(2, "上半年剩餘分數：", int(officer_summary["上半年剩餘分數"]), "0000FF")
                 write_footer(3, "總分：", int(officer_summary["最終總分"]), "FF0000")
                 
-                # 適度調整欄寬讓資料好讀
                 for col_idx in range(1, len(s["df"].columns) + 1):
                     ws_officer.column_dimensions[get_column_letter(col_idx)].width = 12
 
@@ -306,14 +275,15 @@ if db_file and data_files:
                     use_container_width=True
                 )
 
-            # --- 同步總表至 Google Sheets ---
+            # --- 同步至 Google Sheets ---
             if HAS_GSHEET:
                 with col2:
-                    if st.button("☁️ 同步總表至 Google Sheets", use_container_width=True):
-                        with st.spinner("正在寫入雲端..."):
+                    if st.button("☁️ 同步總表與明細至 Google Sheets", use_container_width=True):
+                        with st.spinner("正在將總表與所有員警明細寫入雲端 (請稍候)..."):
                             try:
                                 sh = get_gsheet_connection()
                                 if sh:
+                                    # 1. 寫入總表
                                     ws_name = "績效結算總表"
                                     ws = get_or_create_ws(sh, ws_name, rows=max(30, len(df_summary) + 10), cols=10)
                                     _ws_clear(ws)
@@ -334,7 +304,68 @@ if db_file and data_files:
                                             "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.backgroundColor"
                                         }}
                                     ]
+                                    
+                                    # 2. 寫入各員警獨立分頁 (包含原始數據、安插欄位、表尾分數計算與顏色)
+                                    sheet_name_counts_gs = {}
+                                    for s in processed_sheets:
+                                        base_name_gs = s["officer"][:25]
+                                        if base_name_gs not in sheet_name_counts_gs:
+                                            sheet_name_counts_gs[base_name_gs] = 1
+                                            final_name_gs = base_name_gs
+                                        else:
+                                            sheet_name_counts_gs[base_name_gs] += 1
+                                            final_name_gs = f"{base_name_gs}({sheet_name_counts_gs[base_name_gs]})"
+                                            
+                                        ws_off = get_or_create_ws(sh, final_name_gs, rows=len(s["df"]) + 15, cols=len(s["df"].columns) + 2)
+                                        _ws_clear(ws_off)
+                                        
+                                        data_2d = s["df"].fillna("").values.tolist()
+                                        _ws_update(ws_off, 'A1', data_2d)
+                                        
+                                        officer_summary = df_summary[df_summary['員警姓名'] == s['officer']].iloc[0]
+                                        footer_start_row_gs = len(data_2d) + 2
+                                        write_col_idx = s["col_d_score"] + 1 if s["col_d_score"] != -1 else 5
+                                        
+                                        footer_data = [
+                                            ["本期分數：", int(officer_summary["本期總分"])],
+                                            ["上半年分數：", int(officer_summary["上半年分數"])],
+                                            ["上半年剩餘分數：", int(officer_summary["上半年剩餘分數"])],
+                                            ["總分：", int(officer_summary["最終總分"])]
+                                        ]
+                                        
+                                        # 定位並寫入四層分數 (自動對齊逕舉配分下方)
+                                        start_cell_gs = f"{get_column_letter(write_col_idx - 1)}{footer_start_row_gs}"
+                                        _ws_update(ws_off, start_cell_gs, footer_data)
+                                        
+                                        sheet_id = ws_off.id
+                                        col_idx_0based = write_col_idx - 2
+                                        
+                                        reqs.append({
+                                            "repeatCell": {
+                                                "range": {"sheetId": sheet_id, "startRowIndex": footer_start_row_gs - 1, "endRowIndex": footer_start_row_gs + 2, "startColumnIndex": col_idx_0based, "endColumnIndex": col_idx_0based + 2},
+                                                "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}}}},
+                                                "fields": "userEnteredFormat.textFormat"
+                                            }
+                                        })
+                                        reqs.append({
+                                            "repeatCell": {
+                                                "range": {"sheetId": sheet_id, "startRowIndex": footer_start_row_gs + 2, "endRowIndex": footer_start_row_gs + 3, "startColumnIndex": col_idx_0based, "endColumnIndex": col_idx_0based + 2},
+                                                "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}},
+                                                "fields": "userEnteredFormat.textFormat"
+                                            }
+                                        })
+                                        
+                                        # 套用黃色警示背景色
+                                        for r, c in s["yellow_cells"]:
+                                            reqs.append({
+                                                "repeatCell": {
+                                                    "range": {"sheetId": sheet_id, "startRowIndex": r - 1, "endRowIndex": r, "startColumnIndex": c - 1, "endColumnIndex": c},
+                                                    "cell": {"userEnteredFormat": {"backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.0}}},
+                                                    "fields": "userEnteredFormat.backgroundColor"
+                                                }
+                                            })
+                                            
                                     _sh_batch_update(sh, {"requests": reqs})
-                                    st.success("✅ 雲端資料庫已同步！")
+                                    st.success("✅ 雲端資料庫已完整同步 (包含總表與所有員警個人明細表)！")
                             except Exception as e:
                                 st.error(f"雲端同步失敗：{e}")
