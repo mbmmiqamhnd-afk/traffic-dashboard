@@ -62,10 +62,10 @@ def send_multiple_files_email(file_buffers_dict):
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
 st.title("⚡ 員警交通執法重點工作舉發績效結算")
-st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會依據您上傳的檔案**逐一產出各單位的獨立報表**，並進行深度版面淨化與重構。")
+st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會自動從報表內文解析單位與員警資料，並進行獨立結算與排版優化。")
 
 st.sidebar.header("⚙️ 結算參數設定")
-st.sidebar.info("💡 **智慧基準偵測**：\n系統將自動分析上傳的檔名。若檔名包含「交通分隊」，將自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
+st.sidebar.info("💡 **智慧內文基準偵測**：\n系統將自動讀取報表內文的「舉發單位」。若包含「交通分隊」，自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📂 步驟 1：上傳配分表")
@@ -112,20 +112,24 @@ if db_file and data_files:
                                 return next_val
             return ""
 
-        all_summaries = {}
-        all_output_buffers = {}
+        def extract_unit_name(df_head):
+            for r_idx, row in df_head.iterrows():
+                for c_idx, val in enumerate(row.values):
+                    val_str = str(val).strip()
+                    if "舉發單位" in val_str:
+                        clean = re.sub(r'舉發單位[:：]?', '', val_str).strip()
+                        if clean: return clean
+                        if c_idx + 1 < len(row.values):
+                            next_val = str(row.values[c_idx + 1]).strip()
+                            if next_val and next_val.lower() != 'nan':
+                                return next_val
+            return ""
+
+        # 暫存各單位的處理結果：{ unit_name: { "processed_sheets": [...], "unit_type_label": ... } }
+        unit_collected_data = {}
 
         for f in data_files:
             f.seek(0)
-            
-            unit_name = re.sub(r'\.[a-zA-Z0-9]+$', '', f.name)
-            is_800_quota = "交通分隊" in unit_name
-            quota = 800 if is_800_quota else 400
-            threshold_7x = quota * 7
-            unit_type_label = f"{unit_name} (基準 {quota} 分)"
-            
-            processed_sheets = []
-            
             try:
                 xls = pd.ExcelFile(f)
                 for sheet_name in xls.sheet_names:
@@ -136,6 +140,10 @@ if db_file and data_files:
                     officer_name = extract_officer_name(raw_df.head(20))
                     if not officer_name:
                         officer_name = sheet_name.strip()
+                        
+                    detected_unit = extract_unit_name(raw_df.head(20))
+                    if not detected_unit:
+                        detected_unit = re.sub(r'\.[a-zA-Z0-9]+$', '', f.name) # 若內文抓不到才退回檔名
                     
                     for idx, row in raw_df.iterrows():
                         if "違規條款" in row.astype(str).str.replace(" ", "").values:
@@ -145,7 +153,6 @@ if db_file and data_files:
                     if header_idx == -1:
                         continue
                     
-                    # 💡 終極版面重構：先將重要的資訊全部抓出來
                     print_date_val = ""
                     issue_date_val = ""
                     unit_val = ""
@@ -166,19 +173,15 @@ if db_file and data_files:
                                 elif "舉發員警" in val_no_space:
                                     officer_val = val_str
 
-                    # 💡 將上半部雜亂的資料(含各種空白列)徹底切除，讓 DataFrame 只保留資料本身
                     raw_df = raw_df.iloc[header_idx:].reset_index(drop=True)
-                    header_idx = 0 # 重設標題列索引為 0
+                    header_idx = 0 
                     
-                    # 清理無關欄位：找出標題為空或 nan 的欄位並刪除
                     header_row_temp = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
                     cols_to_keep = [c for c, val in enumerate(header_row_temp) if val not in ["nan", "None", ""]]
                     
-                    # 只保留有效欄位，並重置索引
                     raw_df = raw_df.iloc[:, cols_to_keep]
                     raw_df.columns = range(raw_df.shape[1])
 
-                    # 重新取得清理後的標題列
                     header_row = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
                     col_rule = header_row.index("違規條款") if "違規條款" in header_row else -1
                     col_s_cnt = header_row.index("攔停數") if "攔停數" in header_row else -1
@@ -191,7 +194,6 @@ if db_file and data_files:
                     if col_rule == -1 or col_s_cnt == -1 or col_d_cnt == -1:
                         continue
 
-                    # 動態插入欄位
                     if col_s_score == -1:
                         idx_s_score = col_s_cnt + 1
                         raw_df.insert(idx_s_score, f'new_{idx_s_score}', None)
@@ -249,7 +251,7 @@ if db_file and data_files:
                             
                         grand_total += row_subtotal
                         
-                    processed_sheets.append({
+                    sheet_data = {
                         "officer": officer_name.replace(" ", ""),
                         "df": raw_df,
                         "yellow_cells": yellow_cells,
@@ -259,15 +261,35 @@ if db_file and data_files:
                         "issue_date": issue_date_val,
                         "unit_val": unit_val,
                         "officer_val": officer_val
-                    })
+                    }
+                    
+                    if detected_unit not in unit_collected_data:
+                        is_800 = "交通分隊" in detected_unit
+                        quota_val = 800 if is_800 else 400
+                        unit_collected_data[detected_unit] = {
+                            "processed_sheets": [],
+                            "quota": quota_val,
+                            "threshold_7x": quota_val * 7,
+                            "unit_type_label": f"{detected_unit} (基準 {quota_val} 分)"
+                        }
+                    unit_collected_data[detected_unit]["processed_sheets"].append(sheet_data)
                     
             except Exception as e:
-                st.error(f"❌ 處理單位檔案 {f.name} 時發生錯誤：{e}")
+                st.error(f"❌ 處理檔案 {f.name} 時發生錯誤：{e}")
                 continue
 
-            # ==========================================
-            # 3. 各單位獨立結算與報表產出
-            # ==========================================
+        # ==========================================
+        # 3. 各單位獨立結算與報表產出
+        # ==========================================
+        all_summaries = {}
+        all_output_buffers = {}
+
+        for unit_name, unit_info in unit_collected_data.items():
+            processed_sheets = unit_info["processed_sheets"]
+            quota = unit_info["quota"]
+            threshold_7x = unit_info["threshold_7x"]
+            unit_type_label = unit_info["unit_type_label"]
+
             if processed_sheets:
                 df_raw_summary = pd.DataFrame([{
                     "員警姓名": s["officer"],
@@ -323,43 +345,36 @@ if db_file and data_files:
                     ws_officer = wb.create_sheet(title=final_name)
                     num_cols = len(s["df"].columns)
                     
-                    # 💡 手動重構完美無空隙的頂部標題區
-                    # 第一列：大標題 + 列印日期
                     title_row = ["員警開單績效統計表"] + [None] * (num_cols - 1)
                     if s["print_date"]:
-                        put_idx = min(3, num_cols - 1) # 放在第 D 欄
+                        put_idx = min(3, num_cols - 1) 
                         title_row[put_idx] = s["print_date"]
                     ws_officer.append(title_row)
                     ws_officer['A1'].font = Font(size=14, bold=True)
                     if s["print_date"]:
                         date_cell = ws_officer.cell(row=1, column=put_idx + 1)
-                        date_cell.font = Font(bold=True, color="0000FF") # 藍色粗體
+                        date_cell.font = Font(bold=True, color="0000FF") 
                         date_cell.alignment = Alignment(horizontal="left")
                         
-                    # 第二列：開單日期
                     if s["issue_date"]:
                         ws_officer.append([s["issue_date"]] + [None] * (num_cols - 1))
                         
-                    # 第三列：單位
                     if s["unit_val"]:
                         ws_officer.append([s["unit_val"]] + [None] * (num_cols - 1))
                     else:
                         ws_officer.append([f"舉發單位：{unit_name}"] + [None] * (num_cols - 1))
                         
-                    # 第四列：員警
                     if s["officer_val"]:
                         ws_officer.append([s["officer_val"]] + [None] * (num_cols - 1))
                     else:
                         ws_officer.append([f"舉發員警：{s['officer']}"] + [None] * (num_cols - 1))
 
-                    current_row_offset = ws_officer.max_row # 記錄頂部區塊佔了幾列
+                    current_row_offset = ws_officer.max_row 
                     
-                    # 依序寫入剩下的資料列 (表頭與資料會緊緊接在第四列下面，完全無空白)
                     for r_idx, row in s["df"].iterrows():
                         cleaned_row = [val if pd.notna(val) and str(val).strip() != "" else None for val in row.tolist()]
                         ws_officer.append(cleaned_row)
                         
-                    # 標示無配分的黃色警示區塊
                     for r, c in s["yellow_cells"]:
                         excel_r = current_row_offset + r + 1
                         excel_c = c + 1
@@ -385,7 +400,6 @@ if db_file and data_files:
                         ws_officer.column_dimensions[get_column_letter(col_idx)].width = 14
 
                 wb.save(output)
-                # 💡 修改輸出的檔案名稱格式為 "交通執法重點工作舉發績效結算表_單位名稱"
                 all_output_buffers[f"交通執法重點工作舉發績效結算表_{unit_name}.xlsx"] = output
 
         # ==========================================
