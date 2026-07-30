@@ -62,7 +62,7 @@ def send_multiple_files_email(file_buffers_dict):
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
 st.title("⚡ 員警交通違規舉發績效結算")
-st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會依據您上傳的檔案**逐一產出各單位的獨立報表**，並自動優化排版。")
+st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會依據您上傳的檔案**逐一產出各單位的獨立報表**，並自動過濾無關空行以優化排版。")
 
 st.sidebar.header("⚙️ 結算參數設定")
 st.sidebar.info("💡 **智慧基準偵測**：\n系統將自動分析上傳的檔名。若檔名包含「交通分隊」，將自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
@@ -137,6 +137,7 @@ if db_file and data_files:
                     if not officer_name:
                         officer_name = sheet_name.strip()
                     
+                    # 尋找資料標題列
                     for idx, row in raw_df.iterrows():
                         if "違規條款" in row.astype(str).str.replace(" ", "").values:
                             header_idx = idx
@@ -145,7 +146,7 @@ if db_file and data_files:
                     if header_idx == -1:
                         continue
                     
-                    # 💡 強化提取列印日期：搜尋標題列以上的範圍，無視所有空白進行比對
+                    # 💡 提取列印日期
                     print_date_val = ""
                     for r_search in range(max(1, header_idx)):
                         for c_search in range(len(raw_df.columns)):
@@ -154,20 +155,30 @@ if db_file and data_files:
                                 val_str = str(val).strip()
                                 if "列印日期" in val_str.replace(" ", ""):
                                     print_date_val = val_str
-                                    raw_df.iat[r_search, c_search] = None # 撈出後清空原位置，避免重複顯示
+                                    raw_df.iat[r_search, c_search] = None # 撈出後清空原位置
                                     break
                         if print_date_val:
                             break
+                            
+                    # 💡 清理標題列上方的「全空列」(解決大標題與開單日期之間有多餘空行的問題)
+                    rows_to_drop = []
+                    for r_chk in range(header_idx):
+                        # 如果這列裡的所有值都是 None 或是空字串，就視為空列並記錄下來
+                        if all(pd.isna(x) or str(x).strip() == "" for x in raw_df.iloc[r_chk]):
+                            rows_to_drop.append(r_chk)
+                            
+                    if rows_to_drop:
+                        raw_df = raw_df.drop(index=rows_to_drop).reset_index(drop=True)
+                        header_idx -= len(rows_to_drop) # 同步更新標題列的索引位置
                     
-                    # 清理無關欄位：找出標題為空或 nan 的欄位並刪除
+                    # 清理無關的空白欄位 (直欄)
                     header_row_temp = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
                     cols_to_keep = [c for c, val in enumerate(header_row_temp) if val not in ["nan", "None", ""]]
                     
-                    # 只保留有效欄位，並重置索引
                     raw_df = raw_df.iloc[:, cols_to_keep]
                     raw_df.columns = range(raw_df.shape[1])
 
-                    # 重新取得清理後的標題列
+                    # 重新取得清理欄位後的標題列
                     header_row = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
                     col_rule = header_row.index("違規條款") if "違規條款" in header_row else -1
                     col_s_cnt = header_row.index("攔停數") if "攔停數" in header_row else -1
@@ -180,7 +191,7 @@ if db_file and data_files:
                     if col_rule == -1 or col_s_cnt == -1 or col_d_cnt == -1:
                         continue
 
-                    # 動態插入欄位
+                    # 動態插入配分欄位
                     if col_s_score == -1:
                         idx_s_score = col_s_cnt + 1
                         raw_df.insert(idx_s_score, f'new_{idx_s_score}', None)
@@ -244,7 +255,7 @@ if db_file and data_files:
                         "yellow_cells": yellow_cells,
                         "grand_total": grand_total,
                         "col_d_score": col_d_score,
-                        "print_date": print_date_val  # 儲存成功提取的列印日期
+                        "print_date": print_date_val  
                     })
                     
             except Exception as e:
@@ -308,12 +319,12 @@ if db_file and data_files:
                         
                     ws_officer = wb.create_sheet(title=final_name)
                     
-                    # 💡 建立置頂的全新第 1 列 (在原本資料的最上面)
+                    # 💡 建立置頂的全新第 1 列 (大標題與列印日期)
                     num_cols = len(s["df"].columns)
                     title_row = ["員警開單績效統計表"] + [None] * (num_cols - 1)
                     
                     if s["print_date"]:
-                        # 放在第 4 個欄位 (D欄)，視覺上最剛好，絕不會超出螢幕
+                        # 放在第 4 個欄位 (D欄) 最顯眼
                         put_idx = min(3, num_cols - 1)
                         title_row[put_idx] = s["print_date"]
                         
@@ -323,15 +334,15 @@ if db_file and data_files:
                     ws_officer['A1'].font = Font(size=14, bold=True)
                     if s["print_date"]:
                         date_cell = ws_officer.cell(row=1, column=put_idx + 1)
-                        date_cell.font = Font(bold=True, color="0000FF") # 藍色粗體，保證顯眼
+                        date_cell.font = Font(bold=True, color="0000FF") # 藍色粗體
                         date_cell.alignment = Alignment(horizontal="left")
                     
-                    # 依序寫入剩下的資料列 (原本的第一列開單日期會自動變成第 2 列)
+                    # 依序寫入整理後的資料列 (空行已經在前面被刪除乾淨了)
                     for r_idx, row in s["df"].iterrows():
-                        cleaned_row = [val if pd.notna(val) else None for val in row.tolist()]
+                        cleaned_row = [val if pd.notna(val) and str(val).strip() != "" else None for val in row.tolist()]
                         ws_officer.append(cleaned_row)
                         
-                    # 標示無配分的黃色警示區塊 (因上方插入了一列，故行數需 +1)
+                    # 標示無配分的黃色警示區塊 (上方插入了一列標題，故行數 +1)
                     for r, c in s["yellow_cells"]:
                         ws_officer.cell(row=r + 1, column=c).fill = yellow_fill
                         
