@@ -21,7 +21,7 @@ except ImportError:
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
 st.title("⚡ 員警交通違規舉發績效結算")
-st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。匯出的報表將保留原始格式，並自動填入配分與黃色警示。")
+st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。匯出的報表將保留原始格式，若原始檔案缺少配分欄位，系統將**自動動態安插**並填入分數與黃色警示。")
 
 st.sidebar.header("⚙️ 結算參數設定")
 unit_type = st.sidebar.radio(
@@ -36,8 +36,8 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📂 步驟 1：上傳配分表")
 db_file = st.sidebar.file_uploader("外部配分表 (如：檔案 B)", type=["xlsx"], key="db_file")
 
-st.sidebar.subheader("📂 步驟 2：上傳本期舉發資料")
-data_files = st.sidebar.file_uploader("批次選擇多個員警的半年期 Excel 檔案", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
+st.sidebar.subheader("📂 步驟 2：上傳原始舉發資料")
+data_files = st.sidebar.file_uploader("批次選擇多個員警的半年期 Excel 檔案 (支援原始無配分欄位格式)", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
 
 # ==========================================
 # 2. 核心結算邏輯
@@ -85,7 +85,7 @@ if db_file and data_files:
             try:
                 xls = pd.ExcelFile(f)
                 for sheet_name in xls.sheet_names:
-                    # 讀取整張表並將 NaN 補成空字串，以利維持原始樣貌
+                    # 讀取整張表並將 NaN 補成空字串
                     raw_df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
                     raw_df = raw_df.fillna("")
                     
@@ -100,23 +100,52 @@ if db_file and data_files:
                             header_idx = idx
                             break
                     
+                    # 若為無效工作表，靜默略過
                     if header_idx == -1:
-                        st.warning(f"檔案 {f.name} 的工作表『{sheet_name}』找不到違規條款標題，已略過。")
                         continue
 
-                    # 定位欄位索引
-                    col_rule = col_s_score = col_d_score = col_s_cnt = col_d_cnt = -1
-                    for c, val in enumerate(raw_df.iloc[header_idx]):
-                        val_str = str(val).strip().replace(" ", "")
-                        if val_str == "違規條款": col_rule = c
-                        if val_str == "攔舉配分": col_s_score = c
-                        if val_str == "逕舉配分": col_d_score = c
-                        if val_str == "攔停數": col_s_cnt = c
-                        if val_str == "逕舉數": col_d_cnt = c
-                        
-                    if col_rule == -1 or col_s_score == -1 or col_d_score == -1:
-                        st.warning(f"工作表『{sheet_name}』缺少配分或條款欄位，略過。")
+                    # 解析標題列的欄位位置
+                    header_row = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
+                    col_rule = header_row.index("違規條款") if "違規條款" in header_row else -1
+                    col_s_cnt = header_row.index("攔停數") if "攔停數" in header_row else -1
+                    col_d_cnt = header_row.index("逕舉數") if "逕舉數" in header_row else -1
+                    
+                    col_s_score = header_row.index("攔舉配分") if "攔舉配分" in header_row else -1
+                    col_d_score = header_row.index("逕舉配分") if "逕舉配分" in header_row else -1
+                    col_subtotal = header_row.index("小計") if "小計" in header_row else -1
+                    
+                    # 若缺少最基本的違規條款與數量欄位，靜默略過
+                    if col_rule == -1 or col_s_cnt == -1 or col_d_cnt == -1:
                         continue
+
+                    # 💡 核心升級：若原始檔案缺少配分欄位，自動動態插入
+                    if col_s_score == -1:
+                        # 1. 插入「攔舉配分」
+                        idx_s_score = col_s_cnt + 1
+                        raw_df.insert(idx_s_score, f'new_{idx_s_score}', "")
+                        raw_df.iat[header_idx, idx_s_score] = "攔舉配分"
+                        col_s_score = idx_s_score
+                        
+                        # 同步調整後方欄位 index
+                        if col_d_cnt >= idx_s_score: col_d_cnt += 1
+                        if col_subtotal >= idx_s_score: col_subtotal += 1
+                        
+                        # 2. 插入「逕舉配分」
+                        idx_d_score = col_d_cnt + 1
+                        raw_df.insert(idx_d_score, f'new_{idx_d_score}', "")
+                        raw_df.iat[header_idx, idx_d_score] = "逕舉配分"
+                        col_d_score = idx_d_score
+                        
+                        if col_subtotal >= idx_d_score: col_subtotal += 1
+                        
+                        # 3. 插入「小計」
+                        idx_subtotal = idx_d_score + 1
+                        raw_df.insert(idx_subtotal, f'new_{idx_subtotal}', "")
+                        raw_df.iat[header_idx, idx_subtotal] = "小計"
+                        col_subtotal = idx_subtotal
+                        
+                        # 重設 DataFrame 欄位索引名稱
+                        raw_df.columns = range(raw_df.shape[1])
 
                     grand_total = 0
                     yellow_cells = []
@@ -127,13 +156,12 @@ if db_file and data_files:
                         if not rule or "合計" in rule or "製表" in rule or "舉發單張數" in rule:
                             continue
                             
-                        # 安全讀取計數
                         def safe_int(val):
                             try: return int(float(str(val).replace(",", "")))
                             except: return 0
                                 
-                        stop_cnt = safe_int(raw_df.iloc[r, col_s_cnt]) if col_s_cnt != -1 else 0
-                        dir_cnt = safe_int(raw_df.iloc[r, col_d_cnt]) if col_d_cnt != -1 else 0
+                        stop_cnt = safe_int(raw_df.iloc[r, col_s_cnt])
+                        dir_cnt = safe_int(raw_df.iloc[r, col_d_cnt])
                         
                         # 查表
                         if rule in db_map:
@@ -143,16 +171,21 @@ if db_file and data_files:
                             s_score = 0
                             d_score = 0
                             
-                        # 更新原始 DataFrame 的儲存格內容
-                        raw_df.iat[r, col_s_score] = s_score
-                        raw_df.iat[r, col_d_score] = d_score
+                        # 填寫配分
+                        raw_df.iat[r, col_s_score] = s_score if s_score != 0 else 0
+                        raw_df.iat[r, col_d_score] = d_score if d_score != 0 else 0
                         
-                        # 記錄需要標黃色的儲存格 (轉換為 1-based index 供 openpyxl 使用)
+                        # 計算單列小計
+                        row_subtotal = (s_score * stop_cnt) + (d_score * dir_cnt)
+                        if col_subtotal != -1:
+                            raw_df.iat[r, col_subtotal] = row_subtotal
+                        
+                        # 記錄無配分的黃色警示儲存格 (1-based index)
                         if s_score == 0 and d_score == 0:
                             yellow_cells.append((r + 1, col_s_score + 1))
                             yellow_cells.append((r + 1, col_d_score + 1))
                             
-                        grand_total += (s_score * stop_cnt) + (d_score * dir_cnt)
+                        grand_total += row_subtotal
                         
                     processed_sheets.append({
                         "officer": officer_name.replace(" ", ""),
@@ -188,7 +221,7 @@ if db_file and data_files:
             df_summary['上半年剩餘分數'] = df_summary['上半年分數'].apply(calc_rem)
             df_summary['最終總分'] = df_summary['本期總分'] + df_summary['上半年剩餘分數']
 
-            st.success("✅ 所有員警檔案結算與原格式重建完畢！")
+            st.success("✅ 所有原始報表已自動擴充欄位、結算並重建完畢！")
             st.subheader("📊 員警績效結算總表")
             st.dataframe(df_summary, use_container_width=True, hide_index=True)
 
@@ -220,7 +253,6 @@ if db_file and data_files:
             sheet_name_counts = {}
             
             for s in processed_sheets:
-                # 確保工作表名稱不重複且不超過長度限制
                 base_name = s["officer"][:25]
                 if base_name not in sheet_name_counts:
                     sheet_name_counts[base_name] = 1
@@ -266,7 +298,7 @@ if db_file and data_files:
             col1, col2 = st.columns([1, 3])
             with col1:
                 st.download_button(
-                    label="📥 下載完整報表 (含個人明細)",
+                    label="📥 下載完整報表 (自動擴充格式)",
                     data=output.getvalue(),
                     file_name="舉發績效結算與個人明細表.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
