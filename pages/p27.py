@@ -145,15 +145,17 @@ if db_file and data_files:
                     if header_idx == -1:
                         continue
                     
-                    # 💡 提取列印日期 (在刪除空白欄位前先撈出來保護)
-                    print_date_val = None
-                    for r_search in range(min(5, len(raw_df))):
+                    # 💡 強化提取列印日期：搜尋標題列以上的範圍，無視所有空白進行比對
+                    print_date_val = ""
+                    for r_search in range(max(1, header_idx)):
                         for c_search in range(len(raw_df.columns)):
                             val = raw_df.iat[r_search, c_search]
-                            if pd.notna(val) and "列印日期" in str(val):
-                                print_date_val = str(val).strip()
-                                raw_df.iat[r_search, c_search] = None # 撈出後清空原位置，避免重複顯示
-                                break
+                            if pd.notna(val):
+                                val_str = str(val).strip()
+                                if "列印日期" in val_str.replace(" ", ""):
+                                    print_date_val = val_str
+                                    raw_df.iat[r_search, c_search] = None # 撈出後清空原位置，避免重複顯示
+                                    break
                         if print_date_val:
                             break
                     
@@ -242,7 +244,7 @@ if db_file and data_files:
                         "yellow_cells": yellow_cells,
                         "grand_total": grand_total,
                         "col_d_score": col_d_score,
-                        "print_date": print_date_val  # 儲存提取出的列印日期
+                        "print_date": print_date_val  # 儲存成功提取的列印日期
                     })
                     
             except Exception as e:
@@ -309,26 +311,27 @@ if db_file and data_files:
                     # 💡 建立置頂的全新第 1 列 (在原本資料的最上面)
                     num_cols = len(s["df"].columns)
                     title_row = ["員警開單績效統計表"] + [None] * (num_cols - 1)
+                    
                     if s["print_date"]:
-                        # 放在倒數第2個欄位，讓排版平均
-                        put_idx = max(1, num_cols - 2)
+                        # 放在第 4 個欄位 (D欄)，視覺上最剛好，絕不會超出螢幕
+                        put_idx = min(3, num_cols - 1)
                         title_row[put_idx] = s["print_date"]
                         
                     ws_officer.append(title_row)
-                    # 設定標題樣式
-                    title_cell = ws_officer.cell(row=1, column=1)
-                    title_cell.font = Font(size=14, bold=True)
+                    
+                    # 設定第一列的大標題與日期樣式
+                    ws_officer['A1'].font = Font(size=14, bold=True)
                     if s["print_date"]:
                         date_cell = ws_officer.cell(row=1, column=put_idx + 1)
-                        date_cell.font = Font(bold=True)
-                        date_cell.alignment = Alignment(horizontal="right") # 靠右對齊更好看
+                        date_cell.font = Font(bold=True, color="0000FF") # 藍色粗體，保證顯眼
+                        date_cell.alignment = Alignment(horizontal="left")
                     
-                    # 依序寫入剩下的資料列 (這些原本在第一列的開單日期，現在會自動變成第 2 列)
+                    # 依序寫入剩下的資料列 (原本的第一列開單日期會自動變成第 2 列)
                     for r_idx, row in s["df"].iterrows():
                         cleaned_row = [val if pd.notna(val) else None for val in row.tolist()]
                         ws_officer.append(cleaned_row)
                         
-                    # 標示無配分的黃色警示區塊 (因上方硬插了一列，故行數需 +1)
+                    # 標示無配分的黃色警示區塊 (因上方插入了一列，故行數需 +1)
                     for r, c in s["yellow_cells"]:
                         ws_officer.cell(row=r + 1, column=c).fill = yellow_fill
                         
