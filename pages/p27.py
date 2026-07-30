@@ -62,7 +62,7 @@ def send_multiple_files_email(file_buffers_dict):
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
 st.title("⚡ 員警交通違規舉發績效結算")
-st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會依據您上傳的檔案**逐一產出各單位的獨立報表**，並自動過濾無關欄位以維持版面純淨。")
+st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會依據您上傳的檔案**逐一產出各單位的獨立報表**，並自動優化排版。")
 
 st.sidebar.header("⚙️ 結算參數設定")
 st.sidebar.info("💡 **智慧基準偵測**：\n系統將自動分析上傳的檔名。若檔名包含「交通分隊」，將自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
@@ -118,7 +118,6 @@ if db_file and data_files:
         for f in data_files:
             f.seek(0)
             
-            # 動態取得單位名稱與決定基準門檻 (僅判斷交通分隊)
             unit_name = re.sub(r'\.[a-zA-Z0-9]+$', '', f.name)
             is_800_quota = "交通分隊" in unit_name
             quota = 800 if is_800_quota else 400
@@ -146,7 +145,19 @@ if db_file and data_files:
                     if header_idx == -1:
                         continue
                     
-                    # 💡 清理無關欄位：找出標題為空或 nan 的欄位並刪除
+                    # 💡 提取列印日期 (在刪除空白欄位前先撈出來保護)
+                    print_date_val = None
+                    for r_search in range(min(5, len(raw_df))):
+                        for c_search in range(len(raw_df.columns)):
+                            val = raw_df.iat[r_search, c_search]
+                            if pd.notna(val) and "列印日期" in str(val):
+                                print_date_val = str(val).strip()
+                                raw_df.iat[r_search, c_search] = None # 撈出後清空原位置
+                                break
+                        if print_date_val:
+                            break
+                    
+                    # 清理無關欄位：找出標題為空或 nan 的欄位並刪除
                     header_row_temp = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
                     cols_to_keep = [c for c, val in enumerate(header_row_temp) if val not in ["nan", "None", ""]]
                     
@@ -167,7 +178,7 @@ if db_file and data_files:
                     if col_rule == -1 or col_s_cnt == -1 or col_d_cnt == -1:
                         continue
 
-                    # 動態插入欄位 (若缺少配分欄位)
+                    # 動態插入欄位
                     if col_s_score == -1:
                         idx_s_score = col_s_cnt + 1
                         raw_df.insert(idx_s_score, f'new_{idx_s_score}', None)
@@ -230,7 +241,8 @@ if db_file and data_files:
                         "df": raw_df,
                         "yellow_cells": yellow_cells,
                         "grand_total": grand_total,
-                        "col_d_score": col_d_score
+                        "col_d_score": col_d_score,
+                        "print_date": print_date_val  # 儲存提取出的列印日期
                     })
                     
             except Exception as e:
@@ -294,12 +306,26 @@ if db_file and data_files:
                         
                     ws_officer = wb.create_sheet(title=final_name)
                     
+                    # 💡 建立置頂的新標題列 (包含標題與列印日期)
+                    title_row = ["員警開單績效統計表"] + [None] * (len(s["df"].columns) - 1)
+                    if s["print_date"]:
+                        # 放在第 E 欄(index 4)或最後一欄，保持版面平衡
+                        put_idx = min(4, len(title_row) - 1)
+                        title_row[put_idx] = s["print_date"]
+                        
+                    ws_officer.append(title_row)
+                    ws_officer['A1'].font = Font(size=14, bold=True)
+                    if s["print_date"]:
+                        ws_officer.cell(row=1, column=put_idx + 1).font = Font(bold=True)
+                    
+                    # 依序寫入剩下的資料列
                     for r_idx, row in s["df"].iterrows():
                         cleaned_row = [val if pd.notna(val) else None for val in row.tolist()]
                         ws_officer.append(cleaned_row)
                         
+                    # 標示無配分的黃色警示區塊 (因上方插入了一列，故行數需 +1)
                     for r, c in s["yellow_cells"]:
-                        ws_officer.cell(row=r, column=c).fill = yellow_fill
+                        ws_officer.cell(row=r + 1, column=c).fill = yellow_fill
                         
                     officer_summary = df_summary[df_summary['員警姓名'] == s['officer']].iloc[0]
                     
@@ -317,7 +343,6 @@ if db_file and data_files:
                     write_footer(2, "上半年剩餘分數：", int(officer_summary["上半年剩餘分數"]), "0000FF")
                     write_footer(3, "總分：", int(officer_summary["最終總分"]), "FF0000")
                     
-                    # 依據資料長度動態調整欄寬，讓版面更緊湊
                     for col_idx in range(1, len(s["df"].columns) + 1):
                         ws_officer.column_dimensions[get_column_letter(col_idx)].width = 14
 
