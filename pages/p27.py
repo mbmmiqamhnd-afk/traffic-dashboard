@@ -24,11 +24,11 @@ def send_multiple_files_email(file_buffers_dict):
         msg = MIMEMultipart()
         msg["From"] = sender
         msg["To"] = sender
-        msg["Subject"] = "🚔 交通違規舉發績效結算表 (批次產出)"
+        msg["Subject"] = "🚔 交通執法重點工作舉發績效結算表 (批次產出)"
         
         body_text = (
             "長官您好，\n\n"
-            "系統已自動產出最新結算的【交通違規舉發績效結算表與個人明細】。\n\n"
+            "系統已自動產出最新結算的【交通執法重點工作舉發績效結算表與個人明細】。\n\n"
             "本次共產出以下單位報表，詳見附件：\n"
         )
         for fname in file_buffers_dict.keys():
@@ -61,7 +61,7 @@ def send_multiple_files_email(file_buffers_dict):
 # ==========================================
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
-st.title("⚡ 員警交通違規舉發績效結算")
+st.title("⚡ 員警交通執法重點工作舉發績效結算")
 st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會依據您上傳的檔案**逐一產出各單位的獨立報表**，並進行深度版面淨化與重構。")
 
 st.sidebar.header("⚙️ 結算參數設定")
@@ -292,7 +292,7 @@ if db_file and data_files:
                 
                 ws_summary = wb.active
                 ws_summary.title = "績效結算總表"
-                ws_summary['A1'] = "交通違規舉發績效結算表"
+                ws_summary['A1'] = "交通執法重點工作舉發績效結算表"
                 ws_summary['A1'].font = Font(size=14, bold=True)
                 ws_summary['A2'] = f"結算單位：{unit_type_label}"
                 
@@ -385,7 +385,8 @@ if db_file and data_files:
                         ws_officer.column_dimensions[get_column_letter(col_idx)].width = 14
 
                 wb.save(output)
-                all_output_buffers[f"績效結算_{unit_name}.xlsx"] = output
+                # 💡 修改輸出的檔案名稱格式為 "交通執法重點工作舉發績效結算表_單位名稱"
+                all_output_buffers[f"交通執法重點工作舉發績效結算表_{unit_name}.xlsx"] = output
 
         # ==========================================
         # 4. 畫面展示與下載/寄件區塊
@@ -401,10 +402,11 @@ if db_file and data_files:
                     st.subheader(f"📊 {name} - 績效結算總表")
                     st.dataframe(all_summaries[name], use_container_width=True, hide_index=True)
                     
+                    dl_filename = f"交通執法重點工作舉發績效結算表_{name}.xlsx"
                     st.download_button(
                         label=f"📥 下載 {name} 完整報表",
-                        data=all_output_buffers[f"績效結算_{name}.xlsx"].getvalue(),
-                        file_name=f"績效結算_{name}.xlsx",
+                        data=all_output_buffers[dl_filename].getvalue(),
+                        file_name=dl_filename,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                         key=f"dl_{name}"
