@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 import io
+import time
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font
 from openpyxl.utils import get_column_letter
@@ -53,6 +54,7 @@ if db_file and data_files:
             st.error(f"❌ 讀取配分表失敗：{e}")
             st.stop()
 
+        # 建立配分查找字典，提升比對速度
         db_map = {}
         for _, row in df_db.iterrows():
             rule = str(row.get('違規條款', '')).strip()
@@ -84,6 +86,7 @@ if db_file and data_files:
             try:
                 xls = pd.ExcelFile(f)
                 for sheet_name in xls.sheet_names:
+                    # 轉為 object 型態，允許整數與文字混合存在
                     raw_df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
                     raw_df = raw_df.astype('object')
                     
@@ -92,13 +95,17 @@ if db_file and data_files:
                     if not officer_name:
                         officer_name = sheet_name.strip()
                     
+                    # 尋找資料標題列
                     for idx, row in raw_df.iterrows():
                         if "違規條款" in row.astype(str).str.replace(" ", "").values:
                             header_idx = idx
                             break
                     
-                    if header_idx == -1: continue
+                    # 若為無效工作表，靜默略過
+                    if header_idx == -1:
+                        continue
 
+                    # 解析標題列的欄位位置
                     header_row = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
                     col_rule = header_row.index("違規條款") if "違規條款" in header_row else -1
                     col_s_cnt = header_row.index("攔停數") if "攔停數" in header_row else -1
@@ -108,8 +115,11 @@ if db_file and data_files:
                     col_d_score = header_row.index("逕舉配分") if "逕舉配分" in header_row else -1
                     col_subtotal = header_row.index("小計") if "小計" in header_row else -1
                     
-                    if col_rule == -1 or col_s_cnt == -1 or col_d_cnt == -1: continue
+                    # 若缺少最基本的違規條款與數量欄位，靜默略過
+                    if col_rule == -1 or col_s_cnt == -1 or col_d_cnt == -1:
+                        continue
 
+                    # 動態插入欄位
                     if col_s_score == -1:
                         idx_s_score = col_s_cnt + 1
                         raw_df.insert(idx_s_score, f'new_{idx_s_score}', None)
@@ -135,6 +145,7 @@ if db_file and data_files:
                     grand_total = 0
                     yellow_cells = []
                     
+                    # 遍歷資料列計算分數與配分
                     for r in range(header_idx + 1, len(raw_df)):
                         rule = str(raw_df.iloc[r, col_rule]).strip()
                         if not rule or "合計" in rule or "製表" in rule or "舉發單張數" in rule or rule.lower() == 'nan':
@@ -147,6 +158,7 @@ if db_file and data_files:
                         stop_cnt = safe_int(raw_df.iloc[r, col_s_cnt])
                         dir_cnt = safe_int(raw_df.iloc[r, col_d_cnt])
                         
+                        # 查表
                         if rule in db_map:
                             s_score = db_map[rule]['stop']
                             d_score = db_map[rule]['dir']
@@ -154,13 +166,16 @@ if db_file and data_files:
                             s_score = 0
                             d_score = 0
                             
+                        # 填寫配分
                         raw_df.iat[r, col_s_score] = s_score if s_score != 0 else 0
                         raw_df.iat[r, col_d_score] = d_score if d_score != 0 else 0
                         
+                        # 計算單列小計
                         row_subtotal = (s_score * stop_cnt) + (d_score * dir_cnt)
                         if col_subtotal != -1:
                             raw_df.iat[r, col_subtotal] = row_subtotal
                         
+                        # 記錄無配分的黃色警示儲存格 (1-based index)
                         if s_score == 0 and d_score == 0:
                             yellow_cells.append((r + 1, col_s_score + 1))
                             yellow_cells.append((r + 1, col_d_score + 1))
@@ -182,12 +197,16 @@ if db_file and data_files:
         # 3. 結算彙整與報表產出
         # ==========================================
         if processed_sheets:
+            # 將所有工作表的結果進行群組加總 (計算總表用)
             df_raw_summary = pd.DataFrame([{
                 "員警姓名": s["officer"],
                 "本期總分": s["grand_total"]
             } for s in processed_sheets])
             
             df_summary = df_raw_summary.groupby('員警姓名', as_index=False)['本期總分'].sum()
+            
+            # --- 上半年歷史分數 ---
+            # 實務上這裡可以透過讀取外部資料庫動態獲取
             df_summary['上半年分數'] = 5800  
             
             def calc_rem(score):
@@ -201,10 +220,11 @@ if db_file and data_files:
             st.subheader("📊 員警績效結算總表")
             st.dataframe(df_summary, use_container_width=True, hide_index=True)
 
-            # --- 產出 Excel 下載 ---
+            # --- 產出 Excel 下載 (含總表與所有個人明細表) ---
             output = io.BytesIO()
             wb = Workbook()
             
+            # 1. 建立總表
             ws_summary = wb.active
             ws_summary.title = "績效結算總表"
             ws_summary['A1'] = "交通違規舉發績效結算表"
@@ -223,6 +243,7 @@ if db_file and data_files:
                 for c_idx, val in enumerate(row_data, 1):
                     ws_summary.cell(row=r_idx, column=c_idx, value=val)
 
+            # 2. 建立各員警的原始明細表 (附帶四層結算結構)
             yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
             sheet_name_counts = {}
             
@@ -237,15 +258,19 @@ if db_file and data_files:
                     
                 ws_officer = wb.create_sheet(title=final_name)
                 
+                # 寫入保留原格式的資料
                 for r_idx, row in s["df"].iterrows():
                     cleaned_row = [val if pd.notna(val) else None for val in row.tolist()]
                     ws_officer.append(cleaned_row)
                     
+                # 標示無配分的黃色警示區塊
                 for r, c in s["yellow_cells"]:
                     ws_officer.cell(row=r, column=c).fill = yellow_fill
                     
+                # 取得該員警在總表中的結算數據
                 officer_summary = df_summary[df_summary['員警姓名'] == s['officer']].iloc[0]
                 
+                # 在表尾寫入 4 層結算結構
                 footer_start_row = ws_officer.max_row + 2
                 write_col = s["col_d_score"] + 1 if s["col_d_score"] != -1 else 5
                 
@@ -260,6 +285,7 @@ if db_file and data_files:
                 write_footer(2, "上半年剩餘分數：", int(officer_summary["上半年剩餘分數"]), "0000FF")
                 write_footer(3, "總分：", int(officer_summary["最終總分"]), "FF0000")
                 
+                # 適度調整欄寬讓資料好讀
                 for col_idx in range(1, len(s["df"].columns) + 1):
                     ws_officer.column_dimensions[get_column_letter(col_idx)].width = 12
 
@@ -279,93 +305,121 @@ if db_file and data_files:
             if HAS_GSHEET:
                 with col2:
                     if st.button("☁️ 同步總表與明細至 Google Sheets", use_container_width=True):
-                        with st.spinner("正在將總表與所有員警明細寫入雲端 (請稍候)..."):
-                            try:
-                                sh = get_gsheet_connection()
-                                if sh:
-                                    # 1. 寫入總表
-                                    ws_name = "績效結算總表"
-                                    ws = get_or_create_ws(sh, ws_name, rows=max(30, len(df_summary) + 10), cols=10)
-                                    _ws_clear(ws)
+                        try:
+                            sh = get_gsheet_connection()
+                            if sh:
+                                # 💡 為了避免 429 錯誤，加入進度條與間隔寫入機制
+                                progress_text = "雲端同步中，為避免超載，將進行間隔寫入..."
+                                my_bar = st.progress(0, text=progress_text)
+                                
+                                # 1. 寫入總表
+                                ws_name = "績效結算總表"
+                                ws = get_or_create_ws(sh, ws_name, rows=max(30, len(df_summary) + 10), cols=10)
+                                _ws_clear(ws)
+                                
+                                title_text = f"交通違規舉發績效結算表 ({unit_type})"
+                                _ws_update(ws, 'A1', [[title_text], df_summary.columns.tolist()] + df_summary.values.tolist())
+                                
+                                reqs = [
+                                    {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": len(df_summary.columns)}, "mergeType": "MERGE_ALL"}},
+                                    {"repeatCell": {
+                                        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
+                                        "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 14}, "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
+                                        "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"
+                                    }},
+                                    {"repeatCell": {
+                                        "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": len(df_summary.columns)},
+                                        "cell": {"userEnteredFormat": {"textFormat": {"bold": True}, "backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}}},
+                                        "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.backgroundColor"
+                                    }}
+                                ]
+                                
+                                # 2. 寫入各員警獨立分頁
+                                sheet_name_counts_gs = {}
+                                total_sheets = len(processed_sheets)
+                                
+                                for idx, s in enumerate(processed_sheets):
+                                    base_name_gs = s["officer"][:25]
+                                    if base_name_gs not in sheet_name_counts_gs:
+                                        sheet_name_counts_gs[base_name_gs] = 1
+                                        final_name_gs = base_name_gs
+                                    else:
+                                        sheet_name_counts_gs[base_name_gs] += 1
+                                        final_name_gs = f"{base_name_gs}({sheet_name_counts_gs[base_name_gs]})"
+                                        
+                                    ws_off = get_or_create_ws(sh, final_name_gs, rows=len(s["df"]) + 15, cols=len(s["df"].columns) + 2)
+                                    _ws_clear(ws_off)
                                     
-                                    title_text = f"交通違規舉發績效結算表 ({unit_type})"
-                                    _ws_update(ws, 'A1', [[title_text], df_summary.columns.tolist()] + df_summary.values.tolist())
+                                    # 💡 核心優化：把資料和結算分數在記憶體合併後一次寫入，省去一次 API 呼叫
+                                    data_2d = s["df"].fillna("").values.tolist()
+                                    officer_summary = df_summary[df_summary['員警姓名'] == s['officer']].iloc[0]
                                     
-                                    reqs = [
-                                        {"mergeCells": {"range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": len(df_summary.columns)}, "mergeType": "MERGE_ALL"}},
-                                        {"repeatCell": {
-                                            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
-                                            "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 14}, "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}},
-                                            "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"
-                                        }},
-                                        {"repeatCell": {
-                                            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": len(df_summary.columns)},
-                                            "cell": {"userEnteredFormat": {"textFormat": {"bold": True}, "backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}}},
-                                            "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.backgroundColor"
-                                        }}
+                                    write_col_idx = s["col_d_score"] + 1 if s["col_d_score"] != -1 else 5
+                                    title_idx = write_col_idx - 2
+                                    val_idx = write_col_idx - 1
+                                    
+                                    # 確保寬度一致 (gspread 強制要求每一列長度相同)
+                                    max_cols = max(len(data_2d[0]) if data_2d else 0, val_idx + 1)
+                                    data_2d = [row + [""] * (max_cols - len(row)) for row in data_2d]
+                                    
+                                    # 加一行空白
+                                    data_2d.append([""] * max_cols)
+                                    
+                                    footer_start_row_gs = len(data_2d) + 1 # 1-based index 供後面格式設定使用
+                                    footer_data = [
+                                        ("本期分數：", int(officer_summary["本期總分"])),
+                                        ("上半年分數：", int(officer_summary["上半年分數"])),
+                                        ("上半年剩餘分數：", int(officer_summary["上半年剩餘分數"])),
+                                        ("總分：", int(officer_summary["最終總分"]))
                                     ]
                                     
-                                    # 2. 寫入各員警獨立分頁 (包含原始數據、安插欄位、表尾分數計算與顏色)
-                                    sheet_name_counts_gs = {}
-                                    for s in processed_sheets:
-                                        base_name_gs = s["officer"][:25]
-                                        if base_name_gs not in sheet_name_counts_gs:
-                                            sheet_name_counts_gs[base_name_gs] = 1
-                                            final_name_gs = base_name_gs
-                                        else:
-                                            sheet_name_counts_gs[base_name_gs] += 1
-                                            final_name_gs = f"{base_name_gs}({sheet_name_counts_gs[base_name_gs]})"
-                                            
-                                        ws_off = get_or_create_ws(sh, final_name_gs, rows=len(s["df"]) + 15, cols=len(s["df"].columns) + 2)
-                                        _ws_clear(ws_off)
+                                    for title, val in footer_data:
+                                        new_row = [""] * max_cols
+                                        new_row[title_idx] = title
+                                        new_row[val_idx] = val
+                                        data_2d.append(new_row)
                                         
-                                        data_2d = s["df"].fillna("").values.tolist()
-                                        _ws_update(ws_off, 'A1', data_2d)
-                                        
-                                        officer_summary = df_summary[df_summary['員警姓名'] == s['officer']].iloc[0]
-                                        footer_start_row_gs = len(data_2d) + 2
-                                        write_col_idx = s["col_d_score"] + 1 if s["col_d_score"] != -1 else 5
-                                        
-                                        footer_data = [
-                                            ["本期分數：", int(officer_summary["本期總分"])],
-                                            ["上半年分數：", int(officer_summary["上半年分數"])],
-                                            ["上半年剩餘分數：", int(officer_summary["上半年剩餘分數"])],
-                                            ["總分：", int(officer_summary["最終總分"])]
-                                        ]
-                                        
-                                        # 定位並寫入四層分數 (自動對齊逕舉配分下方)
-                                        start_cell_gs = f"{get_column_letter(write_col_idx - 1)}{footer_start_row_gs}"
-                                        _ws_update(ws_off, start_cell_gs, footer_data)
-                                        
-                                        sheet_id = ws_off.id
-                                        col_idx_0based = write_col_idx - 2
-                                        
+                                    # 單一 API 寫入全部資料
+                                    _ws_update(ws_off, 'A1', data_2d)
+                                    
+                                    # 儲存格式化要求 (最後整批送出)
+                                    sheet_id = ws_off.id
+                                    
+                                    reqs.append({
+                                        "repeatCell": {
+                                            "range": {"sheetId": sheet_id, "startRowIndex": footer_start_row_gs - 1, "endRowIndex": footer_start_row_gs + 2, "startColumnIndex": title_idx, "endColumnIndex": val_idx + 1},
+                                            "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}}}},
+                                            "fields": "userEnteredFormat.textFormat"
+                                        }
+                                    })
+                                    reqs.append({
+                                        "repeatCell": {
+                                            "range": {"sheetId": sheet_id, "startRowIndex": footer_start_row_gs + 2, "endRowIndex": footer_start_row_gs + 3, "startColumnIndex": title_idx, "endColumnIndex": val_idx + 1},
+                                            "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}},
+                                            "fields": "userEnteredFormat.textFormat"
+                                        }
+                                    })
+                                    
+                                    for r, c in s["yellow_cells"]: # r, c are 1-based
                                         reqs.append({
                                             "repeatCell": {
-                                                "range": {"sheetId": sheet_id, "startRowIndex": footer_start_row_gs - 1, "endRowIndex": footer_start_row_gs + 2, "startColumnIndex": col_idx_0based, "endColumnIndex": col_idx_0based + 2},
-                                                "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "foregroundColor": {"red": 0.0, "green": 0.0, "blue": 1.0}}}},
-                                                "fields": "userEnteredFormat.textFormat"
-                                            }
-                                        })
-                                        reqs.append({
-                                            "repeatCell": {
-                                                "range": {"sheetId": sheet_id, "startRowIndex": footer_start_row_gs + 2, "endRowIndex": footer_start_row_gs + 3, "startColumnIndex": col_idx_0based, "endColumnIndex": col_idx_0based + 2},
-                                                "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "foregroundColor": {"red": 1.0, "green": 0.0, "blue": 0.0}}}},
-                                                "fields": "userEnteredFormat.textFormat"
+                                                "range": {"sheetId": sheet_id, "startRowIndex": r - 1, "endRowIndex": r, "startColumnIndex": c - 1, "endColumnIndex": c},
+                                                "cell": {"userEnteredFormat": {"backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.0}}},
+                                                "fields": "userEnteredFormat.backgroundColor"
                                             }
                                         })
                                         
-                                        # 套用黃色警示背景色
-                                        for r, c in s["yellow_cells"]:
-                                            reqs.append({
-                                                "repeatCell": {
-                                                    "range": {"sheetId": sheet_id, "startRowIndex": r - 1, "endRowIndex": r, "startColumnIndex": c - 1, "endColumnIndex": c},
-                                                    "cell": {"userEnteredFormat": {"backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.0}}},
-                                                    "fields": "userEnteredFormat.backgroundColor"
-                                                }
-                                            })
-                                            
-                                    _sh_batch_update(sh, {"requests": reqs})
-                                    st.success("✅ 雲端資料庫已完整同步 (包含總表與所有員警個人明細表)！")
-                            except Exception as e:
-                                st.error(f"雲端同步失敗：{e}")
+                                    # 💡 核心防爆衝：處理完一位員警就休息一下，並更新進度條
+                                    progress_pct = (idx + 1) / total_sheets
+                                    my_bar.progress(progress_pct, text=f"雲端同步中... ({idx + 1}/{total_sheets}) 剛完成 {final_name_gs} 的資料庫寫入")
+                                    time.sleep(3) # 每次休息 3 秒，保護 60次/分鐘 的 Quota
+                                    
+                                # 3. 最後一口氣送出所有的顏色與字體格式 (只花 1 個 Write Request)
+                                my_bar.progress(1.0, text="正在套用最終格式與顏色標記...")
+                                _sh_batch_update(sh, {"requests": reqs})
+                                
+                                my_bar.empty()
+                                st.success("✅ 雲端資料庫已完整同步 (包含總表與所有員警個人明細表)！")
+                                
+                        except Exception as e:
+                            st.error(f"雲端同步失敗：{e}")
