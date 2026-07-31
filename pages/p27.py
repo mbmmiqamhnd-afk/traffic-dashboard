@@ -202,7 +202,7 @@ def main():
                                     db_map[rule]['item'] = new_item
                                     
                             if updates:
-                                worksheet.batch_update(updates)
+                                worksheet.batch_update(updates)  # 這裡原本就是批次處理，不會有429問題
                                 st.success("✅ 修復完成！已成功將參照類別補上。")
                                 st.rerun() 
                             else:
@@ -304,13 +304,16 @@ def main():
             if not st.button("✅ 我已確認完畢，同步寫回雲端並開始結算", type="primary", use_container_width=True):
                 st.stop() 
             else:
-                with st.spinner("☁️ 正在將新條款同步寫回 Google 試算表..."):
+                with st.spinner("☁️ 正在將新條款「批次」同步寫回 Google 試算表..."):
                     client = get_gspread_client()
                     if not client:
                         st.error("❌ 找不到對應的 GCP 憑證設定。")
                         st.stop()
                     try:
                         worksheet = client.open_by_key(sheet_id).worksheet("配分表")
+                        
+                        # 💡 升級：將所有新列整理成一個清單 (List of Lists)
+                        new_rows_data = []
                         for _, row in edited_missing.iterrows():
                             rule_val = str(row["違規條款"])
                             s_val = int(row["攔舉配分"])
@@ -319,10 +322,14 @@ def main():
                             cat_val = str(row["類別"]) if pd.notna(row["類別"]) else ""
                             item_val = str(row["取締項目"]) if pd.notna(row["取締項目"]) else ""
                             
-                            worksheet.append_row([rule_val, s_val, d_val, fact_val, cat_val, item_val])
+                            new_rows_data.append([rule_val, s_val, d_val, fact_val, cat_val, item_val])
                             db_map[rule_val] = {'stop': s_val, 'dir': d_val}
                             
-                        st.success("✅ 新條款與對應資訊已成功寫回 Google 試算表最下方！")
+                        # 💡 升級：使用 append_rows 一次打包寫入，徹底解決 [429] 限制！
+                        if new_rows_data:
+                            worksheet.append_rows(new_rows_data)
+                            
+                        st.success("✅ 新條款與對應資訊已「整批」成功寫回 Google 試算表最下方！")
                     except Exception as write_err:
                         st.error(f"❌ 寫入雲端失敗，詳細錯誤：{write_err}")
                         st.stop()
@@ -592,7 +599,7 @@ def main():
                         if s["unit_val"]:
                             ws_officer.append([s["unit_val"]] + [None] * (num_cols - 1))
                         else:
-                            ws_officer.append([f"舉發單位：{unit_name}"] + [None] * (num_cols - 1))
+                            ws_officer.append([f"举發單位：{unit_name}"] + [None] * (num_cols - 1))
                             
                         if s["officer_val"]:
                             ws_officer.append([s["officer_val"]] + [None] * (num_cols - 1))
