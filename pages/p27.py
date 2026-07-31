@@ -163,7 +163,7 @@ def generate_traffic_enforcement_pdf(target_roc_year, period_text, months_text):
     
     char_w = 13
     body_l1 = ParagraphStyle('BodyL1', parent=body_style, leftIndent=char_w*2, firstLineIndent=-char_w*2)
-    body_l2 = ParagraphStyle('BodyL2', parent=body_style, leftIndent=char_w*4, firstLineIndent=-char_w*2)
+    # 使用 body_step 讓第二點的內文直接與標題的文字對齊 (縮排兩個字元長度)
     body_step = ParagraphStyle('BodyStep', parent=body_style, leftIndent=char_w*2, firstLineIndent=0)
 
     now = datetime.datetime.now()
@@ -174,13 +174,15 @@ def generate_traffic_enforcement_pdf(target_roc_year, period_text, months_text):
     units = ["聖亭所", "龍潭所", "中興所", "石門所", "高平所", "龍潭交通分隊", "三和所", "警備隊"]
 
     for idx, unit_name in enumerate(units):
-        story.append(Paragraph("桃園市政府警察局龍潭分局交通組交(會)辦單", title_style))
+        # 💡 刪除 (會)
+        story.append(Paragraph("桃園市政府警察局龍潭分局交通組交辦單", title_style))
         story.append(Spacer(1, 8))
         
         notice_paragraphs = [
             Paragraph(f"一、為辦理本分局{target_roc_year}年{period_text}({months_text})執行「交通執法重點工作」出力人員敘獎案，請至「人事資源整合管理系統」登錄敘獎人員獎勵資料。", body_l1),
             Paragraph("二、獎勵規則：", body_l1),
-            Paragraph("按「警察機關交通執法獎懲作業規定」三、「警察人員交通執法之獎勵，行政警察每四百分嘉獎一次，交通警察每八百分嘉獎一次，每半年總獎勵額度最高以嘉獎七次為限；下半年總獎勵尚未達嘉獎七次者，未達獎勵基準之剩餘分數，行政警察剩餘分數超過二百分嘉獎一次，交通警察剩餘分數超過四百分嘉獎一次；上半年未敘至嘉獎七次者，其未達獎勵基準之剩餘分數，得併下半年合計」。", body_l2),
+            # 💡 內文改用 body_step 切齊上方編號文字
+            Paragraph("按「警察機關交通執法獎懲作業規定」三、「警察人員交通執法之獎勵，行政警察每四百分嘉獎一次，交通警察每八百分嘉獎一次，每半年總獎勵額度最高以嘉獎七次為限；下半年總獎勵尚未達嘉獎七次者，未達獎勵基準之剩餘分數，行政警察剩餘分數超過二百分嘉獎一次，交通警察剩餘分數超過四百分嘉獎一次；上半年未敘至嘉獎七次者，其未達獎勵基準之剩餘分數，得併下半年合計」。", body_step),
             Paragraph("三、請至網路硬碟/交通組/巡官郭勝隆的資料夾/員警開單績效統計表查閱「總分」，照上述獎勵規則，於「人事資訊整合管理系統」登錄獎懲勵資料完畢後，毋庸附件，將交辦單逕送本組。", body_l1),
             Paragraph("四、登錄獎勵資料的流程：", body_l1),
             Paragraph(f"新增>主旨事由:{target_roc_year}年{period_text}({months_text})執行「交通執法重點工作」出力人員敘獎案>受理單位代碼:交通組>受理人員代碼:郭勝隆>再按新增>加入獎懲人員>獎懲事由:{target_roc_year}年{period_text}執行「交通執法重點工作」達幾分。(ps<font color='red'>請不要更改紅色文字</font>)", body_step),
@@ -190,7 +192,6 @@ def generate_traffic_enforcement_pdf(target_roc_year, period_text, months_text):
             Paragraph(f"辦理期限：{deadline_str}前辦理完畢連同原件具報。", body_style)
         ]
         
-        # 💡 將「所(隊)長」改為「單位主管」
         sign_content = (
             '承辦人：<br/><br/><br/><br/>單位主管：<br/><br/><br/>'
             '<font color="white">白白白白白白白</font>年'
@@ -201,7 +202,8 @@ def generate_traffic_enforcement_pdf(target_roc_year, period_text, months_text):
         data = [
             [
                 Paragraph("受文者", header_style), Paragraph(unit_name, header_style), 
-                Paragraph("交(會)辦日期", header_style), Paragraph(current_date_str, header_style), 
+                # 💡 刪除 (會)
+                Paragraph("交辦日期", header_style), Paragraph(current_date_str, header_style), 
                 Paragraph("承辦人", header_style), Paragraph("", header_style), 
                 Paragraph("單位主管", header_style), Paragraph("組長楊孟竟", header_style)
             ],
@@ -271,7 +273,7 @@ def main():
     # TAB 1: 交辦單 PDF 產生器
     # ==========================================
     with tab_pdf:
-        st.subheader("📋 桃市警龍潭分局交通組交(會)辦單 (全單位一次匯出)")
+        st.subheader("📋 桃市警龍潭分局交通組交辦單 (全單位一次匯出)")
         st.write("已導入動態期程辨識，交辦內容的年份與期程將完全自動同步上方設定，辦理期限預設為今日的後 7 天。")
         
         pdf_data = generate_traffic_enforcement_pdf(target_roc_year, period, months_text)
