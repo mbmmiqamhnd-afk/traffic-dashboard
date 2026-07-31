@@ -190,8 +190,9 @@ def generate_traffic_enforcement_pdf(target_roc_year, period_text, months_text):
             Paragraph(f"辦理期限：{deadline_str}前辦理完畢連同原件具報。", body_style)
         ]
         
+        # 💡 將「所(隊)長」改為「單位主管」
         sign_content = (
-            '承辦人：<br/><br/><br/><br/>所(隊)長：<br/>(職務報告請核章)<br/>'
+            '承辦人：<br/><br/><br/><br/>單位主管：<br/><br/><br/>'
             '<font color="white">白白白白白白白</font>年'
             '<font color="white">白白白</font>月'
             '<font color="white">白白白</font>日'
