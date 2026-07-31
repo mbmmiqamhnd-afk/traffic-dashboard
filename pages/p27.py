@@ -544,7 +544,6 @@ def main():
                 unit_type_label = unit_info["unit_type_label"]
 
                 if processed_sheets:
-                    # 💡 依照所選期程動態建立欄位，並將下半年的「剩餘分數」欄位徹底隱藏
                     if period == "上半年":
                         df_raw_summary = pd.DataFrame([{
                             "員警姓名": s["officer"],
@@ -559,7 +558,7 @@ def main():
                             
                         df_summary['上半年剩餘分數'] = df_summary['上半年總分'].apply(calc_rem)
                         
-                    else: # 下半年 (隱藏剩餘分數)
+                    else: # 下半年
                         df_raw_summary = pd.DataFrame([{
                             "員警姓名": s["officer"],
                             "本期原始分數": s["grand_total"]
@@ -569,7 +568,7 @@ def main():
                         df_summary['上半年結轉餘數'] = df_summary['員警姓名'].map(h1_remainders).fillna(0).astype(int)
                         df_summary['下半年總分'] = df_summary['本期原始分數'] + df_summary['上半年結轉餘數']
                         
-                        # 因為不需要保留到明年，所以這欄直接拿掉，不產出
+                        # 不再顯示也不產出「下半年剩餘分數」欄位
 
                     all_summaries[unit_name] = df_summary
 
@@ -655,7 +654,6 @@ def main():
                             c_val = ws_officer.cell(row=footer_start_row + row_offset, column=write_col, value=val)
                             c_val.font = Font(bold=True, color=color)
                         
-                        # 💡 依照期程動態顯示底部結算標籤，下半年只顯示到總分，不顯示餘數
                         if period == "上半年":
                             write_footer(0, "上半年總分：", int(officer_summary["上半年總分"]), "0000FF")
                             write_footer(1, "上半年剩餘分數：", int(officer_summary["上半年剩餘分數"]), "FF0000")
@@ -664,7 +662,11 @@ def main():
                             write_footer(1, "上半年結轉餘數：", int(officer_summary["上半年結轉餘數"]), "000000")
                             write_footer(2, "下半年總分：", int(officer_summary["下半年總分"]), "FF0000")
                         
-                        for col_idx in range(1, len(s["df"].columns) + 1):
+                        # 💡 刪除 B 欄 (第 2 欄)
+                        ws_officer.delete_cols(2)
+                        
+                        # 💡 設定欄寬 (因為刪除了一欄，總欄數減 1)
+                        for col_idx in range(1, len(s["df"].columns)):
                             ws_officer.column_dimensions[get_column_letter(col_idx)].width = 14
 
                     wb.save(output)
