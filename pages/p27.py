@@ -86,6 +86,33 @@ def send_multiple_files_email(file_buffers_dict):
     except Exception as e:
         return False, str(e)
 
+# 💡 自動計算字串的顯示寬度 (中文字較寬，英數字較窄)
+def get_display_width(text):
+    if not text: return 0
+    width = 0
+    for char in str(text):
+        if ord(char) > 128:
+            width += 2.1  # 中文/全形符號
+        else:
+            width += 1.1  # 英數/半形符號
+    return width
+
+# 💡 自動調整 Excel 工作表的所有欄寬
+def autofit_columns(ws, min_row=1, max_width=60):
+    for col in ws.columns:
+        max_length = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            # 略過前幾列的大標題，避免欄位被不正常撐寬
+            if cell.row < min_row: 
+                continue
+            if cell.value is not None:
+                w = get_display_width(cell.value)
+                if w > max_length:
+                    max_length = w
+        if max_length > 0:
+            ws.column_dimensions[col_letter].width = min(max_length + 2, max_width)
+
 # ==========================================
 # 主程式執行區塊
 # ==========================================
@@ -585,11 +612,13 @@ def main():
                         cell = ws_summary.cell(row=4, column=c_idx, value=title)
                         cell.font = Font(bold=True, color="FFFFFF")
                         cell.fill = header_fill
-                        ws_summary.column_dimensions[get_column_letter(c_idx)].width = 16
                         
                     for r_idx, row_data in enumerate(df_summary.values, 5):
                         for c_idx, val in enumerate(row_data, 1):
                             ws_summary.cell(row=r_idx, column=c_idx, value=val)
+
+                    # 💡 呼叫自動調整欄寬引擎 (總表：從第4列開始計算)
+                    autofit_columns(ws_summary, min_row=4, max_width=40)
 
                     yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
                     sheet_name_counts = {}
@@ -666,9 +695,8 @@ def main():
                             write_footer(1, "上半年結轉餘數：", int(officer_summary["上半年結轉餘數"]), "000000")
                             write_footer(2, "下半年總分：", int(officer_summary["下半年總分"]), "FF0000")
                         
-                        # 💡 設定欄寬 (因為刪除了一欄，總欄數減 1)
-                        for col_idx in range(1, len(s["df"].columns)):
-                            ws_officer.column_dimensions[get_column_letter(col_idx)].width = 14
+                        # 💡 呼叫自動調整欄寬引擎 (各員警表：從第4或5列開始計算，避免標題被撐太開，最高寬度設為 65)
+                        autofit_columns(ws_officer, min_row=current_row_offset, max_width=65)
 
                     wb.save(output)
                     all_output_buffers[f"交通執法重點工作舉發績效結算表_{unit_name}.xlsx"] = output
