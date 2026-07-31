@@ -90,15 +90,11 @@ def send_multiple_files_email(file_buffers_dict):
 # 主程式執行區塊
 # ==========================================
 def main():
-    # 1. 頁面基本設定 (必須是第一個 Streamlit 指令)
     st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
-
-    # 2. 呼叫側邊欄導航選單
     show_sidebar()
 
-    # 3. 繪製主畫面 UI
     st.title("⚡ 員警交通執法重點工作舉發績效結算")
-    st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統具備雙向雲端同步與**智慧修復引擎**，能自動補齊殘缺的資料。")
+    st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統具備雙向雲端同步與**智慧修復引擎**，並支援全年度期程結轉。")
 
     # ==========================================
     # 💡 背景讀取配分資料與「自動修復引擎」
@@ -108,7 +104,6 @@ def main():
     sheet_id = TARGET_GSHEET_URL.split("/d/")[1].split("/")[0]
     xlsx_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
 
-    # 抓取雲端資料
     try:
         df_db = pd.read_excel(xlsx_export_url, sheet_name="配分表")
         connection_status = True
@@ -116,7 +111,6 @@ def main():
         connection_status = False
         error_msg = e
 
-    # 解析與檢查缺漏
     incomplete_rules = [] 
     if connection_status:
         if '違規條款' not in df_db.columns:
@@ -165,7 +159,7 @@ def main():
         return best_match
 
     # ==========================================
-    # 💡 將狀態顯示改為「折疊面板」，保持主畫面乾淨
+    # 💡 狀態顯示折疊面板
     # ==========================================
     with st.expander("⚙️ 系統運行狀態與結算基準 (點擊展開)", expanded=bool(incomplete_rules)):
         if connection_status:
@@ -174,9 +168,8 @@ def main():
             st.error(f"🔴 雲端資料庫連線失敗：{error_msg}")
             st.stop()
             
-        st.info("💡 **自動結算基準**\n- **交通分隊**：800 分\n- **其他單位**：400 分\n*(本期報表即為上半年資料，獎勵上限 7 倍，未滿基準或超過 7 倍之餘數，皆列為上半年剩餘分數)*")
+        st.info("💡 **自動結算基準**\n- **交通分隊**：800 分\n- **其他單位**：400 分\n*(獎勵上限 7 倍，年度結算時下半年之殘餘分數將不予保留)*")
 
-        # 隱藏在這裡的修復按鈕
         if incomplete_rules:
             st.warning(f"⚠️ 偵測到雲端資料庫中有 **{len(incomplete_rules)}** 筆過往新增的條款缺乏「類別」與「取締項目」。")
             if st.button("🛠️ 一鍵智慧修復資料庫", use_container_width=True):
@@ -212,10 +205,34 @@ def main():
 
     st.markdown("---")
     
-    # 💡 檔案上傳區
-    st.subheader("📂 步驟 1：上傳原始舉發資料")
-    data_files = st.file_uploader("批次選擇多個單位的半年期 Excel 檔案", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
-    st.markdown("---")
+    # ==========================================
+    # 💡 檔案上傳區 (新增期程切換)
+    # ==========================================
+    st.subheader("📂 步驟 1：選擇期程與資料上傳")
+    
+    period = st.radio("📅 選擇目前結算的期程：", ["上半年", "下半年"], horizontal=True)
+    
+    h1_remainders = {}
+    
+    if period == "下半年":
+        st.info("💡 下半年結算需加入前期的保留分數。請上傳前次產出的**【上半年績效結算總表】**(可多選)。")
+        h1_files = st.file_uploader("上傳上半年績效總表 (Excel)", type=["xlsx", "xls"], accept_multiple_files=True, key="h1_files")
+        
+        if h1_files:
+            for f in h1_files:
+                try:
+                    df_h1 = pd.read_excel(f, sheet_name="績效結算總表", header=3)
+                    if "員警姓名" in df_h1.columns and "上半年剩餘分數" in df_h1.columns:
+                        for _, r in df_h1.iterrows():
+                            name = str(r["員警姓名"]).strip()
+                            rem = pd.to_numeric(r["上半年剩餘分數"], errors='coerce')
+                            if name and pd.notna(rem):
+                                h1_remainders[name] = int(rem)
+                except Exception as e:
+                    st.warning(f"⚠️ 無法讀取檔案 {f.name} 的餘數資料，請確認是否為系統產出的總表。")
+
+    st.write("---")
+    data_files = st.file_uploader(f"批次上傳各單位的【{period}原始舉發 Excel 報表】", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
 
     # ==========================================
     # 2. 核心結算邏輯
@@ -500,7 +517,6 @@ def main():
                         }
                         
                         if detected_unit not in unit_collected_data:
-                            # 自動判定基準與 7 倍上限
                             is_800 = "交通分隊" in detected_unit
                             quota_val = 800 if is_800 else 400
                             unit_collected_data[detected_unit] = {
@@ -528,21 +544,33 @@ def main():
                 unit_type_label = unit_info["unit_type_label"]
 
                 if processed_sheets:
-                    df_raw_summary = pd.DataFrame([{
-                        "員警姓名": s["officer"],
-                        "上半年總分": s["grand_total"]
-                    } for s in processed_sheets])
-                    
-                    df_summary = df_raw_summary.groupby('員警姓名', as_index=False)['上半年總分'].sum()
-                    
-                    # 💡 核心邏輯：7倍上限餘數計算
-                    def calc_rem(score):
-                        if score >= threshold_7x:
-                            return score - threshold_7x
-                        return score % quota
+                    # 💡 依照所選期程動態建立欄位，並將下半年的「剩餘分數」欄位徹底隱藏
+                    if period == "上半年":
+                        df_raw_summary = pd.DataFrame([{
+                            "員警姓名": s["officer"],
+                            "上半年總分": s["grand_total"]
+                        } for s in processed_sheets])
                         
-                    df_summary['上半年剩餘分數'] = df_summary['上半年總分'].apply(calc_rem)
-                    
+                        df_summary = df_raw_summary.groupby('員警姓名', as_index=False)['上半年總分'].sum()
+                        
+                        def calc_rem(score):
+                            if score >= threshold_7x: return score - threshold_7x
+                            return score % quota
+                            
+                        df_summary['上半年剩餘分數'] = df_summary['上半年總分'].apply(calc_rem)
+                        
+                    else: # 下半年 (隱藏剩餘分數)
+                        df_raw_summary = pd.DataFrame([{
+                            "員警姓名": s["officer"],
+                            "本期原始分數": s["grand_total"]
+                        } for s in processed_sheets])
+                        
+                        df_summary = df_raw_summary.groupby('員警姓名', as_index=False)['本期原始分數'].sum()
+                        df_summary['上半年結轉餘數'] = df_summary['員警姓名'].map(h1_remainders).fillna(0).astype(int)
+                        df_summary['下半年總分'] = df_summary['本期原始分數'] + df_summary['上半年結轉餘數']
+                        
+                        # 因為不需要保留到明年，所以這欄直接拿掉，不產出
+
                     all_summaries[unit_name] = df_summary
 
                     output = io.BytesIO()
@@ -550,7 +578,7 @@ def main():
                     
                     ws_summary = wb.active
                     ws_summary.title = "績效結算總表"
-                    ws_summary['A1'] = "交通執法重點工作舉發績效結算表"
+                    ws_summary['A1'] = f"交通執法重點工作舉發績效結算表 ({period})"
                     ws_summary['A1'].font = Font(size=14, bold=True)
                     ws_summary['A2'] = f"結算單位：{unit_type_label}"
                     
@@ -627,9 +655,14 @@ def main():
                             c_val = ws_officer.cell(row=footer_start_row + row_offset, column=write_col, value=val)
                             c_val.font = Font(bold=True, color=color)
                         
-                        # 💡 移除重複，僅顯示精準的兩項總結
-                        write_footer(0, "上半年總分：", int(officer_summary["上半年總分"]), "0000FF")
-                        write_footer(1, "上半年剩餘分數：", int(officer_summary["上半年剩餘分數"]), "FF0000")
+                        # 💡 依照期程動態顯示底部結算標籤，下半年只顯示到總分，不顯示餘數
+                        if period == "上半年":
+                            write_footer(0, "上半年總分：", int(officer_summary["上半年總分"]), "0000FF")
+                            write_footer(1, "上半年剩餘分數：", int(officer_summary["上半年剩餘分數"]), "FF0000")
+                        else:
+                            write_footer(0, "本期原始分數：", int(officer_summary["本期原始分數"]), "000000")
+                            write_footer(1, "上半年結轉餘數：", int(officer_summary["上半年結轉餘數"]), "000000")
+                            write_footer(2, "下半年總分：", int(officer_summary["下半年總分"]), "FF0000")
                         
                         for col_idx in range(1, len(s["df"].columns) + 1):
                             ws_officer.column_dimensions[get_column_letter(col_idx)].width = 14
