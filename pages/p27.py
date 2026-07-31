@@ -12,13 +12,13 @@ from email import encoders
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
-
-# 💡 新增寫入 Google 試算表所需的套件
 import gspread
 from google.oauth2.service_account import Credentials
 
-# 💡 在這裡貼上您的 Google 試算表連結 (請保留雙引號)
-DEFAULT_GSHEET_URL = "https://docs.google.com/spreadsheets/d/您的試算表ID/edit"
+# ==========================================
+# 💡 系統後台設定：已自動綁定您專用的交通數據雲端試算表
+# ==========================================
+TARGET_GSHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
 
 # ==========================================
 # 0. 輔助函式：發送多個檔案附件至自己的信箱
@@ -69,66 +69,42 @@ def send_multiple_files_email(file_buffers_dict):
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
 st.title("⚡ 員警交通執法重點工作舉發績效結算")
-st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統預設連線至雲端配分表，若偵測到未知條款可即時輸入，系統將自動為您**雙向同步寫回**雲端！")
+st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會於背景自動同步雲端配分表，若偵測到未知條款可即時輸入，並自動雙向寫回雲端！")
 
-st.sidebar.header("⚙️ 結算參數設定")
+st.sidebar.header("⚙️ 結算操作區")
 st.sidebar.info("💡 **智慧基準偵測**：\n系統將自動讀取報表內文的「舉發單位」。若包含「交通分隊」，自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
-
 st.sidebar.markdown("---")
-st.sidebar.subheader("📂 步驟 1：配分表設定")
-gsheet_url = st.sidebar.text_input(
-    "🔗 Google 試算表連結 (已預設載入)", 
-    value=DEFAULT_GSHEET_URL,
-    help="系統會自動尋找名稱為「配分表」的分頁。您也可以隨時貼上新的連結來覆蓋預設值。"
-)
-db_file = st.sidebar.file_uploader("或上傳本機配分表 (若上傳，將優先使用此檔)", type=["xlsx"])
 
-st.sidebar.subheader("📂 步驟 2：上傳原始舉發資料")
+st.sidebar.subheader("📂 步驟 1：上傳原始舉發資料")
 data_files = st.sidebar.file_uploader("批次選擇多個單位的半年期 Excel 檔案", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
 
 # ==========================================
 # 2. 核心結算邏輯
 # ==========================================
 if data_files:
-    # --- 步驟 A：讀取配分資料庫 ---
+    # --- 步驟 A：背景全自動讀取配分資料庫 ---
     try:
         df_db = None
-        if db_file is not None:
-            df_db = pd.read_excel(db_file)
-            st.toast("✅ 已套用您手動上傳的【本機配分表】", icon="📂")
-        elif gsheet_url and "您的試算表ID" not in gsheet_url:
+        if "/d/" in TARGET_GSHEET_URL:
+            sheet_id = TARGET_GSHEET_URL.split("/d/")[1].split("/")[0]
+            xlsx_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+            
             try:
-                if "/d/" in gsheet_url:
-                    sheet_id = gsheet_url.split("/d/")[1].split("/")[0]
-                    xlsx_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
-                    
-                    try:
-                        df_db = pd.read_excel(xlsx_export_url, sheet_name="配分表")
-                        st.toast("✅ 已成功連線並抓取【配分表】分頁資料！", icon="☁️")
-                    except ValueError:
-                        st.error("❌ 找不到名為「配分表」的分頁！請確認您的雲端試算表中，確實有一個分頁命名為「配分表」。")
-                        st.stop()
-                else:
-                    st.error("❌ Google 試算表連結格式錯誤！")
-                    st.stop()
-            except Exception as e:
-                st.error(f"❌ 讀取雲端試算表失敗，請確定權限是否設為「知道連結的任何人皆可檢視」。\n錯誤詳情：{e}")
+                df_db = pd.read_excel(xlsx_export_url, sheet_name="配分表")
+                st.toast("✅ 系統已於背景自動同步【配分表】資料！", icon="☁️")
+            except ValueError:
+                st.error("❌ 找不到名為「配分表」的分頁！請確認雲端試算表中，確實有該分頁。")
                 st.stop()
         else:
-            default_path = "default_db.xlsx"
-            if os.path.exists(default_path):
-                df_db = pd.read_excel(default_path)
-                st.toast("✅ 自動套用【系統預設配分表】", icon="⚙️")
-            else:
-                st.warning("⚠️ 請確認上方已設定有效的 Google 試算表連結，或上傳配分表！")
-                st.stop()
+            st.error("❌ 系統後台設定的 Google 試算表連結格式錯誤！")
+            st.stop()
 
         if df_db is not None and '違規條款' not in df_db.columns:
-            st.error("❌ 來源配分表缺少『違規條款』欄位！請檢查檔案或雲端試算表的格式。")
+            st.error("❌ 雲端配分表缺少『違規條款』欄位！請檢查試算表格式。")
             st.stop()
             
     except Exception as e:
-        st.error(f"❌ 讀取配分表時發生未知錯誤：{e}")
+        st.error(f"❌ 背景連線至雲端試算表失敗，請確定權限是否設為「知道連結的任何人皆可檢視」。\n錯誤詳情：{e}")
         st.stop()
 
     db_map = {}
@@ -190,19 +166,16 @@ if data_files:
             key="missing_rules_editor"
         )
         
-        # 💡 新增寫回 Google 試算表的邏輯
         if not st.button("✅ 我已填寫完畢，同步寫回雲端並開始結算", type="primary", use_container_width=True):
             st.stop() 
         else:
             with st.spinner("☁️ 正在將新條款同步寫回 Google 試算表..."):
                 try:
-                    # 設定權限範圍
                     scopes = [
                         "https://www.googleapis.com/auth/spreadsheets",
                         "https://www.googleapis.com/auth/drive"
                     ]
                     
-                    # 智慧讀取 secrets.toml 中的憑證
                     if "gcp_service_account" in st.secrets:
                         creds_dict = dict(st.secrets["gcp_service_account"])
                     elif "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
@@ -214,11 +187,9 @@ if data_files:
                     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
                     client = gspread.authorize(creds)
                     
-                    # 抓取試算表並定位到「配分表」
-                    sheet_id = gsheet_url.split("/d/")[1].split("/")[0]
+                    sheet_id = TARGET_GSHEET_URL.split("/d/")[1].split("/")[0]
                     worksheet = client.open_by_key(sheet_id).worksheet("配分表")
                     
-                    # 將新資料逐筆補到最下方
                     for _, row in edited_missing.iterrows():
                         rule_val = str(row["違規條款"])
                         s_val = int(row["攔舉配分"])
