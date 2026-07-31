@@ -13,6 +13,13 @@ from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
 
+# 💡 新增寫入 Google 試算表所需的套件
+import gspread
+from google.oauth2.service_account import Credentials
+
+# 💡 在這裡貼上您的 Google 試算表連結 (請保留雙引號)
+DEFAULT_GSHEET_URL = "https://docs.google.com/spreadsheets/d/您的試算表ID/edit"
+
 # ==========================================
 # 0. 輔助函式：發送多個檔案附件至自己的信箱
 # ==========================================
@@ -62,43 +69,174 @@ def send_multiple_files_email(file_buffers_dict):
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
 st.title("⚡ 員警交通執法重點工作舉發績效結算")
-st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會自動從報表內文解析單位與員警資料，並進行獨立結算與排版優化。")
+st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統預設連線至雲端配分表，若偵測到未知條款可即時輸入，系統將自動為您**雙向同步寫回**雲端！")
 
 st.sidebar.header("⚙️ 結算參數設定")
-st.sidebar.info("💡 **智慧內文基準偵測**：\n系統將自動讀取報表內文的「舉發單位」。若包含「交通分隊」，自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
+st.sidebar.info("💡 **智慧基準偵測**：\n系統將自動讀取報表內文的「舉發單位」。若包含「交通分隊」，自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("📂 步驟 1：上傳配分表")
-db_file = st.sidebar.file_uploader("外部配分表 (如：檔案 B)", type=["xlsx"], key="db_file")
+st.sidebar.subheader("📂 步驟 1：配分表設定")
+gsheet_url = st.sidebar.text_input(
+    "🔗 Google 試算表連結 (已預設載入)", 
+    value=DEFAULT_GSHEET_URL,
+    help="系統會自動尋找名稱為「配分表」的分頁。您也可以隨時貼上新的連結來覆蓋預設值。"
+)
+db_file = st.sidebar.file_uploader("或上傳本機配分表 (若上傳，將優先使用此檔)", type=["xlsx"])
 
 st.sidebar.subheader("📂 步驟 2：上傳原始舉發資料")
-data_files = st.sidebar.file_uploader("批次選擇多個單位的半年期 Excel 檔案 (支援原始無配分欄位格式)", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
+data_files = st.sidebar.file_uploader("批次選擇多個單位的半年期 Excel 檔案", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
 
 # ==========================================
 # 2. 核心結算邏輯
 # ==========================================
-if db_file and data_files:
-    with st.spinner("🔄 正在逐一讀取與結算各單位資料..."):
-        try:
+if data_files:
+    # --- 步驟 A：讀取配分資料庫 ---
+    try:
+        df_db = None
+        if db_file is not None:
             df_db = pd.read_excel(db_file)
-            if '違規條款' not in df_db.columns:
-                st.error("❌ 配分表缺少『違規條款』欄位！請檢查檔案格式。")
+            st.toast("✅ 已套用您手動上傳的【本機配分表】", icon="📂")
+        elif gsheet_url and "您的試算表ID" not in gsheet_url:
+            try:
+                if "/d/" in gsheet_url:
+                    sheet_id = gsheet_url.split("/d/")[1].split("/")[0]
+                    xlsx_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+                    
+                    try:
+                        df_db = pd.read_excel(xlsx_export_url, sheet_name="配分表")
+                        st.toast("✅ 已成功連線並抓取【配分表】分頁資料！", icon="☁️")
+                    except ValueError:
+                        st.error("❌ 找不到名為「配分表」的分頁！請確認您的雲端試算表中，確實有一個分頁命名為「配分表」。")
+                        st.stop()
+                else:
+                    st.error("❌ Google 試算表連結格式錯誤！")
+                    st.stop()
+            except Exception as e:
+                st.error(f"❌ 讀取雲端試算表失敗，請確定權限是否設為「知道連結的任何人皆可檢視」。\n錯誤詳情：{e}")
                 st.stop()
-        except Exception as e:
-            st.error(f"❌ 讀取配分表失敗：{e}")
-            st.stop()
+        else:
+            default_path = "default_db.xlsx"
+            if os.path.exists(default_path):
+                df_db = pd.read_excel(default_path)
+                st.toast("✅ 自動套用【系統預設配分表】", icon="⚙️")
+            else:
+                st.warning("⚠️ 請確認上方已設定有效的 Google 試算表連結，或上傳配分表！")
+                st.stop()
 
-        db_map = {}
-        for _, row in df_db.iterrows():
-            rule = str(row.get('違規條款', '')).strip()
-            if rule:
-                s = pd.to_numeric(row.get('攔舉配分', 0), errors='coerce')
-                d = pd.to_numeric(row.get('逕舉配分', 0), errors='coerce')
-                db_map[rule] = {
-                    'stop': 0 if pd.isna(s) else int(s),
-                    'dir': 0 if pd.isna(d) else int(d)
-                }
-                
+        if df_db is not None and '違規條款' not in df_db.columns:
+            st.error("❌ 來源配分表缺少『違規條款』欄位！請檢查檔案或雲端試算表的格式。")
+            st.stop()
+            
+    except Exception as e:
+        st.error(f"❌ 讀取配分表時發生未知錯誤：{e}")
+        st.stop()
+
+    db_map = {}
+    for _, row in df_db.iterrows():
+        rule = str(row.get('違規條款', '')).strip()
+        if rule:
+            s = pd.to_numeric(row.get('攔舉配分', 0), errors='coerce')
+            d = pd.to_numeric(row.get('逕舉配分', 0), errors='coerce')
+            db_map[rule] = {
+                'stop': 0 if pd.isna(s) else int(s),
+                'dir': 0 if pd.isna(d) else int(d)
+            }
+
+    # --- 步驟 B：預掃描未知條款 ---
+    missing_rules = set()
+    for f in data_files:
+        f.seek(0)
+        try:
+            xls = pd.ExcelFile(f)
+            for sheet_name in xls.sheet_names:
+                raw_df = pd.read_excel(xls, sheet_name=sheet_name, header=None).astype('object')
+                header_idx = -1
+                for idx, row in raw_df.iterrows():
+                    if "違規條款" in row.astype(str).str.replace(" ", "").values:
+                        header_idx = idx
+                        break
+                if header_idx == -1: continue
+
+                header_row = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
+                if "違規條款" not in header_row: continue
+                col_rule = header_row.index("違規條款")
+
+                for r in range(header_idx + 1, len(raw_df)):
+                    rule = str(raw_df.iloc[r, col_rule]).strip()
+                    if not rule or "合計" in rule or "製表" in rule or "舉發單張數" in rule or rule.lower() == 'nan':
+                        continue
+                    if rule not in db_map:
+                        missing_rules.add(rule)
+        except Exception:
+            pass
+
+    if missing_rules:
+        st.warning(f"⚠️ 掃描完畢！發現 **{len(missing_rules)}** 筆配分表內未設定的「新條款」。請直接於下方表格補上配分：")
+        missing_df = pd.DataFrame({
+            "違規條款": list(missing_rules),
+            "攔舉配分": 0,
+            "逕舉配分": 0
+        })
+        
+        edited_missing = st.data_editor(
+            missing_df,
+            column_config={
+                "違規條款": st.column_config.TextColumn("違規條款 (未設定)", disabled=True),
+                "攔舉配分": st.column_config.NumberColumn("攔舉配分 ✍️", min_value=0, required=True),
+                "逕舉配分": st.column_config.NumberColumn("逕舉配分 ✍️", min_value=0, required=True),
+            },
+            hide_index=True,
+            use_container_width=True,
+            key="missing_rules_editor"
+        )
+        
+        # 💡 新增寫回 Google 試算表的邏輯
+        if not st.button("✅ 我已填寫完畢，同步寫回雲端並開始結算", type="primary", use_container_width=True):
+            st.stop() 
+        else:
+            with st.spinner("☁️ 正在將新條款同步寫回 Google 試算表..."):
+                try:
+                    # 設定權限範圍
+                    scopes = [
+                        "https://www.googleapis.com/auth/spreadsheets",
+                        "https://www.googleapis.com/auth/drive"
+                    ]
+                    
+                    # 智慧讀取 secrets.toml 中的憑證
+                    if "gcp_service_account" in st.secrets:
+                        creds_dict = dict(st.secrets["gcp_service_account"])
+                    elif "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
+                        creds_dict = dict(st.secrets["connections"]["gsheets"])
+                    else:
+                        st.error("❌ 找不到對應的 GCP 憑證設定。請確保 secrets.toml 內已設定憑證！")
+                        st.stop()
+                        
+                    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+                    client = gspread.authorize(creds)
+                    
+                    # 抓取試算表並定位到「配分表」
+                    sheet_id = gsheet_url.split("/d/")[1].split("/")[0]
+                    worksheet = client.open_by_key(sheet_id).worksheet("配分表")
+                    
+                    # 將新資料逐筆補到最下方
+                    for _, row in edited_missing.iterrows():
+                        rule_val = str(row["違規條款"])
+                        s_val = int(row["攔舉配分"])
+                        d_val = int(row["逕舉配分"])
+                        
+                        worksheet.append_row([rule_val, s_val, d_val])
+                        db_map[rule_val] = {'stop': s_val, 'dir': d_val}
+                        
+                    st.success("✅ 新條款已成功寫回 Google 試算表最下方！")
+                except Exception as write_err:
+                    st.error(f"❌ 寫入雲端失敗，請確認您的 Service Account 信箱已加入該試算表的「編輯者」權限。\n詳細錯誤：{write_err}")
+                    st.stop()
+
+    # --- 步驟 C：正式結算 ---
+    with st.spinner("🔄 正在讀取並結算各單位資料，請稍候..."):
+        for f in data_files:
+            f.seek(0)
+            
         def extract_officer_name(df_head):
             for r_idx, row in df_head.iterrows():
                 for c_idx, val in enumerate(row.values):
@@ -125,11 +263,9 @@ if db_file and data_files:
                                 return next_val
             return ""
 
-        # 暫存各單位的處理結果：{ unit_name: { "processed_sheets": [...], "unit_type_label": ... } }
         unit_collected_data = {}
 
         for f in data_files:
-            f.seek(0)
             try:
                 xls = pd.ExcelFile(f)
                 for sheet_name in xls.sheet_names:
@@ -143,7 +279,7 @@ if db_file and data_files:
                         
                     detected_unit = extract_unit_name(raw_df.head(20))
                     if not detected_unit:
-                        detected_unit = re.sub(r'\.[a-zA-Z0-9]+$', '', f.name) # 若內文抓不到才退回檔名
+                        detected_unit = re.sub(r'\.[a-zA-Z0-9]+$', '', f.name) 
                     
                     for idx, row in raw_df.iterrows():
                         if "違規條款" in row.astype(str).str.replace(" ", "").values:
@@ -308,7 +444,6 @@ if db_file and data_files:
 
                 all_summaries[unit_name] = df_summary
 
-                # --- 產出 Excel 檔案 ---
                 output = io.BytesIO()
                 wb = Workbook()
                 
