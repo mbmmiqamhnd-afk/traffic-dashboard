@@ -78,16 +78,16 @@ def send_multiple_files_email(file_buffers_dict):
         return False, str(e)
 
 # ==========================================
-# 1. 頁面基本設定與側邊欄
+# 1. 頁面基本設定與主畫面 UI
 # ==========================================
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
 st.title("⚡ 員警交通執法重點工作舉發績效結算")
 st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統具備雙向雲端同步與**智慧修復引擎**，能自動補齊殘缺的資料。")
 
-st.sidebar.header("⚙️ 結算操作區")
-st.sidebar.info("💡 **智慧基準偵測**：\n系統將自動讀取報表內文的「舉發單位」。若包含「交通分隊」，自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
-st.sidebar.markdown("---")
+# 💡 將原本在側邊欄的提示與操作移至主畫面
+st.info("💡 **智慧基準偵測**：系統將自動讀取報表內文的「舉發單位」。若包含「交通分隊」，自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
+st.markdown("---")
 
 # ==========================================
 # 💡 背景讀取配分資料與「自動修復引擎」
@@ -103,7 +103,6 @@ except Exception as e:
     st.error(f"❌ 背景連線至雲端試算表失敗，請確認網址或權限設定。錯誤詳情：{e}")
     st.stop()
 
-# 檢查必備欄位並確保 D, E, F 欄存在
 if '違規條款' not in df_db.columns:
     st.error("❌ 雲端配分表缺少『違規條款』欄位！")
     st.stop()
@@ -111,7 +110,7 @@ if '違規事實' not in df_db.columns: df_db['違規事實'] = ""
 if '類別' not in df_db.columns: df_db['類別'] = ""
 if '取締項目' not in df_db.columns: df_db['取締項目'] = ""
 
-incomplete_rules = [] # 記錄需要修復的舊條款所在列 (row_index)
+incomplete_rules = [] 
 
 for row_idx, row in df_db.iterrows():
     rule = str(row.get('違規條款', '')).strip()
@@ -132,10 +131,9 @@ for row_idx, row in df_db.iterrows():
             'fact': fact,
             'category': cat,
             'item': item,
-            'gsheet_row': row_idx + 2 # Google Sheet 的列號 (扣除標題，索引0 = 第2列)
+            'gsheet_row': row_idx + 2 
         }
         
-        # 💡 如果雲端資料庫裡有這條法規，但它的類別或取締項目是空白的，就標記為需要修復
         if not cat and not item:
             incomplete_rules.append(rule)
 
@@ -152,14 +150,14 @@ def find_closest_reference(new_rule_str, existing_db):
             best_match = data
     return best_match
 
-# 💡 在側邊欄提供「一鍵修復雲端資料庫」功能
+# 💡 修復功能改放在主畫面
 if incomplete_rules:
-    st.sidebar.warning(f"⚠️ 偵測到雲端資料庫中有 **{len(incomplete_rules)}** 筆過往新增的條款缺乏「類別」與「取締項目」。")
-    if st.sidebar.button("🛠️ 一鍵智慧修復雲端資料庫", use_container_width=True):
+    st.warning(f"⚠️ 偵測到雲端資料庫中有 **{len(incomplete_rules)}** 筆過往新增的條款缺乏「類別」與「取締項目」。")
+    if st.button("🛠️ 一鍵智慧修復雲端資料庫", use_container_width=True):
         with st.spinner("☁️ 正在透過智慧參照引擎修復雲端資料..."):
             client = get_gspread_client()
             if not client:
-                st.sidebar.error("❌ 找不到 GCP 憑證，無法寫入雲端。")
+                st.error("❌ 找不到 GCP 憑證，無法寫入雲端。")
             else:
                 try:
                     worksheet = client.open_by_key(sheet_id).worksheet("配分表")
@@ -171,25 +169,25 @@ if incomplete_rules:
                             new_cat = ref_data['category']
                             new_item = ref_data['item']
                             
-                            # 準備批次更新：類別寫入第 E 欄(第5欄)，取締項目寫入第 F 欄(第6欄)
                             updates.append({'range': f'E{target_row}', 'values': [[new_cat]]})
                             updates.append({'range': f'F{target_row}', 'values': [[new_item]]})
                             
-                            # 同步更新記憶體
                             db_map[rule]['category'] = new_cat
                             db_map[rule]['item'] = new_item
                             
                     if updates:
                         worksheet.batch_update(updates)
-                        st.sidebar.success("✅ 修復完成！已成功將參照類別補上。")
-                        st.rerun() # 重新載入頁面讓警告消失
+                        st.success("✅ 修復完成！已成功將參照類別補上。")
+                        st.rerun() 
                     else:
-                        st.sidebar.info("無可參照的相近條款。")
+                        st.info("無可參照的相近條款。")
                 except Exception as e:
-                    st.sidebar.error(f"❌ 修復失敗：{e}")
+                    st.error(f"❌ 修復失敗：{e}")
 
-st.sidebar.subheader("📂 步驟 1：上傳原始舉發資料")
-data_files = st.sidebar.file_uploader("批次選擇多個單位的半年期 Excel 檔案", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
+# 💡 檔案上傳區改放在主畫面
+st.subheader("📂 步驟 1：上傳原始舉發資料")
+data_files = st.file_uploader("批次選擇多個單位的半年期 Excel 檔案", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
+st.markdown("---")
 
 # ==========================================
 # 2. 核心結算邏輯
