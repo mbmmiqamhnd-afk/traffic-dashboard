@@ -530,13 +530,10 @@ def main():
                 if processed_sheets:
                     df_raw_summary = pd.DataFrame([{
                         "員警姓名": s["officer"],
-                        "本期總分": s["grand_total"]
+                        "上半年總分": s["grand_total"]
                     } for s in processed_sheets])
                     
-                    df_summary = df_raw_summary.groupby('員警姓名', as_index=False)['本期總分'].sum()
-                    
-                    # 本期即為上半年資料
-                    df_summary['上半年分數'] = df_summary['本期總分']
+                    df_summary = df_raw_summary.groupby('員警姓名', as_index=False)['上半年總分'].sum()
                     
                     # 💡 核心邏輯：7倍上限餘數計算
                     def calc_rem(score):
@@ -544,11 +541,8 @@ def main():
                             return score - threshold_7x
                         return score % quota
                         
-                    df_summary['上半年剩餘分數'] = df_summary['上半年分數'].apply(calc_rem)
+                    df_summary['上半年剩餘分數'] = df_summary['上半年總分'].apply(calc_rem)
                     
-                    # 因為本期即為上半年，所以最終總分就是本期總分
-                    df_summary['最終總分'] = df_summary['本期總分']
-
                     all_summaries[unit_name] = df_summary
 
                     output = io.BytesIO()
@@ -633,10 +627,9 @@ def main():
                             c_val = ws_officer.cell(row=footer_start_row + row_offset, column=write_col, value=val)
                             c_val.font = Font(bold=True, color=color)
                         
-                        write_footer(0, "本期分數：", int(officer_summary["本期總分"]), "0000FF")
-                        write_footer(1, "上半年分數：", int(officer_summary["上半年分數"]), "0000FF")
-                        write_footer(2, "上半年剩餘分數：", int(officer_summary["上半年剩餘分數"]), "0000FF")
-                        write_footer(3, "總分：", int(officer_summary["最終總分"]), "FF0000")
+                        # 💡 移除重複，僅顯示精準的兩項總結
+                        write_footer(0, "上半年總分：", int(officer_summary["上半年總分"]), "0000FF")
+                        write_footer(1, "上半年剩餘分數：", int(officer_summary["上半年剩餘分數"]), "FF0000")
                         
                         for col_idx in range(1, len(s["df"].columns) + 1):
                             ws_officer.column_dimensions[get_column_letter(col_idx)].width = 14
