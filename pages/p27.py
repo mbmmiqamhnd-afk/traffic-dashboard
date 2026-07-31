@@ -567,8 +567,6 @@ def main():
                         df_summary = df_raw_summary.groupby('員警姓名', as_index=False)['本期原始分數'].sum()
                         df_summary['上半年結轉餘數'] = df_summary['員警姓名'].map(h1_remainders).fillna(0).astype(int)
                         df_summary['下半年總分'] = df_summary['本期原始分數'] + df_summary['上半年結轉餘數']
-                        
-                        # 不再顯示也不產出「下半年剩餘分數」欄位
 
                     all_summaries[unit_name] = df_summary
 
@@ -645,14 +643,20 @@ def main():
                             
                         officer_summary = df_summary[df_summary['員警姓名'] == s['officer']].iloc[0]
                         
-                        footer_start_row = ws_officer.max_row + 2
-                        write_col = s["col_d_score"] + 1 if s["col_d_score"] != -1 else 5
+                        # 💡 優先刪除原始的 B 欄 (流水號)
+                        ws_officer.delete_cols(2)
                         
+                        footer_start_row = ws_officer.max_row + 2
+                        
+                        # 💡 重新定義 write_footer，將標題寫入 B 欄 (column=2)，分數寫入 C 欄 (column=3)
                         def write_footer(row_offset, title, val, color="000000"):
-                            c_title = ws_officer.cell(row=footer_start_row + row_offset, column=write_col - 1, value=title)
+                            c_title = ws_officer.cell(row=footer_start_row + row_offset, column=2, value=title)
                             c_title.font = Font(bold=True)
-                            c_val = ws_officer.cell(row=footer_start_row + row_offset, column=write_col, value=val)
+                            c_title.alignment = Alignment(horizontal="right") # 標題靠右對齊更美觀
+                            
+                            c_val = ws_officer.cell(row=footer_start_row + row_offset, column=3, value=val)
                             c_val.font = Font(bold=True, color=color)
+                            c_val.alignment = Alignment(horizontal="left")
                         
                         if period == "上半年":
                             write_footer(0, "上半年總分：", int(officer_summary["上半年總分"]), "0000FF")
@@ -661,9 +665,6 @@ def main():
                             write_footer(0, "本期原始分數：", int(officer_summary["本期原始分數"]), "000000")
                             write_footer(1, "上半年結轉餘數：", int(officer_summary["上半年結轉餘數"]), "000000")
                             write_footer(2, "下半年總分：", int(officer_summary["下半年總分"]), "FF0000")
-                        
-                        # 💡 刪除 B 欄 (第 2 欄)
-                        ws_officer.delete_cols(2)
                         
                         # 💡 設定欄寬 (因為刪除了一欄，總欄數減 1)
                         for col_idx in range(1, len(s["df"].columns)):
