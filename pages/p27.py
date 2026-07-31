@@ -16,9 +16,23 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==========================================
-# 💡 系統後台設定：已自動綁定您專用的交通數據雲端試算表
+# 💡 系統後台設定
 # ==========================================
 TARGET_GSHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
+
+def get_gspread_client():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    if "gcp_service_account" in st.secrets:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+    elif "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
+        creds_dict = dict(st.secrets["connections"]["gsheets"])
+    else:
+        return None
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return gspread.authorize(creds)
 
 # ==========================================
 # 0. 輔助函式：發送多個檔案附件至自己的信箱
@@ -69,11 +83,110 @@ def send_multiple_files_email(file_buffers_dict):
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
 st.title("⚡ 員警交通執法重點工作舉發績效結算")
-st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會於背景自動同步雲端配分表，具備**智慧參照功能**，可自動推理新條款類別並雙向寫回！")
+st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統具備雙向雲端同步與**智慧修復引擎**，能自動補齊殘缺的資料。")
 
 st.sidebar.header("⚙️ 結算操作區")
 st.sidebar.info("💡 **智慧基準偵測**：\n系統將自動讀取報表內文的「舉發單位」。若包含「交通分隊」，自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
 st.sidebar.markdown("---")
+
+# ==========================================
+# 💡 背景讀取配分資料與「自動修復引擎」
+# ==========================================
+db_map = {}
+df_db = None
+sheet_id = TARGET_GSHEET_URL.split("/d/")[1].split("/")[0]
+xlsx_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+
+try:
+    df_db = pd.read_excel(xlsx_export_url, sheet_name="配分表")
+except Exception as e:
+    st.error(f"❌ 背景連線至雲端試算表失敗，請確認網址或權限設定。錯誤詳情：{e}")
+    st.stop()
+
+# 檢查必備欄位並確保 D, E, F 欄存在
+if '違規條款' not in df_db.columns:
+    st.error("❌ 雲端配分表缺少『違規條款』欄位！")
+    st.stop()
+if '違規事實' not in df_db.columns: df_db['違規事實'] = ""
+if '類別' not in df_db.columns: df_db['類別'] = ""
+if '取締項目' not in df_db.columns: df_db['取締項目'] = ""
+
+incomplete_rules = [] # 記錄需要修復的舊條款所在列 (row_index)
+
+for row_idx, row in df_db.iterrows():
+    rule = str(row.get('違規條款', '')).strip()
+    if rule:
+        s = pd.to_numeric(row.get('攔舉配分', 0), errors='coerce')
+        d = pd.to_numeric(row.get('逕舉配分', 0), errors='coerce')
+        fact = str(row.get('違規事實', '')).strip()
+        cat = str(row.get('類別', '')).strip()
+        item = str(row.get('取締項目', '')).strip()
+        
+        if fact.lower() == 'nan': fact = ""
+        if cat.lower() == 'nan': cat = ""
+        if item.lower() == 'nan': item = ""
+            
+        db_map[rule] = {
+            'stop': 0 if pd.isna(s) else int(s),
+            'dir': 0 if pd.isna(d) else int(d),
+            'fact': fact,
+            'category': cat,
+            'item': item,
+            'gsheet_row': row_idx + 2 # Google Sheet 的列號 (扣除標題，索引0 = 第2列)
+        }
+        
+        # 💡 如果雲端資料庫裡有這條法規，但它的類別或取締項目是空白的，就標記為需要修復
+        if not cat and not item:
+            incomplete_rules.append(rule)
+
+def find_closest_reference(new_rule_str, existing_db):
+    best_match = None
+    max_prefix_len = 0
+    for old_rule, data in existing_db.items():
+        match_len = 0
+        for c1, c2 in zip(new_rule_str, old_rule):
+            if c1 == c2: match_len += 1
+            else: break
+        if match_len > max_prefix_len and (data['category'] or data['item']):
+            max_prefix_len = match_len
+            best_match = data
+    return best_match
+
+# 💡 在側邊欄提供「一鍵修復雲端資料庫」功能
+if incomplete_rules:
+    st.sidebar.warning(f"⚠️ 偵測到雲端資料庫中有 **{len(incomplete_rules)}** 筆過往新增的條款缺乏「類別」與「取締項目」。")
+    if st.sidebar.button("🛠️ 一鍵智慧修復雲端資料庫", use_container_width=True):
+        with st.spinner("☁️ 正在透過智慧參照引擎修復雲端資料..."):
+            client = get_gspread_client()
+            if not client:
+                st.sidebar.error("❌ 找不到 GCP 憑證，無法寫入雲端。")
+            else:
+                try:
+                    worksheet = client.open_by_key(sheet_id).worksheet("配分表")
+                    updates = []
+                    for rule in incomplete_rules:
+                        ref_data = find_closest_reference(rule, db_map)
+                        if ref_data:
+                            target_row = db_map[rule]['gsheet_row']
+                            new_cat = ref_data['category']
+                            new_item = ref_data['item']
+                            
+                            # 準備批次更新：類別寫入第 E 欄(第5欄)，取締項目寫入第 F 欄(第6欄)
+                            updates.append({'range': f'E{target_row}', 'values': [[new_cat]]})
+                            updates.append({'range': f'F{target_row}', 'values': [[new_item]]})
+                            
+                            # 同步更新記憶體
+                            db_map[rule]['category'] = new_cat
+                            db_map[rule]['item'] = new_item
+                            
+                    if updates:
+                        worksheet.batch_update(updates)
+                        st.sidebar.success("✅ 修復完成！已成功將參照類別補上。")
+                        st.rerun() # 重新載入頁面讓警告消失
+                    else:
+                        st.sidebar.info("無可參照的相近條款。")
+                except Exception as e:
+                    st.sidebar.error(f"❌ 修復失敗：{e}")
 
 st.sidebar.subheader("📂 步驟 1：上傳原始舉發資料")
 data_files = st.sidebar.file_uploader("批次選擇多個單位的半年期 Excel 檔案", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
@@ -82,69 +195,6 @@ data_files = st.sidebar.file_uploader("批次選擇多個單位的半年期 Exce
 # 2. 核心結算邏輯
 # ==========================================
 if data_files:
-    # --- 步驟 A：背景全自動讀取配分資料庫 ---
-    try:
-        df_db = None
-        if "/d/" in TARGET_GSHEET_URL:
-            sheet_id = TARGET_GSHEET_URL.split("/d/")[1].split("/")[0]
-            xlsx_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
-            
-            try:
-                df_db = pd.read_excel(xlsx_export_url, sheet_name="配分表")
-                st.toast("✅ 系統已於背景自動同步【配分表】資料！", icon="☁️")
-            except ValueError:
-                st.error("❌ 找不到名為「配分表」的分頁！請確認雲端試算表中，確實有該分頁。")
-                st.stop()
-        else:
-            st.error("❌ 系統後台設定的 Google 試算表連結格式錯誤！")
-            st.stop()
-
-        if df_db is not None and '違規條款' not in df_db.columns:
-            st.error("❌ 雲端配分表缺少『違規條款』欄位！請檢查試算表格式。")
-            st.stop()
-            
-    except Exception as e:
-        st.error(f"❌ 背景連線至雲端試算表失敗，請確定權限是否設為「知道連結的任何人皆可檢視」。\n錯誤詳情：{e}")
-        st.stop()
-
-    db_map = {}
-    for _, row in df_db.iterrows():
-        rule = str(row.get('違規條款', '')).strip()
-        if rule:
-            s = pd.to_numeric(row.get('攔舉配分', 0), errors='coerce')
-            d = pd.to_numeric(row.get('逕舉配分', 0), errors='coerce')
-            
-            # 💡 把類別與取締項目也存入字典中，供後續參照使用
-            cat = str(row.get('類別', '')).strip() if '類別' in df_db.columns else ""
-            item = str(row.get('取締項目', '')).strip() if '取締項目' in df_db.columns else ""
-            
-            if cat.lower() == 'nan': cat = ""
-            if item.lower() == 'nan': item = ""
-                
-            db_map[rule] = {
-                'stop': 0 if pd.isna(s) else int(s),
-                'dir': 0 if pd.isna(d) else int(d),
-                'category': cat,
-                'item': item
-            }
-
-    # 💡 智慧前綴參照引擎：尋找最接近的既有條款
-    def find_closest_reference(new_rule_str, existing_db):
-        best_match = None
-        max_prefix_len = 0
-        for old_rule, data in existing_db.items():
-            # 比較前綴相同長度
-            match_len = 0
-            for c1, c2 in zip(new_rule_str, old_rule):
-                if c1 == c2: match_len += 1
-                else: break
-            
-            # 如果找到更長的前綴，且舊資料真的有類別，就更新最佳解答
-            if match_len > max_prefix_len and (data['category'] or data['item']):
-                max_prefix_len = match_len
-                best_match = data
-        return best_match
-
     # --- 步驟 B：預掃描未知條款 ---
     missing_rules = {} 
     for f in data_files:
@@ -177,7 +227,6 @@ if data_files:
                         if rule not in missing_rules:
                             missing_rules[rule] = {"fact": "", "category": "", "item": ""}
                             
-                        # 先嘗試從檔案本身抓取
                         if not missing_rules[rule]["fact"] and col_fact != -1:
                             val = str(raw_df.iloc[r, col_fact]).strip()
                             if val.lower() != 'nan': missing_rules[rule]["fact"] = val
@@ -189,11 +238,9 @@ if data_files:
                         if not missing_rules[rule]["item"] and col_item != -1:
                             val = str(raw_df.iloc[r, col_item]).strip()
                             if val.lower() != 'nan': missing_rules[rule]["item"] = val
-                            
         except Exception:
             pass
 
-    # 💡 智慧補遺：如果掃描完檔案還是沒有類別，就啟用參照引擎
     for rule_key, data in missing_rules.items():
         if not data["category"] and not data["item"]:
             ref_data = find_closest_reference(rule_key, db_map)
@@ -202,7 +249,7 @@ if data_files:
                 data["item"] = ref_data["item"]
 
     if missing_rules:
-        st.warning(f"⚠️ 掃描完畢！發現 **{len(missing_rules)}** 筆新條款。系統已根據您的雲端資料庫**智慧帶入相近類別**，請確認配分：")
+        st.warning(f"⚠️ 掃描完畢！發現 **{len(missing_rules)}** 筆新條款。系統已根據雲端資料庫智慧帶入相近類別，請確認配分：")
         
         missing_df = pd.DataFrame({
             "違規條款": list(missing_rules.keys()),
@@ -232,26 +279,12 @@ if data_files:
             st.stop() 
         else:
             with st.spinner("☁️ 正在將新條款同步寫回 Google 試算表..."):
+                client = get_gspread_client()
+                if not client:
+                    st.error("❌ 找不到對應的 GCP 憑證設定。")
+                    st.stop()
                 try:
-                    scopes = [
-                        "https://www.googleapis.com/auth/spreadsheets",
-                        "https://www.googleapis.com/auth/drive"
-                    ]
-                    
-                    if "gcp_service_account" in st.secrets:
-                        creds_dict = dict(st.secrets["gcp_service_account"])
-                    elif "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
-                        creds_dict = dict(st.secrets["connections"]["gsheets"])
-                    else:
-                        st.error("❌ 找不到對應的 GCP 憑證設定。請確保 secrets.toml 內已設定憑證！")
-                        st.stop()
-                        
-                    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-                    client = gspread.authorize(creds)
-                    
-                    sheet_id = TARGET_GSHEET_URL.split("/d/")[1].split("/")[0]
                     worksheet = client.open_by_key(sheet_id).worksheet("配分表")
-                    
                     for _, row in edited_missing.iterrows():
                         rule_val = str(row["違規條款"])
                         s_val = int(row["攔舉配分"])
@@ -265,7 +298,7 @@ if data_files:
                         
                     st.success("✅ 新條款與對應資訊已成功寫回 Google 試算表最下方！")
                 except Exception as write_err:
-                    st.error(f"❌ 寫入雲端失敗，請確認您的 Service Account 信箱已加入該試算表的「編輯者」權限。\n詳細錯誤：{write_err}")
+                    st.error(f"❌ 寫入雲端失敗，詳細錯誤：{write_err}")
                     st.stop()
 
     # --- 步驟 C：正式結算 ---
