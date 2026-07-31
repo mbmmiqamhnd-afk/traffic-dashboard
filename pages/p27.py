@@ -606,6 +606,12 @@ def main():
                     ws_summary['A1'].font = Font(size=14, bold=True)
                     ws_summary['A2'] = f"結算單位：{unit_type_label}"
                     
+                    # 💡 設定【總表】完美列印：縱向、縮放至一頁寬
+                    ws_summary.page_setup.orientation = "portrait"
+                    ws_summary.page_setup.fitToWidth = 1
+                    ws_summary.page_setup.fitToHeight = 0
+                    ws_summary.sheet_properties.pageSetUpPr.fitToPage = True
+                    
                     header = list(df_summary.columns)
                     header_fill = PatternFill(start_color="34495E", end_color="34495E", fill_type="solid")
                     for c_idx, title in enumerate(header, 1):
@@ -617,7 +623,6 @@ def main():
                         for c_idx, val in enumerate(row_data, 1):
                             ws_summary.cell(row=r_idx, column=c_idx, value=val)
 
-                    # 💡 呼叫自動調整欄寬引擎 (總表：從第4列開始計算)
                     autofit_columns(ws_summary, min_row=4, max_width=40)
 
                     yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
@@ -634,6 +639,12 @@ def main():
                             
                         ws_officer = wb.create_sheet(title=final_name)
                         num_cols = len(s["df"].columns)
+                        
+                        # 💡 設定【各員警表】完美列印：縱向、縮放至一頁寬
+                        ws_officer.page_setup.orientation = "portrait"
+                        ws_officer.page_setup.fitToWidth = 1
+                        ws_officer.page_setup.fitToHeight = 0
+                        ws_officer.sheet_properties.pageSetUpPr.fitToPage = True
                         
                         title_row = ["員警開單績效統計表"] + [None] * (num_cols - 1)
                         if s["print_date"]:
@@ -672,16 +683,14 @@ def main():
                             
                         officer_summary = df_summary[df_summary['員警姓名'] == s['officer']].iloc[0]
                         
-                        # 💡 優先刪除原始的 B 欄 (流水號)
                         ws_officer.delete_cols(2)
                         
                         footer_start_row = ws_officer.max_row + 2
                         
-                        # 💡 重新定義 write_footer，將標題寫入 B 欄 (column=2)，分數寫入 C 欄 (column=3)
                         def write_footer(row_offset, title, val, color="000000"):
                             c_title = ws_officer.cell(row=footer_start_row + row_offset, column=2, value=title)
                             c_title.font = Font(bold=True)
-                            c_title.alignment = Alignment(horizontal="right") # 標題靠右對齊更美觀
+                            c_title.alignment = Alignment(horizontal="right") 
                             
                             c_val = ws_officer.cell(row=footer_start_row + row_offset, column=3, value=val)
                             c_val.font = Font(bold=True, color=color)
@@ -695,7 +704,6 @@ def main():
                             write_footer(1, "上半年結轉餘數：", int(officer_summary["上半年結轉餘數"]), "000000")
                             write_footer(2, "下半年總分：", int(officer_summary["下半年總分"]), "FF0000")
                         
-                        # 💡 呼叫自動調整欄寬引擎 (各員警表：從第4或5列開始計算，避免標題被撐太開，最高寬度設為 65)
                         autofit_columns(ws_officer, min_row=current_row_offset, max_width=65)
 
                     wb.save(output)
