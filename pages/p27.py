@@ -174,7 +174,7 @@ def main():
             st.error(f"🔴 雲端資料庫連線失敗：{error_msg}")
             st.stop()
             
-        st.info("💡 **自動結算基準**\n- **交通分隊**：800 分\n- **其他單位**：400 分\n*(系統將自動判讀報表單位)*")
+        st.info("💡 **自動結算基準**\n- **交通分隊**：800 分\n- **其他單位**：400 分\n*(本期報表即為上半年資料，獎勵上限 7 倍，未滿基準或超過 7 倍之餘數，皆列為上半年剩餘分數)*")
 
         # 隱藏在這裡的修復按鈕
         if incomplete_rules:
@@ -202,7 +202,7 @@ def main():
                                     db_map[rule]['item'] = new_item
                                     
                             if updates:
-                                worksheet.batch_update(updates)  # 這裡原本就是批次處理，不會有429問題
+                                worksheet.batch_update(updates) 
                                 st.success("✅ 修復完成！已成功將參照類別補上。")
                                 st.rerun() 
                             else:
@@ -312,7 +312,6 @@ def main():
                     try:
                         worksheet = client.open_by_key(sheet_id).worksheet("配分表")
                         
-                        # 💡 升級：將所有新列整理成一個清單 (List of Lists)
                         new_rows_data = []
                         for _, row in edited_missing.iterrows():
                             rule_val = str(row["違規條款"])
@@ -325,7 +324,6 @@ def main():
                             new_rows_data.append([rule_val, s_val, d_val, fact_val, cat_val, item_val])
                             db_map[rule_val] = {'stop': s_val, 'dir': d_val}
                             
-                        # 💡 升級：使用 append_rows 一次打包寫入，徹底解決 [429] 限制！
                         if new_rows_data:
                             worksheet.append_rows(new_rows_data)
                             
@@ -502,6 +500,7 @@ def main():
                         }
                         
                         if detected_unit not in unit_collected_data:
+                            # 自動判定基準與 7 倍上限
                             is_800 = "交通分隊" in detected_unit
                             quota_val = 800 if is_800 else 400
                             unit_collected_data[detected_unit] = {
@@ -535,14 +534,20 @@ def main():
                     } for s in processed_sheets])
                     
                     df_summary = df_raw_summary.groupby('員警姓名', as_index=False)['本期總分'].sum()
-                    df_summary['上半年分數'] = 5800  
                     
+                    # 本期即為上半年資料
+                    df_summary['上半年分數'] = df_summary['本期總分']
+                    
+                    # 💡 核心邏輯：7倍上限餘數計算
                     def calc_rem(score):
-                        if score >= threshold_7x: return score - threshold_7x
+                        if score >= threshold_7x:
+                            return score - threshold_7x
                         return score % quota
                         
                     df_summary['上半年剩餘分數'] = df_summary['上半年分數'].apply(calc_rem)
-                    df_summary['最終總分'] = df_summary['本期總分'] + df_summary['上半年剩餘分數']
+                    
+                    # 因為本期即為上半年，所以最終總分就是本期總分
+                    df_summary['最終總分'] = df_summary['本期總分']
 
                     all_summaries[unit_name] = df_summary
 
@@ -599,7 +604,7 @@ def main():
                         if s["unit_val"]:
                             ws_officer.append([s["unit_val"]] + [None] * (num_cols - 1))
                         else:
-                            ws_officer.append([f"举發單位：{unit_name}"] + [None] * (num_cols - 1))
+                            ws_officer.append([f"舉發單位：{unit_name}"] + [None] * (num_cols - 1))
                             
                         if s["officer_val"]:
                             ws_officer.append([s["officer_val"]] + [None] * (num_cols - 1))
