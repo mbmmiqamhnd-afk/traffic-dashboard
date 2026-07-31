@@ -84,7 +84,6 @@ st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wi
 
 st.title("⚡ 員警交通執法重點工作舉發績效結算")
 st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統具備雙向雲端同步與**智慧修復引擎**，能自動補齊殘缺的資料。")
-st.markdown("---")
 
 # ==========================================
 # 💡 背景讀取配分資料與「自動修復引擎」
@@ -94,55 +93,48 @@ df_db = None
 sheet_id = TARGET_GSHEET_URL.split("/d/")[1].split("/")[0]
 xlsx_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
 
+# 抓取雲端資料
 try:
     df_db = pd.read_excel(xlsx_export_url, sheet_name="配分表")
-    # 連線成功時，在側邊欄顯示綠燈狀態
-    st.sidebar.header("⚙️ 系統運行狀態")
-    st.sidebar.success("🟢 雲端資料庫連線正常")
+    connection_status = True
 except Exception as e:
-    st.sidebar.header("⚙️ 系統運行狀態")
-    st.sidebar.error("🔴 雲端資料庫連線失敗")
-    st.error(f"❌ 背景連線至雲端試算表失敗，請確認網址或權限設定。錯誤詳情：{e}")
-    st.stop()
+    connection_status = False
+    error_msg = e
 
-# 💡 在側邊欄放上精簡的結算邏輯提示，讓畫面不空洞也不擁擠
-st.sidebar.markdown("---")
-st.sidebar.markdown("**💡 自動結算基準**")
-st.sidebar.info("- **交通分隊**：800 分\n- **其他單位**：400 分\n\n*(系統將自動判讀報表單位)*")
-
-if '違規條款' not in df_db.columns:
-    st.error("❌ 雲端配分表缺少『違規條款』欄位！")
-    st.stop()
-if '違規事實' not in df_db.columns: df_db['違規事實'] = ""
-if '類別' not in df_db.columns: df_db['類別'] = ""
-if '取締項目' not in df_db.columns: df_db['取締項目'] = ""
-
+# 解析與檢查缺漏
 incomplete_rules = [] 
+if connection_status:
+    if '違規條款' not in df_db.columns:
+        st.error("❌ 雲端配分表缺少『違規條款』欄位！")
+        st.stop()
+    if '違規事實' not in df_db.columns: df_db['違規事實'] = ""
+    if '類別' not in df_db.columns: df_db['類別'] = ""
+    if '取締項目' not in df_db.columns: df_db['取締項目'] = ""
 
-for row_idx, row in df_db.iterrows():
-    rule = str(row.get('違規條款', '')).strip()
-    if rule:
-        s = pd.to_numeric(row.get('攔舉配分', 0), errors='coerce')
-        d = pd.to_numeric(row.get('逕舉配分', 0), errors='coerce')
-        fact = str(row.get('違規事實', '')).strip()
-        cat = str(row.get('類別', '')).strip()
-        item = str(row.get('取締項目', '')).strip()
-        
-        if fact.lower() == 'nan': fact = ""
-        if cat.lower() == 'nan': cat = ""
-        if item.lower() == 'nan': item = ""
+    for row_idx, row in df_db.iterrows():
+        rule = str(row.get('違規條款', '')).strip()
+        if rule:
+            s = pd.to_numeric(row.get('攔舉配分', 0), errors='coerce')
+            d = pd.to_numeric(row.get('逕舉配分', 0), errors='coerce')
+            fact = str(row.get('違規事實', '')).strip()
+            cat = str(row.get('類別', '')).strip()
+            item = str(row.get('取締項目', '')).strip()
             
-        db_map[rule] = {
-            'stop': 0 if pd.isna(s) else int(s),
-            'dir': 0 if pd.isna(d) else int(d),
-            'fact': fact,
-            'category': cat,
-            'item': item,
-            'gsheet_row': row_idx + 2 
-        }
-        
-        if not cat and not item:
-            incomplete_rules.append(rule)
+            if fact.lower() == 'nan': fact = ""
+            if cat.lower() == 'nan': cat = ""
+            if item.lower() == 'nan': item = ""
+                
+            db_map[rule] = {
+                'stop': 0 if pd.isna(s) else int(s),
+                'dir': 0 if pd.isna(d) else int(d),
+                'fact': fact,
+                'category': cat,
+                'item': item,
+                'gsheet_row': row_idx + 2 
+            }
+            
+            if not cat and not item:
+                incomplete_rules.append(rule)
 
 def find_closest_reference(new_rule_str, existing_db):
     best_match = None
@@ -157,42 +149,55 @@ def find_closest_reference(new_rule_str, existing_db):
             best_match = data
     return best_match
 
-# 💡 修復功能維持在側邊欄的最下方，當有問題時才出現
-if incomplete_rules:
-    st.sidebar.markdown("---")
-    st.sidebar.warning(f"⚠️ 偵測到雲端資料庫中有 **{len(incomplete_rules)}** 筆過往新增的條款缺乏「類別」與「取締項目」。")
-    if st.sidebar.button("🛠️ 一鍵智慧修復資料庫", use_container_width=True):
-        with st.spinner("☁️ 正在透過智慧參照引擎修復雲端資料..."):
-            client = get_gspread_client()
-            if not client:
-                st.sidebar.error("❌ 找不到 GCP 憑證，無法寫入雲端。")
-            else:
-                try:
-                    worksheet = client.open_by_key(sheet_id).worksheet("配分表")
-                    updates = []
-                    for rule in incomplete_rules:
-                        ref_data = find_closest_reference(rule, db_map)
-                        if ref_data:
-                            target_row = db_map[rule]['gsheet_row']
-                            new_cat = ref_data['category']
-                            new_item = ref_data['item']
-                            
-                            updates.append({'range': f'E{target_row}', 'values': [[new_cat]]})
-                            updates.append({'range': f'F{target_row}', 'values': [[new_item]]})
-                            
-                            db_map[rule]['category'] = new_cat
-                            db_map[rule]['item'] = new_item
-                            
-                    if updates:
-                        worksheet.batch_update(updates)
-                        st.sidebar.success("✅ 修復完成！已成功將參照類別補上。")
-                        st.rerun() 
-                    else:
-                        st.sidebar.info("無可參照的相近條款。")
-                except Exception as e:
-                    st.sidebar.error(f"❌ 修復失敗：{e}")
+# ==========================================
+# 💡 將狀態顯示改為「折疊面板」，保持主畫面乾淨
+# ==========================================
+# 若有需要修復的資料，面板預設展開提醒；否則預設折疊
+with st.expander("⚙️ 系統運行狀態與結算基準 (點擊展開)", expanded=bool(incomplete_rules)):
+    if connection_status:
+        st.success("🟢 雲端配分資料庫連線正常")
+    else:
+        st.error(f"🔴 雲端資料庫連線失敗：{error_msg}")
+        st.stop()
+        
+    st.info("💡 **自動結算基準**\n- **交通分隊**：800 分\n- **其他單位**：400 分\n*(系統將自動判讀報表單位)*")
 
-# 💡 主畫面的檔案上傳區
+    # 隱藏在這裡的修復按鈕
+    if incomplete_rules:
+        st.warning(f"⚠️ 偵測到雲端資料庫中有 **{len(incomplete_rules)}** 筆過往新增的條款缺乏「類別」與「取締項目」。")
+        if st.button("🛠️ 一鍵智慧修復資料庫", use_container_width=True):
+            with st.spinner("☁️ 正在透過智慧參照引擎修復雲端資料..."):
+                client = get_gspread_client()
+                if not client:
+                    st.error("❌ 找不到 GCP 憑證，無法寫入雲端。")
+                else:
+                    try:
+                        worksheet = client.open_by_key(sheet_id).worksheet("配分表")
+                        updates = []
+                        for rule in incomplete_rules:
+                            ref_data = find_closest_reference(rule, db_map)
+                            if ref_data:
+                                target_row = db_map[rule]['gsheet_row']
+                                new_cat = ref_data['category']
+                                new_item = ref_data['item']
+                                
+                                updates.append({'range': f'E{target_row}', 'values': [[new_cat]]})
+                                updates.append({'range': f'F{target_row}', 'values': [[new_item]]})
+                                
+                                db_map[rule]['category'] = new_cat
+                                db_map[rule]['item'] = new_item
+                                
+                        if updates:
+                            worksheet.batch_update(updates)
+                            st.success("✅ 修復完成！已成功將參照類別補上。")
+                            st.rerun() 
+                        else:
+                            st.info("無可參照的相近條款。")
+                    except Exception as e:
+                        st.error(f"❌ 修復失敗：{e}")
+
+st.markdown("---")
+# 💡 檔案上傳區
 st.subheader("📂 步驟 1：上傳原始舉發資料")
 data_files = st.file_uploader("批次選擇多個單位的半年期 Excel 檔案", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
 st.markdown("---")
