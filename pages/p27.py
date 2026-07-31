@@ -118,8 +118,8 @@ if data_files:
                 'dir': 0 if pd.isna(d) else int(d)
             }
 
-    # --- 步驟 B：預掃描未知條款 ---
-    missing_rules = set()
+    # --- 步驟 B：預掃描未知條款 (加入擷取違規事實) ---
+    missing_rules = {} # 改用 dict 儲存 { "條款": "違規事實" }
     for f in data_files:
         f.seek(0)
         try:
@@ -135,21 +135,41 @@ if data_files:
 
                 header_row = [str(x).strip().replace(" ", "") for x in raw_df.iloc[header_idx]]
                 if "違規條款" not in header_row: continue
+                
                 col_rule = header_row.index("違規條款")
+                
+                # 尋找「違規事實」欄位
+                col_fact = -1
+                for i, col_name in enumerate(header_row):
+                    if "違規事實" in col_name:
+                        col_fact = i
+                        break
 
                 for r in range(header_idx + 1, len(raw_df)):
                     rule = str(raw_df.iloc[r, col_rule]).strip()
                     if not rule or "合計" in rule or "製表" in rule or "舉發單張數" in rule or rule.lower() == 'nan':
                         continue
+                        
                     if rule not in db_map:
-                        missing_rules.add(rule)
+                        fact_str = ""
+                        if col_fact != -1:
+                            val = str(raw_df.iloc[r, col_fact]).strip()
+                            if val.lower() != 'nan':
+                                fact_str = val
+                                
+                        # 如果是第一次遇到這條法規，或者之前抓到的事實是空的，就記錄下來
+                        if rule not in missing_rules or not missing_rules[rule]:
+                            missing_rules[rule] = fact_str
         except Exception:
             pass
 
     if missing_rules:
-        st.warning(f"⚠️ 掃描完畢！發現 **{len(missing_rules)}** 筆配分表內未設定的「新條款」。請直接於下方表格補上配分：")
+        st.warning(f"⚠️ 掃描完畢！發現 **{len(missing_rules)}** 筆配分表內未設定的「新條款」。請參考違規事實，並於下方表格補上配分：")
+        
+        # 💡 將違規事實一起放入 DataFrame 呈現
         missing_df = pd.DataFrame({
-            "違規條款": list(missing_rules),
+            "違規條款": list(missing_rules.keys()),
+            "違規事實": list(missing_rules.values()),
             "攔舉配分": 0,
             "逕舉配分": 0
         })
@@ -158,6 +178,7 @@ if data_files:
             missing_df,
             column_config={
                 "違規條款": st.column_config.TextColumn("違規條款 (未設定)", disabled=True),
+                "違規事實": st.column_config.TextColumn("違規事實", disabled=True),
                 "攔舉配分": st.column_config.NumberColumn("攔舉配分 ✍️", min_value=0, required=True),
                 "逕舉配分": st.column_config.NumberColumn("逕舉配分 ✍️", min_value=0, required=True),
             },
@@ -192,10 +213,12 @@ if data_files:
                     
                     for _, row in edited_missing.iterrows():
                         rule_val = str(row["違規條款"])
+                        fact_val = str(row["違規事實"])
                         s_val = int(row["攔舉配分"])
                         d_val = int(row["逕舉配分"])
                         
-                        worksheet.append_row([rule_val, s_val, d_val])
+                        # 💡 寫回雲端時，順便將違規事實寫進第 D 欄，方便日後維護
+                        worksheet.append_row([rule_val, s_val, d_val, fact_val])
                         db_map[rule_val] = {'stop': s_val, 'dir': d_val}
                         
                     st.success("✅ 新條款已成功寫回 Google 試算表最下方！")
