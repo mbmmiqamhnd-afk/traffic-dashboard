@@ -69,7 +69,7 @@ def send_multiple_files_email(file_buffers_dict):
 st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wide")
 
 st.title("⚡ 員警交通執法重點工作舉發績效結算")
-st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會於背景自動同步雲端配分表，若偵測到未知條款可即時輸入，並自動雙向寫回雲端！")
+st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統會於背景自動同步雲端配分表，具備**智慧參照功能**，可自動推理新條款類別並雙向寫回！")
 
 st.sidebar.header("⚙️ 結算操作區")
 st.sidebar.info("💡 **智慧基準偵測**：\n系統將自動讀取報表內文的「舉發單位」。若包含「交通分隊」，自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
@@ -113,12 +113,39 @@ if data_files:
         if rule:
             s = pd.to_numeric(row.get('攔舉配分', 0), errors='coerce')
             d = pd.to_numeric(row.get('逕舉配分', 0), errors='coerce')
+            
+            # 💡 把類別與取締項目也存入字典中，供後續參照使用
+            cat = str(row.get('類別', '')).strip() if '類別' in df_db.columns else ""
+            item = str(row.get('取締項目', '')).strip() if '取締項目' in df_db.columns else ""
+            
+            if cat.lower() == 'nan': cat = ""
+            if item.lower() == 'nan': item = ""
+                
             db_map[rule] = {
                 'stop': 0 if pd.isna(s) else int(s),
-                'dir': 0 if pd.isna(d) else int(d)
+                'dir': 0 if pd.isna(d) else int(d),
+                'category': cat,
+                'item': item
             }
 
-    # --- 步驟 B：預掃描未知條款 (加入擷取違規事實、類別、取締項目) ---
+    # 💡 智慧前綴參照引擎：尋找最接近的既有條款
+    def find_closest_reference(new_rule_str, existing_db):
+        best_match = None
+        max_prefix_len = 0
+        for old_rule, data in existing_db.items():
+            # 比較前綴相同長度
+            match_len = 0
+            for c1, c2 in zip(new_rule_str, old_rule):
+                if c1 == c2: match_len += 1
+                else: break
+            
+            # 如果找到更長的前綴，且舊資料真的有類別，就更新最佳解答
+            if match_len > max_prefix_len and (data['category'] or data['item']):
+                max_prefix_len = match_len
+                best_match = data
+        return best_match
+
+    # --- 步驟 B：預掃描未知條款 ---
     missing_rules = {} 
     for f in data_files:
         f.seek(0)
@@ -137,8 +164,6 @@ if data_files:
                 if "違規條款" not in header_row: continue
                 
                 col_rule = header_row.index("違規條款")
-                
-                # 💡 動態尋找額外欄位
                 col_fact = next((i for i, c in enumerate(header_row) if "違規事實" in c), -1)
                 col_cat = next((i for i, c in enumerate(header_row) if "類別" in c), -1)
                 col_item = next((i for i, c in enumerate(header_row) if "取締項目" in c), -1)
@@ -152,7 +177,7 @@ if data_files:
                         if rule not in missing_rules:
                             missing_rules[rule] = {"fact": "", "category": "", "item": ""}
                             
-                        # 若原始欄位有資料，就更新字典
+                        # 先嘗試從檔案本身抓取
                         if not missing_rules[rule]["fact"] and col_fact != -1:
                             val = str(raw_df.iloc[r, col_fact]).strip()
                             if val.lower() != 'nan': missing_rules[rule]["fact"] = val
@@ -164,13 +189,21 @@ if data_files:
                         if not missing_rules[rule]["item"] and col_item != -1:
                             val = str(raw_df.iloc[r, col_item]).strip()
                             if val.lower() != 'nan': missing_rules[rule]["item"] = val
+                            
         except Exception:
             pass
 
+    # 💡 智慧補遺：如果掃描完檔案還是沒有類別，就啟用參照引擎
+    for rule_key, data in missing_rules.items():
+        if not data["category"] and not data["item"]:
+            ref_data = find_closest_reference(rule_key, db_map)
+            if ref_data:
+                data["category"] = ref_data["category"]
+                data["item"] = ref_data["item"]
+
     if missing_rules:
-        st.warning(f"⚠️ 掃描完畢！發現 **{len(missing_rules)}** 筆配分表內未設定的「新條款」。系統已盡可能抓取相關資訊，請補齊配分：")
+        st.warning(f"⚠️ 掃描完畢！發現 **{len(missing_rules)}** 筆新條款。系統已根據您的雲端資料庫**智慧帶入相近類別**，請確認配分：")
         
-        # 💡 將所有資訊整合進 DataFrame
         missing_df = pd.DataFrame({
             "違規條款": list(missing_rules.keys()),
             "違規事實": [v["fact"] for v in missing_rules.values()],
@@ -180,7 +213,6 @@ if data_files:
             "逕舉配分": 0
         })
         
-        # 開放讓使用者可以編輯類別與取締項目 (以防抓錯或空白)
         edited_missing = st.data_editor(
             missing_df,
             column_config={
@@ -228,7 +260,6 @@ if data_files:
                         cat_val = str(row["類別"]) if pd.notna(row["類別"]) else ""
                         item_val = str(row["取締項目"]) if pd.notna(row["取締項目"]) else ""
                         
-                        # 💡 將 6 個欄位全部寫回雲端 (順序: 條款, 攔舉, 逕舉, 事實, 類別, 取締項目)
                         worksheet.append_row([rule_val, s_val, d_val, fact_val, cat_val, item_val])
                         db_map[rule_val] = {'stop': s_val, 'dir': d_val}
                         
