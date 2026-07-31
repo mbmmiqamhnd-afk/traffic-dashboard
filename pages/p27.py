@@ -84,9 +84,6 @@ st.set_page_config(page_title="舉發績效結算", page_icon="👮", layout="wi
 
 st.title("⚡ 員警交通執法重點工作舉發績效結算")
 st.markdown("本頁面專門處理**員警個人績效配分**與**門檻結算**。系統具備雙向雲端同步與**智慧修復引擎**，能自動補齊殘缺的資料。")
-
-# 💡 將原本在側邊欄的提示與操作移至主畫面
-st.info("💡 **智慧基準偵測**：系統將自動讀取報表內文的「舉發單位」。若包含「交通分隊」，自動套用 **800分** 基準；其餘單位一律自動套用 **400分** 基準。")
 st.markdown("---")
 
 # ==========================================
@@ -99,9 +96,19 @@ xlsx_export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?for
 
 try:
     df_db = pd.read_excel(xlsx_export_url, sheet_name="配分表")
+    # 連線成功時，在側邊欄顯示綠燈狀態
+    st.sidebar.header("⚙️ 系統運行狀態")
+    st.sidebar.success("🟢 雲端資料庫連線正常")
 except Exception as e:
+    st.sidebar.header("⚙️ 系統運行狀態")
+    st.sidebar.error("🔴 雲端資料庫連線失敗")
     st.error(f"❌ 背景連線至雲端試算表失敗，請確認網址或權限設定。錯誤詳情：{e}")
     st.stop()
+
+# 💡 在側邊欄放上精簡的結算邏輯提示，讓畫面不空洞也不擁擠
+st.sidebar.markdown("---")
+st.sidebar.markdown("**💡 自動結算基準**")
+st.sidebar.info("- **交通分隊**：800 分\n- **其他單位**：400 分\n\n*(系統將自動判讀報表單位)*")
 
 if '違規條款' not in df_db.columns:
     st.error("❌ 雲端配分表缺少『違規條款』欄位！")
@@ -150,14 +157,15 @@ def find_closest_reference(new_rule_str, existing_db):
             best_match = data
     return best_match
 
-# 💡 修復功能改放在主畫面
+# 💡 修復功能維持在側邊欄的最下方，當有問題時才出現
 if incomplete_rules:
-    st.warning(f"⚠️ 偵測到雲端資料庫中有 **{len(incomplete_rules)}** 筆過往新增的條款缺乏「類別」與「取締項目」。")
-    if st.button("🛠️ 一鍵智慧修復雲端資料庫", use_container_width=True):
+    st.sidebar.markdown("---")
+    st.sidebar.warning(f"⚠️ 偵測到雲端資料庫中有 **{len(incomplete_rules)}** 筆過往新增的條款缺乏「類別」與「取締項目」。")
+    if st.sidebar.button("🛠️ 一鍵智慧修復資料庫", use_container_width=True):
         with st.spinner("☁️ 正在透過智慧參照引擎修復雲端資料..."):
             client = get_gspread_client()
             if not client:
-                st.error("❌ 找不到 GCP 憑證，無法寫入雲端。")
+                st.sidebar.error("❌ 找不到 GCP 憑證，無法寫入雲端。")
             else:
                 try:
                     worksheet = client.open_by_key(sheet_id).worksheet("配分表")
@@ -177,14 +185,14 @@ if incomplete_rules:
                             
                     if updates:
                         worksheet.batch_update(updates)
-                        st.success("✅ 修復完成！已成功將參照類別補上。")
+                        st.sidebar.success("✅ 修復完成！已成功將參照類別補上。")
                         st.rerun() 
                     else:
-                        st.info("無可參照的相近條款。")
+                        st.sidebar.info("無可參照的相近條款。")
                 except Exception as e:
-                    st.error(f"❌ 修復失敗：{e}")
+                    st.sidebar.error(f"❌ 修復失敗：{e}")
 
-# 💡 檔案上傳區改放在主畫面
+# 💡 主畫面的檔案上傳區
 st.subheader("📂 步驟 1：上傳原始舉發資料")
 data_files = st.file_uploader("批次選擇多個單位的半年期 Excel 檔案", type=["xlsx", "xls"], accept_multiple_files=True, key="data_files")
 st.markdown("---")
