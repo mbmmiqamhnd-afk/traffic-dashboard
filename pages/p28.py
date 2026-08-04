@@ -100,9 +100,9 @@ if uploaded_file is not None:
         
         st.divider()
         
-        # 顯示核算結果表
+        # 顯示核算結果表 (加入 hide_index=True 隱藏流水號)
         st.subheader("🏆 員警獎勵核算總表")
-        st.dataframe(reward_df, use_container_width=True)
+        st.dataframe(reward_df, use_container_width=True, hide_index=True)
         
         # 匯出 Excel 功能
         if not reward_df.empty:
@@ -131,13 +131,15 @@ if uploaded_file is not None:
         
         with tab1:
             if not df_A.empty:
-                st.dataframe(df_A[display_columns], use_container_width=True)
+                # 加入 hide_index=True 隱藏流水號
+                st.dataframe(df_A[display_columns], use_container_width=True, hide_index=True)
             else:
                 st.info("查無符合 Group A 條件之案件。")
                 
         with tab2:
             if not df_B.empty:
-                st.dataframe(df_B[display_columns], use_container_width=True)
+                # 加入 hide_index=True 隱藏流水號
+                st.dataframe(df_B[display_columns], use_container_width=True, hide_index=True)
             else:
                 st.info("查無符合 Group B 條件之案件。")
 
