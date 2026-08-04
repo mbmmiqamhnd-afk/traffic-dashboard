@@ -50,8 +50,9 @@ def send_single_file_email(file_bytes, file_name, mime_type="application/vnd.ope
 # 💡 核心演算法：門檻倍數遞增核算
 # ==========================================
 def calculate_tiered_rewards(row):
-    a_count = row['GroupA_件數']
-    b_count = row['GroupB_件數']
+    # 使用修改後的長標題欄位名稱
+    a_count = row['舉發違反道交條例第13條第1款、第18條第1項及第43條第3項案件']
+    b_count = row['舉發違反道交條例第16條第1項第1、2款（限定排氣管及消音器設備）、第43條第1項第1、3、4、5款案件']
     
     # 建立積分池 (最小公倍數概念)
     # Group B 每 4 件 1 嘉獎 -> 1 件 = 1 點
@@ -141,8 +142,12 @@ def main():
                 # ==========================================
                 # 獎勵核算區 (套用加倍懲罰算法)
                 # ==========================================
-                counts_A = df_A['舉發員警'].value_counts().rename("GroupA_件數")
-                counts_B = df_B['舉發員警'].value_counts().rename("GroupB_件數")
+                # 定義長標題欄位名稱
+                col_name_A = '舉發違反道交條例第13條第1款、第18條第1項及第43條第3項案件'
+                col_name_B = '舉發違反道交條例第16條第1項第1、2款（限定排氣管及消音器設備）、第43條第1項第1、3、4、5款案件'
+                
+                counts_A = df_A['舉發員警'].value_counts().rename(col_name_A)
+                counts_B = df_B['舉發員警'].value_counts().rename(col_name_B)
                 
                 reward_df = pd.concat([counts_A, counts_B], axis=1).fillna(0).astype(int)
                 
@@ -153,14 +158,14 @@ def main():
                 reward_df[['嘉獎次數', '大功數 (倍增指標)', '階梯嘉獎數']] = reward_df.apply(calculate_tiered_rewards, axis=1)
                 
                 # 排序與重命名
-                reward_df = reward_df.sort_values(by=["嘉獎次數", "GroupA_件數"], ascending=[False, False]).reset_index()
+                reward_df = reward_df.sort_values(by=["嘉獎次數", col_name_A], ascending=[False, False]).reset_index()
                 if '舉發員警' in reward_df.columns:
                     reward_df = reward_df.rename(columns={"舉發員警": "舉發員警名稱"})
                 elif 'index' in reward_df.columns:
                     reward_df = reward_df.rename(columns={"index": "舉發員警名稱"})
                 
-                reward_df = reward_df[(reward_df['GroupA_件數'] > 0) | (reward_df['GroupB_件數'] > 0)]
-                reward_df = reward_df[['舉發員警名稱', 'GroupA_件數', 'GroupB_件數', '嘉獎次數', '大功數 (倍增指標)', '階梯嘉獎數']]
+                reward_df = reward_df[(reward_df[col_name_A] > 0) | (reward_df[col_name_B] > 0)]
+                reward_df = reward_df[['舉發員警名稱', col_name_A, col_name_B, '嘉獎次數', '大功數 (倍增指標)', '階梯嘉獎數']]
 
             # ==========================================
             # 畫面呈現區
