@@ -38,8 +38,7 @@ if uploaded_file is not None:
             mask_A = df['條款1'].str.startswith(('131', '181', '433'))
             
             # Group B (4件 = 1嘉獎): 
-            # 1. 第16條1項1,2款 且 違規事實包含「排氣管」或「消音器」
-            # 備註：實務上有時只會登記 161 或 16 開頭，為確保不漏算，先抓 16 加上關鍵字雙重確認
+            # 1. 第16條 且 違規事實包含「排氣管」或「消音器」
             mask_16 = df['條款1'].str.startswith('16') & df['違規事實1'].str.contains('排氣管|消音器', na=False)
             
             # 2. 第43-1-1, 43-1-3, 43-1-4, 43-1-5 (直接比對前五碼)
@@ -54,7 +53,7 @@ if uploaded_file is not None:
             # ==========================================
             # 獎勵核算區
             # ==========================================
-            # 計算各員警件數，並確保沒有 NaN 的警員名稱干擾
+            # 計算各員警件數
             counts_A = df_A['舉發員警'].value_counts().rename("GroupA_件數")
             counts_B = df_B['舉發員警'].value_counts().rename("GroupB_件數")
             
@@ -74,12 +73,17 @@ if uploaded_file is not None:
             
             # 整理報表格式並排序
             reward_df = reward_df.sort_values(by=["嘉獎次數", "GroupA_件數"], ascending=[False, False]).reset_index()
-            reward_df = reward_df.rename(columns={"index": "舉發員警名稱"})
+            
+            # 動態判斷並重新命名警員欄位 (解決 pandas reset_index 的命名衝突)
+            if '舉發員警' in reward_df.columns:
+                reward_df = reward_df.rename(columns={"舉發員警": "舉發員警名稱"})
+            elif 'index' in reward_df.columns:
+                reward_df = reward_df.rename(columns={"index": "舉發員警名稱"})
             
             # 過濾出至少有一件符合的員警
             reward_df = reward_df[(reward_df['GroupA_件數'] > 0) | (reward_df['GroupB_件數'] > 0)]
             
-            # 為了讓報表更容易閱讀，重新排列欄位順序
+            # 重新排列欄位順序
             reward_df = reward_df[['舉發員警名稱', 'GroupA_件數', 'GroupB_件數', '嘉獎次數', '大功數', '剩餘嘉獎']]
 
         # ==========================================
