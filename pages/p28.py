@@ -95,7 +95,7 @@ def main():
         * 第16條第1項第1款（限定機車改裝排氣管）
         * 第16條第1項第2款（限定標的為排氣管及消音器設備）
         * 第43條第1項第1、3、4、5款
-    * *⚠️ **門檻加倍機制**：累積達一大功 (9次嘉獎) 後，系統將自動啟動倍數計算(需 2 倍件數方可獲得嘉獎)，以此類推。*
+    * *⚠️ **門檻加倍機制**：累積達一大功 (9次嘉獎) 後，系統將自動啟動倍數計算(需 2 倍件數方可獲得嘉獎)，以此類推。因此，報表採用「大功數(倍增指標)」與「階梯嘉獎數」呈現。*
     """)
     st.divider()
 
@@ -150,7 +150,7 @@ def main():
                     reward_df = reward_df.drop('nan')
                     
                 # 應用動態門檻演算法
-                reward_df[['嘉獎次數', '大功數', '剩餘嘉獎']] = reward_df.apply(calculate_tiered_rewards, axis=1)
+                reward_df[['嘉獎次數', '大功數 (倍增指標)', '階梯嘉獎數']] = reward_df.apply(calculate_tiered_rewards, axis=1)
                 
                 # 排序與重命名
                 reward_df = reward_df.sort_values(by=["嘉獎次數", "GroupA_件數"], ascending=[False, False]).reset_index()
@@ -160,7 +160,7 @@ def main():
                     reward_df = reward_df.rename(columns={"index": "舉發員警名稱"})
                 
                 reward_df = reward_df[(reward_df['GroupA_件數'] > 0) | (reward_df['GroupB_件數'] > 0)]
-                reward_df = reward_df[['舉發員警名稱', 'GroupA_件數', 'GroupB_件數', '嘉獎次數', '大功數', '剩餘嘉獎']]
+                reward_df = reward_df[['舉發員警名稱', 'GroupA_件數', 'GroupB_件數', '嘉獎次數', '大功數 (倍增指標)', '階梯嘉獎數']]
 
             # ==========================================
             # 畫面呈現區
@@ -171,7 +171,7 @@ def main():
             col1.metric("適用【2件1嘉獎】", f"{len(df_A)} 件")
             col2.metric("適用【4件1嘉獎】", f"{len(df_B)} 件")
             col3.metric("核發嘉獎總數", f"{reward_df['嘉獎次數'].sum()} 次")
-            col4.metric("達成大功總數", f"{reward_df['大功數'].sum()} 次")
+            col4.metric("大功(倍增)總數", f"{reward_df['大功數 (倍增指標)'].sum()} 次")
             
             st.divider()
             
