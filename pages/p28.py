@@ -11,7 +11,7 @@ st.markdown("""
 **💡 獎勵計算標準：**
 * **【Group A：每 2 輛嘉獎一次】**：違反道交條例第13條第1款、第18條第1項及第43條第3項。
 * **【Group B：每 4 輛嘉獎一次】**：
-    * 第16條第1項第1款（全數列入）
+    * 第16條第1項第1款（限定機車改裝排氣管）
     * 第16條第1項第2款（限定標的為排氣管及消音器設備）
     * 第43條第1項第1、3、4、5款
 * *註：累積達一大功 (9次嘉獎) 後，以倍數計算並以此類推。*
@@ -32,6 +32,7 @@ if uploaded_file is not None:
             # 確保欄位為字串型態，避免比對出錯及 NaN 問題
             df['條款1'] = df['條款1'].astype(str).str.strip()
             df['違規事實1'] = df['違規事實1'].astype(str).fillna('')
+            df['車種'] = df['車種'].astype(str).fillna('')
             df['舉發員警'] = df['舉發員警'].astype(str).str.strip()
             
             # ==========================================
@@ -41,8 +42,8 @@ if uploaded_file is not None:
             mask_A = df['條款1'].str.startswith(('131', '181', '433'))
             
             # Group B (4件 = 1嘉獎): 
-            # 1-1. 第16條第1項第1款 (16101開頭)：全數列入
-            mask_16_1_1 = df['條款1'].str.startswith('16101')
+            # 1-1. 第16條第1項第1款 (16101開頭)：且限定車種為機車(包含機車或重型)
+            mask_16_1_1 = df['條款1'].str.startswith('16101') & df['車種'].str.contains('機車|重型|輕型', na=False)
             
             # 1-2. 第16條第1項第2款 (16102開頭)：限定排氣管或消音器
             mask_16_1_2 = df['條款1'].str.startswith('16102') & df['違規事實1'].str.contains('排氣管|消音器', na=False)
@@ -133,18 +134,16 @@ if uploaded_file is not None:
         st.subheader("🔍 案件明細檢核區")
         tab1, tab2 = st.tabs(["📌 Group A：2件1嘉獎 (第13-1, 18-1, 43-3條)", "📌 Group B：4件1嘉獎 (第16-1, 43-1條)"])
         
-        display_columns = ['單號', '車牌', '違規日期', '條款1', '違規事實1', '舉發員警', '舉發單位']
+        display_columns = ['單號', '車牌', '車種', '違規日期', '條款1', '違規事實1', '舉發員警', '舉發單位']
         
         with tab1:
             if not df_A.empty:
-                # 加入 hide_index=True 隱藏流水號
                 st.dataframe(df_A[display_columns], use_container_width=True, hide_index=True)
             else:
                 st.info("查無符合 Group A 條件之案件。")
                 
         with tab2:
             if not df_B.empty:
-                # 加入 hide_index=True 隱藏流水號
                 st.dataframe(df_B[display_columns], use_container_width=True, hide_index=True)
             else:
                 st.info("查無符合 Group B 條件之案件。")
