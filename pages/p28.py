@@ -47,6 +47,39 @@ def send_single_file_email(file_bytes, file_name, mime_type="application/vnd.ope
         return False, str(e)
 
 # ==========================================
+# 💡 核心演算法：門檻倍數遞增核算
+# ==========================================
+def calculate_tiered_rewards(row):
+    a_count = row['GroupA_件數']
+    b_count = row['GroupB_件數']
+    
+    # 建立積分池 (最小公倍數概念)
+    # Group B 每 4 件 1 嘉獎 -> 1 件 = 1 點
+    # Group A 每 2 件 1 嘉獎 -> 1 件 = 2 點
+    total_points = a_count * 2 + b_count * 1
+    
+    jiajiang = 0
+    current_multiplier = 1
+    
+    while True:
+        # 當前階梯換 1 次嘉獎所需的成本 (基礎成本為 4 點)
+        cost = 4 * current_multiplier
+        if total_points >= cost:
+            total_points -= cost
+            jiajiang += 1
+            
+            # 如果滿 9 次 (一大功)，進入下一階梯，成本加倍
+            if jiajiang % 9 == 0:
+                current_multiplier += 1
+        else:
+            break
+            
+    dagong = jiajiang // 9
+    rem_jiajiang = jiajiang % 9
+    
+    return pd.Series([jiajiang, dagong, rem_jiajiang])
+
+# ==========================================
 # 主程式執行區塊
 # ==========================================
 def main():
@@ -62,7 +95,7 @@ def main():
         * 第16條第1項第1款（限定機車改裝排氣管）
         * 第16條第1項第2款（限定標的為排氣管及消音器設備）
         * 第43條第1項第1、3、4、5款
-    * *註：累積達一大功 (9次嘉獎) 後，以倍數計算並以此類推。*
+    * *⚠️ **門檻加倍機制**：累積達一大功 (9次嘉獎) 後，系統將自動啟動倍數計算(需 2 倍件數方可獲得嘉獎)，以此類推。*
     """)
     st.divider()
 
@@ -106,22 +139,18 @@ def main():
                 df_B = df[mask_B]
                 
                 # ==========================================
-                # 獎勵核算區
+                # 獎勵核算區 (套用加倍懲罰算法)
                 # ==========================================
-                # 計算各員警件數
                 counts_A = df_A['舉發員警'].value_counts().rename("GroupA_件數")
                 counts_B = df_B['舉發員警'].value_counts().rename("GroupB_件數")
                 
-                # 以外部合併確保所有員警名單
                 reward_df = pd.concat([counts_A, counts_B], axis=1).fillna(0).astype(int)
                 
                 if 'nan' in reward_df.index:
                     reward_df = reward_df.drop('nan')
                     
-                # 計算嘉獎與大功數
-                reward_df['嘉獎次數'] = (reward_df['GroupA_件數'] // 2) + (reward_df['GroupB_件數'] // 4)
-                reward_df['大功數'] = reward_df['嘉獎次數'] // 9
-                reward_df['剩餘嘉獎'] = reward_df['嘉獎次數'] % 9
+                # 應用動態門檻演算法
+                reward_df[['嘉獎次數', '大功數', '剩餘嘉獎']] = reward_df.apply(calculate_tiered_rewards, axis=1)
                 
                 # 排序與重命名
                 reward_df = reward_df.sort_values(by=["嘉獎次數", "GroupA_件數"], ascending=[False, False]).reset_index()
@@ -136,7 +165,7 @@ def main():
             # ==========================================
             # 畫面呈現區
             # ==========================================
-            st.success("✅ 資料處理完成！")
+            st.success("✅ 資料處理完成！(已套用倍數遞增防呆核算機制)")
             
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("適用【2件1嘉獎】", f"{len(df_A)} 件")
@@ -159,9 +188,7 @@ def main():
                     df_B.to_excel(writer, index=False, sheet_name='GroupB_明細')
                 output.seek(0)
                 
-                # 將下載按鈕與寄信按鈕並排
                 col_dl, col_mail = st.columns(2)
-                
                 excel_filename = "危險駕車與改裝車輛取締_獎勵結算表.xlsx"
                 
                 with col_dl:
@@ -177,7 +204,6 @@ def main():
                 with col_mail:
                     if st.button("📧 將此統計表一鍵寄至我的信箱", use_container_width=True):
                         with st.spinner("信件發送中，請稍候…"):
-                            # 將指標移回開頭確保讀取正常
                             output.seek(0)
                             ok, mail_err = send_single_file_email(output, excel_filename)
                             if ok:
