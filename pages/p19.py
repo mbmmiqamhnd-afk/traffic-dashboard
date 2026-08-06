@@ -596,7 +596,7 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
             "",
         ])
 
-    # [修改一] 調整列高，將 20*mm 增加至 26*mm，確保高度放大但不超過 A4 一頁 (297mm)
+    # 調整列高，將 20*mm 增加至 26*mm，確保高度放大但不超過 A4 一頁 (297mm)
     t = Table(
         table_data,
         colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3],
@@ -610,7 +610,7 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
         ("BACKGROUND", (0,0),(3,  0), colors.whitesmoke),
     ]
     
-    # [修改二] 單位相同自動合併儲存格 (針對左側 Column 0 與右側 Column 2)
+    # 單位相同自動合併儲存格 (針對左側 Column 0 與右側 Column 2)
     for col_idx, tuple_idx in [(0, 0), (2, 1)]:
         start_idx = 0
         while start_idx < len(rows):
@@ -780,29 +780,29 @@ with tab1:
         },
     ).dropna(how="all").fillna("").reset_index(drop=True)
 
-# [修改三] 第二階段人員連動與鎖定
+# 第二階段人員連動與鎖定 -> 變更為「手動編輯優先，自動補齊新人員」
 with tab2:
     res_cp_focus = st.text_area("【伍】勤務重點", p_cp_focus, height=80, key="cp_focus_input")
-    st.caption("💡 人員名單已與第一階段連動。若要修改人員，請至「第一階段」頁籤統一修改。")
+    st.caption("💡 人員名單預設由第一階段帶入，但您可以直接在此表格進行手動增刪與編輯（系統會優先保留您的手動修改）。")
     
-    # 取出第一階段人員名單作為底表
-    if not res_ptl.empty:
-        ptl_personnel = res_ptl[["組別", "無線電代號", "派遣單位", "職別", "姓名"]].copy()
+    # 1. 優先使用既有/已儲存的第二階段資料 (ed_cp) 作為基底
+    if not ed_cp.empty:
+        sync_cp = ed_cp.copy()
     else:
-        ptl_personnel = pd.DataFrame(columns=["組別", "無線電代號", "派遣單位", "職別", "姓名"])
+        sync_cp = pd.DataFrame(columns=CP_COLS)
         
-    # 保留舊有的第二階段分配內容(任務分工、臨檢場所)，並與第一階段人員合併 (Left Join)
-    if not ed_cp.empty and "姓名" in ed_cp.columns:
-        cp_mapping = ed_cp.drop_duplicates("姓名").set_index("姓名")[["任務分工", "臨檢場所"]]
-        sync_cp = ptl_personnel.join(cp_mapping, on="姓名")
-    else:
-        sync_cp = ptl_personnel.copy()
-        sync_cp["任務分工"] = ""
-        sync_cp["臨檢場所"] = ""
+    # 2. 自動連動：將第一階段有，但第二階段沒有的「新人員」補入
+    if not res_ptl.empty and "姓名" in res_ptl.columns:
+        existing_names = sync_cp["姓名"].dropna().astype(str).tolist()
+        new_rows = res_ptl[~res_ptl["姓名"].astype(str).isin(existing_names)].copy()
         
-    sync_cp["任務分工"] = sync_cp["任務分工"].fillna("")
-    sync_cp["臨檢場所"] = sync_cp["臨檢場所"].fillna("")
-    
+        if not new_rows.empty:
+            for col in CP_COLS:
+                if col not in new_rows.columns:
+                    new_rows[col] = ""
+            new_rows = new_rows[CP_COLS]
+            sync_cp = pd.concat([sync_cp, new_rows], ignore_index=True)
+            
     # 確保全部欄位順序均與 CP_COLS 規範一致
     for col in CP_COLS:
         if col not in sync_cp.columns:
@@ -815,12 +815,12 @@ with tab2:
         use_container_width=True,
         key="cp_ed",
         column_config={
-            # 鎖定人員相關欄位，強制與第一階段連動
-            "組別":        st.column_config.TextColumn("組別",        width="small", disabled=True),
-            "無線電代號":   st.column_config.TextColumn("無線電代號",   width="small", disabled=True),
-            "派遣單位":     st.column_config.TextColumn("派遣單位",     width="small", disabled=True),
-            "職別":         st.column_config.TextColumn("職別",         width="small", disabled=True),
-            "姓名":         st.column_config.TextColumn("姓名",         width="small", disabled=True),
+            # 解除 disabled=True，允許手動編輯任何欄位
+            "組別":        st.column_config.TextColumn("組別",        width="small"),
+            "無線電代號":   st.column_config.TextColumn("無線電代號",   width="small"),
+            "派遣單位":     st.column_config.TextColumn("派遣單位",     width="small"),
+            "職別":         st.column_config.TextColumn("職別",         width="small"),
+            "姓名":         st.column_config.TextColumn("姓名",         width="small"),
             "任務分工":     st.column_config.TextColumn("任務分工",     width="medium"),
             "臨檢場所":     st.column_config.TextColumn("臨檢場所",     width="large"),
         },
