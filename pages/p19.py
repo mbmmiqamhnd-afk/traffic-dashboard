@@ -434,16 +434,32 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     ]
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ptl_headers]]
     rows_ptl = df_ptl.reset_index(drop=True)
+    
+    # 計算組別與派遣單位的合併邏輯
     merge_groups = []
     prev_group, grp_start_idx = None, 1
+    unit_merge_groups = []
+    prev_unit, unit_start_idx = None, 1
+    
     for i, r in rows_ptl.iterrows():
-        grp = safe_str(r.get("組別",""))
         tbl_row = i + 1
+        
+        # 組別合併
+        grp = safe_str(r.get("組別",""))
         if grp != prev_group:
             if prev_group is not None:
                 merge_groups.append((grp_start_idx, tbl_row - 1))
             prev_group = grp
             grp_start_idx = tbl_row
+            
+        # 單位合併
+        unit_val = safe_str(r.get("派遣單位",""))
+        if unit_val != prev_unit:
+            if prev_unit is not None:
+                unit_merge_groups.append((unit_start_idx, tbl_row - 1))
+            prev_unit = unit_val
+            unit_start_idx = tbl_row
+
         data_ptl.append([
             Paragraph(clean(r.get("組別","")),      style_cell),
             Paragraph(clean(r.get("無線電代號","")), style_cell),
@@ -454,8 +470,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             Paragraph(clean(r.get("攜行裝備","")),   style_cell_left),
             Paragraph(clean(r.get("路檢地點","")),   style_cell_left),
         ])
+        
     if prev_group is not None:
         merge_groups.append((grp_start_idx, len(rows_ptl)))
+    if prev_unit is not None:
+        unit_merge_groups.append((unit_start_idx, len(rows_ptl)))
+        
     t_ptl = Table(data_ptl, colWidths=col_w_ptl)
     ts_ptl = [
         ("FONTNAME",   (0,0),(-1,-1), font),
@@ -463,10 +483,18 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#f2f2f2")),
         ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
     ]
+    
+    # 應用組合併
     for (rs, re) in merge_groups:
         if re > rs:
             for col in [0, 1, 7]:
                 ts_ptl.append(("SPAN", (col, rs), (col, re)))
+                
+    # 應用派遣單位合併
+    for (rs, re) in unit_merge_groups:
+        if re > rs:
+            ts_ptl.append(("SPAN", (2, rs), (2, re)))
+            
     t_ptl.setStyle(TableStyle(ts_ptl))
     story.append(t_ptl)
 
@@ -482,16 +510,31 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         ]
         data_cp = [[Paragraph(f"<b>{h}</b>", style_cell) for h in cp_headers]]
         rows_cp = df_cp.reset_index(drop=True)
+        
         cp_merge_groups = []
         cp_prev_group, cp_grp_start = None, 1
+        cp_unit_merge_groups = []
+        cp_prev_unit, cp_unit_start = None, 1
+        
         for i, r in rows_cp.iterrows():
-            grp = safe_str(r.get("組別",""))
             tbl_row = i + 1
+            
+            # 組別合併
+            grp = safe_str(r.get("組別",""))
             if grp != cp_prev_group:
                 if cp_prev_group is not None:
                     cp_merge_groups.append((cp_grp_start, tbl_row - 1))
                 cp_prev_group = grp
                 cp_grp_start  = tbl_row
+                
+            # 單位合併
+            unit_val = safe_str(r.get("派遣單位",""))
+            if unit_val != cp_prev_unit:
+                if cp_prev_unit is not None:
+                    cp_unit_merge_groups.append((cp_unit_start, tbl_row - 1))
+                cp_prev_unit = unit_val
+                cp_unit_start = tbl_row
+
             data_cp.append([
                 Paragraph(clean(r.get("組別","")),          style_cell),
                 Paragraph(clean(r.get("無線電代號","")),     style_cell),
@@ -501,8 +544,12 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
                 Paragraph(clean(r.get("任務分工","")),       style_cell_left),
                 Paragraph(clean(r.get("臨檢場所","")),       style_cp_target),
             ])
+            
         if cp_prev_group is not None:
             cp_merge_groups.append((cp_grp_start, len(rows_cp)))
+        if cp_prev_unit is not None:
+            cp_unit_merge_groups.append((cp_unit_start, len(rows_cp)))
+            
         t_cp = Table(data_cp, colWidths=col_w_cp, splitByRow=True)
         ts_cp = [
             ("FONTNAME",   (0,0),(-1,-1), font),
@@ -510,10 +557,18 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#e6e6e6")),
             ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
         ]
+        
+        # 應用組合併
         for (rs, re) in cp_merge_groups:
             if re > rs:
                 for col in [0, 1, 6]:
                     ts_cp.append(("SPAN", (col, rs), (col, re)))
+                    
+        # 應用派遣單位合併
+        for (rs, re) in cp_unit_merge_groups:
+            if re > rs:
+                ts_cp.append(("SPAN", (2, rs), (2, re)))
+                
         t_cp.setStyle(TableStyle(ts_cp))
         story.append(t_cp)
 
