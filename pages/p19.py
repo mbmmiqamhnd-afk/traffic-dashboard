@@ -493,7 +493,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             style = style_cell_left if c_idx in [6, 7] else style_cell
             data_ptl[r_idx][c_idx] = Paragraph(data_ptl[r_idx][c_idx], style)
         
-    # ★ 改用「視覺合併」 (Simulated Span) 以避開跨頁引擎崩潰
+    # 改用「視覺合併」 (Simulated Span) 以避開跨頁引擎崩潰
     ts_ptl = [
         ("FONTNAME",   (0,0),(-1,-1), font),
         ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#f2f2f2")),
@@ -573,7 +573,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
                 style = style_cp_target if c_idx == 7 else (style_cell_left if c_idx in [5, 6] else style_cell)
                 data_cp[r_idx][c_idx] = Paragraph(data_cp[r_idx][c_idx], style)
 
-        # ★ 改用「視覺合併」 (Simulated Span) 以避開跨頁引擎崩潰
+        # 改用「視覺合併」 (Simulated Span) 以避開跨頁引擎崩潰
         ts_cp = [
             ("FONTNAME",   (0,0),(-1,-1), font),
             ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#e6e6e6")),
@@ -733,14 +733,20 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
         part1 = MIMEBase("application", "pdf")
         part1.set_payload(pdf1)
         encoders.encode_base64(part1)
-        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(f'{unit}規劃表.pdf')}")
+        
+        # ★ 將規劃表 PDF 名稱改為完整標題
+        plan_filename = f"{unit}執行{project}勤務規劃表.pdf".replace(" ", "")
+        part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(plan_filename)}")
         msg.attach(part1)
 
         pdf2  = generate_attendance_pdf(unit, project, time_str, stats, df_cmd)
         part2 = MIMEBase("application", "pdf")
         part2.set_payload(pdf2)
         encoders.encode_base64(part2)
-        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(f'{unit}簽到表.pdf')}")
+        
+        # ★ 將簽到表 PDF 名稱改為完整標題
+        sign_filename = f"{unit}執行{project}簽到表.pdf".replace(" ", "")
+        part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(sign_filename)}")
         msg.attach(part2)
 
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
