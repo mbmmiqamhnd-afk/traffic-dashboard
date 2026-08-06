@@ -274,6 +274,20 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, stats, p
 
 # ─────────────── PDF 生成：規劃表 ───────────────
 
+def apply_simulated_span(data_table, ts_list, m_groups, cols):
+    """將合併效果轉換為視覺化留白（消除跨頁斷行 Bug）"""
+    total_rows = len(data_table)
+    for (rs, re) in m_groups:
+        if re > rs:
+            # 將重複的儲存格文字清空
+            for r_idx in range(rs + 1, re + 1):
+                for col in cols:
+                    data_table[r_idx][col] = ""
+        # 繪製群組的底部邊界線
+        if re < total_rows - 1:
+            for col in cols:
+                ts_list.append(("LINEBELOW", (col, re), (col, re), 0.5, colors.black))
+
 def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, stats, ptl_f, cp_f):
     font = _get_font()
     buf  = io.BytesIO()
@@ -435,7 +449,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     data_ptl = [[Paragraph(f"<b>{h}</b>", style_cell) for h in ptl_headers]]
     rows_ptl = df_ptl.reset_index(drop=True)
     
-    # 計算組別與派遣單位的合併邏輯
     merge_groups = []
     prev_group, grp_start_idx = None, 1
     unit_merge_groups = []
@@ -444,7 +457,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     for i, r in rows_ptl.iterrows():
         tbl_row = i + 1
         
-        # 組別合併
         grp = safe_str(r.get("組別",""))
         if grp != prev_group:
             if prev_group is not None:
@@ -452,7 +464,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             prev_group = grp
             grp_start_idx = tbl_row
             
-        # 單位合併
         unit_val = safe_str(r.get("派遣單位",""))
         if unit_val != prev_unit:
             if prev_unit is not None:
@@ -461,40 +472,47 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             unit_start_idx = tbl_row
 
         data_ptl.append([
-            Paragraph(clean(r.get("組別","")),      style_cell),
-            Paragraph(clean(r.get("無線電代號","")), style_cell),
-            Paragraph(clean(r.get("派遣單位","")),   style_cell),
-            Paragraph(clean(r.get("職別","")),       style_cell),
-            Paragraph(clean(r.get("姓名","")),       style_cell),
-            Paragraph(clean(r.get("任務分工","")),   style_cell),
-            Paragraph(clean(r.get("攜行裝備","")),   style_cell_left),
-            Paragraph(clean(r.get("路檢地點","")),   style_cell_left),
+            clean(r.get("組別","")),
+            clean(r.get("無線電代號","")),
+            clean(r.get("派遣單位","")),
+            clean(r.get("職別","")),
+            clean(r.get("姓名","")),
+            clean(r.get("任務分工","")),
+            clean(r.get("攜行裝備","")),
+            clean(r.get("路檢地點","")),
         ])
         
     if prev_group is not None:
         merge_groups.append((grp_start_idx, len(rows_ptl)))
     if prev_unit is not None:
         unit_merge_groups.append((unit_start_idx, len(rows_ptl)))
+
+    # 將文字轉為 Paragraph 物件
+    for r_idx in range(1, len(data_ptl)):
+        for c_idx in range(len(data_ptl[r_idx])):
+            style = style_cell_left if c_idx in [6, 7] else style_cell
+            data_ptl[r_idx][c_idx] = Paragraph(data_ptl[r_idx][c_idx], style)
         
-    t_ptl = Table(data_ptl, colWidths=col_w_ptl)
+    # ★ 改用「視覺合併」 (Simulated Span) 以避開跨頁引擎崩潰
     ts_ptl = [
         ("FONTNAME",   (0,0),(-1,-1), font),
-        ("GRID",       (0,0),(-1,-1), 0.5, colors.black),
         ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#f2f2f2")),
-        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
+        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"), # Header 置中
+        ("VALIGN",     (0,1),(-1,-1), "TOP"),    # 內容靠上，因為下方會留白
+        ("BOX",        (0,0),(-1,-1), 0.5, colors.black),
+        ("LINEBEFORE", (1,0),(-1,-1), 0.5, colors.black),
+        ("LINEBELOW",  (0,0),(-1,0),  0.5, colors.black),
     ]
     
-    # 應用組合併
-    for (rs, re) in merge_groups:
-        if re > rs:
-            for col in [0, 1, 7]:
-                ts_ptl.append(("SPAN", (col, rs), (col, re)))
-                
-    # 應用派遣單位合併
-    for (rs, re) in unit_merge_groups:
-        if re > rs:
-            ts_ptl.append(("SPAN", (2, rs), (2, re)))
+    # 獨立欄位（3, 4, 5, 6）正常加上每一列的橫線
+    for r_idx in range(1, len(data_ptl) - 1):
+        for col in [3, 4, 5, 6]:
+            ts_ptl.append(("LINEBELOW", (col, r_idx), (col, r_idx), 0.5, colors.black))
             
+    apply_simulated_span(data_ptl, ts_ptl, merge_groups, [0, 1, 7])
+    apply_simulated_span(data_ptl, ts_ptl, unit_merge_groups, [2])
+            
+    t_ptl = Table(data_ptl, colWidths=col_w_ptl, splitByRow=True)
     t_ptl.setStyle(TableStyle(ts_ptl))
     story.append(t_ptl)
 
@@ -503,7 +521,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph(f"<b>勤務重點：</b><br/>{clean(cp_f)}", style_text))
 
     if df_cp is not None and not df_cp.empty:
-        # ★ PDF 標頭加入攜行裝備，調整相對應的欄寬 (總和確保仍維持 1.0)
         cp_headers = ["組別","無線電\n代號","派遣\n單位","職別","姓名","任務分工","攜行裝備","臨檢場所"]
         col_w_cp   = [
             page_width*0.08, page_width*0.09, page_width*0.09, page_width*0.08,
@@ -520,7 +537,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         for i, r in rows_cp.iterrows():
             tbl_row = i + 1
             
-            # 組別合併
             grp = safe_str(r.get("組別",""))
             if grp != cp_prev_group:
                 if cp_prev_group is not None:
@@ -528,7 +544,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
                 cp_prev_group = grp
                 cp_grp_start  = tbl_row
                 
-            # 單位合併
             unit_val = safe_str(r.get("派遣單位",""))
             if unit_val != cp_prev_unit:
                 if cp_prev_unit is not None:
@@ -537,40 +552,47 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
                 cp_unit_start = tbl_row
 
             data_cp.append([
-                Paragraph(clean(r.get("組別","")),          style_cell),
-                Paragraph(clean(r.get("無線電代號","")),     style_cell),
-                Paragraph(clean(r.get("派遣單位","")),       style_cell),
-                Paragraph(clean(r.get("職別","")),           style_cell),
-                Paragraph(clean(r.get("姓名","")),           style_cell),
-                Paragraph(clean(r.get("任務分工","")),       style_cell_left),
-                Paragraph(clean(r.get("攜行裝備","")),       style_cell_left), # ★ PDF 新增欄位渲染
-                Paragraph(clean(r.get("臨檢場所","")),       style_cp_target),
+                clean(r.get("組別","")),
+                clean(r.get("無線電代號","")),
+                clean(r.get("派遣單位","")),
+                clean(r.get("職別","")),
+                clean(r.get("姓名","")),
+                clean(r.get("任務分工","")),
+                clean(r.get("攜行裝備","")),
+                clean(r.get("臨檢場所","")),
             ])
             
         if cp_prev_group is not None:
             cp_merge_groups.append((cp_grp_start, len(rows_cp)))
         if cp_prev_unit is not None:
             cp_unit_merge_groups.append((cp_unit_start, len(rows_cp)))
-            
-        t_cp = Table(data_cp, colWidths=col_w_cp, splitByRow=True)
+
+        # 將文字轉為 Paragraph 物件
+        for r_idx in range(1, len(data_cp)):
+            for c_idx in range(len(data_cp[r_idx])):
+                style = style_cp_target if c_idx == 7 else (style_cell_left if c_idx in [5, 6] else style_cell)
+                data_cp[r_idx][c_idx] = Paragraph(data_cp[r_idx][c_idx], style)
+
+        # ★ 改用「視覺合併」 (Simulated Span) 以避開跨頁引擎崩潰
         ts_cp = [
             ("FONTNAME",   (0,0),(-1,-1), font),
-            ("GRID",       (0,0),(-1,-1), 0.5, colors.black),
             ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#e6e6e6")),
             ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
+            ("VALIGN",     (0,1),(-1,-1), "TOP"),
+            ("BOX",        (0,0),(-1,-1), 0.5, colors.black),
+            ("LINEBEFORE", (1,0),(-1,-1), 0.5, colors.black),
+            ("LINEBELOW",  (0,0),(-1,0),  0.5, colors.black),
         ]
         
-        # 應用組合併 (臨檢場所在加入「攜行裝備」後，索引變成 7)
-        for (rs, re) in cp_merge_groups:
-            if re > rs:
-                for col in [0, 1, 7]: 
-                    ts_cp.append(("SPAN", (col, rs), (col, re)))
-                    
-        # 應用派遣單位合併 (索引 2)
-        for (rs, re) in cp_unit_merge_groups:
-            if re > rs:
-                ts_cp.append(("SPAN", (2, rs), (2, re)))
+        # 獨立欄位（3, 4, 5, 6）正常加上每一列的橫線
+        for r_idx in range(1, len(data_cp) - 1):
+            for col in [3, 4, 5, 6]:
+                ts_cp.append(("LINEBELOW", (col, r_idx), (col, r_idx), 0.5, colors.black))
                 
+        apply_simulated_span(data_cp, ts_cp, cp_merge_groups, [0, 1, 7])
+        apply_simulated_span(data_cp, ts_cp, cp_unit_merge_groups, [2])
+                
+        t_cp = Table(data_cp, colWidths=col_w_cp, splitByRow=True)
         t_cp.setStyle(TableStyle(ts_cp))
         story.append(t_cp)
 
@@ -667,7 +689,7 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
         ("BACKGROUND", (0,0),(3,  0), colors.whitesmoke),
     ]
     
-    # 單位相同自動合併儲存格 (針對左側 Column 0 與右側 Column 2)
+    # 單位相同自動合併儲存格 (簽到表不會跨頁，因此 SPAN 非常安全)
     for col_idx, tuple_idx in [(0, 0), (2, 1)]:
         start_idx = 0
         while start_idx < len(rows):
@@ -853,7 +875,7 @@ with tab2:
         new_rows = res_ptl[~res_ptl["姓名"].astype(str).isin(existing_names)].copy()
         
         if not new_rows.empty:
-            # ★ 僅保留要帶入的欄位，其餘欄位（如組別、路檢地點）不選取，因此不會連動。
+            # 僅保留要帶入的欄位，其餘欄位（如組別、路檢地點）不選取，因此不會連動。
             allowed_cols = ["無線電代號", "派遣單位", "職別", "姓名", "任務分工", "攜行裝備"]
             new_rows = new_rows[[c for c in allowed_cols if c in new_rows.columns]]
             
@@ -878,7 +900,7 @@ with tab2:
             "職別":         st.column_config.TextColumn("職別",         width="small"),
             "姓名":         st.column_config.TextColumn("姓名",         width="small"),
             "任務分工":     st.column_config.TextColumn("任務分工",     width="medium"),
-            "攜行裝備":     st.column_config.TextColumn("攜行裝備",     width="medium"), # ★ UI 新增欄位
+            "攜行裝備":     st.column_config.TextColumn("攜行裝備",     width="medium"),
             "臨檢場所":     st.column_config.TextColumn("臨檢場所",     width="large"),
         },
     ).dropna(how="all").fillna("").reset_index(drop=True)
