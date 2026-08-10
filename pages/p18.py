@@ -196,7 +196,6 @@ def p18_page():
                             now = datetime.now()
                             ext_year = str(now.year - 1911)
                             ext_month = str(now.month).zfill(2)
-                        # ====================================================
                         
                         final_sheets = {}
                         summary_rows = []
@@ -440,7 +439,6 @@ def p18_page():
                             now = datetime.now()
                             ext_year = str(now.year - 1911)
                             ext_month = str(now.month).zfill(2)
-                        # ====================================================
                         
                         direct_exec_list = []
                         for sheet_name in template_sheets:
@@ -480,7 +478,10 @@ def p18_page():
                         if df_direct_exec.empty:
                             st.error("⚠️ 該點數表中未偵測到任何個人的點數紀錄。")
                             return
-                            
+                        
+                        # --- 修正重點：將欄位名稱統一為「單位」及「姓名」，但保留在單一頁籤輸出 ---
+                        df_direct_exec.rename(columns={'單位名稱': '單位', '員警姓名': '姓名'}, inplace=True)
+                        
                         df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
                         df_direct_exec['每點獎金'] = point_value
                         df_direct_exec['實領獎金'] = (df_direct_exec['個人總點數'] * point_value).round().astype(int)
@@ -497,10 +498,16 @@ def p18_page():
                                 direct_total_money = df_direct_exec['實領獎金'].sum()
                         
                         df_direct_exec['蓋章'] = ""
+                        
+                        # 加入單一頁籤的總合計列
                         direct_total_row = {c: "" for c in df_direct_exec.columns}
-                        direct_total_row['員警姓名'] = '合計'; direct_total_row['實領獎金'] = direct_total_money
+                        direct_total_row['姓名'] = '合計'
+                        direct_total_row['實領獎金'] = direct_total_money
                         df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
                         
+                        # ====================================================
+                        # 開始處理 共同作業及配合人員
+                        # ====================================================
                         df_coworkers_work = st.session_state.current_roster.copy()
                         df_coworkers_work = sort_coworkers(df_coworkers_work)
                         
@@ -571,7 +578,7 @@ def p18_page():
                             {"項目": "一、直接執行人員", "金額": direct_total_money},
                             {"項目": "二、共同作業-負責管考(72%)", "金額": sub_72},
                             {"項目": "二、共同作業-勤務督導(20%)", "金額": sub_20},
-                            {"項目": "二、共同作業-開他配合(8%)", "金額": sub_08},
+                            {"項目": "二、共同作業-其他配合(8%)", "金額": sub_08},
                             {"項目": "共同作業人員小計", "金額": coworkers_total_money},
                             {"項目": "本月合計應發放", "金額": direct_total_money + coworkers_total_money}
                         ])
@@ -625,13 +632,15 @@ def p18_page():
                                 (6, "分局長：")
                             ]
                             
-                            # 1. 寫入【直接執行人員】分頁
+                            # 1. 寫入【直接執行人員】單一分頁 (欄位仍顯示各單位名稱)
                             df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                             ws1 = writer.sheets['直接執行人員']
                             ws1.set_portrait(); ws1.set_paper(9); ws1.fit_to_pages(1, 0)
                             
                             stamp_col1 = df_direct_exec.columns.get_loc('蓋章')
                             ws1.set_column(stamp_col1, stamp_col1, 22)
+                            
+                            # 套用樣式設定
                             for r in range(len(df_direct_exec) + 1):
                                 ws1.set_row(r, 45 if r > 0 else 25)
                                 for c in range(len(df_direct_exec.columns)):
