@@ -128,10 +128,10 @@ def init_sheets():
         del st.session_state["sheets_data"]
     st.rerun()
 
-# ⚠️ 升級版 load_data：加入重試機制與 429 錯誤保護
-@st.cache_data(ttl=600)
+# ⚠️ 升級版 load_data：拉長指數退避時間與取消 Spinner 閃爍
+@st.cache_data(ttl=600, show_spinner=False)
 def load_data_from_api():
-    max_retries = 3
+    max_retries = 4
     for attempt in range(max_retries):
         try:
             client = get_client()
@@ -159,13 +159,14 @@ def load_data_from_api():
         except gspread.exceptions.APIError as e:
             if "429" in str(e):
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt) # 指數退避: 等待 1秒, 2秒, 4秒...
+                    wait_time = 5 * (attempt + 1) # 等待 5, 10, 15 秒
+                    time.sleep(wait_time) 
                     continue
             return None, None, None, {}, f"API 限制或連線錯誤: {str(e)}"
         except Exception as e:
             return None, None, None, {}, str(e)
             
-    return None, None, None, {}, "達到最大重試次數，API 仍然超限"
+    return None, None, None, {}, "達到最大重試次數，API 仍然超限，請等待 1 分鐘後再試。"
 
 # 負責管理 Session State 緩存，徹底杜絕無限 API 請求
 def ensure_data_loaded():
@@ -181,6 +182,7 @@ def ensure_data_loaded():
             }
     return st.session_state["sheets_data"]
 
+# ⚠️ 升級版 save_data：儲存後直接手動更新快取，省去 3 次 Read Quota
 def save_data(settings_dict, cmd, ptl):
     try:
         client = get_client()
@@ -197,9 +199,15 @@ def save_data(settings_dict, cmd, ptl):
             if not df_clean.empty:
                 ws.update([df_clean.columns.tolist()] + df_clean.values.tolist())
         
-        load_data_from_api.clear()
-        if "sheets_data" in st.session_state:
-            del st.session_state["sheets_data"]
+        # 儲存成功後，不要清除快取，直接手動更新 Session State 中的資料
+        set_df = pd.DataFrame(list(settings_dict.items()), columns=["Key", "Value"])
+        st.session_state["sheets_data"] = {
+            "set_df": set_df, 
+            "cmd_df": cmd.copy(), 
+            "ptl_df": ptl.copy(), 
+            "settings": settings_dict, 
+            "err": None
+        }
             
         return True
     except Exception as e:
