@@ -40,6 +40,7 @@ DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年3月28日19至23時"
 DEFAULT_PROJ    = "0328「全市取締酒後駕車與防制危險駕車及噪音車輛」合併「取締改裝(噪音)車輛專案監、警、環聯合稽查」"
 DEFAULT_BRIEF   = "19時30分於分局二樓會議室召開"
+DEFAULT_FOCUS   = "加強攔查改裝(噪音)車輛，並注意執勤安全與態度。"
 DEFAULT_STATION = "時間:20時至23時\n地點:桃園市龍潭區大昌路一段277號(龍潭區警政聯合辦公大樓)廣場"
 
 DEFAULT_CMD = pd.DataFrame([
@@ -131,13 +132,21 @@ def load_data():
         return pd.DataFrame(ws_set.get_all_records()).fillna(""), pd.DataFrame(ws_cmd.get_all_records()).fillna(""), pd.DataFrame(ws_ptl.get_all_records()).fillna(""), None
     except Exception as e: return None, None, None, str(e)
 
-def save_data(unit, time_str, project, briefing, station, df_cmd, df_ptl):
+def save_data(unit, time_str, project, briefing, station, focus, df_cmd, df_ptl):
     try:
         client = get_client()
         sh = client.open_by_key(SHEET_ID)
         ws_set = sh.worksheet(WS_MAP["set"])
         ws_set.clear()
-        ws_set.update([["Key", "Value"], ["unit_name", unit], ["plan_full_time", time_str], ["project_name", project], ["briefing_info", briefing], ["check_station", station]])
+        ws_set.update([
+            ["Key", "Value"], 
+            ["unit_name", unit], 
+            ["plan_full_time", time_str], 
+            ["project_name", project], 
+            ["briefing_info", briefing], 
+            ["check_station", station],
+            ["duty_focus", focus]
+        ])
         for ws_name, df in [(WS_MAP["cmd"], df_cmd), (WS_MAP["ptl"], df_ptl)]:
             ws = sh.worksheet(ws_name)
             ws.clear()
@@ -160,7 +169,7 @@ def add_page_number(canvas, doc):
     canvas.drawCentredString(A4_SIZE[0] / 2.0, 10 * mm, text)
     canvas.restoreState()
 
-def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, df_ptl):
+def generate_pdf_from_data(unit, project, time_str, briefing, station, focus, df_cmd, df_ptl):
     font = _get_font()
     buf = io.BytesIO()
     margin_lr = float(12 * mm)
@@ -205,6 +214,9 @@ def generate_pdf_from_data(unit, project, time_str, briefing, station, df_cmd, d
     story.append(Spacer(1, 6*mm))
     story.append(Paragraph("<b>📢 勤前教育：</b>", style_middle_block))
     story.append(Paragraph(str(briefing).strip().replace('\n', '<br/>'), style_middle_block))
+    story.append(Spacer(1, 2*mm))
+    story.append(Paragraph("<b>🎯 勤務重點：</b>", style_middle_block))
+    story.append(Paragraph(str(focus).strip().replace('\n', '<br/>'), style_middle_block))
     story.append(Spacer(1, 2*mm))
     story.append(Paragraph("<b>🚧 環保局臨時檢驗站開設：</b>", style_middle_block))
     story.append(Paragraph(str(station).strip().replace('\n', '<br/>'), style_middle_block))
@@ -345,7 +357,7 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     return buf.getvalue()
 
 # --- 4. 寄信功能 ---
-def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl):
+def send_report_email(unit, project, time_str, briefing, station, focus, df_cmd, df_ptl):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         max_msg = MIMEMultipart()
@@ -355,7 +367,7 @@ def send_report_email(unit, project, time_str, briefing, station, df_cmd, df_ptl
         plan_filename = f"{unit}{project}勤務規劃表.pdf"
         
         for pdf_func, name in [(generate_pdf_from_data, plan_filename), (generate_attendance_pdf, '簽到表.pdf')]:
-            args = (unit, project, time_str, briefing, station, df_cmd, df_ptl) if pdf_func == generate_pdf_from_data else (unit, project, time_str, briefing)
+            args = (unit, project, time_str, briefing, station, focus, df_cmd, df_ptl) if pdf_func == generate_pdf_from_data else (unit, project, time_str, briefing)
             data = pdf_func(*args)
             part = MIMEBase("application", "pdf")
             part.set_payload(data)
@@ -411,7 +423,7 @@ st.sidebar.title("🛠️ 雲端設定")
 if st.sidebar.button("初始化/檢查雲端分頁"): init_sheets()
 if st.sidebar.button("⚠️ 強制重置為最新專案資料 (覆蓋雲端)"):
     with st.spinner("重置中..."):
-        save_data(DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF, DEFAULT_STATION, DEFAULT_CMD, DEFAULT_PTL)
+        save_data(DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF, DEFAULT_STATION, DEFAULT_FOCUS, DEFAULT_CMD, DEFAULT_PTL)
         if "ptl_editable_df" in st.session_state: del st.session_state.ptl_editable_df
         st.cache_data.clear()
         st.rerun()
@@ -422,6 +434,7 @@ u = d.get("unit_name", DEFAULT_UNIT)
 t = d.get("plan_full_time", DEFAULT_TIME)
 p = d.get("project_name", DEFAULT_PROJ)
 b = d.get("briefing_info", DEFAULT_BRIEF)
+f = d.get("duty_focus", DEFAULT_FOCUS)
 s = d.get("check_station", DEFAULT_STATION)
 
 st.title("🚓 聯合稽查勤務規劃管理系統")
@@ -452,7 +465,10 @@ else:
 
 st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(df_cmd if df_cmd is not None and not df_cmd.empty else DEFAULT_CMD.copy(), num_rows="dynamic", use_container_width=True).dropna(how='all').fillna("")
-b_info, s_info = st.text_area("📢 勤前教育", b, height=70), st.text_area("🚧 環保局臨時檢驗站開設", s, height=70)
+
+b_info = st.text_area("📢 勤前教育", b, height=70)
+f_info = st.text_area("🎯 勤務重點", f, height=70)
+s_info = st.text_area("🚧 環保局臨時檢驗站開設", s, height=70)
 
 
 st.subheader("2. 巡邏編組")
@@ -472,8 +488,8 @@ st.markdown("---")
 
 if st.button("💾 同步雲端並發送備份郵件", use_container_width=True):
     with st.spinner("處理中..."):
-        save_data(u, p_time, p_name, b_info, s_info, res_cmd, res_ptl)
-        ok, max_err = send_report_email(u, p_name, p_time, b_info, s_info, res_cmd, res_ptl)
+        save_data(u, p_time, p_name, b_info, s_info, f_info, res_cmd, res_ptl)
+        ok, max_err = send_report_email(u, p_name, p_time, b_info, s_info, f_info, res_cmd, res_ptl)
         if ok: 
             st.success("✅ 同步與郵件發送成功！")
             if "ptl_editable_df" in st.session_state: del st.session_state.ptl_editable_df
