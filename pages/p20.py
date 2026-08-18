@@ -485,6 +485,7 @@ if st.sidebar.button("⚠️ 強制重置為預設資料 (覆蓋雲端)"):
     with st.spinner("重置中..."):
         save_data(DEFAULT_UNIT, DEFAULT_TIME, DEFAULT_PROJ, DEFAULT_BRIEF, DEFAULT_STATION, DEFAULT_P1_DESC, DEFAULT_P2_DESC, DEFAULT_CMD, DEFAULT_PTL, DEFAULT_CP)
         if "ptl_editable_df" in st.session_state: del st.session_state.ptl_editable_df
+        if "cp_editable_df" in st.session_state: del st.session_state.cp_editable_df
         st.cache_data.clear()
         st.rerun()
 
@@ -620,8 +621,15 @@ with tab1:
 
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
-    raw_cp = st.data_editor(df_cp if not df_cp.empty else DEFAULT_CP.copy(), num_rows="dynamic", use_container_width=True, key="cp_editor")
+    if "cp_editable_df" not in st.session_state:
+        st.session_state.cp_editable_df = df_cp if not df_cp.empty else DEFAULT_CP.copy()
+
+    raw_cp = st.data_editor(st.session_state.cp_editable_df, num_rows="dynamic", use_container_width=True, key="cp_editor")
     res_cp = auto_assign_radio_code(raw_cp).dropna(how='all').fillna("") if auto_sync_radio else raw_cp.dropna(how='all').fillna("")
+
+    if not res_cp.equals(st.session_state.cp_editable_df):
+        st.session_state.cp_editable_df = res_cp.copy()
+        st.rerun()
 
 st.markdown("---")
 
@@ -632,5 +640,6 @@ if st.button("💾 同步雲端並發送備份郵件", use_container_width=True)
         if ok: 
             st.success("✅ 同步與郵件發送成功！")
             if "ptl_editable_df" in st.session_state: del st.session_state.ptl_editable_df
+            if "cp_editable_df" in st.session_state: del st.session_state.cp_editable_df
             st.rerun()
         else: st.warning(f"⚠️ 雲端已同步，但郵件失敗: {max_err}")
