@@ -42,12 +42,16 @@ WS_MAP = {
     "cp":  "二階段_路檢組"
 }
 
-DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
-DEFAULT_TIME    = "115年4月8日20至24時"
-DEFAULT_PROJ    = "全國同步擴大取締酒後駕車與防制危險駕車及噪音車輛專案勤務"
-DEFAULT_BRIEF   = "20時30分於分局二樓會議室召開"
-DEFAULT_P1_DESC = "第一階段：21時至22時30分，機動巡邏"
-DEFAULT_P2_DESC = "第二階段：22時30分至24時，定點路檢及機動攔檢"
+DEFAULT_UNIT     = "桃園市政府警察局龍潭分局"
+DEFAULT_TIME     = "115年4月8日20至24時"
+DEFAULT_PROJ     = "全國同步擴大取締酒後駕車與防制危險駕車及噪音車輛專案勤務"
+DEFAULT_BRIEF    = "20時30分於分局二樓會議室召開"
+
+# 新增：分拆後的預設時間與重點
+DEFAULT_P1_TIME  = "21時至22時30分"
+DEFAULT_P1_FOCUS = "機動巡邏"
+DEFAULT_P2_TIME  = "22時30分至24時"
+DEFAULT_P2_FOCUS = "定點路檢及機動攔檢"
 
 EXPECTED_PTL_COLS = ["排序", "編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "巡邏路段"]
 EXPECTED_CP_COLS  = ["排序", "編組", "無線電代號", "單位", "職別", "姓名", "任務分工", "路檢地點"]
@@ -211,7 +215,8 @@ def load_data():
     except Exception as e:
         return None, None, None, None, str(e)
 
-def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc):
+# 儲存時將拆分後的「時間」與「重點」獨立寫入設定表
+def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_t, p1_f, p2_t, p2_f):
     try:
         client = get_client()
         if client is None: return False
@@ -228,8 +233,10 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
             ["plan_full_time", time_str],
             ["project_name", project],
             ["briefing_info", briefing],
-            ["phase1_desc", p1_desc],
-            ["phase2_desc", p2_desc]
+            ["phase1_time", p1_t],
+            ["phase1_focus", p1_f],
+            ["phase2_time", p2_t],
+            ["phase2_focus", p2_f]
         ])
 
         try:
@@ -270,7 +277,7 @@ def save_data(unit, time_str, project, briefing, df_cmd, df_ptl, df_cp, p1_desc,
         return False
 
 # --- PDF 相關函數 ---
-def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc):
+def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_t, p1_f, p2_t, p2_f):
     font = _get_font()
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
@@ -313,6 +320,10 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     story.append(Paragraph("<b>📢 勤前教育：</b>", style_middle_block))
     story.append(Paragraph(f"{clean_text_only(briefing)}", style_middle_block))
     story.append(Spacer(1, 6*mm))
+
+    # 在 PDF 裡組合階段標題（如：第一階段：21時至22時30分，機動巡邏）
+    p1_desc = f"第一階段：{p1_t}，{p1_f}"
+    p2_desc = f"第二階段：{p2_t}，{p2_f}"
 
     # --- 第一階段：巡邏組 ---
     df_ptl = clean_df(df_ptl)
@@ -424,7 +435,7 @@ def generate_attendance_pdf(unit, project, time_str, briefing):
     doc.build(story, onFirstPage=draw_page_number, onLaterPages=draw_page_number)
     return buf.getvalue()
 
-def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc):
+def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_t, p1_f, p2_t, p2_f):
     try:
         sender, pwd = st.secrets["email"]["user"], st.secrets["email"]["password"]
         msg = MIMEMultipart()
@@ -435,7 +446,7 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
         plan_filename = f"{unit}執行{project}勤務規劃表.pdf"
         attendance_filename = f"{unit}執行{project}勤務簽到表.pdf"
 
-        p1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_desc, p2_desc)
+        p1 = generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, p1_t, p1_f, p2_t, p2_f)
         part1 = MIMEBase("application", "pdf"); part1.set_payload(p1); encoders.encode_base64(part1)
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(plan_filename)}"); msg.attach(part1)
 
@@ -555,8 +566,12 @@ u    = d.get("unit_name",      DEFAULT_UNIT)
 t    = d.get("plan_full_time", DEFAULT_TIME)
 p    = d.get("project_name",   DEFAULT_PROJ)
 b    = d.get("briefing_info",  DEFAULT_BRIEF)
-p1_d = d.get("phase1_desc",    DEFAULT_P1_DESC)
-p2_d = d.get("phase2_desc",    DEFAULT_P2_DESC)
+
+# 讀取拆分後的時間與重點 (若無則吃預設值)
+p1_time_default  = d.get("phase1_time",  DEFAULT_P1_TIME)
+p1_focus_default = d.get("phase1_focus", DEFAULT_P1_FOCUS)
+p2_time_default  = d.get("phase2_time",  DEFAULT_P2_TIME)
+p2_focus_default = d.get("phase2_focus", DEFAULT_P2_FOCUS)
 
 clean_p_name = re.sub(r"^\d{4}", "", p)
 
@@ -567,10 +582,20 @@ p_input = c1.text_input("專案名稱", clean_p_name)
 date_code = extract_4_digit_date(p_time)
 p_name = f"{date_code}{p_input}" if date_code else p_input
 
-st.subheader("⚙️ 階段標題與說明")
-cc1, cc2 = st.columns(2)
-phase1_desc = cc1.text_input("第一階段標題說明", p1_d)
-phase2_desc = cc2.text_input("第二階段標題說明", p2_d)
+# --- 新的 UI：分拆輸入時間與重點 ---
+st.subheader("⚙️ 分階段勤務時間與重點")
+col_p1, col_p2 = st.columns(2)
+
+with col_p1:
+    st.markdown("**📍 第一階段 (巡邏)**")
+    p1_time_input  = st.text_input("第一階段勤務時間", p1_time_default)
+    p1_focus_input = st.text_input("第一階段勤務重點", p1_focus_default)
+
+with col_p2:
+    st.markdown("**🚧 第二階段 (路檢)**")
+    p2_time_input  = st.text_input("第二階段勤務時間", p2_time_default)
+    p2_focus_input = st.text_input("第二階段勤務重點", p2_focus_default)
+
 
 st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(df_cmd, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
@@ -583,7 +608,8 @@ auto_sync_radio = st.checkbox("✨ 啟用自動推算與統一同編組「無線
 tab1, tab2 = st.tabs(["📍 第一階段 (巡邏)", "🚧 第二階段 (路檢)"])
 
 with tab1:
-    st.info(f"當前標題：{phase1_desc}")
+    # 預覽完整的標題顯示
+    st.info(f"當前標題：第一階段：{p1_time_input}，{p1_focus_input}")
     raw_ptl = st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
     
     raw_ptl = sort_within_group(raw_ptl)
@@ -594,7 +620,8 @@ with tab1:
         res_ptl = raw_ptl.dropna(how="all").fillna("")
 
 with tab2:
-    st.info(f"當前標題：{phase2_desc}")
+    # 預覽完整的標題顯示
+    st.info(f"當前標題：第二階段：{p2_time_input}，{p2_focus_input}")
     
     raw_cp = st.data_editor(df_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     
@@ -609,9 +636,9 @@ st.markdown("---")
 
 if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True):
     with st.spinner("同步中，請稍候…"):
-        if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc):
+        if save_data(u, p_time, p_name, b_info, res_cmd, res_ptl, res_cp, p1_time_input, p1_focus_input, p2_time_input, p2_focus_input):
             with st.spinner("同步成功，正在寄送郵件…"):
-                ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
+                ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, p1_time_input, p1_focus_input, p2_time_input, p2_focus_input)
             if ok:
                 st.success(f"✅ 同步與發信成功！已在後台為專案自動補上「{date_code}」代碼。")
                 st.rerun()  
