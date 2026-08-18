@@ -451,46 +451,6 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
 
 # --- 核心邏輯區 ---
 
-# 🟢 新增：依單位保留第二階段現有資料（任務、地點），僅將第一階段的「職別」與「姓名」更新覆蓋過去
-def update_personnel_by_unit(df_ptl, df_cp):
-    if df_ptl is None or df_ptl.empty or df_cp is None or df_cp.empty:
-        return df_cp
-        
-    df_cp_updated = df_cp.copy()
-    
-    # 1. 建立「單位」與「人員名單」的對應表 (依序存放)
-    unit_personnel = {}
-    for _, row in df_ptl.iterrows():
-        u = safe_str(row.get('單位')).strip()
-        r = safe_str(row.get('職別')).strip()
-        n = safe_str(row.get('姓名')).strip()
-        
-        if u and (r or n):
-            if u not in unit_personnel:
-                unit_personnel[u] = []
-            unit_personnel[u].append({'職別': r, '姓名': n})
-            
-    # 2. 走訪第二階段，依據單位依序填入最新人員（直接覆蓋舊有姓名與職別）
-    usage_count = {u: 0 for u in unit_personnel}
-    
-    for idx, row in df_cp_updated.iterrows():
-        u = safe_str(row.get('單位')).strip()
-        
-        # 若第二階段的該列有填寫單位
-        if u:
-            if u in unit_personnel and usage_count[u] < len(unit_personnel[u]):
-                # 還有該單位的人員名額，則帶入第一階段最新的資料
-                person = unit_personnel[u][usage_count[u]]
-                df_cp_updated.at[idx, '職別'] = person['職別']
-                df_cp_updated.at[idx, '姓名'] = person['姓名']
-                usage_count[u] += 1
-            else:
-                # 若該單位在第一階段已無多餘人員，則清空舊資料，確保名單與第一階段一致
-                df_cp_updated.at[idx, '職別'] = ""
-                df_cp_updated.at[idx, '姓名'] = ""
-                
-    return df_cp_updated
-
 def auto_assign_radio_code(df):
     if df is None or df.empty: return df
     df_copy = df.copy()
@@ -588,9 +548,6 @@ if isinstance(df_cp, pd.DataFrame) and not df_cp.empty:
 else:
     df_cp = pd.DataFrame(columns=EXPECTED_CP_COLS)
 
-# 🌟 插入點：套用同步名單的資料覆寫 🌟
-if 'synced_cp_data' in st.session_state:
-    df_cp = st.session_state['synced_cp_data']
 
 d = dict(zip(df_set.iloc[:, 0].astype(str), df_set.iloc[:, 1].astype(str))) if not df_set.empty else {}
 
@@ -639,17 +596,6 @@ with tab1:
 with tab2:
     st.info(f"當前標題：{phase2_desc}")
     
-    col_btn, col_hint = st.columns([1, 2])
-    with col_btn:
-        if st.button("🔄 依單位更新人員名單 (保留任務與地點)"):
-            # 觸發更新邏輯：保留舊資料架構，僅依單位替換為第一階段最新人員
-            st.session_state['synced_cp_data'] = update_personnel_by_unit(raw_ptl, df_cp)
-            if "cp_editor" in st.session_state:
-                del st.session_state["cp_editor"]
-            st.rerun()
-    with col_hint:
-        st.caption("※ 提示：保留第二階段已建立的地點與任務，依「單位」直接將舊有的人員名單替換為第一階段的最新陣容。")
-    
     raw_cp = st.data_editor(df_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     
     raw_cp = sort_within_group(raw_cp)
@@ -667,8 +613,6 @@ if st.button("💾 同步雲端並發送 Email 備份", use_container_width=True
             with st.spinner("同步成功，正在寄送郵件…"):
                 ok, mail_err = send_report_email(u, p_name, p_time, b_info, res_cmd, res_ptl, res_cp, phase1_desc, phase2_desc)
             if ok:
-                if 'synced_cp_data' in st.session_state:
-                    del st.session_state['synced_cp_data']
                 st.success(f"✅ 同步與發信成功！已在後台為專案自動補上「{date_code}」代碼。")
                 st.rerun()  
             else:
