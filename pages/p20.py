@@ -542,67 +542,6 @@ b_info, s_info = st.text_area("📢 勤前教育", b, height=70), st.text_area("
 
 st.subheader("2. 勤務編組")
 
-with st.expander("📋 點此打開【今日出勤名冊快速貼上區】(針對巡邏組)", expanded=False):
-    st.markdown("""
-    **💡 智慧辨識貼上說明（3欄、4欄皆通用）：**
-    * **【模式 A：一般同單位模式】** 直接貼 **3 個資料** 👉 `單位 職別 姓名`
-    * **【模式 B：跨單位聯合模式】** 貼上 **4 個資料** 👉 `編組名稱 單位 職別 姓名`
-    """)
-    
-    paste_placeholder = "聖亭所 副所長 曹培翔\n聖亭所 警員 詹宗澤\n第三巡邏組 中興所 警員 林國仁"
-    raw_paste = st.text_area("請在此貼上名冊文字：", value="", placeholder=paste_placeholder, height=200)
-    
-    if st.button("⚡ 解析名冊並匯入下方【第一階段】表格", use_container_width=True):
-        if raw_paste.strip():
-            lines = raw_paste.strip().split("\n")
-            parsed_ptl = []
-            
-            route_map = {
-                "聖亭": "於中正路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
-                "龍潭": "於北龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
-                "中興": "於中興路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
-                "石門": "於神龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
-                "高平": "於東龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
-                "三和": "於東龍路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。",
-                "交通": "於中豐路周邊易有噪音車輛滋擾、聚集路段機動巡查改裝噪音車輛。"
-            }
-            
-            for line in lines:
-                if not line.strip(): continue
-                tokens = re.split(r'[\s,\t]+', line.strip())
-                
-                if len(tokens) == 3:
-                    u_name = tokens[0].strip()
-                    title  = tokens[1].strip()
-                    name   = tokens[2].strip()
-                    g_name = u_name.replace("派出所", "組").replace("所", "組").replace("分隊", "組")
-                elif len(tokens) >= 4:
-                    g_name = tokens[0].strip()
-                    u_name = tokens[1].strip()
-                    title  = tokens[2].strip()
-                    name   = tokens[3].strip()
-                else:
-                    continue 
-                    
-                default_route = next((v for k, v in route_map.items() if k in u_name), "於轄區內易有噪音車輛滋擾路段巡邏。")
-                
-                parsed_ptl.append({
-                    "編組": g_name,
-                    "無線電代號": "", 
-                    "單位": u_name,
-                    "職別": title,
-                    "姓名": name,
-                    "任務分工": "機動巡查" if "警員" in title else "帶班兼蒐證",
-                    "巡邏路段": default_route
-                })
-            
-            if parsed_ptl:
-                st.session_state.ptl_editable_df = pd.DataFrame(parsed_ptl)
-                st.success("🎉 名冊智慧解析成功！已載入下方第一階段表格。")
-                st.rerun()
-            else:
-                st.error("❌ 無法解析文字，請確認每行輸入是否包含最少 3 個或 4 個空白隔開的資料。")
-
 auto_sync_radio = st.checkbox("✨ 啟用自動推算與統一同編組「無線電代號」 (若需完全手動自訂每列代號，請取消勾選)", value=True)
 
 tab1, tab2 = st.tabs(["📍 第一階段 (巡邏)", "🚧 第二階段 (路檢)"])
