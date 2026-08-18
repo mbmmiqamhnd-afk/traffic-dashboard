@@ -47,7 +47,7 @@ DEFAULT_TIME     = "115年4月8日20至24時"
 DEFAULT_PROJ     = "全國同步擴大取締酒後駕車與防制危險駕車及噪音車輛專案勤務"
 DEFAULT_BRIEF    = "20時30分於分局二樓會議室召開"
 
-# 新增：分拆後的預設時間與重點
+# 分拆後的預設時間與重點
 DEFAULT_P1_TIME  = "21時至22時30分"
 DEFAULT_P1_FOCUS = "機動巡邏"
 DEFAULT_P2_TIME  = "22時30分至24時"
@@ -582,21 +582,6 @@ p_input = c1.text_input("專案名稱", clean_p_name)
 date_code = extract_4_digit_date(p_time)
 p_name = f"{date_code}{p_input}" if date_code else p_input
 
-# --- 新的 UI：分拆輸入時間與重點 ---
-st.subheader("⚙️ 分階段勤務時間與重點")
-col_p1, col_p2 = st.columns(2)
-
-with col_p1:
-    st.markdown("**📍 第一階段 (巡邏)**")
-    p1_time_input  = st.text_input("第一階段勤務時間", p1_time_default)
-    p1_focus_input = st.text_input("第一階段勤務重點", p1_focus_default)
-
-with col_p2:
-    st.markdown("**🚧 第二階段 (路檢)**")
-    p2_time_input  = st.text_input("第二階段勤務時間", p2_time_default)
-    p2_focus_input = st.text_input("第二階段勤務重點", p2_focus_default)
-
-
 st.subheader("1. 指揮編組")
 res_cmd = st.data_editor(df_cmd, num_rows="dynamic", use_container_width=True).dropna(how="all").fillna("")
 b_info  = st.text_area("📢 勤前教育", b, height=70)
@@ -608,8 +593,10 @@ auto_sync_radio = st.checkbox("✨ 啟用自動推算與統一同編組「無線
 tab1, tab2 = st.tabs(["📍 第一階段 (巡邏)", "🚧 第二階段 (路檢)"])
 
 with tab1:
-    # 預覽完整的標題顯示
-    st.info(f"當前標題：第一階段：{p1_time_input}，{p1_focus_input}")
+    c1_t, c1_f = st.columns(2)
+    p1_time_input  = c1_t.text_input("第一階段勤務時間", p1_time_default)
+    p1_focus_input = c1_f.text_input("第一階段勤務重點", p1_focus_default)
+
     raw_ptl = st.data_editor(df_ptl, num_rows="dynamic", use_container_width=True, key="ptl_editor")
     
     raw_ptl = sort_within_group(raw_ptl)
@@ -620,8 +607,9 @@ with tab1:
         res_ptl = raw_ptl.dropna(how="all").fillna("")
 
 with tab2:
-    # 預覽完整的標題顯示
-    st.info(f"當前標題：第二階段：{p2_time_input}，{p2_focus_input}")
+    c2_t, c2_f = st.columns(2)
+    p2_time_input  = c2_t.text_input("第二階段勤務時間", p2_time_default)
+    p2_focus_input = c2_f.text_input("第二階段勤務重點", p2_focus_default)
     
     raw_cp = st.data_editor(df_cp, num_rows="dynamic", use_container_width=True, key="cp_editor")
     
