@@ -7,24 +7,43 @@ import io
 import menu
 
 def process_traffic_data(file):
-    """讀取並清洗自選匯出 Excel 資料"""
+    """讀取並清洗自選匯出 Excel 資料 (動態尋找標題列，防呆升級版)"""
     try:
-        # 讀取「案件明細」工作表，跳過前兩列表頭
-        df = pd.read_excel(file, sheet_name="案件明細", header=2)
+        # 讀取「案件明細」工作表，先不預設標題列位置 (header=None)
+        df = pd.read_excel(file, sheet_name="案件明細", header=None)
         
-        # 將第一列設為正確的欄位名稱
-        df.columns = df.iloc[0]
-        df = df[1:].reset_index(drop=True)
+        # 動態尋找包含「單號」與「舉發員警1」的那一列，將其定位為正確標題
+        header_row_index = None
+        for idx, row in df.iterrows():
+            row_values = [str(val).strip() for val in row.values]
+            if '單號' in row_values and '舉發員警1' in row_values:
+                header_row_index = idx
+                break
+                
+        if header_row_index is None:
+            st.error("找不到資料標題列！請確認上傳的檔案工作表【案件明細】中是否包含『單號』與『舉發員警1』。")
+            return None
+            
+        # 將找到的那一列設為正確的 DataFrame 欄位名稱
+        df.columns = df.iloc[header_row_index]
+        # 捨棄標題列以上的報表抬頭，只保留資料主體
+        df = df.iloc[header_row_index + 1:].reset_index(drop=True)
         
-        # 確保所有必要欄位都存在
+        if df.empty:
+            st.warning("系統判定此檔案中沒有任何案件明細資料。")
+            return None
+        
+        # 確保後續所需的關鍵欄位皆存在
         cols_to_keep = ['單號', '簡式車種名稱', '違規法條1', '違規事實1', '入案日', '舉發員警1']
         
         missing_cols = [col for col in cols_to_keep if col not in df.columns]
         if missing_cols:
-            st.error(f"上傳的檔案缺少以下必要欄位：{', '.join(missing_cols)}，請確認是否為正確的『自選匯出.xlsx』格式。")
+            st.error(f"上傳的檔案缺少以下必要欄位：{', '.join(missing_cols)}，請確認自選匯出時是否有勾選。")
             return None
             
-        df = df[cols_to_keep]
+        # 只取需要的欄位，並清除完全空白的列
+        df = df[cols_to_keep].dropna(how='all')
+        
         return df
     
     except Exception as e:
