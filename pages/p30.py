@@ -43,39 +43,51 @@ def process_traffic_data(file):
         return None
 
 def calculate_merits_for_officer(group):
-    """計算單一員警的預估嘉獎次數，並串接舉發單號明細"""
+    """計算單一員警的預估嘉獎次數，並嚴格依照獎勵名目拆分"""
     group = group.sort_values(by='入案日')
     
-    total_merits = 0
-    other_plate_cases = 0  
-    fake_plate_cases = 0   
-    tickets = [] # 用來收集該員警的所有單號
+    # 獨立名目統計
+    fake_plate_cases = 0   # 偽變造車牌 件數
+    fake_plate_merits = 0  # 偽變造車牌 嘉獎數
+    
+    other_plate_cases = 0  # 懸掛他車號牌 件數
+    other_plate_merits = 0 # 懸掛他車號牌 嘉獎數
+    
+    tickets = []
     
     for idx, row in group.iterrows():
         violation = str(row['違規事實1'])
         vehicle = str(row['簡式車種名稱'])
         tickets.append(str(row['單號']))
         
-        multiplier = 2 if total_merits >= 9 else 1
+        # 公文規定：前揭獎勵每半年達到嘉獎 9 次後，件數加倍。
+        # 這裡以該員警「本專案累計總嘉獎數」作為是否啟動加倍的門檻
+        current_total_merits = fake_plate_merits + other_plate_merits
+        multiplier = 2 if current_total_merits >= 9 else 1
         
+        # 名目一：偽(變)造車牌
         if '偽造' in violation or '變造' in violation:
             fake_plate_cases += 1
             if '汽車' in vehicle:
-                total_merits += 2 * multiplier
+                fake_plate_merits += 2 * multiplier
             else:
-                total_merits += 1 * multiplier
+                fake_plate_merits += 1 * multiplier
                 
+        # 名目二：懸掛他車號牌
         elif '他車' in violation:
             other_plate_cases += 1
+            # 每 2 件核予嘉獎 1 次
             if other_plate_cases % 2 == 0:
-                total_merits += 1 * multiplier
+                other_plate_merits += 1 * multiplier
                 
     return pd.Series({
-        '偽變造件數 (件)': fake_plate_cases,
-        '他車牌照件數 (件)': other_plate_cases,
-        '總合件數 (件)': fake_plate_cases + other_plate_cases,
-        '預估嘉獎次數 (次)': total_merits,
-        '舉發單號明細': ", ".join(tickets) # 將單號合併為字串
+        '【偽變造車牌】件數': fake_plate_cases,
+        '【偽變造車牌】嘉獎數': fake_plate_merits,
+        '【懸掛他車號牌】件數': other_plate_cases,
+        '【懸掛他車號牌】嘉獎數': other_plate_merits,
+        '總件數合計': fake_plate_cases + other_plate_cases,
+        '總嘉獎合計': fake_plate_merits + other_plate_merits,
+        '舉發單號明細': ", ".join(tickets)
     })
 
 def main():
@@ -100,26 +112,27 @@ def main():
             with st.expander("📄 檢視原始案件明細", expanded=False):
                 st.dataframe(df, use_container_width=True)
             
-            st.subheader("📊 員警專案敘獎統計表 (含案件明細)")
+            st.subheader("📊 員警專案敘獎統計表 (依名目區分)")
             
             merit_stats = df.groupby('舉發員警1').apply(calculate_merits_for_officer).reset_index()
-            merit_stats = merit_stats.sort_values(by=['預估嘉獎次數 (次)', '總合件數 (件)'], ascending=[False, False]).reset_index(drop=True)
+            # 依據總嘉獎數與總件數進行排序
+            merit_stats = merit_stats.sort_values(by=['總嘉獎合計', '總件數合計'], ascending=[False, False]).reset_index(drop=True)
             
-            styled_df = merit_stats.style.background_gradient(subset=['預估嘉獎次數 (次)'], cmap='Blues')
+            # 使用兩種類別的顏色標示不同名目的嘉獎數
+            styled_df = (merit_stats.style
+                         .background_gradient(subset=['【偽變造車牌】嘉獎數'], cmap='Reds')
+                         .background_gradient(subset=['【懸掛他車號牌】嘉獎數'], cmap='Blues'))
+            
             st.dataframe(styled_df, use_container_width=True)
             
-            # === 雙工作表輸出設定 ===
+            # 雙工作表輸出設定
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                # 寫入第一頁：統計表
                 merit_stats.to_excel(writer, index=False, sheet_name='敘獎統計表')
-                
-                # 寫入第二頁：依照員警排序過的案件明細
                 df_sorted = df.sort_values(by=['舉發員警1', '入案日']).reset_index(drop=True)
                 df_sorted.to_excel(writer, index=False, sheet_name='案件明細')
                 
             excel_data = output.getvalue()
-            # =======================
             
             col1, col2 = st.columns([1, 4])
             with col1:
@@ -133,9 +146,10 @@ def main():
             
             with col2:
                 st.info("💡 **系統計算標準：**\n"
-                        "1. **偽變造車牌**：汽車記嘉獎2次，機車記嘉獎1次。\n"
-                        "2. **懸掛他車號牌**：每 2 件記嘉獎1次。\n"
-                        "3. **獎勵加倍**：累計達 9 次嘉獎門檻後，後續入案之件數獎勵自動加倍計算。")
+                        "1. **名目拆分**：系統已將【偽變造車牌】與【懸掛他車號牌】獨立計算，方便對接敘獎事由。\n"
+                        "2. **偽變造車牌**：汽車記嘉獎2次，機車記嘉獎1次。\n"
+                        "3. **懸掛他車號牌**：每 2 件記嘉獎1次。\n"
+                        "4. **獎勵加倍**：專案累計達 9 次嘉獎門檻後，後續入案之件數獎勵自動加倍計算。")
 
 if __name__ == "__main__":
     main()
