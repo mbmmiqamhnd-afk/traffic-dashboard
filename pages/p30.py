@@ -9,10 +9,8 @@ import menu
 def process_traffic_data(file):
     """讀取並清洗自選匯出 Excel 資料 (動態尋找標題列，防呆升級版)"""
     try:
-        # 讀取「案件明細」工作表，先不預設標題列位置 (header=None)
         df = pd.read_excel(file, sheet_name="案件明細", header=None)
         
-        # 動態尋找包含「單號」與「舉發員警1」的那一列，將其定位為正確標題
         header_row_index = None
         for idx, row in df.iterrows():
             row_values = [str(val).strip() for val in row.values]
@@ -24,26 +22,20 @@ def process_traffic_data(file):
             st.error("找不到資料標題列！請確認上傳的檔案工作表【案件明細】中是否包含『單號』與『舉發員警1』。")
             return None
             
-        # 將找到的那一列設為正確的 DataFrame 欄位名稱
         df.columns = df.iloc[header_row_index]
-        # 捨棄標題列以上的報表抬頭，只保留資料主體
         df = df.iloc[header_row_index + 1:].reset_index(drop=True)
         
         if df.empty:
             st.warning("系統判定此檔案中沒有任何案件明細資料。")
             return None
         
-        # 確保後續所需的關鍵欄位皆存在
         cols_to_keep = ['單號', '簡式車種名稱', '違規法條1', '違規事實1', '入案日', '舉發員警1']
-        
         missing_cols = [col for col in cols_to_keep if col not in df.columns]
         if missing_cols:
             st.error(f"上傳的檔案缺少以下必要欄位：{', '.join(missing_cols)}，請確認自選匯出時是否有勾選。")
             return None
             
-        # 只取需要的欄位，並清除完全空白的列
         df = df[cols_to_keep].dropna(how='all')
-        
         return df
     
     except Exception as e:
@@ -51,18 +43,19 @@ def process_traffic_data(file):
         return None
 
 def calculate_merits_for_officer(group):
-    """計算單一員警的預估嘉獎次數 (依入案日排序以處理加倍機制)"""
+    """計算單一員警的預估嘉獎次數，並串接舉發單號明細"""
     group = group.sort_values(by='入案日')
     
     total_merits = 0
     other_plate_cases = 0  
     fake_plate_cases = 0   
+    tickets = [] # 用來收集該員警的所有單號
     
     for idx, row in group.iterrows():
         violation = str(row['違規事實1'])
         vehicle = str(row['簡式車種名稱'])
+        tickets.append(str(row['單號']))
         
-        # 累計達 9 次嘉獎後，後續計算加倍
         multiplier = 2 if total_merits >= 9 else 1
         
         if '偽造' in violation or '變造' in violation:
@@ -81,18 +74,17 @@ def calculate_merits_for_officer(group):
         '偽變造件數 (件)': fake_plate_cases,
         '他車牌照件數 (件)': other_plate_cases,
         '總合件數 (件)': fake_plate_cases + other_plate_cases,
-        '預估嘉獎次數 (次)': total_merits
+        '預估嘉獎次數 (次)': total_merits,
+        '舉發單號明細': ", ".join(tickets) # 將單號合併為字串
     })
 
 def main():
     st.set_page_config(page_title="偽變造車牌專案 敘獎統計", layout="wide")
     
-    # === 呼叫您的自訂側邊欄 ===
     try:
         menu.show_sidebar()
     except Exception as e:
         st.sidebar.error("無法載入側邊欄，請確認根目錄下有 menu.py")
-    # ==========================
         
     st.title("🔎 偽變造車牌專案 - 自動敘獎統計系統")
     st.markdown("本模組專為計算「加強取締查緝偽(變)造車牌及違法(規)權利車」專案期間出力人員敘獎所設計。")
@@ -108,7 +100,7 @@ def main():
             with st.expander("📄 檢視原始案件明細", expanded=False):
                 st.dataframe(df, use_container_width=True)
             
-            st.subheader("📊 員警專案敘獎統計表")
+            st.subheader("📊 員警專案敘獎統計表 (含案件明細)")
             
             merit_stats = df.groupby('舉發員警1').apply(calculate_merits_for_officer).reset_index()
             merit_stats = merit_stats.sort_values(by=['預估嘉獎次數 (次)', '總合件數 (件)'], ascending=[False, False]).reset_index(drop=True)
@@ -116,19 +108,25 @@ def main():
             styled_df = merit_stats.style.background_gradient(subset=['預估嘉獎次數 (次)'], cmap='Blues')
             st.dataframe(styled_df, use_container_width=True)
             
-            # === 將結果寫入記憶體中的 Excel 檔案，避免 Windows 中文亂碼 ===
+            # === 雙工作表輸出設定 ===
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                # 寫入第一頁：統計表
                 merit_stats.to_excel(writer, index=False, sheet_name='敘獎統計表')
+                
+                # 寫入第二頁：依照員警排序過的案件明細
+                df_sorted = df.sort_values(by=['舉發員警1', '入案日']).reset_index(drop=True)
+                df_sorted.to_excel(writer, index=False, sheet_name='案件明細')
+                
             excel_data = output.getvalue()
-            # =========================================================
+            # =======================
             
             col1, col2 = st.columns([1, 4])
             with col1:
                 st.download_button(
-                    label="📥 匯出敘獎統計名冊 (Excel)",
+                    label="📥 匯出敘獎名冊及明細 (Excel)",
                     data=excel_data,
-                    file_name='偽變造車牌專案敘獎統計表.xlsx',
+                    file_name='偽變造車牌專案敘獎統計含明細.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     type="primary"
                 )
