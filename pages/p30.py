@@ -3,6 +3,9 @@ import pandas as pd
 import numpy as np
 import io
 
+# 載入您自訂的側邊欄模組
+import menu
+
 def process_traffic_data(file):
     """讀取並清洗自選匯出 Excel 資料"""
     try:
@@ -16,7 +19,6 @@ def process_traffic_data(file):
         # 確保所有必要欄位都存在
         cols_to_keep = ['單號', '簡式車種名稱', '違規法條1', '違規事實1', '入案日', '舉發員警1']
         
-        # 欄位名稱檢查機制，若匯出表格式有動，可避免系統崩潰
         missing_cols = [col for col in cols_to_keep if col not in df.columns]
         if missing_cols:
             st.error(f"上傳的檔案缺少以下必要欄位：{', '.join(missing_cols)}，請確認是否為正確的『自選匯出.xlsx』格式。")
@@ -31,33 +33,27 @@ def process_traffic_data(file):
 
 def calculate_merits_for_officer(group):
     """計算單一員警的預估嘉獎次數 (依入案日排序以處理加倍機制)"""
-    # 依入案日排序，確保累計加倍邏輯符合時間先後
     group = group.sort_values(by='入案日')
     
     total_merits = 0
-    other_plate_cases = 0  # 累計他車牌照案件數
-    fake_plate_cases = 0   # 累計偽變造案件數
+    other_plate_cases = 0  
+    fake_plate_cases = 0   
     
     for idx, row in group.iterrows():
         violation = str(row['違規事實1'])
         vehicle = str(row['簡式車種名稱'])
         
-        # 公文規定：每半年達到嘉獎 9 次後，件數加倍 (即獎勵係數 x2)
         multiplier = 2 if total_merits >= 9 else 1
         
-        # 1. 偽(變)造車牌邏輯
         if '偽造' in violation or '變造' in violation:
             fake_plate_cases += 1
-            # 取締汽車核予嘉獎二次，機車(重機/輕機)核予嘉獎一次
             if '汽車' in vehicle:
                 total_merits += 2 * multiplier
             else:
                 total_merits += 1 * multiplier
                 
-        # 2. 懸掛他車號牌邏輯
         elif '他車' in violation:
             other_plate_cases += 1
-            # 查獲懸掛他車號牌者，每 2 件核予嘉獎 1 次
             if other_plate_cases % 2 == 0:
                 total_merits += 1 * multiplier
                 
@@ -70,11 +66,18 @@ def calculate_merits_for_officer(group):
 
 def main():
     st.set_page_config(page_title="偽變造車牌專案 敘獎統計", layout="wide")
+    
+    # === 呼叫您的自訂側邊欄 ===
+    try:
+        menu.show_sidebar()
+    except Exception as e:
+        st.sidebar.error("無法載入側邊欄，請確認根目錄下有 menu.py")
+    # ==========================
+        
     st.title("🔎 偽變造車牌專案 - 自動敘獎統計系統")
     st.markdown("本模組專為計算「加強取締查緝偽(變)造車牌及違法(規)權利車」專案期間出力人員敘獎所設計。")
     st.divider()
     
-    # 檔案上傳區塊
     uploaded_file = st.file_uploader("請上傳『自選匯出.xlsx』(資料來源需包含簡式車種名稱與違規事實)", type=["xlsx"])
     
     if uploaded_file is not None:
@@ -82,23 +85,17 @@ def main():
             df = process_traffic_data(uploaded_file)
             
         if df is not None:
-            # 顯示原始資料預覽
             with st.expander("📄 檢視原始案件明細", expanded=False):
                 st.dataframe(df, use_container_width=True)
             
             st.subheader("📊 員警專案敘獎統計表")
             
-            # 依據舉發員警群組化並套用計算邏輯
             merit_stats = df.groupby('舉發員警1').apply(calculate_merits_for_officer).reset_index()
-            # 依嘉獎次數高低排序，將績效最好的排在上面
             merit_stats = merit_stats.sort_values(by=['預估嘉獎次數 (次)', '總合件數 (件)'], ascending=[False, False]).reset_index(drop=True)
             
-            # 建立欄位顯示的漸層效果，幫助肉眼快速辨識績效高低
             styled_df = merit_stats.style.background_gradient(subset=['預估嘉獎次數 (次)'], cmap='Blues')
-            
             st.dataframe(styled_df, use_container_width=True)
             
-            # 轉換為 CSV (使用 utf-8-sig 避免 Excel 開啟亂碼)
             csv = merit_stats.to_csv(index=False).encode('utf-8-sig')
             
             col1, col2 = st.columns([1, 4])
