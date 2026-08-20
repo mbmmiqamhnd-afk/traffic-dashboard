@@ -43,6 +43,7 @@ def calculate_merits_for_officer(group):
         violation = str(row['違規事實1'])
         vehicle = str(row['簡式車種名稱'])
         
+        # 累計達 9 次嘉獎後，後續計算加倍
         multiplier = 2 if total_merits >= 9 else 1
         
         if '偽造' in violation or '變造' in violation:
@@ -96,15 +97,20 @@ def main():
             styled_df = merit_stats.style.background_gradient(subset=['預估嘉獎次數 (次)'], cmap='Blues')
             st.dataframe(styled_df, use_container_width=True)
             
-            csv = merit_stats.to_csv(index=False).encode('utf-8-sig')
+            # === 將結果寫入記憶體中的 Excel 檔案，避免 Windows 中文亂碼 ===
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                merit_stats.to_excel(writer, index=False, sheet_name='敘獎統計表')
+            excel_data = output.getvalue()
+            # =========================================================
             
             col1, col2 = st.columns([1, 4])
             with col1:
                 st.download_button(
-                    label="📥 匯出敘獎統計名冊 (CSV)",
-                    data=csv,
-                    file_name='偽變造車牌專案敘獎統計表.csv',
-                    mime='text/csv',
+                    label="📥 匯出敘獎統計名冊 (Excel)",
+                    data=excel_data,
+                    file_name='偽變造車牌專案敘獎統計表.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     type="primary"
                 )
             
