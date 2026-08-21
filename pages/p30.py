@@ -2,10 +2,54 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import io
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+import urllib.parse as _ul
 
-# 載入您自訂的側邊欄模組
-import menu
+# 載入自訂側邊欄
+try:
+    import menu
+except ImportError:
+    pass
 
+# ==========================================
+# 0. 輔助函式：發送單一檔案 Email
+# ==========================================
+def send_single_file_email(file_bytes, file_name, mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"):
+    """使用 st.secrets 設定檔發送夾帶報表的電子郵件"""
+    try:
+        sender = st.secrets["email"]["user"]
+        pwd = st.secrets["email"]["password"]
+        msg = MIMEMultipart()
+        msg["From"] = sender
+        msg["To"] = sender  # 寄給自己
+        msg["Subject"] = f"🔎 偽變造車牌專案敘獎統計 - {file_name}"
+        
+        body_text = f"長官您好，\n\n系統已自動產出相關檔案，附件為最新的【{file_name}】。\n\n本信件由交通執法自動化分析引擎發送。"
+        msg.attach(MIMEText(body_text, "plain", "utf-8"))
+
+        # 解析 MIME 類型
+        main_type, sub_type = mime_type.split('/') if '/' in mime_type else ("application", "octet-stream")
+        part = MIMEBase(main_type, sub_type)
+        part.set_payload(file_bytes.getvalue())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(file_name)}")
+        msg.attach(part)
+
+        # 透過 SMTP 發送
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, pwd)
+            server.sendmail(sender, sender, msg.as_string())
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+# ==========================================
+# 1. 資料處理與統計邏輯
+# ==========================================
 def process_traffic_data(file):
     """讀取並清洗自選匯出 Excel 資料 (動態尋找標題列，防呆升級版)"""
     try:
@@ -46,12 +90,11 @@ def calculate_merits_for_officer(group):
     """計算單一員警的預估嘉獎次數，並嚴格依照獎勵名目拆分"""
     group = group.sort_values(by='入案日')
     
-    # 獨立名目統計
-    fake_plate_cases = 0   # 偽變造車牌 件數
-    fake_plate_merits = 0  # 偽變造車牌 嘉獎數
+    fake_plate_cases = 0   
+    fake_plate_merits = 0  
     
-    other_plate_cases = 0  # 懸掛他車號牌 件數
-    other_plate_merits = 0 # 懸掛他車號牌 嘉獎數
+    other_plate_cases = 0  
+    other_plate_merits = 0 
     
     tickets = []
     
@@ -60,12 +103,9 @@ def calculate_merits_for_officer(group):
         vehicle = str(row['簡式車種名稱'])
         tickets.append(str(row['單號']))
         
-        # 公文規定：前揭獎勵每半年達到嘉獎 9 次後，件數加倍。
-        # 這裡以該員警「本專案累計總嘉獎數」作為是否啟動加倍的門檻
         current_total_merits = fake_plate_merits + other_plate_merits
         multiplier = 2 if current_total_merits >= 9 else 1
         
-        # 名目一：偽(變)造車牌
         if '偽造' in violation or '變造' in violation:
             fake_plate_cases += 1
             if '汽車' in vehicle:
@@ -73,10 +113,8 @@ def calculate_merits_for_officer(group):
             else:
                 fake_plate_merits += 1 * multiplier
                 
-        # 名目二：懸掛他車號牌
         elif '他車' in violation:
             other_plate_cases += 1
-            # 每 2 件核予嘉獎 1 次
             if other_plate_cases % 2 == 0:
                 other_plate_merits += 1 * multiplier
                 
@@ -90,6 +128,9 @@ def calculate_merits_for_officer(group):
         '舉發單號明細': ", ".join(tickets)
     })
 
+# ==========================================
+# 2. 主程式介面
+# ==========================================
 def main():
     st.set_page_config(page_title="偽變造車牌專案 敘獎統計", layout="wide")
     
@@ -115,17 +156,15 @@ def main():
             st.subheader("📊 員警專案敘獎統計表 (依名目區分)")
             
             merit_stats = df.groupby('舉發員警1').apply(calculate_merits_for_officer).reset_index()
-            # 依據總嘉獎數與總件數進行排序
             merit_stats = merit_stats.sort_values(by=['總嘉獎合計', '總件數合計'], ascending=[False, False]).reset_index(drop=True)
             
-            # 使用兩種類別的顏色標示不同名目的嘉獎數
             styled_df = (merit_stats.style
                          .background_gradient(subset=['【偽變造車牌】嘉獎數'], cmap='Reds')
                          .background_gradient(subset=['【懸掛他車號牌】嘉獎數'], cmap='Blues'))
             
             st.dataframe(styled_df, use_container_width=True)
             
-            # 雙工作表輸出設定
+            # 建立記憶體中的 Excel 檔案
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 merit_stats.to_excel(writer, index=False, sheet_name='敘獎統計表')
@@ -133,23 +172,37 @@ def main():
                 df_sorted.to_excel(writer, index=False, sheet_name='案件明細')
                 
             excel_data = output.getvalue()
+            excel_filename = '偽變造車牌專案敘獎統計含明細.xlsx'
             
-            col1, col2 = st.columns([1, 4])
-            with col1:
+            st.divider()
+            col_dl, col_mail = st.columns(2)
+            
+            with col_dl:
                 st.download_button(
-                    label="📥 匯出敘獎名冊及明細 (Excel)",
+                    label="📥 下載敘獎名冊及明細 (Excel)",
                     data=excel_data,
-                    file_name='偽變造車牌專案敘獎統計含明細.xlsx',
-                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    type="primary"
+                    file_name=excel_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                    use_container_width=True
                 )
             
-            with col2:
-                st.info("💡 **系統計算標準：**\n"
-                        "1. **名目拆分**：系統已將【偽變造車牌】與【懸掛他車號牌】獨立計算，方便對接敘獎事由。\n"
-                        "2. **偽變造車牌**：汽車記嘉獎2次，機車記嘉獎1次。\n"
-                        "3. **懸掛他車號牌**：每 2 件記嘉獎1次。\n"
-                        "4. **獎勵加倍**：專案累計達 9 次嘉獎門檻後，後續入案之件數獎勵自動加倍計算。")
+            with col_mail:
+                if st.button("📧 將此統計表一鍵寄至我的信箱", use_container_width=True):
+                    with st.spinner("信件發送中，請稍候…"):
+                        output.seek(0)
+                        ok, mail_err = send_single_file_email(output, excel_filename)
+                        if ok:
+                            st.success("✅ 信件發送成功！統計報表 Excel 已夾帶至您的信箱。")
+                        else:
+                            st.error(f"❌ 發信失敗，請檢查系統信箱設定。錯誤訊息: {mail_err}")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.info("💡 **系統計算標準：**\n"
+                    "1. **名目拆分**：系統已將【偽變造車牌】與【懸掛他車號牌】獨立計算，方便對接敘獎事由。\n"
+                    "2. **偽變造車牌**：汽車記嘉獎2次，機車記嘉獎1次。\n"
+                    "3. **懸掛他車號牌**：每 2 件記嘉獎1次。\n"
+                    "4. **獎勵加倍**：專案累計達 9 次嘉獎門檻後，後續入案之件數獎勵自動加倍計算。")
 
 if __name__ == "__main__":
     main()
