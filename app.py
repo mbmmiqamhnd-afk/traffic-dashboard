@@ -51,7 +51,6 @@ def get_gsheet_connection():
         try:
             gc = gspread.service_account_from_dict(GCP_CREDS)
             sh = gc.open_by_url(GOOGLE_SHEET_URL)
-            # 修正 1：將工作表列表的讀取動作包進重試機制，防止連線初始化時爆發 429 錯誤
             sh._cached_worksheets = _gsheet_call_with_retry(sh.worksheets)
             return sh
         except Exception as e:
@@ -186,21 +185,28 @@ def process_tech_enforcement(files, sh):
         _sh_batch_update(sh, reqs)
 
 
-# ----------------- [2. 超載統計] -----------------
+# ----------------- [2. 超載統計 (修正版)] -----------------
 def process_overload(files, sh):
-    f_wk, f_yt, f_ly = None, None, None
-    for f in files:
-        if "(1)" in f.name: f_yt = f
-        elif "(2)" in f.name: f_ly = f
-        else: f_wk = f
-
     def parse_rpt(f):
         if not f: return {}, "0000000", "0000000"
         f.seek(0)
-        counts, s, e = {}, "0000000", "0000000"
-        text_block = pd.read_excel(f, header=None, nrows=15).to_string()
-        m = re.search(r'(\d{3,7}).*至\s*(\d{3,7})', text_block)
-        if m: s, e = m.group(1), m.group(2)
+        counts = {}
+        s_date, e_date = "0000000", "0000000"
+        
+        # 讀取前 25 列文字尋找日期
+        text_block = pd.read_excel(f, header=None, nrows=25).to_string()
+        
+        # 匹配常見民國格式：115年01月01日至115年04月07日 或 115/01/01~115/04/07
+        m_roc = re.search(r'(\d{3})[年\./\-]?(\d{2})[月\./\-]?(\d{2})[日\s]*[至\-\~][\s]*(\d{3})[年\./\-]?(\d{2})[月\./\-]?(\d{2})[日]?', text_block)
+        if m_roc:
+            s_date = f"{m_roc.group(1)}{m_roc.group(2)}{m_roc.group(3)}"
+            e_date = f"{m_roc.group(4)}{m_roc.group(5)}{m_roc.group(6)}"
+        else:
+            # 匹配 7 位民國碼：1150101 至 1150407
+            m_raw = re.search(r'(\d{7})\s*[至\-\~]\s*(\d{7})', text_block)
+            if m_raw:
+                s_date, e_date = m_raw.group(1), m_raw.group(2)
+        
         f.seek(0)
         xls = pd.ExcelFile(f)
         for sn in xls.sheet_names:
@@ -215,36 +221,107 @@ def process_overload(files, sh):
                     nums = [float(str(x).replace(',', '')) for x in r if str(x).replace('.', '', 1).isdigit()]
                     if nums:
                         short = OVERLOAD_UNIT_MAP.get(u, u)
-                        if short in OVERLOAD_UNIT_ORDER: counts[short] = counts.get(short, 0) + int(nums[-1])
+                        if short in OVERLOAD_UNIT_ORDER: 
+                            counts[short] = counts.get(short, 0) + int(nums[-1])
                         u = None
-        return counts, s, e
+        return counts, s_date, e_date
 
-    d_wk, s_wk, e_wk = parse_rpt(f_wk)
-    d_yt, s_yt, e_yt = parse_rpt(f_yt)
-    d_ly, s_ly, e_ly = parse_rpt(f_ly)
+    # 解析所有上傳的超載檔案
+    parsed_files = []
+    for f in files:
+        cnts, s_d, e_d = parse_rpt(f)
+        parsed_files.append({"file": f, "counts": cnts, "s": s_d, "e": e_d})
+
+    f_wk_data, f_yt_data, f_ly_data = None, None, None
+
+    # 先以檔名特徵篩選
+    for item in parsed_files:
+        fname = item["file"].name
+        if "(2)" in fname or "去年" in fname:
+            f_ly_data = item
+        elif "(1)" in fname:
+            f_yt_data = item
+        elif "本期" in fname or "週" in fname:
+            f_wk_data = item
+
+    # 檔案名稱若無括號，則以統計日期邏輯進行精準歸類
+    remaining = [it for it in parsed_files if it not in [f_wk_data, f_yt_data, f_ly_data]]
+    for it in remaining:
+        s, e = it["s"], it["e"]
+        if s == "0000000" or e == "0000000": continue
+        if s.endswith("0101") and not f_yt_data:
+            f_yt_data = it
+        elif not f_wk_data:
+            f_wk_data = it
+        elif not f_ly_data:
+            f_ly_data = it
+
+    d_wk = f_wk_data["counts"] if f_wk_data else {}
+    d_yt = f_yt_data["counts"] if f_yt_data else {}
+    d_ly = f_ly_data["counts"] if f_ly_data else {}
+
+    s_wk = f_wk_data["s"] if f_wk_data else "0000000"
+    e_wk = f_wk_data["e"] if f_wk_data else "0000000"
+    s_yt = f_yt_data["s"] if f_yt_data else "0000000"
+    e_yt = f_yt_data["e"] if f_yt_data else "0000000"
+    s_ly = f_ly_data["s"] if f_ly_data else "0000000"
+    e_ly = f_ly_data["e"] if f_ly_data else "0000000"
+
     raw_wk = f"本期 ({s_wk[-4:]}~{e_wk[-4:]})"
     raw_yt = f"本年累計 ({s_yt[-4:]}~{e_yt[-4:]})"
     raw_ly = f"去年累計 ({s_ly[-4:]}~{e_ly[-4:]})"
 
+    # 核心計算：依據統計範圍最後一日 (e_yt) 換算應達成率
+    rate_desc = ""
+    if e_yt != "0000000" and len(e_yt) == 7:
+        roc_year = int(e_yt[:3])
+        month = int(e_yt[3:5])
+        day = int(e_yt[5:7])
+        g_year = roc_year + 1911
+        try:
+            target_dt = datetime(g_year, month, day)
+            day_of_year = target_dt.timetuple().tm_yday
+            is_leap = (g_year % 4 == 0 and g_year % 100 != 0) or (g_year % 400 == 0)
+            total_days = 366 if is_leap else 365
+            expected_rate = (day_of_year / total_days) * 100
+            rate_desc = f"（統計截至 {roc_year}年{month:02d}月{day:02d}日，應達成率：{expected_rate:.1f}%）"
+        except Exception:
+            pass
+
     body = []
     for u in OVERLOAD_UNIT_ORDER:
         yv, tv = d_yt.get(u, 0), OVERLOAD_TARGETS.get(u, 0)
-        body.append({'統計期間': u, raw_wk: d_wk.get(u, 0), raw_yt: yv, raw_ly: d_ly.get(u, 0),
-                     '本年與去年同期比較': yv - d_ly.get(u, 0), '目標值': tv,
-                     '達成率': f"{yv/tv:.0%}" if tv > 0 else "—"})
+        body.append({
+            '統計期間': u,
+            raw_wk: d_wk.get(u, 0),
+            raw_yt: yv,
+            raw_ly: d_ly.get(u, 0),
+            '本年與去年同期比較': yv - d_ly.get(u, 0),
+            '目標值': tv,
+            '達成率': f"{yv/tv:.0%}" if tv > 0 else "—"
+        })
     df_body = pd.DataFrame(body)
     sum_v = df_body[df_body['統計期間'] != '警備隊'][[raw_wk, raw_yt, raw_ly, '目標值']].sum()
-    total_row = pd.DataFrame([{'統計期間': '合計', raw_wk: sum_v[raw_wk], raw_yt: sum_v[raw_yt], raw_ly: sum_v[raw_ly],
-                                '本年與去年同期比較': sum_v[raw_yt] - sum_v[raw_ly], '目標值': sum_v['目標值'],
-                                '達成率': f"{sum_v[raw_yt]/sum_v['目標值']:.0%}" if sum_v['目標值'] > 0 else "0%"}])
+    total_row = pd.DataFrame([{
+        '統計期間': '合計',
+        raw_wk: sum_v[raw_wk],
+        raw_yt: sum_v[raw_yt],
+        raw_ly: sum_v[raw_ly],
+        '本年與去年同期比較': sum_v[raw_yt] - sum_v[raw_ly],
+        '目標值': sum_v['目標值'],
+        '達成率': f"{sum_v[raw_yt]/sum_v['目標值']:.0%}" if sum_v['目標值'] > 0 else "0%"
+    }])
     df_final = pd.concat([total_row, df_body], ignore_index=True)
 
-    st.write("📊 **超載統計結果：**")
+    full_table_title = f"取締超載違規件數統計表 {rate_desc}".strip()
+
+    st.write(f"📊 **{full_table_title}**")
     st.dataframe(df_final, hide_index=True)
 
     if sh:
         ws = get_ws_by_index(sh, 1)
-        _ws_update(ws, 'A1', [['取締超載違規件數統計表']])
+        _ws_clear(ws)
+        _ws_update(ws, 'A1', [[full_table_title]])
         _ws_update(ws, 'A2', [df_final.columns.tolist()] + df_final.values.tolist())
 
         requests = []
@@ -383,7 +460,6 @@ def process_major(files, sh):
     st.write("📊 **重大違規統計結果 (總表)：**")
     st.dataframe(df_result, use_container_width=True)
 
-    # 細項表
     DETAIL_CATEGORIES = {
         "酒駕": ["酒駕", "酒後", "35條"],
         "闖紅燈": ["闖紅燈", "53條"],
@@ -461,10 +537,6 @@ def process_major(files, sh):
 
     if sh:
         try:
-            # 修正 2：使用具有指數退避重試機制的 _gsheet_call_with_retry 呼叫 sh.worksheets
-            all_worksheets = _gsheet_call_with_retry(sh.worksheets)
-            existing_sheets = [s.title for s in all_worksheets]
-
             red_color   = {"red": 1.0, "green": 0.0, "blue": 0.0}
             black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
             blue_color  = {"red": 0.0, "green": 0.0, "blue": 1.0}
@@ -504,12 +576,11 @@ def process_major(files, sh):
             if reqs_main:
                 _sh_batch_update(sh, {"requests": reqs_main})
 
-            # ── 👑 7 個細項分頁：鎖定「22級標題」與「16級全體數據標楷粗體」 ──
+            # ── 7 個細項分頁 ──
             for cat, df_c in cat_dfs.items():
                 ws_name = f"重大違規-{cat}"
                 ws_cat = get_or_create_ws(sh, ws_name, rows=30, cols=15)
                 
-                # 預先清除格式，防止 400 合併儲存格衝突
                 reset_reqs = [
                     {
                         "updateCells": {
@@ -540,7 +611,6 @@ def process_major(files, sh):
 
                 reqs_cat = []
 
-                # 🚀 【核心修改：標題升級 22 級字】鎖定大字體（22級字）、全粗體、標楷體（DFKai-SB）
                 if "(" in title_text:
                     p_start_title = title_text.find("(")
                     reqs_cat.append({"updateCells": {
@@ -553,7 +623,6 @@ def process_major(files, sh):
                         "fields": "userEnteredValue,textFormatRuns"
                     }})
 
-                # 表頭資料：鎖定 16 級、粗體、標楷體
                 for i, text in enumerate(top_row_c):
                     if "(" in text:
                         p_start = text.find("(")
@@ -561,13 +630,11 @@ def process_major(files, sh):
                             "range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": i, "endColumnIndex": i + 1},
                             "rows": [{"values": [{"textFormatRuns": [
                                 {"startIndex": 0, "format": {"foregroundColor": black_color, "fontSize": 16, "bold": True, "fontFamily": "DFKai-SB"}},
-                                {"startIndex": p_start, "format": {"foregroundColor": red_color, "fontSize": 16, "bold": True, "fontFamily": "DFKai-SB"}
-                                 }
+                                {"startIndex": p_start, "format": {"foregroundColor": red_color, "fontSize": 16, "bold": True, "fontFamily": "DFKai-SB"}}
                             ], "userEnteredValue": {"stringValue": text}}]}],
                             "fields": "userEnteredValue,textFormatRuns"
                         }})
 
-                # 表頭對齊與結構合併設定（維持 16 級粗體標楷）
                 reqs_cat.extend([
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 10}, "mergeType": "MERGE_ALL"}},
                     {"mergeCells": {"range": {"sheetId": ws_cat.id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 1}, "mergeType": "MERGE_ALL"}},
@@ -581,7 +648,6 @@ def process_major(files, sh):
                     }}
                 ])
 
-                # 內文及執法數據數據列：同步定型為「16級字、標楷體、粗體」
                 for r_idx, row_vals in enumerate(data_body_c):
                     target_row = 3 + r_idx
                     reqs_cat.append({
@@ -591,7 +657,6 @@ def process_major(files, sh):
                             "fields": "userEnteredFormat.textFormat.fontFamily,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"
                         }
                     })
-                    # 處理後三欄比較值（維持 16 級、粗體、遇到負數帶紅字規格）
                     for c_idx in [7, 8, 9]:
                         if c_idx < len(row_vals):
                             val = row_vals[c_idx]
@@ -603,7 +668,6 @@ def process_major(files, sh):
                                 "fields": "userEnteredFormat.textFormat"
                             }})
 
-                # 自動補回黑灰色網格實線格線
                 total_data_rows = 3 + len(data_body_c)
                 reqs_cat.append({
                     "updateBorders": {
