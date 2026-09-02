@@ -185,7 +185,7 @@ def process_tech_enforcement(files, sh):
         _sh_batch_update(sh, reqs)
 
 
-# ----------------- [2. 超載統計 (修正版)] -----------------
+# ----------------- [2. 超載統計 (含標準下方備註)] -----------------
 def process_overload(files, sh):
     def parse_rpt(f):
         if not f: return {}, "0000000", "0000000"
@@ -193,7 +193,7 @@ def process_overload(files, sh):
         counts = {}
         s_date, e_date = "0000000", "0000000"
         
-        # 讀取前 25 列文字尋找日期
+        # 讀取前 25 列文字尋找起訖日期
         text_block = pd.read_excel(f, header=None, nrows=25).to_string()
         
         # 匹配常見民國格式：115年01月01日至115年04月07日 或 115/01/01~115/04/07
@@ -202,7 +202,7 @@ def process_overload(files, sh):
             s_date = f"{m_roc.group(1)}{m_roc.group(2)}{m_roc.group(3)}"
             e_date = f"{m_roc.group(4)}{m_roc.group(5)}{m_roc.group(6)}"
         else:
-            # 匹配 7 位民國碼：1150101 至 1150407
+            # 匹配 7 位民國連續碼：1150101 至 1150407
             m_raw = re.search(r'(\d{7})\s*[至\-\~]\s*(\d{7})', text_block)
             if m_raw:
                 s_date, e_date = m_raw.group(1), m_raw.group(2)
@@ -226,7 +226,6 @@ def process_overload(files, sh):
                         u = None
         return counts, s_date, e_date
 
-    # 解析所有上傳的超載檔案
     parsed_files = []
     for f in files:
         cnts, s_d, e_d = parse_rpt(f)
@@ -234,7 +233,7 @@ def process_overload(files, sh):
 
     f_wk_data, f_yt_data, f_ly_data = None, None, None
 
-    # 先以檔名特徵篩選
+    # 優先由檔名關鍵字識別
     for item in parsed_files:
         fname = item["file"].name
         if "(2)" in fname or "去年" in fname:
@@ -244,7 +243,7 @@ def process_overload(files, sh):
         elif "本期" in fname or "週" in fname:
             f_wk_data = item
 
-    # 檔案名稱若無括號，則以統計日期邏輯進行精準歸類
+    # 備援機制：依起訖日期特徵精準分類
     remaining = [it for it in parsed_files if it not in [f_wk_data, f_yt_data, f_ly_data]]
     for it in remaining:
         s, e = it["s"], it["e"]
@@ -271,8 +270,8 @@ def process_overload(files, sh):
     raw_yt = f"本年累計 ({s_yt[-4:]}~{e_yt[-4:]})"
     raw_ly = f"去年累計 ({s_ly[-4:]}~{e_ly[-4:]})"
 
-    # 核心計算：依據統計範圍最後一日 (e_yt) 換算應達成率
-    rate_desc = ""
+    # 核心計算：依據年累計統計範圍最後一日 (e_yt) 換算應達成率
+    footnote_text = "本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準"
     if e_yt != "0000000" and len(e_yt) == 7:
         roc_year = int(e_yt[:3])
         month = int(e_yt[3:5])
@@ -284,7 +283,7 @@ def process_overload(files, sh):
             is_leap = (g_year % 4 == 0 and g_year % 100 != 0) or (g_year % 400 == 0)
             total_days = 366 if is_leap else 365
             expected_rate = (day_of_year / total_days) * 100
-            rate_desc = f"（統計截至 {roc_year}年{month:02d}月{day:02d}日，應達成率：{expected_rate:.1f}%）"
+            footnote_text = f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，統計截至 {roc_year}年{month:02d}月{day:02d}日 (入案日期)應達成率為{expected_rate:.1f}%"
         except Exception:
             pass
 
@@ -313,18 +312,29 @@ def process_overload(files, sh):
     }])
     df_final = pd.concat([total_row, df_body], ignore_index=True)
 
-    full_table_title = f"取締超載違規件數統計表 {rate_desc}".strip()
-
-    st.write(f"📊 **{full_table_title}**")
+    st.write("📊 **取締超載違規件數統計表：**")
     st.dataframe(df_final, hide_index=True)
+    st.caption(f"📝 {footnote_text}")
 
     if sh:
         ws = get_ws_by_index(sh, 1)
         _ws_clear(ws)
-        _ws_update(ws, 'A1', [[full_table_title]])
-        _ws_update(ws, 'A2', [df_final.columns.tolist()] + df_final.values.tolist())
+        
+        # 標題 (A1) + 表頭 (A2) + 數據本體 (A3~A11) + 底部備註 (A12)
+        grid_data = (
+            [['取締超載違規件數統計表']] +
+            [df_final.columns.tolist()] +
+            df_final.values.tolist() +
+            [[footnote_text] + [""] * (len(df_final.columns) - 1)]
+        )
+        _ws_update(ws, 'A1', grid_data)
+
+        total_cols = len(df_final.columns)
+        footnote_row_idx = 1 + len(df_final) + 1  # 0-based: 0標題, 1表頭, 2~10數據, 11備註列
 
         requests = []
+        
+        # 欄位抬頭括號紅字
         for i, col_name in enumerate(df_final.columns):
             if "(" in col_name:
                 p_start = col_name.find("(")
@@ -338,8 +348,50 @@ def process_overload(files, sh):
                         "fields": "userEnteredValue,textFormatRuns"
                     }
                 })
+
+        # 底部備註：整列跨欄合併、靠左對齊、標楷體、字體 11 級
+        requests.extend([
+            {
+                "mergeCells": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": footnote_row_idx,
+                        "endRowIndex": footnote_row_idx + 1,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": total_cols
+                    },
+                    "mergeType": "MERGE_ALL"
+                }
+            },
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": footnote_row_idx,
+                        "endRowIndex": footnote_row_idx + 1,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": total_cols
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "horizontalAlignment": "LEFT",
+                            "verticalAlignment": "MIDDLE",
+                            "textFormat": {
+                                "fontFamily": "DFKai-SB",
+                                "fontSize": 11,
+                                "bold": False,
+                                "foregroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2}
+                            }
+                        }
+                    },
+                    "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.textFormat"
+                }
+            }
+        ])
+
         if requests:
             _sh_batch_update(sh, {"requests": requests})
+        st.write("✅ 超載統計雲端同步完成 (含底部應達成率附註)")
 
 
 # ----------------- [3. 重大交通違規] -----------------
