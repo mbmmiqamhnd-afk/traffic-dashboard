@@ -236,13 +236,22 @@ def generate_pdf(time_str, project_name, fast_cmd, cmd_df, ptl_df, sign_points, 
     story.append(Paragraph(f"勤務時間：{time_str}", s_sub))
     story.append(Spacer(1, 3*mm))
 
+    # ----------------------------------------------------
+    # 任務編組表格：調整欄寬（姓名欄擴大至 32%，避免字串換行）
+    # ----------------------------------------------------
     cmd_clean = cmd_df.dropna(how="all").fillna("")
     data_cmd = [[Paragraph("<b>任 務 編 組</b>", s_th), "", "", ""]]
     data_cmd.append([Paragraph(f"<b>{h}</b>", s_th) for h in CMD_COLS])
     for _, row in cmd_clean.iterrows():
-        data_cmd.append([c(f"<b>{row.get('職稱','')}</b>"), c(row.get("代號","")), 
-                         c(str(row.get("姓名","")).replace("、","<br/>")), c(row.get("任務",""), s_left)])
-    t_cmd = Table(data_cmd, colWidths=[W*0.13, W*0.11, W*0.25, W*0.51], repeatRows=2)
+        data_cmd.append([
+            c(f"<b>{row.get('職稱','')}</b>"), 
+            c(row.get("代號","")), 
+            c(str(row.get("姓名",""))),  # 姓名欄位
+            c(row.get("任務",""), s_left)
+        ])
+    
+    # 欄寬分配：職稱 12%、代號 10%、姓名 32%、任務 46%
+    t_cmd = Table(data_cmd, colWidths=[W*0.12, W*0.10, W*0.32, W*0.46], repeatRows=2)
     t_cmd.setStyle(TableStyle([("FONTNAME",(0,0),(-1,-1),font), ("GRID",(0,0),(-1,-1),0.5,colors.black),
                                ("VALIGN",(0,0),(-1,-1),"MIDDLE"), ("SPAN",(0,0),(-1,0)), 
                                ("BACKGROUND",(0,0),(-1,1),colors.HexColor("#f2f2f2"))]))
@@ -376,7 +385,6 @@ fast_cmd = st.text_input("交通快打指揮官", value=settings.get("fast_cmd",
 # ========================================================
 date_updated = False
 
-# 單位代號對照表
 unit_prefix_map = {
     "聖亭所": "隆安5",
     "龍潭所": "隆安6",
@@ -387,14 +395,14 @@ unit_prefix_map = {
     "交通分隊": "隆安99"
 }
 
-# 1. 識別快打指揮官所屬單位（由長到短優先比對，避免被子字串截斷）
+# 識別快打指揮官所屬單位
 cmd_unit = "該單位"
 for candidate in ["龍潭交通分隊", "交通分隊", "聖亭所", "龍潭所", "中興所", "石門所", "高平所"]:
     if candidate in fast_cmd:
         cmd_unit = "龍潭交通分隊" if "交通分隊" in candidate else candidate
         break
 
-# 2. 計算呼號代號（所長/分隊長為 1；副所長/副分隊長/小隊長等副主管為 2）
+# 計算呼號代號
 base_code = unit_prefix_map.get(cmd_unit, "請確認代號")
 if base_code != "請確認代號":
     if any(title in fast_cmd for title in ["副所長", "副分隊長", "小隊長"]):
@@ -406,7 +414,7 @@ if base_code != "請確認代號":
 else:
     cmd_code = base_code
 
-# 3. 日期連動更新勤務時段
+# 日期連動更新
 date_match = re.search(r"(\d+)年(\d+)月(\d+)日", time_val)
 if date_match:
     try:
