@@ -128,7 +128,7 @@ def init_sheets():
         del st.session_state["sheets_data"]
     st.rerun()
 
-# ⚠️ 升級版 load_data：拉長指數退避時間與取消 Spinner 閃爍
+# 升級版 load_data：拉長指數退避時間與取消 Spinner 閃爍
 @st.cache_data(ttl=600, show_spinner=False)
 def load_data_from_api():
     max_retries = 4
@@ -139,7 +139,6 @@ def load_data_from_api():
                 return None, None, None, {}, "授權失敗"
             sh = client.open_by_key(SHEET_ID)
             
-            # 抓取資料，若發生錯誤會直接跳到 except 區塊
             set_df = pd.DataFrame(sh.worksheet(WS_MAP["set"]).get_all_records()).fillna("")
             cmd_df = pd.DataFrame(sh.worksheet(WS_MAP["cmd"]).get_all_records()).fillna("")
             ptl_df = pd.DataFrame(sh.worksheet(WS_MAP["ptl"]).get_all_records()).fillna("")
@@ -159,7 +158,7 @@ def load_data_from_api():
         except gspread.exceptions.APIError as e:
             if "429" in str(e):
                 if attempt < max_retries - 1:
-                    wait_time = 5 * (attempt + 1) # 等待 5, 10, 15 秒
+                    wait_time = 5 * (attempt + 1)
                     time.sleep(wait_time) 
                     continue
             return None, None, None, {}, f"API 限制或連線錯誤: {str(e)}"
@@ -182,7 +181,7 @@ def ensure_data_loaded():
             }
     return st.session_state["sheets_data"]
 
-# ⚠️ 升級版 save_data：儲存後直接手動更新快取，省去 3 次 Read Quota
+# 升級版 save_data：儲存後直接手動更新快取，省去 3 次 Read Quota
 def save_data(settings_dict, cmd, ptl):
     try:
         client = get_client()
@@ -199,7 +198,6 @@ def save_data(settings_dict, cmd, ptl):
             if not df_clean.empty:
                 ws.update([df_clean.columns.tolist()] + df_clean.values.tolist())
         
-        # 儲存成功後，不要清除快取，直接手動更新 Session State 中的資料
         set_df = pd.DataFrame(list(settings_dict.items()), columns=["Key", "Value"])
         st.session_state["sheets_data"] = {
             "set_df": set_df, 
@@ -354,7 +352,6 @@ if st.sidebar.button("🔄 強制重新載入"):
         del st.session_state["sheets_data"]
     st.rerun()
 
-# 🛡️ 這裡改用我們升級版的 Session State 讀取函數
 data_pkg = ensure_data_loaded()
 set_df, cmd_df, ptl_df, settings, err = (
     data_pkg["set_df"], data_pkg["cmd_df"], data_pkg["ptl_df"], data_pkg["settings"], data_pkg["err"]
@@ -379,31 +376,37 @@ fast_cmd = st.text_input("交通快打指揮官", value=settings.get("fast_cmd",
 # ========================================================
 date_updated = False
 
-# 保留單位名稱，濾除主管/帶班幹部職稱
-unit_match = re.search(r"(.+?(所|分隊))", fast_cmd)
-cmd_unit = unit_match.group(1) if unit_match else "該單位"
-
+# 單位代號對照表
 unit_prefix_map = {
     "聖亭所": "隆安5",
     "龍潭所": "隆安6",
     "中興所": "隆安7",
     "石門所": "隆安8",
     "高平所": "隆安9",
-    "龍潭交通分隊": "隆安99"
+    "龍潭交通分隊": "隆安99",
+    "交通分隊": "隆安99"
 }
 
-base_code = unit_prefix_map.get(cmd_unit, "請確認代號")
+# 1. 識別快打指揮官所屬單位（由長到短優先比對，避免被子字串截斷）
+cmd_unit = "該單位"
+for candidate in ["龍潭交通分隊", "交通分隊", "聖亭所", "龍潭所", "中興所", "石門所", "高平所"]:
+    if candidate in fast_cmd:
+        cmd_unit = "龍潭交通分隊" if "交通分隊" in candidate else candidate
+        break
 
+# 2. 計算呼號代號（所長/分隊長為 1；副所長/副分隊長/小隊長等副主管為 2）
+base_code = unit_prefix_map.get(cmd_unit, "請確認代號")
 if base_code != "請確認代號":
-    if "副所長" in fast_cmd or "副分隊長" in fast_cmd or "小隊長" in fast_cmd:
+    if any(title in fast_cmd for title in ["副所長", "副分隊長", "小隊長"]):
         cmd_code = f"{base_code}2"
-    elif "所長" in fast_cmd or "分隊長" in fast_cmd:
+    elif any(title in fast_cmd for title in ["所長", "分隊長"]):
         cmd_code = f"{base_code}1"
     else:
-        cmd_code = f"{base_code}2" 
+        cmd_code = f"{base_code}2"
 else:
     cmd_code = base_code
 
+# 3. 日期連動更新勤務時段
 date_match = re.search(r"(\d+)年(\d+)月(\d+)日", time_val)
 if date_match:
     try:
@@ -424,7 +427,6 @@ if date_match:
             group_name = str(use_ptl.loc[idx, "編組"])
             if "專責警力" in group_name:
                 use_ptl.loc[idx, "勤務時段"] = f"{next_m_str}月{next_d_str}日\n零時至4時"
-                # 連動編組名稱，僅呈現單位名稱
                 use_ptl.loc[idx, "編組"] = f"專責警力\n（{cmd_unit}）"
                 use_ptl.loc[idx, "代號"] = cmd_code
             else:
