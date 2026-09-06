@@ -84,8 +84,9 @@ class DriveVirtualFile(io.BytesIO):
 def get_drive_service():
   if not GCP_CREDS:
     return None
+  # 使用完整權限 Scope 存取共用資料夾
   creds = service_account.Credentials.from_service_account_info(
-      GCP_CREDS, scopes=["https://www.googleapis.com/auth/drive.readonly"]
+      GCP_CREDS, scopes=["https://www.googleapis.com/auth/drive"]
   )
   return build("drive", "v3", credentials=creds)
 
@@ -96,30 +97,65 @@ def fetch_files_from_drive(folder_id):
     st.error("❌ 無法初始化 Drive 服務，請確認 secrets.toml 設定")
     return []
 
+  # 1. 驗證服務帳號存取該資料夾本身的權限
+  try:
+    folder_meta = (
+        service.files()
+        .get(fileId=folder_id, supportsAllDrives=True, fields="id, name")
+        .execute()
+    )
+    st.info(f"📂 成功連接雲端資料夾：**{folder_meta.get('name')}**")
+  except Exception as e:
+    st.error(
+        f"❌ 無法存取該資料夾（請確認服務帳號已加入共用並具備檢視權限）：{e}"
+    )
+    return []
+
+  # 2. 雙重備援查詢共用資料夾內的所有檔案
   query = f"'{folder_id}' in parents and trashed = false"
+  items = []
 
   try:
     results = (
         service.files()
         .list(
             q=query,
-            fields="files(id, name, size, modifiedTime)",
-            orderBy="modifiedTime desc",
+            fields="files(id, name, size, mimeType)",
             pageSize=100,
-            supportsAllDrives=True,
+            spaces="drive",
+            corpora="allDrives",
             includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
         )
         .execute()
     )
     items = results.get("files", [])
-  except Exception as e:
-    st.error(f"❌ Google Drive API 讀取失敗: {e}")
+  except Exception:
+    try:
+      results = (
+          service.files()
+          .list(
+              q=query,
+              fields="files(id, name, size, mimeType)",
+              pageSize=100,
+              includeItemsFromAllDrives=True,
+              supportsAllDrives=True,
+          )
+          .execute()
+      )
+      items = results.get("files", [])
+    except Exception as e:
+      st.error(f"❌ 查詢檔案列表失敗：{e}")
+      return []
+
+  if not items:
+    st.warning("⚠️ 資料夾連線成功，但 Google Drive API 回傳檔案清單為空。")
     return []
 
+  # 3. 篩選與下載 Excel / CSV 檔案
   downloaded_files = []
   for item in items:
     fname = item["name"].lower()
-    # 支援 Excel 及 CSV
     if not (
         fname.endswith(".xlsx")
         or fname.endswith(".xls")
@@ -2371,8 +2407,7 @@ elif source_mode == "☁️ 從 Google 雲端硬碟讀取":
           uploads = [file_map[name] for name in selected_names]
         else:
           st.warning(
-              "⚠️ 該雲端資料夾內尚無 Excel 或 CSV 報表，請確認 Google Drive"
-              " API 是否已啟用或檔案是否放置正確。"
+              "⚠️ 該雲端資料夾內尚無符合格式之報表，請確認檔案是否放置正確。"
           )
       except Exception as e:
         st.error(f"❌ 讀取雲端硬碟失敗：{e}")
