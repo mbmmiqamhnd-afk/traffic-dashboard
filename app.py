@@ -83,55 +83,55 @@ def get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 def fetch_files_from_drive(folder_id):
-    """
-    全視角穿透查詢：
-    1. 不受限於 parents 外部目錄索引同步延遲
-    2. 直接列出服務帳號可見之所有未刪除檔案
-    3. 自動篩選 Excel / CSV 報表
-    """
     service = get_drive_service()
     if not service:
         st.error("❌ 無法初始化 Drive 服務，請確認 secrets.toml 設定")
         return []
 
     folder_id = str(folder_id).strip().replace('"', '').replace("'", '')
+    items = []
 
+    # 途徑 1：母資料夾直接查詢（目前已具備編輯者權限）
     try:
-        results = service.files().list(
-            q="trashed = false",
-            fields="files(id, name, size, mimeType, parents)",
+        query = f"'{folder_id}' in parents and trashed = false"
+        res = service.files().list(
+            q=query,
+            fields="files(id, name, size, mimeType)",
             pageSize=100,
             supportsAllDrives=True,
             includeItemsFromAllDrives=True
         ).execute()
-        items = results.get("files", [])
+        items = res.get("files", [])
     except Exception as e:
-        st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
-        return []
+        st.warning(f"母資料夾索引查詢嘗試中：{e}")
 
-    # 顯示即時檢視面板
-    if items:
-        with st.expander("🔎 服務帳號目前能辨識的所有雲端檔案清單（點擊展開）"):
-            for f in items:
-                st.write(f"- **{f['name']}** (`{f.get('mimeType')}`)")
-    else:
-        st.error(
-            "❌ 服務帳號目前『完全看不到任何檔案』！\n"
-            "請確認在 Google 雲端硬碟的「執法統計報表集中處」資料夾上，已將 `vision-ocr@streamlit-sheets-482909.iam.gserviceaccount.com` 新增為【編輯者】。"
-        )
-        return []
+    # 途徑 2：若母資料夾查詢尚未回傳，切換為 sharedWithMe 備援
+    if not items:
+        try:
+            query2 = "trashed = false and sharedWithMe = true"
+            res2 = service.files().list(
+                q=query2,
+                fields="files(id, name, size, mimeType, parents)",
+                pageSize=100,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
+            ).execute()
+            items = res2.get("files", [])
+        except Exception as e2:
+            st.error(f"❌ 查詢雲端硬碟檔案失敗：{e2}")
+            return []
 
-    # 篩選 Excel 與 CSV 檔案（排除 Google 原生試算表等）
+    # 篩選 Excel 與 CSV 報表
     valid_items = [
         f for f in items
         if any(f["name"].lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"])
     ]
 
     if not valid_items:
-        st.warning("⚠️ 找到了檔案，但都不是 .xlsx / .xls / .csv 報表。")
+        st.warning("⚠️ 資料夾連線成功，但尚未抓取到 Excel 或 CSV 報表。")
         return []
 
-    st.caption(f"🔍 成功篩選出 {len(valid_items)} 個有效報表！")
+    st.caption(f"🔍 成功掃描到 {len(valid_items)} 個有效報表！")
 
     downloaded_files = []
     for item in valid_items:
