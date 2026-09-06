@@ -84,8 +84,10 @@ def get_drive_service():
 
 def fetch_files_from_drive(folder_id):
     """
-    徹底拿掉 'in parents' 避免 Google Drive API 對個人帳號資料夾拋出 404 (File not found: .)
-    直接向服務帳號索取所有未在垃圾桶且非 Google 原生試算表的 Excel/CSV 檔案
+    全視角穿透查詢：
+    1. 不受限於 parents 外部目錄索引同步延遲
+    2. 直接列出服務帳號可見之所有未刪除檔案
+    3. 自動篩選 Excel / CSV 報表
     """
     service = get_drive_service()
     if not service:
@@ -93,11 +95,10 @@ def fetch_files_from_drive(folder_id):
         return []
 
     folder_id = str(folder_id).strip().replace('"', '').replace("'", '')
-    query = "trashed = false and mimeType != 'application/vnd.google-apps.spreadsheet'"
 
     try:
         results = service.files().list(
-            q=query,
+            q="trashed = false",
             fields="files(id, name, size, mimeType, parents)",
             pageSize=100,
             supportsAllDrives=True,
@@ -108,21 +109,29 @@ def fetch_files_from_drive(folder_id):
         st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
         return []
 
-    # 1. 優先挑選 parents 吻合的檔案；若 Google 未即時回傳 parents，則取候選報表
-    folder_matched = [f for f in items if folder_id in f.get("parents", [])]
-    candidate_items = folder_matched if folder_matched else items
+    # 顯示即時檢視面板
+    if items:
+        with st.expander("🔎 服務帳號目前能辨識的所有雲端檔案清單（點擊展開）"):
+            for f in items:
+                st.write(f"- **{f['name']}** (`{f.get('mimeType')}`)")
+    else:
+        st.error(
+            "❌ 服務帳號目前『完全看不到任何檔案』！\n"
+            "請確認在 Google 雲端硬碟的「執法統計報表集中處」資料夾上，已將 `vision-ocr@streamlit-sheets-482909.iam.gserviceaccount.com` 新增為【編輯者】。"
+        )
+        return []
 
-    # 2. 嚴格過濾 Excel / CSV 副檔名
+    # 篩選 Excel 與 CSV 檔案（排除 Google 原生試算表等）
     valid_items = [
-        f for f in candidate_items
+        f for f in items
         if any(f["name"].lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"])
     ]
 
     if not valid_items:
-        st.warning("⚠️ 雲端硬碟未檢測到可用的 Excel 或 CSV 報表。")
+        st.warning("⚠️ 找到了檔案，但都不是 .xlsx / .xls / .csv 報表。")
         return []
 
-    st.caption(f"🔍 成功掃描到 {len(valid_items)} 個報表檔案！")
+    st.caption(f"🔍 成功篩選出 {len(valid_items)} 個有效報表！")
 
     downloaded_files = []
     for item in valid_items:
