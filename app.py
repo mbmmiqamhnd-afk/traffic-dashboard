@@ -64,8 +64,8 @@ def get_gsheet_connection():
             st.error(f"⚠️ Google Sheets 連線失敗: {e}")
     return None
 
-# --- [Google Drive 虛擬檔案物件 (含檔案 ID)] ---
 class DriveVirtualFile(io.BytesIO):
+    """具備檔案 ID 與虛擬檔案特性之記憶體物件"""
     def __init__(self, name, content_bytes, file_id=None):
         super().__init__(content_bytes)
         self.name = name
@@ -89,40 +89,28 @@ def fetch_files_from_drive(folder_id):
         return []
 
     folder_id = str(folder_id).strip().replace('"', '').replace("'", '')
-
-    # 1. 查詢未刪除的 Excel / CSV 檔案（避開 parents 索引同步延遲）
-    query = "trashed = false and (name contains '.xlsx' or name contains '.xls' or name contains '.csv')"
+    query = f"'{folder_id}' in parents and trashed = false"
 
     try:
-        res = service.files().list(
+        results = service.files().list(
             q=query,
-            fields="files(id, name, size, mimeType, parents)",
+            fields="files(id, name, size, mimeType)",
             pageSize=100,
             supportsAllDrives=True,
             includeItemsFromAllDrives=True
         ).execute()
-        all_files = res.get("files", [])
+        items = results.get("files", [])
     except Exception as e:
-        st.error(f"❌ 查詢失敗：{e}")
+        st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
         return []
 
-    # 2. 若檔案含有 parents 資訊且等於目標資料夾，優先挑選；若無，則只要是報表全部納入
-    matched_files = []
-    for f in all_files:
-        parents = f.get("parents", [])
-        if folder_id in parents:
-            matched_files.append(f)
-
-    target_list = matched_files if matched_files else all_files
-
-    # 排除非 Excel/CSV 檔案與系統試算表
     valid_items = [
-        f for f in target_list
+        f for f in items
         if any(f["name"].lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"])
     ]
 
     if not valid_items:
-        st.warning("⚠️ 雲端硬碟未檢測到可用的 Excel 或 CSV 報表。")
+        st.warning(f"⚠️ 資料夾連線成功，但未讀取到 Excel 或 CSV 報表。")
         return []
 
     st.caption(f"🔍 成功掃描到 {len(valid_items)} 個報表檔案！")
@@ -145,7 +133,7 @@ def fetch_files_from_drive(folder_id):
     return downloaded_files
 
 def move_files_to_trash(file_ids):
-    """統計完成後，將已處理的報表移至垃圾桶（移出集中處，30天內可隨時復原）"""
+    """統計完成後，將來源資料夾內的檔案移至垃圾桶（移出集中處，30天內可隨時復原）"""
     service = get_drive_service()
     if not service or not file_ids:
         return
