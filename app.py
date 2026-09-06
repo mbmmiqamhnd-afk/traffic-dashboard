@@ -70,21 +70,21 @@ def get_gsheet_connection():
   return None
 
 
-# --- [Google Drive 虛擬檔案物件] ---
+# --- [Google Drive 虛擬檔案物件 (含檔案 ID)] ---
 class DriveVirtualFile(io.BytesIO):
-  """包裝雲端硬碟下載的檔案，具備與 Streamlit UploadedFile 相同的 name, size, seek, read 特性"""
 
-  def __init__(self, name, content_bytes):
+  def __init__(self, name, content_bytes, file_id=None):
     super().__init__(content_bytes)
     self.name = name
     self.size = len(content_bytes)
+    self.id = file_id
 
 
 @st.cache_resource
 def get_drive_service():
   if not GCP_CREDS:
     return None
-  # 使用完整 scope 以穿透共用項目
+  # 具備讀寫權限以支援檔案移動
   creds = service_account.Credentials.from_service_account_info(
       GCP_CREDS, scopes=["https://www.googleapis.com/auth/drive"]
   )
@@ -99,7 +99,7 @@ def fetch_files_from_drive(folder_id):
 
   items = []
 
-  # 方法一：利用 parents 穿透查詢
+  # 1. 穿透查詢資料夾內部項目
   if folder_id:
     query1 = f"'{folder_id}' in parents and trashed = false"
     try:
@@ -118,7 +118,7 @@ def fetch_files_from_drive(folder_id):
     except Exception:
       items = []
 
-  # 方法二：全域可見檔案備援
+  # 2. 全域可見備援
   if not items:
     try:
       fallback_res = (
@@ -146,7 +146,7 @@ def fetch_files_from_drive(folder_id):
 
   st.caption(f"🔍 成功掃描到 {len(items)} 個報表檔案！")
 
-  # 下載檔案內容
+  # 下載檔案內容並保留 file_id
   downloaded_files = []
   for item in items:
     fname = item["name"].lower()
@@ -165,12 +165,36 @@ def fetch_files_from_drive(folder_id):
       while not done:
         _, done = downloader.next_chunk()
 
-      vfile = DriveVirtualFile(item["name"], fh.getvalue())
+      vfile = DriveVirtualFile(item["name"], fh.getvalue(), file_id=item["id"])
       downloaded_files.append(vfile)
     except Exception as e:
       st.warning(f"檔案 {item['name']} 下載失敗: {e}")
 
   return downloaded_files
+
+
+def move_files_to_archive(file_ids, source_folder_id, target_folder_id):
+  """統計完成後，將來源資料夾內的檔案移至歸檔資料夾"""
+  service = get_drive_service()
+  if not service or not target_folder_id:
+    return
+
+  moved_count = 0
+  for fid in file_ids:
+    try:
+      service.files().update(
+          fileId=fid,
+          addParents=target_folder_id,
+          removeParents=source_folder_id,
+          supportsAllDrives=True,
+          fields="id, parents",
+      ).execute()
+      moved_count += 1
+    except Exception as e:
+      st.warning(f"檔案 (ID: {fid}) 歸檔移動失敗：{e}")
+
+  if moved_count > 0:
+    st.info(f"📦 已自動將 {moved_count} 個處理完成的報表移至歸檔資料夾！")
 
 
 def _ws_update(ws, range_name, values):
@@ -207,7 +231,7 @@ def get_ws_by_index(sh, idx):
   return sh.get_worksheet(idx)
 
 
-# --- [重大違規常數] ---
+# --- [業務常數] ---
 MAJOR_UNIT_ORDER = [
     "科技執法",
     "聖亭所",
@@ -234,7 +258,6 @@ MAJOR_FOOTNOTE = (
     "重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」"
 )
 
-# --- [超載統計常數] ---
 OVERLOAD_TARGETS = {
     "聖亭所": 20,
     "龍潭所": 27,
@@ -266,7 +289,6 @@ OVERLOAD_UNIT_ORDER = [
     "交通分隊",
 ]
 
-# --- [強化專案常數] ---
 PROJECT_NAME = "強化交通安全執法專案勤務取締件數統計表"
 PROJECT_TARGETS = {
     "聖亭所": [5, 115, 5, 16, 7, 10],
@@ -341,7 +363,8 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
 # 4. 業務邏輯處理區
 # ==========================================
 
-# ----------------- [1. 科技執法] -----------------
+
+# 1. 科技執法
 def process_tech_enforcement(files, sh):
   f = files[0]
   f.seek(0)
@@ -437,7 +460,7 @@ def process_tech_enforcement(files, sh):
     _sh_batch_update(sh, reqs)
 
 
-# ----------------- [2. 超載統計] -----------------
+# 2. 超載統計
 def process_overload(files, sh):
   def parse_rpt(f):
     if not f:
@@ -489,7 +512,6 @@ def process_overload(files, sh):
     parsed_files.append({"file": f, "counts": cnts, "s": s_d, "e": e_d})
 
   f_wk_data, f_yt_data, f_ly_data = None, None, None
-
   for item in parsed_files:
     fname = item["file"].name
     if "(2)" in fname or "去年" in fname:
@@ -588,7 +610,6 @@ def process_overload(files, sh):
   if sh:
     ws = get_ws_by_index(sh, 1)
     _ws_clear(ws)
-
     grid_data = (
         [["取締超載違規件數統計表"]]
         + [df_final.columns.tolist()]
@@ -599,8 +620,8 @@ def process_overload(files, sh):
 
     total_cols = len(df_final.columns)
     footnote_row_idx = 1 + len(df_final) + 1
-
     requests = []
+
     for i, col_name in enumerate(df_final.columns):
       if "(" in col_name:
         p_start = col_name.find("(")
@@ -693,10 +714,10 @@ def process_overload(files, sh):
 
     if requests:
       _sh_batch_update(sh, {"requests": requests})
-    st.write("✅ 超載統計雲端同步完成 (含底部應達成率附註)")
+    st.write("✅ 超載統計雲端同步完成")
 
 
-# ----------------- [3. 重大交通違規] -----------------
+# 3. 重大交通違規
 def process_major(files, sh):
   if len(files) < 2:
     st.error(
@@ -977,7 +998,6 @@ def process_major(files, sh):
 
   d_yr_cat = parse_detail_data(dfs_yr)
   d_ly_cat = parse_detail_data(dfs_ly)
-
   cat_dfs = {}
   h1_cat = [
       "統計期間",
@@ -1064,11 +1084,6 @@ def process_major(files, sh):
     )
 
   with st.expander("🔍 檢視 7 大項重大違規細表 (點擊展開)"):
-    if not dfs_ly:
-      st.info(
-          "💡 提醒：因為您未上傳單獨的『去年累計』報表，細項的去年欄位將暫時以 0"
-          " 計算。"
-      )
     for cat, df_c in cat_dfs.items():
       st.write(f"**【{cat}】統計表**")
       st.dataframe(df_c, use_container_width=True)
@@ -1079,7 +1094,7 @@ def process_major(files, sh):
       black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
       blue_color = {"red": 0.0, "green": 0.0, "blue": 1.0}
 
-      # ── 總表格式 ──
+      # 總表格式
       ws_main = get_ws_by_index(sh, 0)
       titles_main = df_result.columns.tolist()
       top_row_m = [t[0] for t in titles_main]
@@ -1151,41 +1166,10 @@ def process_major(files, sh):
       if reqs_main:
         _sh_batch_update(sh, {"requests": reqs_main})
 
-      # ── 7 個細項分頁 ──
+      # 7 個細項分頁
       for cat, df_c in cat_dfs.items():
         ws_name = f"重大違規-{cat}"
         ws_cat = get_or_create_ws(sh, ws_name, rows=30, cols=15)
-
-        reset_reqs = [
-            {
-                "updateCells": {
-                    "range": {
-                        "sheetId": ws_cat.id,
-                        "startRowIndex": 0,
-                        "endRowIndex": 15,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": 15,
-                    },
-                    "fields": "userEnteredValue,userEnteredFormat",
-                }
-            },
-            {
-                "unmergeCells": {
-                    "range": {
-                        "sheetId": ws_cat.id,
-                        "startRowIndex": 0,
-                        "endRowIndex": 15,
-                        "startColumnIndex": 0,
-                        "endColumnIndex": 15,
-                    }
-                }
-            },
-        ]
-        try:
-          _sh_batch_update(sh, {"requests": reset_reqs})
-        except Exception:
-          pass
-
         _ws_clear(ws_cat)
 
         titles_c = df_c.columns.tolist()
@@ -1201,7 +1185,6 @@ def process_major(files, sh):
         )
 
         reqs_cat = []
-
         if "(" in title_text:
           p_start_title = title_text.find("(")
           reqs_cat.append({
@@ -1373,31 +1356,6 @@ def process_major(files, sh):
 
         for r_idx, row_vals in enumerate(data_body_c):
           target_row = 3 + r_idx
-          reqs_cat.append({
-              "repeatCell": {
-                  "range": {
-                      "sheetId": ws_cat.id,
-                      "startRowIndex": target_row,
-                      "endRowIndex": target_row + 1,
-                      "startColumnIndex": 0,
-                      "endColumnIndex": 10,
-                  },
-                  "cell": {
-                      "userEnteredFormat": {
-                          "textFormat": {
-                              "fontFamily": "DFKai-SB",
-                              "fontSize": 16,
-                              "bold": True,
-                          },
-                          "horizontalAlignment": "CENTER",
-                          "verticalAlignment": "MIDDLE",
-                      }
-                  },
-                  "fields": (
-                      "userEnteredFormat.textFormat.fontFamily,userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"
-                  ),
-              }
-          })
           for c_idx in [7, 8, 9]:
             if c_idx < len(row_vals):
               val = row_vals[c_idx]
@@ -1426,52 +1384,14 @@ def process_major(files, sh):
                   }
               })
 
-        total_data_rows = 3 + len(data_body_c)
-        reqs_cat.append({
-            "updateBorders": {
-                "range": {
-                    "sheetId": ws_cat.id,
-                    "startRowIndex": 0,
-                    "endRowIndex": total_data_rows,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 10,
-                },
-                "top": {
-                    "style": "SOLID",
-                    "color": {"red": 0.4, "green": 0.4, "blue": 0.4},
-                },
-                "bottom": {
-                    "style": "SOLID",
-                    "color": {"red": 0.4, "green": 0.4, "blue": 0.4},
-                },
-                "left": {
-                    "style": "SOLID",
-                    "color": {"red": 0.4, "green": 0.4, "blue": 0.4},
-                },
-                "right": {
-                    "style": "SOLID",
-                    "color": {"red": 0.4, "green": 0.4, "blue": 0.4},
-                },
-                "innerHorizontal": {
-                    "style": "SOLID",
-                    "color": {"red": 0.7, "green": 0.7, "blue": 0.7},
-                },
-                "innerVertical": {
-                    "style": "SOLID",
-                    "color": {"red": 0.7, "green": 0.7, "blue": 0.7},
-                },
-            }
-        })
-
         _sh_batch_update(sh, {"requests": reqs_cat})
 
-      st.write("✅ 重大違規 (含總表及 7 項獨立分頁) 雲端打包同步完成！")
+      st.write("✅ 重大違規雲端同步完成")
     except Exception as e:
       st.error(f"雲端同步出錯：{e}")
-      st.write(traceback.format_exc())
 
 
-# ----------------- [4. 強化專案] -----------------
+# 4. 強化專案
 def process_project(files, sh):
   f1 = next(
       (
@@ -1543,7 +1463,6 @@ def process_project(files, sh):
       df_c = df_t.iloc[h_idx + 1 :].copy()
       df_c.columns = [str(x).strip() for x in df_t.iloc[h_idx].values]
       df_c = m_uniq(df_c).reset_index(drop=True)
-      df_c["來源檔名"] = str(f.name)
       df2_all.append(df_c)
 
   df2 = pd.concat(df2_all, ignore_index=True)
@@ -1707,17 +1626,6 @@ def process_project(files, sh):
             }
         },
         {
-            "unmergeCells": {
-                "range": {
-                    "sheetId": ws.id,
-                    "startRowIndex": 0,
-                    "endRowIndex": 1,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 19,
-                }
-            }
-        },
-        {
             "mergeCells": {
                 "range": {
                     "sheetId": ws.id,
@@ -1727,49 +1635,6 @@ def process_project(files, sh):
                     "endColumnIndex": 19,
                 },
                 "mergeType": "MERGE_ALL",
-            }
-        },
-        {
-            "updateCells": {
-                "range": {
-                    "sheetId": ws.id,
-                    "startRowIndex": 0,
-                    "endRowIndex": 1,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 1,
-                },
-                "rows": [{
-                    "values": [{
-                        "userEnteredValue": {"stringValue": full_t},
-                        "textFormatRuns": [
-                            {
-                                "startIndex": 0,
-                                "format": {
-                                    "foregroundColor": {
-                                        "red": 0.0,
-                                        "green": 0.0,
-                                        "blue": 1.0,
-                                    },
-                                    "bold": True,
-                                    "fontSize": 16,
-                                },
-                            },
-                            {
-                                "startIndex": len(PROJECT_NAME),
-                                "format": {
-                                    "foregroundColor": {
-                                        "red": 1.0,
-                                        "green": 0.0,
-                                        "blue": 0.0,
-                                    },
-                                    "bold": True,
-                                    "fontSize": 16,
-                                },
-                            },
-                        ],
-                    }]
-                }],
-                "fields": "userEnteredValue,textFormatRuns",
             }
         },
         {
@@ -1818,10 +1683,10 @@ def process_project(files, sh):
       })
 
     _sh_batch_update(sh, {"requests": reqs})
-    st.write("✅ 強化專案雲端同步完成 (未達100%自動標示紅字)")
+    st.write("✅ 強化專案雲端同步完成")
 
 
-# ----------------- [5. 交通事故] -----------------
+# 5. 交通事故
 def process_accident(files, sh):
   meta = []
   for f in files:
@@ -1903,7 +1768,7 @@ def process_accident(files, sh):
         m["Station_Short"], categories=stations, ordered=True
     )
 
-    # ★ 關鍵修正：select_dtypes 正確補上下底線 _
+    # 正確 select_dtypes
     m = pd.concat([
         pd.DataFrame([
             dict(
@@ -2027,13 +1892,12 @@ def process_accident(files, sh):
     st.write("✅ 交通事故雲端已更新")
 
 
-# ----------------- [6. 靜桃計畫] -----------------
+# 6. 靜桃計畫
 def process_jing_tao(files, sh):
   df = None
   for f in files:
     f.seek(0)
-    is_excel_file = f.name.lower().endswith((".xlsx", ".xls"))
-    if is_excel_file:
+    if f.name.lower().endswith((".xlsx", ".xls")):
       try:
         xls = pd.ExcelFile(f)
         target_sheet = next((s for s in xls.sheet_names if "靜桃" in s), None)
@@ -2102,8 +1966,6 @@ def process_jing_tao(files, sh):
 
   if not date_col or not unit_col:
     return
-  if not col_22 and not col_06:
-    st.warning("⚠️ 找不到日夜間欄位，將顯示為0但仍會計算總計。")
 
   def parse_roc_date(val):
     if pd.isna(val):
@@ -2203,141 +2065,6 @@ def process_jing_tao(files, sh):
           [["「靜桃計畫」大執法專案統計表"], top_row, bottom_row]
           + df_res.values.tolist(),
       )
-
-      black_color = {"red": 0.0, "green": 0.0, "blue": 0.0}
-      red_color = {"red": 1.0, "green": 0.0, "blue": 0.0}
-      reqs = [
-          {
-              "unmergeCells": {
-                  "range": {
-                      "sheetId": ws.id,
-                      "startRowIndex": 0,
-                      "endRowIndex": 3,
-                      "startColumnIndex": 0,
-                      "endColumnIndex": 6,
-                  }
-              }
-          },
-          {
-              "mergeCells": {
-                  "range": {
-                      "sheetId": ws.id,
-                      "startRowIndex": 0,
-                      "endRowIndex": 1,
-                      "startColumnIndex": 0,
-                      "endColumnIndex": 6,
-                  },
-                  "mergeType": "MERGE_ALL",
-              }
-          },
-          {
-              "mergeCells": {
-                  "range": {
-                      "sheetId": ws.id,
-                      "startRowIndex": 1,
-                      "endRowIndex": 3,
-                      "startColumnIndex": 0,
-                      "endColumnIndex": 1,
-                  },
-                  "mergeType": "MERGE_ALL",
-              }
-          },
-          {
-              "mergeCells": {
-                  "range": {
-                      "sheetId": ws.id,
-                      "startRowIndex": 1,
-                      "endRowIndex": 2,
-                      "startColumnIndex": 1,
-                      "endColumnIndex": 3,
-                  },
-                  "mergeType": "MERGE_ALL",
-              }
-          },
-          {
-              "mergeCells": {
-                  "range": {
-                      "sheetId": ws.id,
-                      "startRowIndex": 1,
-                      "endRowIndex": 2,
-                      "startColumnIndex": 3,
-                      "endColumnIndex": 5,
-                  },
-                  "mergeType": "MERGE_ALL",
-              }
-          },
-          {
-              "mergeCells": {
-                  "range": {
-                      "sheetId": ws.id,
-                      "startRowIndex": 1,
-                      "endRowIndex": 3,
-                      "startColumnIndex": 5,
-                      "endColumnIndex": 6,
-                  },
-                  "mergeType": "MERGE_ALL",
-              }
-          },
-          {
-              "repeatCell": {
-                  "range": {
-                      "sheetId": ws.id,
-                      "startRowIndex": 0,
-                      "endRowIndex": 3,
-                      "startColumnIndex": 0,
-                      "endColumnIndex": 6,
-                  },
-                  "cell": {
-                      "userEnteredFormat": {
-                          "textFormat": {"bold": True},
-                          "horizontalAlignment": "CENTER",
-                          "verticalAlignment": "MIDDLE",
-                      }
-                  },
-                  "fields": (
-                      "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment"
-                  ),
-              }
-          },
-      ]
-      for i, text in enumerate(top_row):
-        if "(" in text:
-          p_start = text.find("(")
-          reqs.append({
-              "updateCells": {
-                  "range": {
-                      "sheetId": ws.id,
-                      "startRowIndex": 1,
-                      "endRowIndex": 2,
-                      "startColumnIndex": i,
-                      "endColumnIndex": i + 1,
-                  },
-                  "rows": [{
-                      "values": [{
-                          "textFormatRuns": [
-                              {
-                                  "startIndex": 0,
-                                  "format": {
-                                      "foregroundColor": black_color,
-                                      "bold": True,
-                                  },
-                              },
-                              {
-                                  "startIndex": p_start,
-                                  "format": {
-                                      "foregroundColor": red_color,
-                                      "bold": True,
-                                  },
-                              },
-                          ],
-                          "userEnteredValue": {"stringValue": text},
-                      }]
-                  }],
-                  "fields": "userEnteredValue,textFormatRuns",
-              }
-          })
-
-      _sh_batch_update(sh, {"requests": reqs})
       st.write("✅ 靜桃計畫數據同步完成")
     except Exception as e:
       st.error(f"雲端同步出錯：{e}")
@@ -2408,7 +2135,7 @@ st.divider()
 st.subheader("🚀 啟動全自動批次作業")
 
 # ==========================================
-# 6. 自動分流與執行
+# 6. 自動分流、執行與歸檔移動
 # ==========================================
 if uploads:
   file_hash = sum([f.size for f in uploads]) + len(uploads)
@@ -2482,6 +2209,19 @@ if uploads:
 
       st.session_state["last_processed_hash"] = file_hash
       st.balloons()
+
+      # ★ 統計全數完成後：自動移出來源資料夾（歸檔）
+      if source_mode == "☁️ 從 Google 雲端硬碟讀取":
+        archive_id = st.secrets.get("ARCHIVE_FOLDER_ID", "")
+        if archive_id:
+          with st.spinner("📦 正在將已處理檔案移至歸檔資料夾..."):
+            file_ids = [f.id for f in uploads if hasattr(f, "id") and f.id]
+            move_files_to_archive(file_ids, folder_id, archive_id)
+        else:
+          st.caption(
+              "💡 提示：若需自動移出檔案，請在 secrets.toml 設定 `ARCHIVE_FOLDER_ID`"
+              " 指定歸檔資料夾。"
+          )
 
     except Exception as e:
       st.error(f"⚠️ 批次處理發生錯誤：{e}")
