@@ -84,7 +84,7 @@ class DriveVirtualFile(io.BytesIO):
 def get_drive_service():
   if not GCP_CREDS:
     return None
-  # 使用完整 scope 存取共用項目
+  # 使用完整 scope 以穿透共用資料夾與跨磁碟權限限制
   creds = service_account.Credentials.from_service_account_info(
       GCP_CREDS, scopes=["https://www.googleapis.com/auth/drive"]
   )
@@ -99,57 +99,64 @@ def fetch_files_from_drive(folder_id):
 
   items = []
 
-  # 方法一：嘗試用 parents 搭配 spaces="drive" 查詢
+  # 1. 穿透查詢：直接找 parent 在此資料夾內的所有項目（移除 spaces 與限制）
   if folder_id:
+    query = f"'{folder_id}' in parents and trashed = false"
     try:
-      query1 = f"'{folder_id}' in parents and trashed = false"
-      res1 = (
+      res = (
           service.files()
           .list(
-              q=query1,
+              q=query,
               fields="files(id, name, size, mimeType)",
               pageSize=100,
-              spaces="drive",
-              supportsAllDrives=True,
               includeItemsFromAllDrives=True,
+              supportsAllDrives=True,
           )
           .execute()
       )
-      items = res1.get("files", [])
-    except Exception:
-      items = []
+      items = res.get("files", [])
+    except Exception as e:
+      st.warning(f"⚠️ 資料夾路徑穿透查詢略過：{e}")
 
-  # 方法二（共用直讀穿透備援）：若 parents 查詢不到，直接讀取所有直接共用給服務帳號的試算表
+  # 2. 備援查詢：若 parents 為空，直接檢索該服務帳號「所有具備檢視權限之檔案」
   if not items:
     try:
-      query2 = "sharedWithMe = true and trashed = false"
-      res2 = (
+      fallback_res = (
           service.files()
           .list(
-              q=query2,
-              fields="files(id, name, size, mimeType)",
               pageSize=100,
+              fields="files(id, name, parents)",
               supportsAllDrives=True,
               includeItemsFromAllDrives=True,
           )
           .execute()
       )
-      raw_items = res2.get("files", [])
-      for item in raw_items:
-        fname = item["name"].lower()
+      all_visible = fallback_res.get("files", [])
+
+      if all_visible:
+        st.info(
+            "🔍 服務帳號目前可見的雲端檔案："
+            f" {[f['name'] for f in all_visible[:10]]}"
+        )
+
+      # 篩選出符合副檔名的試算表
+      for f in all_visible:
+        fname = f["name"].lower()
         if any(fname.endswith(ext) for ext in [".xlsx", ".xls", ".csv"]):
-          items.append(item)
+          items.append(f)
     except Exception as e:
-      st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
+      st.error(f"❌ 診斷與備援查詢失敗: {e}")
       return []
 
   if not items:
-    st.warning("⚠️ 系統已連線，但尚未讀取到符合格式之共用報表檔案。")
+    st.warning(
+        "⚠️ 服務帳號目前未讀取到任何檔案，請確認檔案是否已共用給該服務帳號。"
+    )
     return []
 
-  st.caption(f"🔍 成功掃描到 {len(items)} 個共用報表檔案！")
+  st.caption(f"🔍 成功掃描到 {len(items)} 個報表檔案！")
 
-  # 下載檔案內容
+  # 3. 下載檔案
   downloaded_files = []
   for item in items:
     fname = item["name"].lower()
@@ -1908,7 +1915,7 @@ def process_accident(files, sh):
     m = pd.concat([
         pd.DataFrame([
             dict(
-                m.select_dtypes(include="number").sum().to_dict(),
+                m.selectdtypes(include="number").sum().to_dict(),
                 Station_Short="合計",
             )
         ]),
@@ -2314,29 +2321,29 @@ def process_jing_tao(files, sh):
                       "endColumnIndex": i + 1,
                   },
                   "rows": [{
-                    "values": [{
-                        "textFormatRuns": [
-                            {
-                                "startIndex": 0,
-                                "format": {
-                                    "foregroundColor": black_color,
-                                    "bold": True,
-                                },
-                            },
-                            {
-                                "startIndex": p_start,
-                                "format": {
-                                    "foregroundColor": red_color,
-                                    "bold": True,
-                                },
-                            },
-                        ],
-                        "userEnteredValue": {"stringValue": text},
-                    }]
-                }],
-                "fields": "userEnteredValue,textFormatRuns",
-            }
-        })
+                      "values": [{
+                          "textFormatRuns": [
+                              {
+                                  "startIndex": 0,
+                                  "format": {
+                                      "foregroundColor": black_color,
+                                      "bold": True,
+                                  },
+                              },
+                              {
+                                  "startIndex": p_start,
+                                  "format": {
+                                      "foregroundColor": red_color,
+                                      "bold": True,
+                                  },
+                              },
+                          ],
+                          "userEnteredValue": {"stringValue": text},
+                      }]
+                  }],
+                  "fields": "userEnteredValue,textFormatRuns",
+              }
+          })
 
       _sh_batch_update(sh, {"requests": reqs})
       st.write("✅ 靜桃計畫數據同步完成")
