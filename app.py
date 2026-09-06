@@ -91,19 +91,31 @@ def fetch_files_from_drive(folder_id):
     folder_id = str(folder_id).strip().replace('"', '').replace("'", '')
     query = f"'{folder_id}' in parents and trashed = false"
 
+    items = []
+    # 關鍵修正：移除 spaces='drive' 避免引發 File not found: .
     try:
         results = service.files().list(
             q=query,
             fields="files(id, name, size, mimeType)",
             pageSize=100,
-            spaces="drive",
             supportsAllDrives=True,
             includeItemsFromAllDrives=True
         ).execute()
         items = results.get("files", [])
-    except Exception as e:
-        st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
-        return []
+    except Exception as e1:
+        try:
+            results = service.files().list(
+                q=query,
+                fields="files(id, name, size, mimeType)",
+                pageSize=100,
+                corpora="allDrives",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
+            ).execute()
+            items = results.get("files", [])
+        except Exception as e2:
+            st.error(f"❌ 查詢雲端硬碟檔案失敗：{e2}")
+            return []
 
     valid_items = [
         f for f in items
@@ -111,7 +123,7 @@ def fetch_files_from_drive(folder_id):
     ]
 
     if not valid_items:
-        st.warning(f"⚠️ 資料夾連線成功，但未讀取到未處理之 Excel 或 CSV 報表。")
+        st.warning(f"⚠️ 資料夾 (ID: {folder_id}) 連線成功，但未讀取到 Excel 或 CSV 報表。")
         return []
 
     st.caption(f"🔍 成功掃描到 {len(valid_items)} 個報表檔案！")
@@ -1035,7 +1047,6 @@ def process_accident(files, sh):
         m = m[m["Station_Short"].isin(stations)].copy()
         m["Station_Short"] = pd.Categorical(m["Station_Short"], categories=stations, ordered=True)
 
-        # 標準 select_dtypes
         m = pd.concat([
             pd.DataFrame([dict(m.select_dtypes(include="number").sum().to_dict(), Station_Short="合計")]),
             m.sort_values("Station_Short")
