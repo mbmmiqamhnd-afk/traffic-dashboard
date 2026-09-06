@@ -83,64 +83,52 @@ def get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 def fetch_files_from_drive(folder_id):
-    """
-    成功版本邏輯：
-    1. 針對資料夾 ID 查詢，帶上 supportsAllDrives 與 includeItemsFromAllDrives 穿透連結共用權限
-    2. 若因任何 API 限制未能抓取，啟動備援全域查詢，自動篩選試算表報表
-    """
     service = get_drive_service()
     if not service:
         st.error("❌ 無法初始化 Drive 服務，請確認 secrets.toml 設定")
         return []
 
     folder_id = str(folder_id).strip().replace('"', '').replace("'", '')
-    items = []
 
-    # 方法 1：資料夾穿透查詢
-    if folder_id:
-        try:
-            query = f"'{folder_id}' in parents and trashed = false"
-            res = service.files().list(
-                q=query,
-                fields="files(id, name, size, mimeType)",
-                pageSize=100,
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True
-            ).execute()
-            items = res.get("files", [])
-        except Exception:
-            items = []
+    # 1. 查詢未刪除的 Excel / CSV 檔案（避開 parents 索引同步延遲）
+    query = "trashed = false and (name contains '.xlsx' or name contains '.xls' or name contains '.csv')"
 
-    # 方法 2：備援全域檢索（先前抓出所有報表的可靠機制）
-    if not items:
-        try:
-            fallback_res = service.files().list(
-                pageSize=100,
-                fields="files(id, name, parents)",
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True
-            ).execute()
-            all_visible = fallback_res.get("files", [])
-            items = [
-                f for f in all_visible
-                if any(f["name"].lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"])
-            ]
-        except Exception as e:
-            st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
-            return []
-
-    if not items:
-        st.warning("⚠️ 該資料夾內目前沒有未處理的 Excel 或 CSV 報表。")
+    try:
+        res = service.files().list(
+            q=query,
+            fields="files(id, name, size, mimeType, parents)",
+            pageSize=100,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
+        all_files = res.get("files", [])
+    except Exception as e:
+        st.error(f"❌ 查詢失敗：{e}")
         return []
 
-    st.caption(f"🔍 成功掃描到 {len(items)} 個報表檔案！")
+    # 2. 若檔案含有 parents 資訊且等於目標資料夾，優先挑選；若無，則只要是報表全部納入
+    matched_files = []
+    for f in all_files:
+        parents = f.get("parents", [])
+        if folder_id in parents:
+            matched_files.append(f)
+
+    target_list = matched_files if matched_files else all_files
+
+    # 排除非 Excel/CSV 檔案與系統試算表
+    valid_items = [
+        f for f in target_list
+        if any(f["name"].lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"])
+    ]
+
+    if not valid_items:
+        st.warning("⚠️ 雲端硬碟未檢測到可用的 Excel 或 CSV 報表。")
+        return []
+
+    st.caption(f"🔍 成功掃描到 {len(valid_items)} 個報表檔案！")
 
     downloaded_files = []
-    for item in items:
-        fname = item["name"].lower()
-        if not any(fname.endswith(ext) for ext in [".xlsx", ".xls", ".csv"]):
-            continue
-
+    for item in valid_items:
         try:
             req = service.files().get_media(fileId=item["id"], supportsAllDrives=True)
             fh = io.BytesIO()
