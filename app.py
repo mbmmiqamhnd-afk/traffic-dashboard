@@ -66,11 +66,12 @@ def get_gsheet_connection():
 
 class DriveVirtualFile(io.BytesIO):
     """具備檔案 ID 與虛擬檔案特性之記憶體物件"""
-    def __init__(self, name, content_bytes, file_id=None):
+    def __init__(self, name, content_bytes, file_id=None, parents=None):
         super().__init__(content_bytes)
         self.name = name
         self.size = len(content_bytes)
         self.id = file_id
+        self.parents = parents or []
 
 @st.cache_resource
 def get_drive_service():
@@ -157,12 +158,40 @@ def fetch_files_from_drive(folder_id):
             while not done:
                 _, done = downloader.next_chunk()
 
-            vfile = DriveVirtualFile(item["name"], fh.getvalue(), file_id=item["id"])
+            vfile = DriveVirtualFile(item["name"], fh.getvalue(), file_id=item["id"], parents=item.get("parents", []))
             downloaded_files.append(vfile)
         except Exception as e:
             st.warning(f"檔案 {item['name']} 下載失敗: {e}")
 
     return downloaded_files
+
+def move_files_to_archive(files, archive_folder_id):
+    """統計完成後，將來源資料夾內的檔案移往指定的歸檔資料夾（非刪除，僅變更所在資料夾）"""
+    service = get_drive_service()
+    if not service or not files or not archive_folder_id:
+        return
+
+    archive_folder_id = str(archive_folder_id).strip().replace('"', '').replace("'", '')
+    moved_count = 0
+    for f in files:
+        fid = getattr(f, "id", None)
+        if not fid:
+            continue
+        try:
+            prev_parents = ",".join(getattr(f, "parents", []) or [])
+            service.files().update(
+                fileId=fid,
+                addParents=archive_folder_id,
+                removeParents=prev_parents,
+                supportsAllDrives=True,
+                fields="id, parents"
+            ).execute()
+            moved_count += 1
+        except Exception as e:
+            st.warning(f"檔案 {getattr(f, 'name', fid)} 歸檔失敗：{e}")
+
+    if moved_count > 0:
+        st.success(f"📦 已成功將 {moved_count} 個已處理完成之報表移往歸檔資料夾！")
 
 def _ws_update(ws, range_name, values):
     _gsheet_call_with_retry(ws.update, range_name=range_name, values=values)
@@ -1336,6 +1365,15 @@ if uploads:
 
             st.session_state["last_processed_hash"] = file_hash
             st.balloons()
+
+            # 統計全數完成後：將來源檔案移往歸檔資料夾（若已設定 ARCHIVE_FOLDER_ID）
+            if source_mode == "☁️ 從 Google 雲端硬碟讀取":
+                archive_folder_id = st.secrets.get("ARCHIVE_FOLDER_ID", "").strip()
+                if archive_folder_id:
+                    with st.spinner("📦 正在將已完成報表移往歸檔資料夾..."):
+                        move_files_to_archive(uploads, archive_folder_id)
+                else:
+                    st.info("💡 尚未設定 `ARCHIVE_FOLDER_ID`，來源報表將保留原位，未自動歸檔。")
 
         except Exception as e:
             st.error(f"⚠️ 批次處理發生錯誤：{e}")
