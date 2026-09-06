@@ -84,7 +84,7 @@ class DriveVirtualFile(io.BytesIO):
 def get_drive_service():
   if not GCP_CREDS:
     return None
-  # 使用完整 scope 以穿透共用資料夾限制
+  # 使用完整 scope 存取共用項目
   creds = service_account.Credentials.from_service_account_info(
       GCP_CREDS, scopes=["https://www.googleapis.com/auth/drive"]
   )
@@ -97,31 +97,62 @@ def fetch_files_from_drive(folder_id):
     st.error("❌ 無法初始化 Drive 服務，請確認 secrets.toml 設定")
     return []
 
-  # 直接以包含外部共用的參數進行穿透查詢
-  query = f"'{folder_id}' in parents and trashed = false"
+  items = []
 
+  # 方法一：嘗試用 parents 搭配 spaces="drive" 查詢
   try:
-    results = (
+    query1 = f"'{folder_id}' in parents and trashed = false"
+    res1 = (
         service.files()
         .list(
-            q=query,
+            q=query1,
             fields="files(id, name, size, mimeType)",
             pageSize=100,
+            spaces="drive",
             supportsAllDrives=True,
             includeItemsFromAllDrives=True,
         )
         .execute()
     )
-    items = results.get("files", [])
-  except Exception as e:
-    st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
-    return []
+    items = res1.get("files", [])
+  except Exception:
+    items = []
+
+  # 方法二（共用穿透備援）：改查「共用給該服務帳號的所有檔案」
+  if not items:
+    try:
+      query2 = "sharedWithMe = true and trashed = false"
+      res2 = (
+          service.files()
+          .list(
+              q=query2,
+              fields="files(id, name, size, mimeType, parents)",
+              pageSize=100,
+              supportsAllDrives=True,
+              includeItemsFromAllDrives=True,
+          )
+          .execute()
+      )
+      all_shared = res2.get("files", [])
+      # 過濾出 parent 符合該資料夾 ID，或是檔名為 Excel/CSV 的項目
+      items = [
+          f
+          for f in all_shared
+          if folder_id in f.get("parents", [])
+          or any(
+              f["name"].lower().endswith(ext)
+              for ext in [".xlsx", ".xls", ".csv"]
+          )
+      ]
+    except Exception as e:
+      st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
+      return []
 
   if not items:
-    st.warning(
-        "⚠️ 該資料夾連線成功，但未讀取到符合條件之報表，請確認檔案是否已上傳至該資料夾。"
-    )
+    st.warning("⚠️ 該資料夾連線成功，但未讀取到符合條件之報表。")
     return []
+
+  st.caption(f"🔍 成功掃描到 {len(items)} 個報表檔案！")
 
   # 篩選並下載 Excel / CSV 檔案
   downloaded_files = []
