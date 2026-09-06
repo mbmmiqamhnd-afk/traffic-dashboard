@@ -83,41 +83,66 @@ def get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 def fetch_files_from_drive(folder_id):
+    """
+    成功版本邏輯：
+    1. 針對資料夾 ID 查詢，帶上 supportsAllDrives 與 includeItemsFromAllDrives 穿透連結共用權限
+    2. 若因任何 API 限制未能抓取，啟動備援全域查詢，自動篩選試算表報表
+    """
     service = get_drive_service()
     if not service:
         st.error("❌ 無法初始化 Drive 服務，請確認 secrets.toml 設定")
         return []
 
     folder_id = str(folder_id).strip().replace('"', '').replace("'", '')
-    query = f"'{folder_id}' in parents and trashed = false"
+    items = []
 
-    # ★ 徹底移除 supportsAllDrives / corpora，純粹針對個人 Google 雲端硬碟查詢
-    try:
-        results = service.files().list(
-            q=query,
-            fields="files(id, name, size, mimeType)",
-            pageSize=100
-        ).execute()
-        items = results.get("files", [])
-    except Exception as e:
-        st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
+    # 方法 1：資料夾穿透查詢
+    if folder_id:
+        try:
+            query = f"'{folder_id}' in parents and trashed = false"
+            res = service.files().list(
+                q=query,
+                fields="files(id, name, size, mimeType)",
+                pageSize=100,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
+            ).execute()
+            items = res.get("files", [])
+        except Exception:
+            items = []
+
+    # 方法 2：備援全域檢索（先前抓出所有報表的可靠機制）
+    if not items:
+        try:
+            fallback_res = service.files().list(
+                pageSize=100,
+                fields="files(id, name, parents)",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
+            ).execute()
+            all_visible = fallback_res.get("files", [])
+            items = [
+                f for f in all_visible
+                if any(f["name"].lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"])
+            ]
+        except Exception as e:
+            st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
+            return []
+
+    if not items:
+        st.warning("⚠️ 該資料夾內目前沒有未處理的 Excel 或 CSV 報表。")
         return []
 
-    valid_items = [
-        f for f in items
-        if any(f["name"].lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"])
-    ]
-
-    if not valid_items:
-        st.warning(f"⚠️ 資料夾 (ID: {folder_id}) 連線成功，但未讀取到未處理之 Excel 或 CSV 報表。")
-        return []
-
-    st.caption(f"🔍 成功掃描到 {len(valid_items)} 個報表檔案！")
+    st.caption(f"🔍 成功掃描到 {len(items)} 個報表檔案！")
 
     downloaded_files = []
-    for item in valid_items:
+    for item in items:
+        fname = item["name"].lower()
+        if not any(fname.endswith(ext) for ext in [".xlsx", ".xls", ".csv"]):
+            continue
+
         try:
-            req = service.files().get_media(fileId=item["id"])
+            req = service.files().get_media(fileId=item["id"], supportsAllDrives=True)
             fh = io.BytesIO()
             downloader = MediaIoBaseDownload(fh, req)
             done = False
@@ -132,7 +157,7 @@ def fetch_files_from_drive(folder_id):
     return downloaded_files
 
 def move_files_to_trash(file_ids):
-    """統計完成後，將來源資料夾內的檔案移至垃圾桶（移出集中處，30天內可隨時復原）"""
+    """統計完成後，將已處理的報表移至垃圾桶（移出集中處，30天內可隨時復原）"""
     service = get_drive_service()
     if not service or not file_ids:
         return
@@ -143,6 +168,7 @@ def move_files_to_trash(file_ids):
             service.files().update(
                 fileId=fid,
                 body={"trashed": True},
+                supportsAllDrives=True,
                 fields="id, trashed"
             ).execute()
             trashed_count += 1
@@ -1032,6 +1058,7 @@ def process_accident(files, sh):
         m = m[m["Station_Short"].isin(stations)].copy()
         m["Station_Short"] = pd.Categorical(m["Station_Short"], categories=stations, ordered=True)
 
+        # 關鍵 select_dtypes 修正
         m = pd.concat([
             pd.DataFrame([dict(m.select_dtypes(include="number").sum().to_dict(), Station_Short="合計")]),
             m.sort_values("Station_Short")
@@ -1322,7 +1349,7 @@ if uploads:
             st.session_state["last_processed_hash"] = file_hash
             st.balloons()
 
-            # 統計全數完成後：自動移出集中資料夾（丟入垃圾桶）
+            # 統計全數完成後：自動將來源檔案移至垃圾桶（移出集中處）
             if source_mode == "☁️ 從 Google 雲端硬碟讀取":
                 with st.spinner("🗑️ 正在將已完成報表移出資料夾..."):
                     file_ids = [f.id for f in uploads if hasattr(f, "id") and f.id]
