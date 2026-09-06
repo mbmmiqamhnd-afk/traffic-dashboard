@@ -164,28 +164,6 @@ def fetch_files_from_drive(folder_id):
 
     return downloaded_files
 
-def move_files_to_trash(file_ids):
-    """統計完成後，將來源資料夾內的檔案移至垃圾桶（移出集中處，30天內可隨時復原）"""
-    service = get_drive_service()
-    if not service or not file_ids:
-        return
-
-    trashed_count = 0
-    for fid in file_ids:
-        try:
-            service.files().update(
-                fileId=fid,
-                body={"trashed": True},
-                supportsAllDrives=True,
-                fields="id, trashed"
-            ).execute()
-            trashed_count += 1
-        except Exception as e:
-            st.warning(f"檔案 (ID: {fid}) 移出失敗：{e}")
-
-    if trashed_count > 0:
-        st.success(f"🗑️ 已成功將 {trashed_count} 個已處理完成之報表移出集中資料夾！")
-
 def _ws_update(ws, range_name, values):
     _gsheet_call_with_retry(ws.update, range_name=range_name, values=values)
 
@@ -1355,12 +1333,6 @@ if uploads:
 
             st.session_state["last_processed_hash"] = file_hash
             st.balloons()
-
-            # 統計全數完成後：自動將來源檔案移至垃圾桶（移出集中處）
-            if source_mode == "☁️ 從 Google 雲端硬碟讀取":
-                with st.spinner("🗑️ 正在將已完成報表移出資料夾..."):
-                    file_ids = [f.id for f in uploads if hasattr(f, "id") and f.id]
-                    move_files_to_trash(file_ids)
 
         except Exception as e:
             st.error(f"⚠️ 批次處理發生錯誤：{e}")
