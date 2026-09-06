@@ -1274,10 +1274,13 @@ st.subheader("🚀 啟動全自動批次作業")
 if uploads:
     file_hash = sum([f.size for f in uploads]) + len(uploads)
 
+    force_rerun = False
     if st.session_state.get("last_processed_hash") == file_hash:
         st.success("✅ 目前載入的檔案皆已全自動處理完畢！")
-        st.info("💡 若要重新執行，請切換資料來源或放入新檔案。")
-    else:
+        st.info("💡 若要重新執行，請切換資料來源、放入新檔案，或勾選下方選項強制重跑。")
+        force_rerun = st.checkbox("🔁 強制重新執行（沿用相同檔案重新統計）", key="force_rerun_checkbox")
+
+    if st.session_state.get("last_processed_hash") != file_hash or force_rerun:
         cat_files = {
             "科技執法": [], "重大違規": [], "超載統計": [],
             "強化專案": [], "交通事故": [], "靜桃計畫": []
