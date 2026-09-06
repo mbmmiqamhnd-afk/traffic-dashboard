@@ -70,9 +70,9 @@ def get_gsheet_connection():
   return None
 
 
-# --- [Google Drive 讀取核心] ---
+# --- [Google Drive 虛擬檔案物件] ---
 class DriveVirtualFile(io.BytesIO):
-  """包裝雲端硬碟檔案，具備與 Streamlit UploadedFile 相同的 name, size, seek, read 特性"""
+  """包裝雲端硬碟下載的檔案，具備與 Streamlit UploadedFile 相同的 name, size, seek, read 特性"""
 
   def __init__(self, name, content_bytes):
     super().__init__(content_bytes)
@@ -93,40 +93,52 @@ def get_drive_service():
 def fetch_files_from_drive(folder_id):
   service = get_drive_service()
   if not service:
-    st.error("❌ 無法初始化 Drive 服務，請確認 secrets 設定")
+    st.error("❌ 無法初始化 Drive 服務，請確認 secrets.toml 設定")
     return []
 
   query = f"'{folder_id}' in parents and trashed = false"
-  results = (
-      service.files()
-      .list(
-          q=query,
-          fields="files(id, name, size, modifiedTime)",
-          orderBy="modifiedTime desc",
-          pageSize=50,
-      )
-      .execute()
-  )
-  items = results.get("files", [])
+
+  try:
+    results = (
+        service.files()
+        .list(
+            q=query,
+            fields="files(id, name, size, modifiedTime)",
+            orderBy="modifiedTime desc",
+            pageSize=100,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        )
+        .execute()
+    )
+    items = results.get("files", [])
+  except Exception as e:
+    st.error(f"❌ Google Drive API 讀取失敗: {e}")
+    return []
 
   downloaded_files = []
   for item in items:
-    # 僅篩選試算表檔案類型
     fname = item["name"].lower()
+    # 支援 Excel 及 CSV
     if not (
-        fname.endswith(".xlsx") or fname.endswith(".xls") or fname.endswith(".csv")
+        fname.endswith(".xlsx")
+        or fname.endswith(".xls")
+        or fname.endswith(".csv")
     ):
       continue
 
-    req = service.files().get_media(fileId=item["id"])
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, req)
-    done = False
-    while not done:
-      _, done = downloader.next_chunk()
+    try:
+      req = service.files().get_media(fileId=item["id"], supportsAllDrives=True)
+      fh = io.BytesIO()
+      downloader = MediaIoBaseDownload(fh, req)
+      done = False
+      while not done:
+        _, done = downloader.next_chunk()
 
-    vfile = DriveVirtualFile(item["name"], fh.getvalue())
-    downloaded_files.append(vfile)
+      vfile = DriveVirtualFile(item["name"], fh.getvalue())
+      downloaded_files.append(vfile)
+    except Exception as e:
+      st.warning(f"檔案 {item['name']} 下載失敗: {e}")
 
   return downloaded_files
 
@@ -296,7 +308,7 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
 
 
 # ==========================================
-# 4. 業務邏輯處理區 (完全保持不變)
+# 4. 業務邏輯處理區
 # ==========================================
 
 # ----------------- [1. 科技執法] -----------------
@@ -395,7 +407,7 @@ def process_tech_enforcement(files, sh):
     _sh_batch_update(sh, reqs)
 
 
-# ----------------- [2. 超載統計 (含標準下方備註)] -----------------
+# ----------------- [2. 超載統計] -----------------
 def process_overload(files, sh):
   def parse_rpt(f):
     if not f:
@@ -405,7 +417,6 @@ def process_overload(files, sh):
     s_date, e_date = "0000000", "0000000"
 
     text_block = pd.read_excel(f, header=None, nrows=25).to_string()
-
     m_roc = re.search(
         r"(\d{3})[年\./\-]?(\d{2})[月\./\-]?(\d{2})[日\s]*[至\-\~][\s]*(\d{3})[年\./\-]?(\d{2})[月\./\-]?(\d{2})[日]?",
         text_block,
@@ -2350,7 +2361,7 @@ elif source_mode == "☁️ 從 Google 雲端硬碟讀取":
           )
           file_map = {f.name: f for f in drive_files}
 
-          # 預設全選資料夾內檔案，使用者也可以手動取消勾選
+          # 預設全選資料夾內檔案
           selected_names = st.multiselect(
               "請確認欲參與批次分析的雲端報表（預設已全選）：",
               options=list(file_map.keys()),
@@ -2359,7 +2370,10 @@ elif source_mode == "☁️ 從 Google 雲端硬碟讀取":
           )
           uploads = [file_map[name] for name in selected_names]
         else:
-          st.warning("⚠️ 該雲端資料夾內尚無 Excel 或 CSV 報表。")
+          st.warning(
+              "⚠️ 該雲端資料夾內尚無 Excel 或 CSV 報表，請確認 Google Drive"
+              " API 是否已啟用或檔案是否放置正確。"
+          )
       except Exception as e:
         st.error(f"❌ 讀取雲端硬碟失敗：{e}")
 
@@ -2367,10 +2381,9 @@ st.divider()
 st.subheader("🚀 啟動全自動批次作業")
 
 # ==========================================
-# 6. 自動分流與執行 (完全相容 UploadedFile 與 DriveVirtualFile)
+# 6. 自動分流與執行
 # ==========================================
 if uploads:
-  # 無論本機或雲端虛擬檔案，都有 size 與 len 特性
   file_hash = sum([f.size for f in uploads]) + len(uploads)
 
   if st.session_state.get("last_processed_hash") == file_hash:
