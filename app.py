@@ -83,18 +83,22 @@ def get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 def fetch_files_from_drive(folder_id):
+    """
+    徹底拿掉 'in parents' 避免 Google Drive API 對個人帳號資料夾拋出 404 (File not found: .)
+    直接向服務帳號索取所有未在垃圾桶且非 Google 原生試算表的 Excel/CSV 檔案
+    """
     service = get_drive_service()
     if not service:
         st.error("❌ 無法初始化 Drive 服務，請確認 secrets.toml 設定")
         return []
 
     folder_id = str(folder_id).strip().replace('"', '').replace("'", '')
-    query = f"'{folder_id}' in parents and trashed = false"
+    query = "trashed = false and mimeType != 'application/vnd.google-apps.spreadsheet'"
 
     try:
         results = service.files().list(
             q=query,
-            fields="files(id, name, size, mimeType)",
+            fields="files(id, name, size, mimeType, parents)",
             pageSize=100,
             supportsAllDrives=True,
             includeItemsFromAllDrives=True
@@ -104,13 +108,18 @@ def fetch_files_from_drive(folder_id):
         st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
         return []
 
+    # 1. 優先挑選 parents 吻合的檔案；若 Google 未即時回傳 parents，則取候選報表
+    folder_matched = [f for f in items if folder_id in f.get("parents", [])]
+    candidate_items = folder_matched if folder_matched else items
+
+    # 2. 嚴格過濾 Excel / CSV 副檔名
     valid_items = [
-        f for f in items
+        f for f in candidate_items
         if any(f["name"].lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"])
     ]
 
     if not valid_items:
-        st.warning(f"⚠️ 資料夾連線成功，但未讀取到 Excel 或 CSV 報表。")
+        st.warning("⚠️ 雲端硬碟未檢測到可用的 Excel 或 CSV 報表。")
         return []
 
     st.caption(f"🔍 成功掃描到 {len(valid_items)} 個報表檔案！")
@@ -1034,7 +1043,6 @@ def process_accident(files, sh):
         m = m[m["Station_Short"].isin(stations)].copy()
         m["Station_Short"] = pd.Categorical(m["Station_Short"], categories=stations, ordered=True)
 
-        # 關鍵 select_dtypes 修正
         m = pd.concat([
             pd.DataFrame([dict(m.select_dtypes(include="number").sum().to_dict(), Station_Short="合計")]),
             m.sort_values("Station_Short")
