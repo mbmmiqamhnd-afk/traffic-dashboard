@@ -12,10 +12,11 @@ openpyxl
 xlsxwriter
 xlrd
 
-# --- Google Sheets 連線 ---
+# --- Google 連線 (Sheets & Drive API) ---
 gspread
 gspread-formatting
 google-auth
+google-api-python-client
 
 # --- PDF 讀取與生成 ---
 pypdf
