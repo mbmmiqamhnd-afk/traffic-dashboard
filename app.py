@@ -1,11 +1,8 @@
 import io
 import re
-import smtplib
 import time
 import traceback
 from datetime import datetime, timedelta
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 import gspread
 import numpy as np
@@ -34,11 +31,6 @@ except ImportError:
 # 1. 全局常數與設定區
 # ==========================================
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
-
-# 簡報母本與存檔資料夾 ID
-TEMPLATE_MONDAY_ID = "1YPVp-PFiQhaJrkaMfBmLQ60ErqrQdOU4BLQMp_pDsXA"    # 主管會報週一簡報母本
-TEMPLATE_THURSDAY_ID = "1l3_HtTKHO5uHof1eBCsm_a_orjHIGrJrtY_E5hql5d4"  # 主管會報週四簡報母本
-TARGET_FOLDER_ID = "1pgxrM4jpGmTEa564ztKR8_LMgxV7GHdp"                  # 會議簡報存檔資料夾
 
 try:
     GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
@@ -223,7 +215,7 @@ PROJECT_LAW_MAP = {
 }
 
 # ==========================================
-# 3. 輔助工具與自動簡報/郵件模組
+# 3. 輔助工具區
 # ==========================================
 def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
     text = str(text)
@@ -258,102 +250,6 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
             }
         }
     }
-
-def send_meeting_slide_email(file_name, file_url, meeting_date_str):
-    """發送附帶簡報連結的通知信至 Gmail"""
-    smtp_user = st.secrets.get("EMAIL_SENDER", "")
-    smtp_pass = st.secrets.get("EMAIL_PASSWORD", "")
-    receiver = st.secrets.get("EMAIL_RECEIVER", smtp_user)
-
-    if not smtp_user or not smtp_pass:
-        st.info("💡 尚未在 secrets.toml 設定 EMAIL_SENDER 或 EMAIL_PASSWORD，略過自動發信。")
-        return False
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"【會議簡報存檔通知】{file_name}"
-    msg["From"] = f"交通數據戰情室 <{smtp_user}>"
-    msg["To"] = receiver
-
-    plain_text = (
-        f"您好：\n\n本次會議簡報副本已順利建立。\n\n"
-        f"檔案名稱：{file_name}\n"
-        f"開會日期：{meeting_date_str}\n"
-        f"簡報連結：{file_url}\n\n"
-        f"（此信件由 Streamlit 交通執法分析引擎自動發送）"
-    )
-
-    html_content = f"""
-    <div style="font-family: Arial, 'Microsoft JhengHei', sans-serif; line-height: 1.6; color: #333;">
-        <h3 style="color: #1a73e8;">📋 主管會報簡報已完成建立與歸檔</h3>
-        <p>您好：</p>
-        <p>交通數據批次分析與試算表同步已完成，系統已自動複製母本並建立本次會議簡報：</p>
-        <table style="border-collapse: collapse; margin: 15px 0;">
-            <tr><td style="padding: 4px 10px; font-weight: bold;">檔案名稱：</td><td style="padding: 4px 10px;">{file_name}</td></tr>
-            <tr><td style="padding: 4px 10px; font-weight: bold;">開會日期：</td><td style="padding: 4px 10px;">{meeting_date_str}</td></tr>
-        </table>
-        <p style="margin: 25px 0;">
-            <a href="{file_url}" target="_blank" 
-               style="display: inline-block; padding: 12px 24px; font-size: 15px; color: #ffffff; 
-                      background-color: #1a73e8; border-radius: 5px; text-decoration: none; font-weight: bold;">
-                👉 點此開啟會議簡報
-            </a>
-        </p>
-        <p style="color: #666; font-size: 13px; background-color: #f8f9fa; padding: 10px; border-radius: 4px;">
-            💡 <b>溫馨提醒：</b>點開簡報後，請點擊畫面上的「全部更新」按鈕，即可將試算表最新數據載入投影片。
-        </p>
-        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-        <p style="font-size: 12px; color: #999;">此信件由 Streamlit 交通執法分析引擎自動發送。</p>
-    </div>
-    """
-    msg.attach(MIMEText(plain_text, "plain", "utf-8"))
-    msg.attach(MIMEText(html_content, "html", "utf-8"))
-
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(smtp_user, receiver, msg.as_string())
-        return True
-    except Exception as e:
-        st.error(f"❌ 寄送郵件失敗：{e}")
-        return False
-
-def auto_create_and_notify_slide():
-    """自動推算開會日期、複製母本簡報並發送郵件通知"""
-    drive_service = get_drive_service()
-    if not drive_service:
-        st.error("❌ 無法取得 Google Drive 服務")
-        return None, None, False
-
-    today = datetime.now()
-    weekday = today.weekday()  # 0=週一, 1=週二, 2=週三, 3=週四, 4=週五, 5=週六, 6=週日
-
-    # 週五、六、日、一 製作 ➔ 推算至下一個週一 (weekday 0)
-    # 週二、三、四 製作 ➔ 推算至下一個週四 (weekday 3)
-    if weekday in [4, 5, 6, 0]:
-        days_ahead = (0 - weekday + 7) % 7
-        template_id = TEMPLATE_MONDAY_ID
-    else:
-        days_ahead = (3 - weekday + 7) % 7
-        template_id = TEMPLATE_THURSDAY_ID
-
-    meeting_date = today + timedelta(days=days_ahead)
-    file_name = f"{meeting_date.strftime('%Y%m%d')}主管會報"
-    date_display_str = meeting_date.strftime("%Y年%m月%d日")
-
-    try:
-        new_file = drive_service.files().copy(
-            fileId=template_id,
-            body={"name": file_name, "parents": [TARGET_FOLDER_ID]},
-            supportsAllDrives=True
-        ).execute()
-
-        file_id = new_file.get("id")
-        file_url = f"https://docs.google.com/presentation/d/{file_id}/edit"
-        emailed = send_meeting_slide_email(file_name, file_url, date_display_str)
-        return file_name, file_url, emailed
-    except Exception as e:
-        st.error(f"❌ 自動建立簡報副本失敗：{e}")
-        return None, None, False
 
 # ==========================================
 # 4. 業務邏輯處理區
@@ -1357,7 +1253,7 @@ st.divider()
 st.subheader("🚀 啟動全自動批次作業")
 
 # ==========================================
-# 6. 自動分流、執行與建立簡報/郵件通知
+# 6. 自動分流、執行與引導更新簡報
 # ==========================================
 if uploads:
     file_hash = sum([f.size for f in uploads]) + len(uploads)
@@ -1425,15 +1321,21 @@ if uploads:
             st.session_state["last_processed_hash"] = file_hash
             st.balloons()
 
-            # --- 自動建立當次會議簡報副本並寄送通知 ---
-            with st.status("📑 正在自動生成會議簡報副本並寄送通知...", expanded=True):
-                slide_name, slide_url, emailed = auto_create_and_notify_slide()
-                if slide_name and slide_url:
-                    st.success(f"✅ 已成功建立簡報副本：**{slide_name}**")
-                    st.markdown(f"👉 [點此立即開啟 {slide_name}]({slide_url})")
-                    if emailed:
-                        st.info("✉️ 簡報連結已同步寄送至您的 Gmail 信箱！")
-                    st.caption("💡 溫馨提醒：點開簡報後，請點擊畫面上的「全部更新」即可載入最新數據。")
+            # --- 全自動分析完成，提供母本直達入口與兩步作業提示 ---
+            st.success("🎉 全自動批次數據分析與 Google 試算表同步完成！")
+
+            # 根據執行當下的星期自動推薦對應的母本 (週五~週一推薦週一母本；週二~週四推薦週四母本)
+            weekday = datetime.now().weekday()
+            is_mon = weekday in [4, 5, 6, 0]
+            rec_url = "https://docs.google.com/presentation/d/1YPVp-PFiQhaJrkaMfBmLQ60ErqrQdOU4BLQMp_pDsXA/edit" if is_mon else "https://docs.google.com/presentation/d/1l3_HtTKHO5uHof1eBCsm_a_orjHIGrJrtY_E5hql5d4/edit"
+            rec_name = "週一主管會報簡報母本" if is_mon else "週四主管會報簡報母本"
+
+            st.markdown(
+                f"### 📑 接下來請執行以下步驟：\n\n"
+                f"👉 **[點此直接開啟 {rec_name}]({rec_url})**\n\n"
+                f"1. 點擊簡報畫面右上方的 **「全部更新」**（載入最新數據）。\n"
+                f"2. 點擊上方選單 **【📂 會議歸檔工具】>【🚀 建立當次會議副本並存檔】**，按一下 Enter 即可自動完成副本歸檔並寄發郵件通知！"
+            )
 
         except Exception as e:
             st.error(f"⚠️ 批次處理發生錯誤：{e}")
