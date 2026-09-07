@@ -1,15 +1,19 @@
 import io
 import re
+import smtplib
 import time
 import traceback
 from datetime import datetime, timedelta
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+import gspread
 import numpy as np
 import pandas as pd
 import streamlit as st
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-import gspread
 
 # ==========================================
 # 0. 系統初始化與格式套件
@@ -30,6 +34,11 @@ except ImportError:
 # 1. 全局常數與設定區
 # ==========================================
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
+
+# 簡報母本與存檔資料夾 ID
+TEMPLATE_MONDAY_ID = "1YPVp-PFiQhaJrkaMfBmLQ60ErqrQdOU4BLQMp_pDsXA"    # 主管會報週一簡報母本
+TEMPLATE_THURSDAY_ID = "1l3_HtTKHO5uHof1eBCsm_a_orjHIGrJrtY_E5hql5d4"  # 主管會報週四簡報母本
+TARGET_FOLDER_ID = "1pgxrM4jpGmTEa564ztKR8_LMgxV7GHdp"                  # 會議簡報存檔資料夾
 
 try:
     GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
@@ -84,11 +93,7 @@ def get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 def fetch_files_from_drive(folder_id):
-    """
-    限定資料夾範圍查詢：
-    1. 只列出『屬於指定 folder_id』底下、未刪除的檔案
-    2. 自動篩選 Excel / CSV 報表
-    """
+    """限定資料夾範圍查詢並下載 Excel/CSV 檔案"""
     service = get_drive_service()
     if not service:
         st.error("❌ 無法初始化 Drive 服務，請確認 secrets.toml 設定")
@@ -108,42 +113,28 @@ def fetch_files_from_drive(folder_id):
     except Exception as e:
         if "404" in str(e) or "File not found" in str(e):
             st.error(
-                f"❌ 服務帳號對資料夾 ID `{folder_id}` 完全沒有存取權（連資料夾本身都看不到，非僅是空的）。\n\n"
-                f"請確認：\n"
-                f"1. 打開 `https://drive.google.com/drive/folders/{folder_id}` 確認這是正確的資料夾\n"
-                f"2. 該資料夾（或其所在的共用雲端硬碟）已將 "
-                f"`vision-ocr@streamlit-sheets-482909.iam.gserviceaccount.com` 加為協作者\n"
-                f"3. 若該資料夾位於「共用雲端硬碟」中，需確認服務帳號是該共用雲端硬碟的成員，"
-                f"僅資料夾層級授權可能不足"
+                f"❌ 服務帳號對資料夾 ID `{folder_id}` 無存取權。\n"
+                f"請確認該資料夾已將服務帳號加為協作者（編輯者）。"
             )
         else:
             st.error(f"❌ 查詢雲端硬碟檔案失敗：{e}")
         return []
 
-    # 顯示即時檢視面板
     if items:
         with st.expander("🔎 此資料夾內服務帳號可辨識的檔案清單（點擊展開）"):
             for f in items:
                 st.write(f"- **{f['name']}** (`{f.get('mimeType')}`)")
     else:
-        st.error(
-            f"❌ 服務帳號在資料夾 ID `{folder_id}` 底下『完全看不到任何檔案』！\n\n"
-            "請確認：\n"
-            "1. `DRIVE_FOLDER_ID` 是否為正確的資料夾 ID（不是子檔案或其他資料夾）\n"
-            "2. 該資料夾本身（而非個別檔案）已將 "
-            "`vision-ocr@streamlit-sheets-482909.iam.gserviceaccount.com` 加為【編輯者】\n"
-            "3. 該資料夾未被移出共用雲端硬碟或改變上層權限繼承"
-        )
+        st.error(f"❌ 服務帳號在資料夾 ID `{folder_id}` 底下找不到任何檔案！")
         return []
 
-    # 篩選 Excel 與 CSV 檔案（排除 Google 原生試算表等）
     valid_items = [
         f for f in items
         if any(f["name"].lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"])
     ]
 
     if not valid_items:
-        st.warning(f"⚠️ 資料夾內找到 {len(items)} 個檔案，但都不是 .xlsx / .xls / .csv 報表（可能是 Google 原生試算表或其他格式）。")
+        st.warning(f"⚠️ 資料夾內找到 {len(items)} 個檔案，但都不是 .xlsx / .xls / .csv 報表。")
         return []
 
     st.caption(f"🔍 成功篩選出 {len(valid_items)} 個有效報表！")
@@ -232,7 +223,7 @@ PROJECT_LAW_MAP = {
 }
 
 # ==========================================
-# 3. 輔助工具區
+# 3. 輔助工具與自動簡報/郵件模組
 # ==========================================
 def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
     text = str(text)
@@ -267,6 +258,102 @@ def get_gsheet_rich_text_req(sheet_id, row_idx, col_idx, text):
             }
         }
     }
+
+def send_meeting_slide_email(file_name, file_url, meeting_date_str):
+    """發送附帶簡報連結的通知信至 Gmail"""
+    smtp_user = st.secrets.get("EMAIL_SENDER", "")
+    smtp_pass = st.secrets.get("EMAIL_PASSWORD", "")
+    receiver = st.secrets.get("EMAIL_RECEIVER", smtp_user)
+
+    if not smtp_user or not smtp_pass:
+        st.info("💡 尚未在 secrets.toml 設定 EMAIL_SENDER 或 EMAIL_PASSWORD，略過自動發信。")
+        return False
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"【會議簡報存檔通知】{file_name}"
+    msg["From"] = f"交通數據戰情室 <{smtp_user}>"
+    msg["To"] = receiver
+
+    plain_text = (
+        f"您好：\n\n本次會議簡報副本已順利建立。\n\n"
+        f"檔案名稱：{file_name}\n"
+        f"開會日期：{meeting_date_str}\n"
+        f"簡報連結：{file_url}\n\n"
+        f"（此信件由 Streamlit 交通執法分析引擎自動發送）"
+    )
+
+    html_content = f"""
+    <div style="font-family: Arial, 'Microsoft JhengHei', sans-serif; line-height: 1.6; color: #333;">
+        <h3 style="color: #1a73e8;">📋 主管會報簡報已完成建立與歸檔</h3>
+        <p>您好：</p>
+        <p>交通數據批次分析與試算表同步已完成，系統已自動複製母本並建立本次會議簡報：</p>
+        <table style="border-collapse: collapse; margin: 15px 0;">
+            <tr><td style="padding: 4px 10px; font-weight: bold;">檔案名稱：</td><td style="padding: 4px 10px;">{file_name}</td></tr>
+            <tr><td style="padding: 4px 10px; font-weight: bold;">開會日期：</td><td style="padding: 4px 10px;">{meeting_date_str}</td></tr>
+        </table>
+        <p style="margin: 25px 0;">
+            <a href="{file_url}" target="_blank" 
+               style="display: inline-block; padding: 12px 24px; font-size: 15px; color: #ffffff; 
+                      background-color: #1a73e8; border-radius: 5px; text-decoration: none; font-weight: bold;">
+                👉 點此開啟會議簡報
+            </a>
+        </p>
+        <p style="color: #666; font-size: 13px; background-color: #f8f9fa; padding: 10px; border-radius: 4px;">
+            💡 <b>溫馨提醒：</b>點開簡報後，請點擊畫面上的「全部更新」按鈕，即可將試算表最新數據載入投影片。
+        </p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+        <p style="font-size: 12px; color: #999;">此信件由 Streamlit 交通執法分析引擎自動發送。</p>
+    </div>
+    """
+    msg.attach(MIMEText(plain_text, "plain", "utf-8"))
+    msg.attach(MIMEText(html_content, "html", "utf-8"))
+
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, receiver, msg.as_string())
+        return True
+    except Exception as e:
+        st.error(f"❌ 寄送郵件失敗：{e}")
+        return False
+
+def auto_create_and_notify_slide():
+    """自動推算開會日期、複製母本簡報並發送郵件通知"""
+    drive_service = get_drive_service()
+    if not drive_service:
+        st.error("❌ 無法取得 Google Drive 服務")
+        return None, None, False
+
+    today = datetime.now()
+    weekday = today.weekday()  # 0=週一, 1=週二, 2=週三, 3=週四, 4=週五, 5=週六, 6=週日
+
+    # 週五、六、日、一 製作 ➔ 推算至下一個週一 (weekday 0)
+    # 週二、三、四 製作 ➔ 推算至下一個週四 (weekday 3)
+    if weekday in [4, 5, 6, 0]:
+        days_ahead = (0 - weekday + 7) % 7
+        template_id = TEMPLATE_MONDAY_ID
+    else:
+        days_ahead = (3 - weekday + 7) % 7
+        template_id = TEMPLATE_THURSDAY_ID
+
+    meeting_date = today + timedelta(days=days_ahead)
+    file_name = f"{meeting_date.strftime('%Y%m%d')}主管會報"
+    date_display_str = meeting_date.strftime("%Y年%m月%d日")
+
+    try:
+        new_file = drive_service.files().copy(
+            fileId=template_id,
+            body={"name": file_name, "parents": [TARGET_FOLDER_ID]},
+            supportsAllDrives=True
+        ).execute()
+
+        file_id = new_file.get("id")
+        file_url = f"https://docs.google.com/presentation/d/{file_id}/edit"
+        emailed = send_meeting_slide_email(file_name, file_url, date_display_str)
+        return file_name, file_url, emailed
+    except Exception as e:
+        st.error(f"❌ 自動建立簡報副本失敗：{e}")
+        return None, None, False
 
 # ==========================================
 # 4. 業務邏輯處理區
@@ -1270,7 +1357,7 @@ st.divider()
 st.subheader("🚀 啟動全自動批次作業")
 
 # ==========================================
-# 6. 自動分流、執行與移出
+# 6. 自動分流、執行與建立簡報/郵件通知
 # ==========================================
 if uploads:
     file_hash = sum([f.size for f in uploads]) + len(uploads)
@@ -1337,6 +1424,16 @@ if uploads:
 
             st.session_state["last_processed_hash"] = file_hash
             st.balloons()
+
+            # --- 自動建立當次會議簡報副本並寄送通知 ---
+            with st.status("📑 正在自動生成會議簡報副本並寄送通知...", expanded=True):
+                slide_name, slide_url, emailed = auto_create_and_notify_slide()
+                if slide_name and slide_url:
+                    st.success(f"✅ 已成功建立簡報副本：**{slide_name}**")
+                    st.markdown(f"👉 [點此立即開啟 {slide_name}]({slide_url})")
+                    if emailed:
+                        st.info("✉️ 簡報連結已同步寄送至您的 Gmail 信箱！")
+                    st.caption("💡 溫馨提醒：點開簡報後，請點擊畫面上的「全部更新」即可載入最新數據。")
 
         except Exception as e:
             st.error(f"⚠️ 批次處理發生錯誤：{e}")
