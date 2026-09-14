@@ -1224,28 +1224,45 @@ def process_jing_tao(files, sh):
         except Exception as e:
             st.error(f"雲端同步出錯：{e}")
 
-# 7. 取締三項重點違規（嚴格防呆與精準校正版）
+# 7. 取締三項重點違規（單日與累計精準分離修正版）
 def process_three_major_daily(files, sh):
     """統計各單位 115 年 9 月 1 日起之三項重點違規（闖紅燈、逆向行駛、不停讓行人）"""
     if not files:
         st.warning("⚠️ 未偵測到可供統計三項重點違規之報表檔案。")
         return
 
-    def parse_date_roc(s):
-        if not s: return None, None
-        s = str(s).strip()
-        m_roc = re.search(r"(1\d{2})[./\-_]?(\d{2})[./\-_]?(\d{2})", s)
-        if m_roc:
-            y, m, d = int(m_roc.group(1)), int(m_roc.group(2)), int(m_roc.group(3))
-            return y * 10000 + m * 100 + d, f"{m:02d}/{d:02d}"
-        return None, None
+    def parse_dates_from_meta(text, fname):
+        combined = f"{fname} {text}"
+        # 1. 優先匹配起訖區間：115XXXX 至 115XXXX
+        m_range = re.search(r"115(\d{4})\s*[至\-\~]\s*115(\d{4})", combined)
+        if m_range:
+            s_d, e_d = m_range.group(1), m_range.group(2)
+            return 1150000 + int(s_d), 1150000 + int(e_d), f"{s_d[:2]}/{s_d[2:]}~{e_d[:2]}/{e_d[2:]}" if s_d != e_d else f"{e_d[:2]}/{e_d[2:]}", f"{e_d[:2]}/{e_d[2:]}"
+
+        m_short_range = re.search(r"0?9(\d{2})\s*[至\-\~]\s*0?9(\d{2})", combined)
+        if m_short_range:
+            s_d, e_d = f"09{m_short_range.group(1)}", f"09{m_short_range.group(2)}"
+            return 1150000 + int(s_d), 1150000 + int(e_d), f"{s_d[:2]}/{s_d[2:]}~{e_d[:2]}/{e_d[2:]}" if s_d != e_d else f"{e_d[:2]}/{e_d[2:]}", f"{e_d[:2]}/{e_d[2:]}"
+
+        # 2. 單一日期匹配：11509XX
+        m_single = re.search(r"115(09\d{2})", combined)
+        if m_single:
+            d = m_single.group(1)
+            return 1150000 + int(d), 1150000 + int(d), f"{d[:2]}/{d[2:]}", f"{d[:2]}/{d[2:]}"
+
+        # 3. 檔名單日匹配：如 914, 0914
+        m_fname = re.search(r"(?<!\d)(?:0?9|11509)(\d{2})(?!\d)", fname)
+        if m_fname:
+            d = f"09{m_fname.group(1)}"
+            return 1150000 + int(d), 1150000 + int(d), f"{d[:2]}/{d[2:]}", f"{d[:2]}/{d[2:]}"
+
+        return None, None, None, None
 
     detail_records = []
     summary_files = []
 
     for f in files:
         fname = f.name.lower()
-        # 【防呆 1】：嚴格排除去年度報表，避免 114 年整年累計數據混入
         if any(k in fname for k in ["去年", "1140"]):
             continue
 
@@ -1281,8 +1298,8 @@ def process_three_major_daily(files, sh):
                 for _, r in df_det.iterrows():
                     u = clean_unit_name(r[unit_col])
                     if not u: continue
-                    d_code, d_label = parse_date_roc(r[date_col])
-                    if not d_code or d_code < THREE_MAJOR_START_ROC: continue
+                    s_code, e_code, _, d_label = parse_dates_from_meta(str(r[date_col]), "")
+                    if not s_code or s_code < THREE_MAJOR_START_ROC: continue
 
                     txt = f"{str(r.get(law_col, ''))} {str(r.get(fact_col, ''))}"
                     target_cat = None
@@ -1294,7 +1311,7 @@ def process_three_major_daily(files, sh):
                         target_cat = "不停讓行人"
 
                     if target_cat:
-                        detail_records.append({"date_code": d_code, "date_label": d_label, "unit": u, "cat": target_cat, "count": 1})
+                        detail_records.append({"date_code": s_code, "date_label": d_label, "unit": u, "cat": target_cat, "count": 1})
             continue
 
         # 彙總型報表解析
@@ -1306,24 +1323,15 @@ def process_three_major_daily(files, sh):
                 break
 
         if h_idx != -1:
-            # 【防呆 2】：精準只從「統計期間」提取起訖日期，嚴格忽略「列印時間」
             text_header_block = "".join([str(x) for x in df_raw.iloc[:h_idx].values.flatten() if pd.notna(x)])
             if "去年" in fname or ("1140" in text_header_block and "1150" not in text_header_block):
                 continue
 
-            m_stat = re.search(r'本年度\s*115(\d{4})\s*[至\-\~]\s*115(\d{4})', text_header_block)
-            if not m_stat:
-                m_stat = re.search(r'115(\d{4})\s*[至\-\~]\s*115(\d{4})', text_header_block)
-
-            if not m_stat:
+            s_code, e_code, period_label, e_label = parse_dates_from_meta(text_header_block, fname)
+            if not s_code or e_code < THREE_MAJOR_START_ROC:
                 continue
 
-            s_d_str, e_d_str = m_stat.group(1), m_stat.group(2)
-            s_code, e_code = 1150000 + int(s_d_str), 1150000 + int(e_d_str)
-
-            # 排除全年度累計報表（0101起算），聚焦於專案期間（9/1起）或當期本期報表
-            is_ytd = (s_d_str == "0101")
-            period_label = f"{s_d_str[:2]}/{s_d_str[2:]}~{e_d_str[:2]}/{e_d_str[2:]}" if s_d_str != e_d_str else f"{e_d_str[:2]}/{e_d_str[2:]}"
+            is_ytd = (str(s_code).endswith("0101"))
 
             headers = df_raw.iloc[h_idx].values
             cat_col_map = {"闖紅燈": [], "逆向行駛": [], "不停讓行人": []}
@@ -1357,7 +1365,7 @@ def process_three_major_daily(files, sh):
                     "e_code": e_code,
                     "is_ytd": is_ytd,
                     "label": period_label,
-                    "e_label": f"{e_d_str[:2]}/{e_d_str[2:]}",
+                    "e_label": e_label,
                     "counts": file_counts
                 })
 
@@ -1396,31 +1404,78 @@ def process_three_major_daily(files, sh):
         period_info_str = f"統計起日：115 年 9 月 1 日 ｜ 最新資料日：{latest_day}"
 
     elif summary_files:
-        # 優先篩選出「非全年度累積」的本期/專案報表
-        period_reports = [f for f in summary_files if not f["is_ytd"]]
-        target_rep = sorted(period_reports or summary_files, key=lambda x: x["e_code"])[-1]
-        active_counts = target_rep["counts"]
-        latest_day = target_rep["e_label"]
-        period_name = target_rep["label"]
+        # 排除全年累計（0101起），鎖定9月報表
+        valid_reports = [f for f in summary_files if not f["is_ytd"]]
+        if not valid_reports:
+            valid_reports = summary_files
+
+        # 1. 跨度最大者為「9/1起累計報表」
+        sorted_by_span = sorted(valid_reports, key=lambda x: (x["e_code"] - x["s_code"]), reverse=True)
+        cumu_rep = sorted_by_span[0]
+        latest_day = cumu_rep["e_label"]
+        period_name = cumu_rep["label"]
+
+        daily_counts = {}
+        has_daily = False
+
+        # 2. 尋找「最後一日單日報表」（s_code == e_code 或只有單日資料）
+        single_day_candidates = [
+            f for f in valid_reports
+            if f != cumu_rep and f["e_code"] == cumu_rep["e_code"] and f["s_code"] == f["e_code"]
+        ]
+
+        if single_day_candidates:
+            daily_rep = single_day_candidates[0]
+            daily_counts = daily_rep["counts"]
+            has_daily = True
+        else:
+            # 3. 若無獨立單日報表，檢查是否有前一日累計報表（如 9/1~9/13）可相減推導
+            prev_candidates = [
+                f for f in valid_reports
+                if f != cumu_rep and f["e_code"] < cumu_rep["e_code"] and f["s_code"] == cumu_rep["s_code"]
+            ]
+            if prev_candidates:
+                prev_rep = sorted(prev_candidates, key=lambda x: x["e_code"])[-1]
+                has_daily = True
+                for u in MAJOR_UNIT_ORDER:
+                    daily_counts[u] = {}
+                    u_now = cumu_rep["counts"].get(u, {})
+                    u_prev = prev_rep["counts"].get(u, {})
+                    for cat in ["闖紅燈", "逆向行駛", "不停讓行人"]:
+                        daily_counts[u][cat] = max(0, u_now.get(cat, 0) - u_prev.get(cat, 0))
+            elif cumu_rep["s_code"] == cumu_rep["e_code"]:
+                has_daily = True
+                daily_counts = cumu_rep["counts"]
 
         overview_rows = []
         for u in MAJOR_UNIT_ORDER:
-            u_c = active_counts.get(u, {"闖紅燈": 0, "逆向行駛": 0, "不停讓行人": 0})
-            r = u_c.get("闖紅燈", 0)
-            v = u_c.get("逆向行駛", 0)
-            p = u_c.get("不停讓行人", 0)
+            c_tot = cumu_rep["counts"].get(u, {})
+            r_tot = c_tot.get("闖紅燈", 0)
+            v_tot = c_tot.get("逆向行駛", 0)
+            p_tot = c_tot.get("不停讓行人", 0)
+            tot_sum = r_tot + v_tot + p_tot
+
+            if has_daily:
+                c_day = daily_counts.get(u, {})
+                r_day = c_day.get("闖紅燈", 0)
+                v_day = c_day.get("逆向行駛", 0)
+                p_day = c_day.get("不停讓行人", 0)
+                day_sum = r_day + v_day + p_day
+            else:
+                r_day, v_day, p_day, day_sum = "—", "—", "—", "—"
+
             overview_rows.append({
                 "單位": u,
-                f"闖紅燈({latest_day})": r,
-                "闖紅燈(本期累計)": r,
-                f"逆向行駛({latest_day})": v,
-                "逆向行駛(本期累計)": v,
-                f"不停讓行人({latest_day})": p,
-                "不停讓行人(本期累計)": p,
-                f"三項合計({latest_day})": r + v + p,
-                "三項合計(本期累計)": r + v + p,
+                f"闖紅燈({latest_day})": r_day,
+                "闖紅燈(9/1起累計)": r_tot,
+                f"逆向行駛({latest_day})": v_day,
+                "逆向行駛(9/1起累計)": v_tot,
+                f"不停讓行人({latest_day})": p_day,
+                "不停讓行人(9/1起累計)": p_tot,
+                f"三項合計({latest_day})": day_sum,
+                "三項合計(9/1起累計)": tot_sum,
             })
-        period_info_str = f"報表統計期間：{period_name} ｜ 資料日期：{latest_day}"
+        period_info_str = f"專案累計期間：{period_name} ｜ 最後一日：{latest_day}"
     else:
         st.error("❌ 未能自上傳檔案解析出 115 年 9 月之有效統計數據，請確認來源檔案。")
         return
@@ -1429,10 +1484,11 @@ def process_three_major_daily(files, sh):
     sum_vals = {"單位": "合計"}
     for col in df_summary.columns:
         if col != "單位":
-            sum_vals[col] = df_summary[col].sum()
+            nums = [x for x in df_summary[col] if isinstance(x, (int, float))]
+            sum_vals[col] = sum(nums) if nums else "—"
     df_summary_final = pd.concat([pd.DataFrame([sum_vals]), df_summary], ignore_index=True)
 
-    # 取得累計欄位名與最新日欄位名
+    # 取得欄位名稱
     tot_col = [c for c in df_summary_final.columns if "三項合計" in c and "累計" in c][0]
     day_col = [c for c in df_summary_final.columns if "三項合計" in c and latest_day in c][0]
     red_tot_col = [c for c in df_summary_final.columns if "闖紅燈" in c and "累計" in c][0]
@@ -1441,14 +1497,16 @@ def process_three_major_daily(files, sh):
     ped_day_col = [c for c in df_summary_final.columns if "不停讓" in c and latest_day in c][0]
 
     # --- 畫面展示 ---
-    st.subheader("🚦 取締三項重點違規（闖紅燈、逆向行駛、不停讓行人）專案統計表")
+    st.subheader("🚦 取締三項重點違規（最後一日新增 vs 115/09/01起累計）專案統計表")
     st.caption(f"📅 {period_info_str}")
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🎯 三項重點累計總數", f"{df_summary_final.iloc[0][tot_col]} 件")
-    c2.metric(f"📅 最新單期/單日 ({latest_day})", f"{df_summary_final.iloc[0][day_col]} 件")
-    c3.metric("闖紅燈 (單期 / 累計)", f"{df_summary_final.iloc[0][red_day_col]} / {df_summary_final.iloc[0][red_tot_col]} 件")
-    c4.metric("不停讓行人 (單期 / 累計)", f"{df_summary_final.iloc[0][ped_day_col]} / {df_summary_final.iloc[0][ped_tot_col]} 件")
+    tot_display = df_summary_final.iloc[0][tot_col]
+    day_display = df_summary_final.iloc[0][day_col]
+    c1.metric("🎯 三項重點累計總數", f"{tot_display} 件" if isinstance(tot_display, (int, float)) else str(tot_display))
+    c2.metric(f"📅 最後一日新增 ({latest_day})", f"{day_display} 件" if isinstance(day_display, (int, float)) else str(day_display))
+    c3.metric("闖紅燈 (單日 / 累計)", f"{df_summary_final.iloc[0][red_day_col]} / {df_summary_final.iloc[0][red_tot_col]} 件")
+    c4.metric("不停讓行人 (單日 / 累計)", f"{df_summary_final.iloc[0][ped_day_col]} / {df_summary_final.iloc[0][ped_tot_col]} 件")
 
     st.write("📊 **各單位專案取締統計結果：**")
     st.dataframe(df_summary_final, hide_index=True, use_container_width=True)
@@ -1460,7 +1518,7 @@ def process_three_major_daily(files, sh):
             ws = get_or_create_ws(sh, ws_name, rows=35, cols=15)
             ensure_ws_capacity(ws, len(df_summary_final) + 5, len(df_summary_final.columns) + 2)
             _ws_clear(ws)
-            title = f"桃園市政府警察局龍潭分局 取締三項重點違規統計表 ({period_info_str})"
+            title = f"桃園市政府警察局龍潭分局 取締三項重點違規最後一日({latest_day})及累計(115年9月1日起)統計表"
             grid = [[title] + [""] * (len(df_summary_final.columns) - 1)] + [df_summary_final.columns.tolist()] + df_summary_final.values.tolist()
             _ws_update(ws, "A1", grid)
             st.success("✅ 三項重點違規數據已精確校正並同步至 Google Sheets！")
