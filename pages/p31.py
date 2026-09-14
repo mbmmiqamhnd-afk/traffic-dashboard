@@ -150,6 +150,7 @@ if uploaded_file:
         all_cats = sorted(df_clean["案件分類"].unique().tolist())
         drug_default = [c for c in all_cats if "🧪" in c or "🚲 慢車毒駕" in c]
 
+        # ✅ 修正處：傳入 欄位比例
         c_sel1, c_sel2 = st.columns()
         with c_sel1:
             selected_cats = st.multiselect(
@@ -222,7 +223,8 @@ if uploaded_file:
             st.subheader("📊 案件分類分佈統計")
             summary_cat = df_clean["案件分類"].value_counts().reset_index()
             summary_cat.columns = ["案件類別", "件數"]
-            c_g1, c_g2 = st.columns()
+            # ✅ 修正處：傳入 2 欄
+            c_g1, c_g2 = st.columns(2)
             with c_g1:
                 st.dataframe(summary_cat, use_container_width=True, hide_index=True)
             with c_g2:
