@@ -79,65 +79,55 @@ def classify_violation(fact_text, law_code=""):
 
     return "📋 其他相關違規"
 
-# ==================== 檔案上傳與智慧標題識別 ====================
+# ==================== 檔案上傳與自動直取【案件明細】 ====================
 uploaded_file = st.file_uploader(
     "📂 請上傳「35條73條統計表」（自選匯出.xlsx）", 
     type=["xlsx", "xls"],
-    help="支援自動跳過表頭公文資訊，精準定位「單號、違規事實1、違規法條1、舉發員警1」"
+    help="系統將自動直取「案件明細」並對齊【單號、違規事實1、違規法條1、舉發員警1】"
 )
 
 if uploaded_file:
-    # 讀取全部工作表名稱
     xls = pd.ExcelFile(uploaded_file)
     sheet_options = xls.sheet_names
     
-    # 預設選取「案件明細」
-    default_idx = 0
-    for idx, s in enumerate(sheet_options):
-        if "案件明細" in s:
-            default_idx = idx
-            break
-        elif any(k in s for k in ["明細", "案件", "法條"]):
-            default_idx = idx
-
-    selected_sheet = st.selectbox("📑 選擇工作表：", sheet_options, index=default_idx)
+    # 自動鎖定「案件明細」，找不到才退回第一張
+    target_sheet = next((s for s in sheet_options if "案件明細" in s), sheet_options[0])
     
-    # 1. 以無標題模式讀取前 20 列定位欄位
-    df_raw_no_header = pd.read_excel(uploaded_file, sheet_name=selected_sheet, header=None)
+    # 讀取目標工作表
+    df_raw_no_header = pd.read_excel(uploaded_file, sheet_name=target_sheet, header=None)
     
+    # 自動搜尋標題列（第2列包含單號、違規法條1、舉發員警1）
     header_idx = None
     for idx in range(min(15, len(df_raw_no_header))):
         row_text = " ".join(df_raw_no_header.iloc[idx].dropna().astype(str).tolist())
-        # 尋找包含「單號」或「違規事實」或「違規法條」之列
         if any(k in row_text for k in ["單號", "違規事實", "違規法條", "舉發員警"]):
             header_idx = idx
             break
 
-    # 2. 定位標題列並下移切割資料
     if header_idx is not None:
         new_columns = [str(c).strip() for c in df_raw_no_header.iloc[header_idx].tolist()]
         df_clean = df_raw_no_header.iloc[header_idx + 1:].copy().reset_index(drop=True)
         df_clean.columns = new_columns
     else:
-        df_clean = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
+        df_clean = pd.read_excel(uploaded_file, sheet_name=target_sheet)
 
-    # 3. 過濾底部的公文頁尾資訊（如：列印人員：郭勝隆、統計期間...）
+    # 過濾公文頁尾資訊（如：列印人員：郭勝隆、統計期間...）
     ticket_col = next((c for c in df_clean.columns if "單號" in str(c)), None)
     if ticket_col:
         df_clean = df_clean[df_clean[ticket_col].notna()]
         df_clean = df_clean[~df_clean[ticket_col].astype(str).str.contains("列印人員|統計期間|製表人員|總計", na=False)]
 
-    # 4. 尋找核心欄位（支援「違規事實1」、「違規法條1」、「舉發員警1」等後綴）
+    # 定位核心欄位
     fact_col = next((c for c in df_clean.columns if any(k in str(c) for k in ["違規事實", "事實說明", "違規事項", "事實"])), None)
     law_col = next((c for c in df_clean.columns if any(k in str(c) for k in ["違規法條", "法條代碼", "法條"])), None)
     officer_col = next((c for c in df_clean.columns if any(k in str(c) for k in ["舉發員警", "員警", "警號", "姓名", "填單人"])), None)
     vehicle_col = next((c for c in df_clean.columns if any(k in str(c) for k in ["簡式車種名稱", "車種", "車種名稱"])), None)
     date_col = next((c for c in df_clean.columns if any(k in str(c) for k in ["入案日", "違規日", "日期"])), None)
 
-    st.success(f"成功解析工作表【{selected_sheet}】，共計 **{len(df_clean)}** 筆有效案件紀錄。")
+    st.success(f"已自動鎖定【{target_sheet}】，共成功匯入 **{len(df_clean)}** 筆案件紀錄！")
 
     if fact_col:
-        # 標註分類標籤
+        # 打上案件分類標籤
         df_clean["案件分類"] = df_clean.apply(
             lambda r: classify_violation(
                 r[fact_col], 
@@ -146,41 +136,45 @@ if uploaded_file:
             axis=1
         )
 
-        # 側邊/上方分類篩選控制台
-        st.markdown("### 🎯 案件類別篩選（預設已勾選毒品專案）")
+        st.markdown("### 🎯 案件類別篩選（預設已勾選毒品專案案件）")
         all_cats = sorted(df_clean["案件分類"].unique().tolist())
         drug_default = [c for c in all_cats if "🧪" in c or "🚲 慢車毒駕" in c]
 
-        # ✅ 這裡明確傳入 比例，保證不再報錯
-        c_sel1, c_sel2 = st.columns()
-        with c_sel1:
+        # 採用安全穩健的單純元件佈局，不使用易出錯的解構寫法
+        quick_mode = st.radio(
+            "快速切換模式：", 
+            ["僅毒品專案（敘獎標準）", "全部案件（含酒駕與移置）", "自訂勾選"], 
+            index=0, 
+            horizontal=True
+        )
+
+        if quick_mode == "僅毒品專案（敘獎標準）":
+            selected_cats = [c for c in all_cats if "🧪" in c or "🚲 慢車毒駕" in c]
+        elif quick_mode == "全部案件（含酒駕與移置）":
+            selected_cats = all_cats
+        else:
             selected_cats = st.multiselect(
                 "請勾選本次納入統計之案件分類：",
                 options=all_cats,
                 default=drug_default if drug_default else all_cats
             )
-        with c_sel2:
-            quick_mode = st.radio("快速切換：", ["自訂", "僅毒品專案", "全部納入"], index=0, horizontal=True)
-            if quick_mode == "僅毒品專案":
-                selected_cats = [c for c in all_cats if "🧪" in c or "🚲 慢車毒駕" in c]
-            elif quick_mode == "全部納入":
-                selected_cats = all_cats
 
         # 篩選後的分析資料集
         df_filtered = df_clean[df_clean["案件分類"].isin(selected_cats)].copy()
 
-        # 顯示指標卡
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("🧪 毒駕本體", len(df_clean[df_clean["案件分類"] == "🧪 毒駕本體"]))
-        m2.metric("🧪 毒駕累犯", len(df_clean[df_clean["案件分類"] == "🧪 毒駕累犯"]))
-        m3.metric("🧪 毒駕拒測", len(df_clean[df_clean["案件分類"] == "🧪 毒駕拒測"]))
-        m4.metric("🚲 慢車毒駕", len(df_clean[df_clean["案件分類"] == "🚲 慢車毒駕"]))
-        m5.metric("📌 本次統計納入", len(df_filtered))
+        # 統計指標看板
+        st.markdown("#### 📈 專案指標概覽")
+        col_list = st.columns(5)
+        col_list[0].metric("🧪 毒駕本體", len(df_clean[df_clean["案件分類"] == "🧪 毒駕本體"]))
+        col_list.metric("🧪 毒駕累犯", len(df_clean[df_clean["案件分類"] == "🧪 毒駕累犯"]))
+        col_list.metric("🧪 毒駕拒測", len(df_clean[df_clean["案件分類"] == "🧪 毒駕拒測"]))
+        col_list[3].metric("🚲 慢車毒駕", len(df_clean[df_clean["案件分類"] == "🚲 慢車毒駕"]))
+        col_list[4].metric("📌 本次納入統計", len(df_filtered))
 
         st.divider()
 
         # 分頁展示
-        tab_officer, tab_summary, tab_detail = st.tabs(["👮 出力員警敘獎建議名冊", "📊 違規分類統計彙整", "📑 篩選後案件清冊"])
+        tab_officer, tab_summary, tab_detail = st.tabs(["👮 出力員警敘獎建議名冊", "📊 違規分類分佈統計", "📑 專案查獲案件明細表"])
 
         # TAB 1: 出力人員敘獎名冊
         with tab_officer:
@@ -224,21 +218,19 @@ if uploaded_file:
             st.subheader("📊 案件分類分佈統計")
             summary_cat = df_clean["案件分類"].value_counts().reset_index()
             summary_cat.columns = ["案件類別", "件數"]
-            c_g1, c_g2 = st.columns(2)
-            with c_g1:
-                st.dataframe(summary_cat, use_container_width=True, hide_index=True)
-            with c_g2:
-                st.bar_chart(summary_cat.set_index("案件類別"))
+            
+            col_chart = st.columns(2)
+            col_chart[0].dataframe(summary_cat, use_container_width=True, hide_index=True)
+            col_chart.bar_chart(summary_cat.set_index("案件類別"))
 
         # TAB 3: 案件明細清單
         with tab_detail:
             st.subheader(f"📑 符合條件之案件清單（共 {len(df_filtered)} 筆）")
-            # 優先排列核心欄位
             display_cols = [c for c in [ticket_col, "案件分類", law_col, fact_col, officer_col, vehicle_col, date_col] if c and c in df_filtered.columns]
             other_cols = [c for c in df_filtered.columns if c not in display_cols]
             st.dataframe(df_filtered[display_cols + other_cols], use_container_width=True, hide_index=True)
     else:
-        st.error("未能在此工作表中自動辨識到「違規事實」欄位。請切換工作表或檢查檔案格式。")
+        st.error("未能在此工作表中自動辨識到「違規事實」欄位。")
         st.dataframe(df_clean.head(10), use_container_width=True)
 else:
     st.info("💡 請上傳從 Gmail 下載之 `自選匯出.xlsx` 報表檔案。")
