@@ -155,7 +155,7 @@ def process_traffic_data(file):
         return None
 
 def calculate_merits_for_officer(group):
-    """計算單一員警的敘獎額度（嚴格遵守大型車記功、其他車種依嘉獎二次/一次拆解）"""
+    """計算單一員警的敘獎額度（拒測獨立統計，不計入車種計算）"""
     group = group.sort_values(by='入案日')
 
     heavy_cases = 0
@@ -171,23 +171,25 @@ def calculate_merits_for_officer(group):
         cat = str(row['案件分類'])
         tickets.append(str(row['單號']))
 
+        # ✅ 核心修正：拒測件數獨立統計，不計入車種計算中
         if '拒測' in cat:
             refusal_cases += 1
+        else:
+            if v_type == '大型車':
+                heavy_cases += 1
+            elif v_type == '小型車':
+                car_cases += 1
+            elif v_type == '機車':
+                moto_cases += 1
+            elif v_type == '其餘慢車(不納入)':
+                other_slow_cases += 1
 
-        if v_type == '大型車':
-            heavy_cases += 1
-        elif v_type == '小型車':
-            car_cases += 1
-        elif v_type == '機車':
-            moto_cases += 1
-        elif v_type == '其餘慢車(不納入)':
-            other_slow_cases += 1
-
-    # 1. 大型車專屬功次
+    # 1. 大型車專屬功次（唯有大型車記功）
     merit_cnt = heavy_cases * 1
 
-    # 2. 其他車種累計點數（小型車2點、機車含微電車1點，其餘慢車0點）
-    total_pts = (car_cases * 2) + (moto_cases * 1)
+    # 2. 其他車種累計點數（小型車2點、機車含微電車1點、拒測2點，其餘慢車0點）
+    # 毒駕拒測案件獨立計算點數
+    total_pts = (car_cases * 2) + (moto_cases * 1) + (refusal_cases * 2)
     
     # 3. 法定獎懲額度拆解（商數為嘉獎二次，餘數為嘉獎一次）
     num_commend_2 = total_pts // 2
@@ -204,7 +206,7 @@ def calculate_merits_for_officer(group):
 
     final_reward_text = "、".join(reward_parts) if reward_parts else "列入參考（未達標準）"
 
-    # ✅ 具體出力事由：內容只到件數，後方標點符號與工作出力文字均已移除
+    # 具體出力事由：內容只到件數，後方標點符號與工作出力文字均已移除
     reasons = []
     if heavy_cases > 0:
         reasons.append(f"大型車毒駕{heavy_cases}件")
@@ -223,7 +225,7 @@ def calculate_merits_for_officer(group):
         '機車含微電車(件)': moto_cases,
         '其餘慢車(不納入)': other_slow_cases,
         '毒駕拒測(件)': refusal_cases,
-        '計獎總件數': heavy_cases + car_cases + moto_cases,
+        '計獎總件數': heavy_cases + car_cases + moto_cases + refusal_cases,
         '記功一次': merit_cnt,
         '嘉獎二次': num_commend_2,
         '嘉獎一次': num_commend_1,
@@ -324,9 +326,10 @@ def main():
                     "1. **大型車專屬記功**：僅查獲大型車（大貨車、大客車、聯結車等）毒駕核予「記功一次」。\n"
                     "2. **小型車**：每件核給 2 點（嘉獎二次）。\n"
                     "3. **機車（含微電車）**：每件核給 1 點（慢車中之微型電動二輪車含在機車標準）。\n"
-                    "4. **其餘慢車**：電動輔助自行車、腳踏自行車等依規定不納入專案計點。\n"
-                    "5. **獎勵名目拆分**：非大型車點數嚴格拆解為「嘉獎二次」（點數 // 2）與「嘉獎一次」（點數 % 2），無跨級折算記功或嘉獎三次/六次情形。\n"
-                    "6. **出力事由簡約化**：具體事由嚴格截止於查獲件數，無後綴標點符號與額外贅字。")
+                    "4. **拒測件數獨立**：毒駕拒測案件獨立計算，不計入大型車、小型車或機車等車種欄位中。\n"
+                    "5. **其餘慢車**：電動輔助自行車、腳踏自行車等依規定不納入專案計點。\n"
+                    "6. **獎勵名目拆分**：非大型車點數嚴格拆解為「嘉獎二次」（點數 // 2）與「嘉獎一次」（點數 % 2），無跨級折算記功或嘉獎三次/六次情形。\n"
+                    "7. **出力事由簡約化**：具體事由嚴格截止於查獲件數，無後綴標點符號與額外贅字。")
 
 if __name__ == "__main__":
     main()
