@@ -90,7 +90,7 @@ if uploaded_file:
     xls = pd.ExcelFile(uploaded_file)
     sheet_options = xls.sheet_names
     
-    # 自動鎖定「案件明細」，找不到才退回第一張
+    # 自動鎖定「案件明細」
     target_sheet = next((s for s in sheet_options if "案件明細" in s), sheet_options[0])
     
     # 讀取目標工作表
@@ -140,7 +140,6 @@ if uploaded_file:
         all_cats = sorted(df_clean["案件分類"].unique().tolist())
         drug_default = [c for c in all_cats if "🧪" in c or "🚲 慢車毒駕" in c]
 
-        # 採用安全穩健的單純元件佈局，不使用易出錯的解構寫法
         quick_mode = st.radio(
             "快速切換模式：", 
             ["僅毒品專案（敘獎標準）", "全部案件（含酒駕與移置）", "自訂勾選"], 
@@ -162,14 +161,14 @@ if uploaded_file:
         # 篩選後的分析資料集
         df_filtered = df_clean[df_clean["案件分類"].isin(selected_cats)].copy()
 
-        # 統計指標看板
+        # ✅ 統計指標看板（已修正為獨立變數，不再報錯）
         st.markdown("#### 📈 專案指標概覽")
-        col_list = st.columns(5)
-        col_list[0].metric("🧪 毒駕本體", len(df_clean[df_clean["案件分類"] == "🧪 毒駕本體"]))
-        col_list.metric("🧪 毒駕累犯", len(df_clean[df_clean["案件分類"] == "🧪 毒駕累犯"]))
-        col_list.metric("🧪 毒駕拒測", len(df_clean[df_clean["案件分類"] == "🧪 毒駕拒測"]))
-        col_list[3].metric("🚲 慢車毒駕", len(df_clean[df_clean["案件分類"] == "🚲 慢車毒駕"]))
-        col_list[4].metric("📌 本次納入統計", len(df_filtered))
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("🧪 毒駕本體", len(df_clean[df_clean["案件分類"] == "🧪 毒駕本體"]))
+        m2.metric("🧪 毒駕累犯", len(df_clean[df_clean["案件分類"] == "🧪 毒駕累犯"]))
+        m3.metric("🧪 毒駕拒測", len(df_clean[df_clean["案件分類"] == "🧪 毒駕拒測"]))
+        m4.metric("🚲 慢車毒駕", len(df_clean[df_clean["案件分類"] == "🚲 慢車毒駕"]))
+        m5.metric("📌 本次納入統計", len(df_filtered))
 
         st.divider()
 
@@ -219,9 +218,9 @@ if uploaded_file:
             summary_cat = df_clean["案件分類"].value_counts().reset_index()
             summary_cat.columns = ["案件類別", "件數"]
             
-            col_chart = st.columns(2)
-            col_chart[0].dataframe(summary_cat, use_container_width=True, hide_index=True)
-            col_chart.bar_chart(summary_cat.set_index("案件類別"))
+            c_g1, c_g2 = st.columns(2)
+            c_g1.dataframe(summary_cat, use_container_width=True, hide_index=True)
+            c_g2.bar_chart(summary_cat.set_index("案件類別"))
 
         # TAB 3: 案件明細清單
         with tab_detail:
