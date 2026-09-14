@@ -31,6 +31,7 @@ except ImportError:
 # 1. 全局常數與設定區
 # ==========================================
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1HaFu5PZkFDUg7WZGV9khyQ0itdGXhXUakP4_BClFTUg/edit"
+THREE_MAJOR_PRESENTATION_ID = "1gP8Rw6n0c8Z_MTRcJoP67LTzgxjp41fcXls6wy57aY8"
 
 try:
     GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
@@ -38,7 +39,7 @@ except Exception:
     GCP_CREDS = None
 
 # ==========================================
-# 2. Google Sheets & Drive 連線層與工具
+# 2. Google Sheets & Drive & Slides 連線層
 # ==========================================
 
 def _gsheet_call_with_retry(fn, *args, max_retries=4, base_delay=5, **kwargs):
@@ -83,6 +84,81 @@ def get_drive_service():
         scopes=["https://www.googleapis.com/auth/drive"]
     )
     return build("drive", "v3", credentials=creds)
+
+@st.cache_resource
+def get_slides_service():
+    """初始化 Google Slides API 服務，供方案 A 直接更新投影片"""
+    if not GCP_CREDS:
+        return None
+    creds = service_account.Credentials.from_service_account_info(
+        GCP_CREDS,
+        scopes=[
+            "https://www.googleapis.com/auth/drive",
+            "https://www.googleapis.com/auth/presentations"
+        ]
+    )
+    return build("slides", "v1", credentials=creds)
+
+SLIDES_UNIT_GRP_MAP = {
+    "合計": 89,
+    "科技執法": 90,
+    "聖亭所": 91,
+    "龍潭所": 92,
+    "中興所": 93,
+    "石門所": 94,
+    "高平所": 95,
+    "三和所": 96,
+    "警備隊": 97,
+    "交通分隊": 98
+}
+
+def update_slides_three_major(df_summary_final, latest_day):
+    """【方案 A 全自動更新】批次處理完成後，直接透過 Google Slides API 覆寫簡報數據"""
+    try:
+        service = get_slides_service()
+        if not service:
+            return
+
+        requests = []
+        # 1. 更新副標題日期
+        sub_text = f"統計期間：自 115 年 9 月 1 日起至本期({latest_day})止 ｜ 製表單位：龍潭分局交通組"
+        requests.append({"deleteText": {"objectId": "g409dcdab65c_87_0", "textRange": {"type": "ALL"}}})
+        requests.append({"insertText": {"objectId": "g409dcdab65c_87_0", "text": sub_text, "insertionIndex": 0}})
+
+        # 2. 更新各單位數值
+        for _, row in df_summary_final.iterrows():
+            u = row["單位"]
+            grp_id = SLIDES_UNIT_GRP_MAP.get(u)
+            if not grp_id:
+                continue
+
+            r_d = str(row.get(f"闖紅燈(本期 {latest_day})", 0))
+            v_d = str(row.get(f"逆向行駛(本期 {latest_day})", 0))
+            p_d = str(row.get(f"不停讓行人(本期 {latest_day})", 0))
+            t_d = str(row.get(f"三項合計(本期 {latest_day})", 0))
+
+            r_t = str(row.get("闖紅燈(9/1起累計)", 0))
+            v_t = str(row.get("逆向行駛(9/1起累計)", 0))
+            p_t = str(row.get("不停讓行人(9/1起累計)", 0))
+            t_t = str(row.get("三項合計(9/1起累計)", 0))
+
+            field_offsets = [
+                (3, r_d), (5, v_d), (7, p_d), (9, t_d),
+                (11, r_t), (13, v_t), (15, p_t), (17, t_t)
+            ]
+            for offset, val_str in field_offsets:
+                obj_id = f"g409dcdab65c_{grp_id}_{offset}"
+                requests.append({"deleteText": {"objectId": obj_id, "textRange": {"type": "ALL"}}})
+                requests.append({"insertText": {"objectId": obj_id, "text": val_str, "insertionIndex": 0}})
+
+        if requests:
+            service.presentations().batchUpdate(
+                presentationId=THREE_MAJOR_PRESENTATION_ID,
+                body={"requests": requests}
+            ).execute()
+            st.success("🎉 【方案 A】三項重點違規專案簡報母本已全自動更新完成！")
+    except Exception as e:
+        st.info(f"💡 簡報自動同步提示（若需全自動更新，請確認簡報已共用給服務帳號）：{e}")
 
 def fetch_files_from_drive(folder_id):
     """限定資料夾範圍查詢並下載 Excel/CSV 檔案"""
@@ -1395,16 +1471,15 @@ def process_three_major_daily(files, sh):
             p_l, p_t = int(cat_tables["不停讓行人"].loc[u, latest_day]), int(cat_tables["不停讓行人"].loc[u, "累計"])
             overview_rows.append({
                 "單位": u,
-                f"闖紅燈({latest_day})": r_l, "闖紅燈(9/1起累計)": r_t,
-                f"逆向行駛({latest_day})": v_l, "逆向行駛(9/1起累計)": v_t,
-                f"不停讓行人({latest_day})": p_l, "不停讓行人(9/1起累計)": p_t,
-                f"三項合計({latest_day})": r_l + v_l + p_l,
+                f"闖紅燈(本期 {latest_day})": r_l, "闖紅燈(9/1起累計)": r_t,
+                f"逆向行駛(本期 {latest_day})": v_l, "逆向行駛(9/1起累計)": v_t,
+                f"不停讓行人(本期 {latest_day})": p_l, "不停讓行人(9/1起累計)": p_t,
+                f"三項合計(本期 {latest_day})": r_l + v_l + p_l,
                 "三項合計(9/1起累計)": r_t + v_t + p_t,
             })
-        period_info_str = f"統計起日：115 年 9 月 1 日 ｜ 最新資料日：{latest_day}"
+        period_info_str = f"統計起日：115 年 9 月 1 日 ｜ 本期：{latest_day}"
 
     elif summary_files:
-        # 排除全年累計（0101起），鎖定9月報表
         valid_reports = [f for f in summary_files if not f["is_ytd"]]
         if not valid_reports:
             valid_reports = summary_files
@@ -1418,7 +1493,7 @@ def process_three_major_daily(files, sh):
         daily_counts = {}
         has_daily = False
 
-        # 2. 尋找「最後一日單日報表」（s_code == e_code 或只有單日資料）
+        # 2. 尋找「本期單日報表」
         single_day_candidates = [
             f for f in valid_reports
             if f != cumu_rep and f["e_code"] == cumu_rep["e_code"] and f["s_code"] == f["e_code"]
@@ -1429,7 +1504,7 @@ def process_three_major_daily(files, sh):
             daily_counts = daily_rep["counts"]
             has_daily = True
         else:
-            # 3. 若無獨立單日報表，檢查是否有前一日累計報表（如 9/1~9/13）可相減推導
+            # 3. 檢查是否有前一日累計報表相減
             prev_candidates = [
                 f for f in valid_reports
                 if f != cumu_rep and f["e_code"] < cumu_rep["e_code"] and f["s_code"] == cumu_rep["s_code"]
@@ -1466,16 +1541,16 @@ def process_three_major_daily(files, sh):
 
             overview_rows.append({
                 "單位": u,
-                f"闖紅燈({latest_day})": r_day,
+                f"闖紅燈(本期 {latest_day})": r_day,
                 "闖紅燈(9/1起累計)": r_tot,
-                f"逆向行駛({latest_day})": v_day,
+                f"逆向行駛(本期 {latest_day})": v_day,
                 "逆向行駛(9/1起累計)": v_tot,
-                f"不停讓行人({latest_day})": p_day,
+                f"不停讓行人(本期 {latest_day})": p_day,
                 "不停讓行人(9/1起累計)": p_tot,
-                f"三項合計({latest_day})": day_sum,
+                f"三項合計(本期 {latest_day})": day_sum,
                 "三項合計(9/1起累計)": tot_sum,
             })
-        period_info_str = f"專案累計期間：{period_name} ｜ 最後一日：{latest_day}"
+        period_info_str = f"專案累計期間：{period_name} ｜ 本期：{latest_day}"
     else:
         st.error("❌ 未能自上傳檔案解析出 115 年 9 月之有效統計數據，請確認來源檔案。")
         return
@@ -1490,38 +1565,41 @@ def process_three_major_daily(files, sh):
 
     # 取得欄位名稱
     tot_col = [c for c in df_summary_final.columns if "三項合計" in c and "累計" in c][0]
-    day_col = [c for c in df_summary_final.columns if "三項合計" in c and latest_day in c][0]
+    day_col = [c for c in df_summary_final.columns if "三項合計" in c and "本期" in c][0]
     red_tot_col = [c for c in df_summary_final.columns if "闖紅燈" in c and "累計" in c][0]
-    red_day_col = [c for c in df_summary_final.columns if "闖紅燈" in c and latest_day in c][0]
+    red_day_col = [c for c in df_summary_final.columns if "闖紅燈" in c and "本期" in c][0]
     ped_tot_col = [c for c in df_summary_final.columns if "不停讓" in c and "累計" in c][0]
-    ped_day_col = [c for c in df_summary_final.columns if "不停讓" in c and latest_day in c][0]
+    ped_day_col = [c for c in df_summary_final.columns if "不停讓" in c and "本期" in c][0]
 
     # --- 畫面展示 ---
-    st.subheader("🚦 取締三項重點違規（最後一日新增 vs 115/09/01起累計）專案統計表")
+    st.subheader("🚦 取締三項重點違規（本期新增 vs 115/09/01起累計）專案統計表")
     st.caption(f"📅 {period_info_str}")
 
     c1, c2, c3, c4 = st.columns(4)
     tot_display = df_summary_final.iloc[0][tot_col]
     day_display = df_summary_final.iloc[0][day_col]
     c1.metric("🎯 三項重點累計總數", f"{tot_display} 件" if isinstance(tot_display, (int, float)) else str(tot_display))
-    c2.metric(f"📅 最後一日新增 ({latest_day})", f"{day_display} 件" if isinstance(day_display, (int, float)) else str(day_display))
-    c3.metric("闖紅燈 (單日 / 累計)", f"{df_summary_final.iloc[0][red_day_col]} / {df_summary_final.iloc[0][red_tot_col]} 件")
-    c4.metric("不停讓行人 (單日 / 累計)", f"{df_summary_final.iloc[0][ped_day_col]} / {df_summary_final.iloc[0][ped_tot_col]} 件")
+    c2.metric(f"📅 本期新增 ({latest_day})", f"{day_display} 件" if isinstance(day_display, (int, float)) else str(day_display))
+    c3.metric("闖紅燈 (本期 / 累計)", f"{df_summary_final.iloc[0][red_day_col]} / {df_summary_final.iloc[0][red_tot_col]} 件")
+    c4.metric("不停讓行人 (本期 / 累計)", f"{df_summary_final.iloc[0][ped_day_col]} / {df_summary_final.iloc[0][ped_tot_col]} 件")
 
     st.write("📊 **各單位專案取締統計結果：**")
     st.dataframe(df_summary_final, hide_index=True, use_container_width=True)
 
-    # 同步 Google Sheets
+    # 1. 同步 Google Sheets
     if sh:
         try:
             ws_name = "三項重點違規-每日績效"
             ws = get_or_create_ws(sh, ws_name, rows=35, cols=15)
             ensure_ws_capacity(ws, len(df_summary_final) + 5, len(df_summary_final.columns) + 2)
             _ws_clear(ws)
-            title = f"桃園市政府警察局龍潭分局 取締三項重點違規最後一日({latest_day})及累計(115年9月1日起)統計表"
+            title = f"桃園市政府警察局龍潭分局 取締三項重點違規本期({latest_day})及累計(115年9月1日起)統計表"
             grid = [[title] + [""] * (len(df_summary_final.columns) - 1)] + [df_summary_final.columns.tolist()] + df_summary_final.values.tolist()
             _ws_update(ws, "A1", grid)
             st.success("✅ 三項重點違規數據已精確校正並同步至 Google Sheets！")
+            
+            # 2. 方案 A：全自動連線更新 Google Slides 簡報母本
+            update_slides_three_major(df_summary_final, latest_day)
         except Exception as e:
             st.error(f"同步出錯：{e}")
 
@@ -1662,7 +1740,7 @@ if uploads:
             st.session_state["last_processed_hash"] = file_hash
             st.balloons()
 
-            st.success("🎉 全自動批次數據分析與 Google 試算表同步完成！")
+            st.success("🎉 全自動批次數據分析、Google 試算表與簡報母本同步完成！")
 
             weekday = datetime.now().weekday()
             is_mon = weekday in [4, 5, 6, 0]
@@ -1670,10 +1748,10 @@ if uploads:
             rec_name = "週一主管會報簡報母本" if is_mon else "週四主管會報簡報母本"
 
             st.markdown(
-                f"### 📑 接下來請執行以下步驟：\n\n"
-                f"👉 **[點此直接開啟 {rec_name}]({rec_url})**\n\n"
-                f"1. 點擊簡報畫面右上方的 **「全部更新」**（載入最新數據）。\n"
-                f"2. 點擊上方選單 **【📂 會議歸檔工具】>【🚀 建立當次會議副本並存檔】**，按一下 Enter 即可自動完成副本歸檔並寄發郵件通知！"
+                f"### 📑 簡報母本快速查閱入口：\n\n"
+                f"1. 👉 **[開啟 {rec_name}]({rec_url})**（主管會報常態母本）\n"
+                f"2. 👉 **[開啟 三項重點違規專案獨立母本](https://docs.google.com/presentation/d/1gP8Rw6n0c8Z_MTRcJoP67LTzgxjp41fcXls6wy57aY8/edit)**（已由系統全自動更新數值）\n\n"
+                f"若需進行常態主管會報存檔，請進入主管會報母本後點擊上方選單 **【📂 會議歸檔工具】>【🚀 建立當次會議副本並存檔】** 即可完成！"
             )
 
         except Exception as e:
