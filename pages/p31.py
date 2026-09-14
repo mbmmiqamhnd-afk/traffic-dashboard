@@ -38,21 +38,22 @@ with st.expander("📌 專案公文重點提示與待辦時限", expanded=False)
 def classify_violation(fact_text, law_code=""):
     """
     結合法條代碼與違規事實文字，精準判定案件類別：
-    - 35300178: 十年內經測試檢定有吸食毒品第2次 -> 毒駕累犯
-    - 35300199: 經測試檢定有吸食毒品者 -> 毒駕本體
-    - 35101...: 酒精濃度超過標準 -> 一般酒駕
-    - 35900...: 第35條第9項移置保管 -> 車輛移置
+    - 35102...: 毒駕本體
+    - 35300175/178/199/253: 毒駕累犯
+    - 35402002: 拒絕接受毒品測試之檢定 (毒駕拒測)
+    - 35101...: 一般酒駕
+    - 35900...: 第35條第9項移置保管
     """
     text = f"{law_code} {fact_text}".strip()
     if not text or text == "nan":
         return "未填寫"
 
-    is_drug = bool(re.search(r"毒|毒品|麻醉|迷幻|第1項第2款|第一項第二款|1項2款|35102|35300178|35300199", text))
-    is_alcohol = bool(re.search(r"酒|酒精|呼氣|吐氣|第1項第1款|第一項第一款|1項1款|35101|35700", text))
-    is_refusal = bool(re.search(r"拒測|拒絕接受|拒絕", text))
+    is_drug = bool(re.search(r"毒|毒品|麻醉|迷幻|第1項第2款|第一項第二款|1項2款|35102|35300175|35300178|35300184|35300199|35300211|35300253|35300256|35402002", text))
+    is_alcohol = bool(re.search(r"酒|酒精|呼氣|吐氣|第1項第1款|第一項第一款|1項1款|35101|35700|35402001", text))
+    is_refusal = bool(re.search(r"拒測|拒絕接受|拒絕|35402", text))
     is_recidivism = bool(re.search(r"累犯|二次以上|第2次|第3次|多次", text))
     is_slow_vehicle = bool(re.search(r"73|慢車|自行車|腳踏車|微型電動二輪車", text))
-    is_impound = bool(re.search(r"第三十五條第一、三、四、五項之情形之一|移置|保管|35900", text))
+    is_impound = bool(re.search(r"第三十五條第一、三、四、五項之情形之一|第35條第1、3、4、5項之情形之一|移置|保管|35900", text))
 
     # 1. 拒測判別
     if is_refusal:
@@ -150,7 +151,7 @@ if uploaded_file:
         all_cats = sorted(df_clean["案件分類"].unique().tolist())
         drug_default = [c for c in all_cats if "🧪" in c or "🚲 慢車毒駕" in c]
 
-        # ✅ 修正處：傳入 比例
+        # ✅ 這裡明確傳入 比例，保證不再報錯
         c_sel1, c_sel2 = st.columns()
         with c_sel1:
             selected_cats = st.multiselect(
@@ -223,7 +224,6 @@ if uploaded_file:
             st.subheader("📊 案件分類分佈統計")
             summary_cat = df_clean["案件分類"].value_counts().reset_index()
             summary_cat.columns = ["案件類別", "件數"]
-            # 修正處：傳入 2 欄
             c_g1, c_g2 = st.columns(2)
             with c_g1:
                 st.dataframe(summary_cat, use_container_width=True, hide_index=True)
