@@ -204,14 +204,18 @@ def calculate_merits_for_officer(group):
 
     final_reward_text = "、".join(reward_parts) if reward_parts else "列入參考（未達標準）"
 
-    # 具體出力事由文字
+    # ✅ 具體出力事由：內容只到件數，後方標點符號與工作出力文字均已移除
     reasons = []
-    if heavy_cases > 0: reasons.append(f"查獲大型車毒駕{heavy_cases}件")
-    if car_cases > 0: reasons.append(f"查獲小型車毒駕{car_cases}件")
-    if moto_cases > 0: reasons.append(f"查獲機車(含微電車)毒駕{moto_cases}件")
-    if refusal_cases > 0: reasons.append(f"查獲毒駕拒測{refusal_cases}件")
+    if heavy_cases > 0:
+        reasons.append(f"大型車毒駕{heavy_cases}件")
+    if car_cases > 0:
+        reasons.append(f"小型車毒駕{car_cases}件")
+    if moto_cases > 0:
+        reasons.append(f"機車(含微電車)毒駕{moto_cases}件")
+    if refusal_cases > 0:
+        reasons.append(f"毒駕拒測{refusal_cases}件")
 
-    reason_str = "執行加強攔查取締毒駕專案工作計畫，" + "、".join(reasons) + "，工作出力。" if reasons else "執行毒駕專案工作出力。"
+    reason_str = "執行加強攔查取締毒駕專案工作計畫，查獲" + "、".join(reasons) if reasons else ""
 
     return pd.Series({
         '大型車(件)': heavy_cases,
@@ -321,7 +325,8 @@ def main():
                     "2. **小型車**：每件核給 2 點（嘉獎二次）。\n"
                     "3. **機車（含微電車）**：每件核給 1 點（慢車中之微型電動二輪車含在機車標準）。\n"
                     "4. **其餘慢車**：電動輔助自行車、腳踏自行車等依規定不納入專案計點。\n"
-                    "5. **獎勵名目拆分**：非大型車點數嚴格拆解為「嘉獎二次」（點數 // 2）與「嘉獎一次」（點數 % 2），無跨級折算記功或嘉獎三次/六次情形。")
+                    "5. **獎勵名目拆分**：非大型車點數嚴格拆解為「嘉獎二次」（點數 // 2）與「嘉獎一次」（點數 % 2），無跨級折算記功或嘉獎三次/六次情形。\n"
+                    "6. **出力事由簡約化**：具體事由嚴格截止於查獲件數，無後綴標點符號與額外贅字。")
 
 if __name__ == "__main__":
     main()
