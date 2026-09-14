@@ -3,48 +3,67 @@ import re
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
-from email.header import Header
+from email.mime.base import MIMEBase
+from email import encoders
+import urllib.parse as _ul
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 
-# 引入共用側邊欄選單
+# 載入自訂側邊欄
 try:
-    from menu import show_sidebar
+    import menu
 except ImportError:
-    def show_sidebar():
-        st.sidebar.title("🚓 交通執法系統")
+    pass
 
-st.set_page_config(
-    page_title="毒駕專案取締敘獎統計",
-    page_icon="🧪",
-    layout="wide"
-)
+# ==========================================
+# 0. 輔助函式：發送單一檔案 Email
+# ==========================================
+def send_single_file_email(file_bytes, file_name, mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"):
+    """使用 st.secrets 設定檔發送夾帶報表的電子郵件"""
+    try:
+        sender = st.secrets["email"]["user"]
+        pwd = st.secrets["email"]["password"]
+        msg = MIMEMultipart()
+        msg["From"] = sender
+        msg["To"] = sender  # 寄給自己
+        msg["Subject"] = f"🧪 毒駕專案敘獎統計 - {file_name}"
+        
+        body_text = (
+            f"長官您好，\n\n"
+            f"系統已自動完成「加強攔查取締施用毒品後駕車專案工作計畫」出力人員敘獎結算。\n"
+            f"附件為最新產出之【{file_name}】。\n\n"
+            f"依據桃園市政府警察局 115 年 9 月 10 日 桃警交字第 1150120088 號函，"
+            f"本案辦理時限至民國 115 年 9 月 17 日（星期四）止，請查照。\n\n"
+            f"本信件由交通執法自動化分析引擎發送。"
+        )
+        msg.attach(MIMEText(body_text, "plain", "utf-8"))
 
-# 渲染側邊欄
-show_sidebar()
+        # 解析 MIME 類型
+        main_type, sub_type = mime_type.split('/') if '/' in mime_type else ("application", "octet-stream")
+        part = MIMEBase(main_type, sub_type)
+        part.set_payload(file_bytes.getvalue())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(file_name)}")
+        msg.attach(part)
 
-# ==================== 頁面標題與公文資訊 ====================
-st.title("🧪 加強取締施用毒品後駕車專案出力人員敘獎統計")
-st.caption("依據內政部警政署加強攔查取締施用毒品後駕車專案工作計畫暨桃園市政府警察局 115年9月10日 桃警交字第1150120088號函辦理")
+        # 透過 SMTP 發送 (SSL 465 埠)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, pwd)
+            server.sendmail(sender, sender, msg.as_string())
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
-with st.expander("📌 專案公文重點提示與待辦時限", expanded=False):
-    st.markdown("""
-    * **主旨**：有關辦理本局執行內政部警政署加強攔查取締施用毒品後駕車專案工作計畫出力人員敘獎案，請依說明事項辦理，請查照。
-    * **發文字號**：桃園市政府警察局 115 年 9 月 10 日 桃警交字第 1150120088 號函
-    * **承辦窗口**：本局交通警察大隊
-    * **辦理時限**：**民國 115 年 9 月 17 日（星期四）**
-    * **車種敘獎標準規範**：
-      1. **大型車**：每件核予「記功一次」。
-      2. **小型車**：每件核給 2 點（嘉獎二次）。
-      3. **機車（含微型電動二輪車）**：每件核給 1 點。
-      4. **其餘慢車（電輔車、腳踏自行車）**：不納入專案計點。
-      5. **人事獎懲拆解**：非大型車累積點數以商數（// 2）為「嘉獎二次」，餘數（% 2）為「嘉獎一次」。
-    """)
-
-# ==================== 違規事實與車種精準分類 ====================
+# ==========================================
+# 1. 資料處理與統計邏輯
+# ==========================================
 def classify_violation(fact_text, law_code=""):
+    """
+    結合法條代碼與違規事實文字，精準判定案件類別：
+    - 涵蓋迷幻藥、麻醉藥品、藥駕、毒駕本體、毒駕累犯、毒駕拒測
+    """
     text = f"{law_code} {fact_text}".strip()
     if not text or text == "nan":
         return "未填寫"
@@ -56,23 +75,14 @@ def classify_violation(fact_text, law_code=""):
     is_slow_vehicle = bool(re.search(r"73|慢車|自行車|腳踏車|微型電動二輪車", text))
     is_impound = bool(re.search(r"第三十五條第一、三、四、五項之情形之一|第35條第1、3、4、5項之情形之一|移置|保管|35900", text))
 
-    # 1. 拒測判別
     if is_refusal:
         return "🧪 毒駕拒測" if is_drug else ("🍺 酒駕拒測" if is_alcohol else "⚠️ 拒測(未指明類別)")
-
-    # 2. 累犯判別
     if is_recidivism:
         return "🧪 毒駕累犯" if is_drug else ("🍺 酒駕累犯" if is_alcohol else "⚠️ 累犯")
-
-    # 3. 慢車判別 (第 73 條)
     if is_slow_vehicle:
         return "🚲 慢車毒駕" if is_drug else ("🚲 慢車酒駕" if is_alcohol else "🚲 慢車其他違規")
-
-    # 4. 車輛移置保管 (第 35 條第 9 項)
     if is_impound:
         return "🚗 車輛移置保管（第35條第9項）"
-
-    # 5. 本體違規判別 (第 35 條)
     if is_drug:
         return "🧪 毒駕本體"
     elif is_alcohol:
@@ -81,6 +91,13 @@ def classify_violation(fact_text, law_code=""):
     return "📋 其他相關違規"
 
 def classify_vehicle_type(v_name):
+    """
+    精準區分車種：
+    - 大型車：大貨車、大客車、聯結車、曳引車 (唯有大型車可記功)
+    - 小型車：汽車、自小客、小貨車
+    - 機車：重機、輕機、微型電動二輪車 (微型電動二輪車比照機車標準)
+    - 其餘慢車：電動輔助自行車、腳踏自行車 (不納入專案計點)
+    """
     v = str(v_name).strip()
     if any(k in v for k in ["大貨", "大客", "聯結", "曳引", "大型車"]):
         return "大型車"
@@ -94,278 +111,217 @@ def classify_vehicle_type(v_name):
         return "其餘慢車(不納入)"
     return "其他車種"
 
-# ==================== 檔案上傳與自動直取【案件明細】 ====================
-uploaded_file = st.file_uploader(
-    "📂 請上傳「35條73條統計表」（自選匯出.xlsx）", 
-    type=["xlsx", "xls"],
-    help="系統將自動直取「案件明細」並依署頒計畫標準精算"
-)
+def process_traffic_data(file):
+    """讀取並清洗自選匯出 Excel 資料 (自動直取案件明細並對齊標題列)"""
+    try:
+        xls = pd.ExcelFile(file)
+        sheet_options = xls.sheet_names
+        target_sheet = next((s for s in sheet_options if "案件明細" in s), sheet_options[0])
 
-if uploaded_file:
-    xls = pd.ExcelFile(uploaded_file)
-    sheet_options = xls.sheet_names
-    target_sheet = next((s for s in sheet_options if "案件明細" in s), sheet_options[0])
+        df_raw = pd.read_excel(file, sheet_name=target_sheet, header=None)
+
+        header_row_index = None
+        for idx in range(min(15, len(df_raw))):
+            row_values = " ".join(df_raw.iloc[idx].dropna().astype(str).tolist())
+            if '單號' in row_values and ('舉發員警1' in row_values or '舉發員警' in row_values):
+                header_row_index = idx
+                break
+
+        if header_row_index is None:
+            st.error("找不到資料標題列！請確認上傳檔案工作表【案件明細】中是否包含『單號』與『舉發員警1』。")
+            return None
+
+        new_cols = [str(val).strip() for val in df_raw.iloc[header_row_index]]
+        df = df_raw.iloc[header_row_index + 1:].copy().reset_index(drop=True)
+        df.columns = new_cols
+
+        # 過濾底部公文頁尾列
+        ticket_col = next((c for c in df.columns if "單號" in str(c)), None)
+        if ticket_col:
+            df = df[df[ticket_col].notna()]
+            df = df[~df[ticket_col].astype(str).str.contains("列印人員|統計期間|製表人員|總計", na=False)]
+
+        cols_to_keep = ['單號', '簡式車種名稱', '違規法條1', '違規事實1', '入案日', '舉發員警1']
+        missing_cols = [col for col in cols_to_keep if col not in df.columns]
+        if missing_cols:
+            st.error(f"上傳的檔案缺少以下必要欄位：{', '.join(missing_cols)}，請確認自選匯出時是否有勾選。")
+            return None
+
+        df = df[cols_to_keep].dropna(how='all')
+        return df
+
+    except Exception as e:
+        st.error(f"檔案解析失敗，錯誤訊息：{str(e)}")
+        return None
+
+def calculate_merits_for_officer(group):
+    """計算單一員警的敘獎額度（嚴格遵守大型車記功、其他車種依嘉獎二次/一次拆解）"""
+    group = group.sort_values(by='入案日')
+
+    heavy_cases = 0
+    car_cases = 0
+    moto_cases = 0
+    other_slow_cases = 0
+    refusal_cases = 0
+
+    tickets = []
+
+    for idx, row in group.iterrows():
+        v_type = str(row['車種判定'])
+        cat = str(row['案件分類'])
+        tickets.append(str(row['單號']))
+
+        if '拒測' in cat:
+            refusal_cases += 1
+
+        if v_type == '大型車':
+            heavy_cases += 1
+        elif v_type == '小型車':
+            car_cases += 1
+        elif v_type == '機車':
+            moto_cases += 1
+        elif v_type == '其餘慢車(不納入)':
+            other_slow_cases += 1
+
+    # 1. 大型車專屬功次
+    merit_cnt = heavy_cases * 1
+
+    # 2. 其他車種累計點數（小型車2點、機車含微電車1點，其餘慢車0點）
+    total_pts = (car_cases * 2) + (moto_cases * 1)
     
-    df_raw_no_header = pd.read_excel(uploaded_file, sheet_name=target_sheet, header=None)
-    
-    header_idx = None
-    for idx in range(min(15, len(df_raw_no_header))):
-        row_text = " ".join(df_raw_no_header.iloc[idx].dropna().astype(str).tolist())
-        if any(k in row_text for k in ["單號", "違規事實", "違規法條", "舉發員警"]):
-            header_idx = idx
-            break
+    # 3. 法定獎懲額度拆解（商數為嘉獎二次，餘數為嘉獎一次）
+    num_commend_2 = total_pts // 2
+    num_commend_1 = total_pts % 2
 
-    if header_idx is not None:
-        new_columns = [str(c).strip() for c in df_raw_no_header.iloc[header_idx].tolist()]
-        df_clean = df_raw_no_header.iloc[header_idx + 1:].copy().reset_index(drop=True)
-        df_clean.columns = new_columns
-    else:
-        df_clean = pd.read_excel(uploaded_file, sheet_name=target_sheet)
+    # 4. 組合建議獎勵額度文字
+    reward_parts = []
+    if merit_cnt > 0:
+        reward_parts.append(f"記功一次{merit_cnt}次" if merit_cnt > 1 else "記功一次")
+    if num_commend_2 > 0:
+        reward_parts.append(f"嘉獎二次{num_commend_2}次" if num_commend_2 > 1 else "嘉獎二次")
+    if num_commend_1 > 0:
+        reward_parts.append(f"嘉獎一次{num_commend_1}次" if num_commend_1 > 1 else "嘉獎一次")
 
-    # 過濾公文頁尾
-    ticket_col = next((c for c in df_clean.columns if "單號" in str(c)), None)
-    if ticket_col:
-        df_clean = df_clean[df_clean[ticket_col].notna()]
-        df_clean = df_clean[~df_clean[ticket_col].astype(str).str.contains("列印人員|統計期間|製表人員|總計", na=False)]
+    final_reward_text = "、".join(reward_parts) if reward_parts else "列入參考（未達標準）"
 
-    # 定位關鍵欄位
-    fact_col = next((c for c in df_clean.columns if any(k in str(c) for k in ["違規事實", "事實說明", "違規事項", "事實"])), None)
-    law_col = next((c for c in df_clean.columns if any(k in str(c) for k in ["違規法條", "法條代碼", "法條"])), None)
-    officer_col = next((c for c in df_clean.columns if any(k in str(c) for k in ["舉發員警", "員警", "警號", "姓名", "填單人"])), None)
-    vehicle_col = next((c for c in df_clean.columns if any(k in str(c) for k in ["簡式車種名稱", "車種", "車種名稱"])), None)
-    date_col = next((c for c in df_clean.columns if any(k in str(c) for k in ["入案日", "違規日", "日期"])), None)
+    # 具體出力事由文字
+    reasons = []
+    if heavy_cases > 0: reasons.append(f"查獲大型車毒駕{heavy_cases}件")
+    if car_cases > 0: reasons.append(f"查獲小型車毒駕{car_cases}件")
+    if moto_cases > 0: reasons.append(f"查獲機車(含微電車)毒駕{moto_cases}件")
+    if refusal_cases > 0: reasons.append(f"查獲毒駕拒測{refusal_cases}件")
 
-    st.success(f"已自動鎖定【{target_sheet}】，共成功匯入 **{len(df_clean)}** 筆案件紀錄！")
+    reason_str = "執行加強攔查取締毒駕專案工作計畫，" + "、".join(reasons) + "，工作出力。" if reasons else "執行毒駕專案工作出力。"
 
-    if fact_col and vehicle_col:
-        # 標註分類與車種判定
-        df_clean["案件分類"] = df_clean.apply(lambda r: classify_violation(r[fact_col], r[law_col] if law_col else ""), axis=1)
-        df_clean["車種判定"] = df_clean[vehicle_col].apply(classify_vehicle_type)
+    return pd.Series({
+        '大型車(件)': heavy_cases,
+        '小型車(件)': car_cases,
+        '機車含微電車(件)': moto_cases,
+        '其餘慢車(不納入)': other_slow_cases,
+        '毒駕拒測(件)': refusal_cases,
+        '計獎總件數': heavy_cases + car_cases + moto_cases,
+        '記功一次': merit_cnt,
+        '嘉獎二次': num_commend_2,
+        '嘉獎一次': num_commend_1,
+        '建議獎勵額度': final_reward_text,
+        '具體出力事由': reason_str,
+        '舉發單號明細': ", ".join(tickets)
+    })
 
-        st.markdown("### 🎯 案件類別篩選")
-        all_cats = sorted(df_clean["案件分類"].unique().tolist())
-        quick_mode = st.radio(
-            "快速切換模式：", 
-            ["僅毒品專案（敘獎標準）", "全部案件（含酒駕與移置）", "自訂勾選"], 
-            index=0, 
-            horizontal=True
-        )
+# ==========================================
+# 2. 主程式介面
+# ==========================================
+def main():
+    st.set_page_config(page_title="毒駕專案 敘獎統計", page_icon="🧪", layout="wide")
 
-        if quick_mode == "僅毒品專案（敘獎標準）":
-            selected_cats = [c for c in all_cats if "🧪" in c or "🚲 慢車毒駕" in c]
-        elif quick_mode == "全部案件（含酒駕與移置）":
-            selected_cats = all_cats
-        else:
-            selected_cats = st.multiselect(
-                "請勾選本次納入統計之案件分類：",
-                options=all_cats,
-                default=[c for c in all_cats if "🧪" in c or "🚲 慢車毒駕" in c]
-            )
+    try:
+        menu.show_sidebar()
+    except Exception as e:
+        st.sidebar.error("無法載入側邊欄，請確認根目錄下有 menu.py")
 
-        df_filtered = df_clean[df_clean["案件分類"].isin(selected_cats)].copy()
+    st.title("🧪 加強取締施用毒品後駕車專案 - 自動敘獎統計系統")
+    st.caption("依據內政部警政署加強攔查取締施用毒品後駕車專案工作計畫暨桃園市政府警察局 115年9月10日 桃警交字第1150120088號函辦理（時限：115年9月17日）")
+    st.divider()
 
-        # 指標看板
-        st.markdown("#### 📈 專案指標概覽")
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("🧪 毒駕本體", len(df_clean[df_clean["案件分類"] == "🧪 毒駕本體"]))
-        m2.metric("🧪 毒駕累犯", len(df_clean[df_clean["案件分類"] == "🧪 毒駕累犯"]))
-        m3.metric("🧪 毒駕拒測", len(df_clean[df_clean["案件分類"] == "🧪 毒駕拒測"]))
-        m4.metric("🚲 慢車毒駕", len(df_clean[df_clean["案件分類"] == "🚲 慢車毒駕"]))
-        m5.metric("📌 本次統計納入", len(df_filtered))
+    uploaded_file = st.file_uploader("請上傳『自選匯出.xlsx』(資料來源需包含簡式車種名稱與違規事實)", type=["xlsx"])
 
-        st.divider()
+    if uploaded_file is not None:
+        with st.spinner("資料處理與專案案件過濾中，請稍候..."):
+            df = process_traffic_data(uploaded_file)
 
-        # ==================== 署頒專案敘獎標準設定面板 ====================
-        st.markdown("### ⚙️ 警政署專案工作計畫點數設定")
-        with st.expander("🛠️ 點此確認或微調各車種折算點數（微電車已自動納入機車）", expanded=True):
-            s1, s2, s3, s4 = st.columns(4)
-            heavy_pts = s1.number_input("🚛 大型車毒駕每件記功次數：", min_value=1, max_value=2, value=1, step=1)
-            car_pts = s2.number_input("🚗 小型車毒駕每件嘉獎點數：", min_value=1, max_value=3, value=2, step=1)
-            moto_pts = s3.number_input("🛵 機車(含微電車)每件點數：", min_value=1, max_value=2, value=1, step=1)
-            s4.info("🚲 其餘慢車（電輔車、自行車等）依規定不納入專案計點。")
+        if df is not None:
+            # 標註分類與車種判定
+            df["案件分類"] = df.apply(lambda r: classify_violation(r["違規事實1"], r["違規法條1"]), axis=1)
+            df["車種判定"] = df["簡式車種名稱"].apply(classify_vehicle_type)
 
-        # 分頁展示
-        tab_officer, tab_summary, tab_detail = st.tabs(["👮 出力員警敘獎建議名冊", "📊 車種與違規分佈統計", "📑 專案查獲案件明細表"])
+            with st.expander("📄 檢視原始案件明細", expanded=False):
+                st.dataframe(df, use_container_width=True)
 
-        # TAB 1: 出力人員敘獎名冊
-        with tab_officer:
-            st.subheader("👮 查獲出力員警敘獎建議名冊（署頒計畫標準）")
+            # 篩選毒駕專案案件
+            df_drug = df[df["案件分類"].str.contains("🧪")].copy()
 
-            if officer_col:
-                officer_list = df_filtered[officer_col].unique()
-                summary_data = []
+            # 指標看板
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("🧪 毒駕本體", len(df[df["案件分類"] == "🧪 毒駕本體"]))
+            m2.metric("🧪 毒駕累犯", len(df[df["案件分類"] == "🧪 毒駕累犯"]))
+            m3.metric("🧪 毒駕拒測", len(df[df["案件分類"] == "🧪 毒駕拒測"]))
+            m4.metric("📌 專案計獎案件總數", len(df_drug))
 
-                for officer in officer_list:
-                    sub = df_filtered[df_filtered[officer_col] == officer]
-                    
-                    heavy_cnt = len(sub[sub["車種判定"] == "大型車"])
-                    car_cnt = len(sub[sub["車種判定"] == "小型車"])
-                    moto_cnt = len(sub[sub["車種判定"] == "機車"])  # 包含微型電動二輪車
-                    other_slow_cnt = len(sub[sub["車種判定"] == "其餘慢車(不納入)"])
-                    refusal_cnt = len(sub[sub["案件分類"] == "🧪 毒駕拒測"])
-                    reward_total_cnt = heavy_cnt + car_cnt + moto_cnt
+            st.subheader("📊 員警專案敘獎統計表 (依警政署工作計畫標準)")
 
-                    # 1. 大型車專屬：記功一次
-                    merit_total = heavy_cnt * heavy_pts
+            # 按員警分組結算
+            merit_stats = df_drug.groupby('舉發員警1').apply(calculate_merits_for_officer).reset_index()
+            merit_stats = merit_stats.sort_values(
+                by=['記功一次', '嘉獎二次', '嘉獎一次', '計獎總件數'], 
+                ascending=[False, False, False, False]
+            ).reset_index(drop=True)
 
-                    # 2. 其他車種：累計嘉獎點數 (小型車2點、機車含微電車1點)
-                    total_pts = (car_cnt * car_pts) + (moto_cnt * moto_pts)
+            styled_df = (merit_stats.style
+                         .background_gradient(subset=['嘉獎二次'], cmap='Reds')
+                         .background_gradient(subset=['嘉獎一次'], cmap='Blues'))
 
-                    # 3. 依警察法規拆解為「嘉獎二次」與「嘉獎一次」
-                    num_commend_2 = total_pts // 2
-                    num_commend_1 = total_pts % 2
+            st.dataframe(styled_df, use_container_width=True)
 
-                    # 4. 組合建議獎勵額度文字
-                    reward_parts = []
-                    if merit_total > 0:
-                        reward_parts.append(f"記功一次{merit_total}次" if merit_total > 1 else "記功一次")
-                    if num_commend_2 > 0:
-                        reward_parts.append(f"嘉獎二次{num_commend_2}次" if num_commend_2 > 1 else "嘉獎二次")
-                    if num_commend_1 > 0:
-                        reward_parts.append(f"嘉獎一次{num_commend_1}次" if num_commend_1 > 1 else "嘉獎一次")
+            # 建立記憶體中的 Excel 檔案 (使用 openpyxl 引擎)
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                merit_stats.to_excel(writer, index=False, sheet_name='出力人員敘獎名冊')
+                df_sorted = df_drug.sort_values(by=['舉發員警1', '入案日']).reset_index(drop=True)
+                df_sorted.to_excel(writer, index=False, sheet_name='專案案件明細')
 
-                    final_reward_text = "、".join(reward_parts) if reward_parts else "列入參考（未達標準）"
+            excel_data = output.getvalue()
+            excel_filename = '加強取締施用毒品後駕車專案敘獎統計含明細.xlsx'
 
-                    reasons = []
-                    if heavy_cnt > 0:
-                        reasons.append(f"查獲大型車毒駕{heavy_cnt}件")
-                    if car_cnt > 0:
-                        reasons.append(f"查獲小型車毒駕{car_cnt}件")
-                    if moto_cnt > 0:
-                        reasons.append(f"查獲機車(含微電車)毒駕{moto_cnt}件")
-                    if refusal_cnt > 0:
-                        reasons.append(f"查獲毒駕拒測{refusal_cnt}件")
+            st.divider()
+            col_dl, col_mail = st.columns(2)
 
-                    reason_str = "執行加強攔查取締毒駕專案工作計畫，" + "、".join(reasons) + "，工作出力。" if reasons else "執行毒駕專案工作出力。"
-
-                    summary_data.append({
-                        "員警姓名": officer,
-                        "大型車(件)": heavy_cnt,
-                        "小型車(件)": car_cnt,
-                        "機車含微電車(件)": moto_cnt,
-                        "其餘慢車(不計)": other_slow_cnt,
-                        "毒駕拒測(件)": refusal_cnt,
-                        "計獎總件數": reward_total_cnt,
-                        "記功一次": merit_total,
-                        "嘉獎二次": num_commend_2,
-                        "嘉獎一次": num_commend_1,
-                        "建議獎勵額度": final_reward_text,
-                        "具體出力事由": reason_str
-                    })
-
-                officer_df = pd.DataFrame(summary_data).sort_values(
-                    by=["記功一次", "嘉獎二次", "嘉獎一次", "計獎總件數"], 
-                    ascending=[False, False, False, False]
-                )
-                
-                st.dataframe(officer_df, use_container_width=True, hide_index=True)
-
-                # 生成 Excel 二進位資料
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-                    officer_df.to_excel(writer, index=False, sheet_name="出力人員敘獎建議名冊")
-                    df_filtered.to_excel(writer, index=False, sheet_name="專案查獲案件明細")
-                excel_bytes = output.getvalue()
-                excel_filename = "加強攔查取締施用毒品後駕車專案出力人員敘獎建議表.xlsx"
-
-                # 檔案下載按鈕
+            with col_dl:
                 st.download_button(
-                    label="📥 下載【加強取締施用毒品後駕車專案出力人員敘獎建議表】(Excel)",
-                    data=excel_bytes,
+                    label="📥 下載敘獎名冊及明細 (Excel)",
+                    data=excel_data,
                     file_name=excel_filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                    use_container_width=True
                 )
 
-                # ==================== 📧 一鍵寄送郵件給自己功能 ====================
-                st.markdown("---")
-                st.subheader("📧 將敘獎建議名冊發送至電子信箱")
-
-                with st.expander("📬 點此發送郵件（附帶 Excel 附件與完整名冊 HTML）", expanded=True):
-                    # 預設從 secrets 讀取，沒有則使用輸入框
-                    default_sender = st.secrets.get("GMAIL_USER", "mbmmiqamhnd@gmail.com")
-                    saved_password = st.secrets.get("GMAIL_PASSWORD", "")
-
-                    c_mail1, c_mail2 = st.columns(2)
-                    target_email = c_mail1.text_input("收件人信箱：", value="mbmmiqamhnd@gmail.com")
-                    
-                    if not saved_password:
-                        app_pwd = c_mail2.text_input("Gmail 應用程式密碼 (16位英文字母)：", type="password", help="如已在 Streamlit Secrets 設定 GMAIL_PASSWORD 則會自動帶入")
-                    else:
-                        app_pwd = saved_password
-                        c_mail2.success("✅ 已自動從 Streamlit Secrets 載入郵件密碼")
-
-                    if st.button("🚀 立即發送郵件（含 Excel 附件）"):
-                        if not app_pwd:
-                            st.warning("⚠️ 請輸入 Gmail 應用程式密碼以進行發送。")
+            with col_mail:
+                if st.button("📧 將此統計表一鍵寄至我的信箱", use_container_width=True):
+                    with st.spinner("信件發送中，請稍候…"):
+                        output.seek(0)
+                        ok, mail_err = send_single_file_email(output, excel_filename)
+                        if ok:
+                            st.success("✅ 信件發送成功！統計報表 Excel 已夾帶至您的信箱。")
                         else:
-                            try:
-                                with st.spinner("正在發送郵件與上傳附件中..."):
-                                    # 建立郵件訊息
-                                    msg = MIMEMultipart()
-                                    msg["From"] = default_sender
-                                    msg["To"] = target_email
-                                    mail_subject = "【專案報告】加強取締施用毒品後駕車專案出力人員敘獎建議名冊"
-                                    msg["Subject"] = Header(mail_subject, "utf-8")
+                            st.error(f"❌ 發信失敗，請檢查系統信箱設定。錯誤訊息: {mail_err}")
 
-                                    # HTML 內容
-                                    html_table = officer_df.to_html(index=False, classes="table table-bordered", border=1)
-                                    html_content = f"""
-                                    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-                                        <h2 style="color: #1a73e8;">🚓 內政部警政署加強攔查取締施用毒品後駕車專案出力人員敘獎建議表</h2>
-                                        <p><strong>承辦人：郭勝隆 巡官</strong></p>
-                                        <p><strong>公文字號：</strong>桃園市政府警察局 115年9月10日 桃警交字第1150120088號函</p>
-                                        <p><strong>辦理時限：</strong>民國 115 年 9 月 17 日（星期四）前函報交大</p>
-                                        <hr>
-                                        <h3>📋 出力人員敘獎建議名冊（共計 {len(officer_df)} 名同仁）</h3>
-                                        {html_table}
-                                        <hr>
-                                        <p style="color: #555;">📎 完整案件明細與敘獎名冊 Excel 檔已隨信夾帶於附件，請查照。</p>
-                                    </div>
-                                    """
-                                    msg.attach(MIMEText(html_content, "html", "utf-8"))
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.info("💡 **系統計算標準：**\n"
+                    "1. **大型車專屬記功**：僅查獲大型車（大貨車、大客車、聯結車等）毒駕核予「記功一次」。\n"
+                    "2. **小型車**：每件核給 2 點（嘉獎二次）。\n"
+                    "3. **機車（含微電車）**：每件核給 1 點（慢車中之微型電動二輪車含在機車標準）。\n"
+                    "4. **其餘慢車**：電動輔助自行車、腳踏自行車等依規定不納入專案計點。\n"
+                    "5. **獎勵名目拆分**：非大型車點數嚴格拆解為「嘉獎二次」（點數 // 2）與「嘉獎一次」（點數 % 2），無跨級折算記功或嘉獎三次/六次情形。")
 
-                                    # 附加 Excel 檔案
-                                    part = MIMEApplication(excel_bytes)
-                                    part.add_header("Content-Disposition", "attachment", filename=("utf-8", "", excel_filename))
-                                    msg.attach(part)
-
-                                    # 發送郵件 (SMTP SSL/TLS)
-                                    server = smtplib.SMTP("smtp.gmail.com", 587)
-                                    server.starttls()
-                                    server.login(default_sender, app_pwd)
-                                    server.sendmail(default_sender, [target_email], msg.as_string())
-                                    server.quit()
-
-                                st.success(f"🎉 郵件已成功寄送至 {target_email}！內含 Excel 附件與完整敘獎名冊。")
-                            except Exception as err:
-                                st.error(f"❌ 郵件寄送失敗：{err}。請確認 Gmail 是否已啟用兩步驟驗證並產生「16位應用程式密碼」。")
-
-            else:
-                st.warning("此工作表未包含員警欄位。")
-
-        # TAB 2: 分類分佈圖表
-        with tab_summary:
-            st.subheader("📊 車種與案件分類分佈統計")
-            c1, c2 = st.columns(2)
-            with c1:
-                v_summary = df_filtered["車種判定"].value_counts().reset_index()
-                v_summary.columns = ["車種大類", "案件數"]
-                st.dataframe(v_summary, use_container_width=True, hide_index=True)
-                st.bar_chart(v_summary.set_index("車種大類"))
-            with c2:
-                cat_summary = df_filtered["案件分類"].value_counts().reset_index()
-                cat_summary.columns = ["違規分類", "案件數"]
-                st.dataframe(cat_summary, use_container_width=True, hide_index=True)
-                st.bar_chart(cat_summary.set_index("違規分類"))
-
-        # TAB 3: 案件明細清單
-        with tab_detail:
-            st.subheader(f"📑 符合條件之案件清單（共 {len(df_filtered)} 筆）")
-            display_cols = [c for c in [ticket_col, "車種判定", "案件分類", law_col, fact_col, officer_col, vehicle_col, date_col] if c and c in df_filtered.columns]
-            other_cols = [c for c in df_filtered.columns if c not in display_cols]
-            st.dataframe(df_filtered[display_cols + other_cols], use_container_width=True, hide_index=True)
-    else:
-        st.error("未能在此工作表中自動辨識到「違規事實」或「車種」欄位。")
-        st.dataframe(df_clean.head(10), use_container_width=True)
-else:
-    st.info("💡 請上傳從 Gmail 下載之 `自選匯出.xlsx` 報表檔案。")
+if __name__ == "__main__":
+    main()
