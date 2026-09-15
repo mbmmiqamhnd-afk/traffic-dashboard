@@ -102,7 +102,8 @@ def get_slides_service():
 def update_slides_three_major(df_summary_final, latest_day):
     """【方案 A 全自動更新】徹底解決 400 (Object not found) 錯誤
     - 表頭、副標題與統計期間全改用 replaceAllText（不依賴任何個別 objectId）
-    - 數值更新同時相容原生 Table 與群組文字框
+    - 支援巢狀 elementGroup 遞迴搜尋文字框（解決手動編輯後結構跑掉的問題）
+    - 數值更新改為「逐單位獨立 batchUpdate」，單一物件失效不會拖垮整體同步
     """
     try:
         service = get_slides_service()
@@ -116,13 +117,13 @@ def update_slides_three_major(df_summary_final, latest_day):
             return
         slide = slides[0]
 
-        requests = []
-
         # ========================================================
         # (1) 標題、副標題、表頭欄位改用 replaceAllText（避開 ID 遺失或群組問題）
         # ========================================================
+        header_requests = []
+
         new_sub = f"統計期間：自 115 年 9 月 1 日起至本期({latest_day})止 ｜ 製表單位：龍潭分局交通組"
-        requests.append({
+        header_requests.append({
             "replaceAllText": {
                 "replaceText": new_sub,
                 "containsText": {"matchCase": False, "text": "統計期間：自 115 年"}
@@ -130,7 +131,7 @@ def update_slides_three_major(df_summary_final, latest_day):
         })
 
         new_h1 = f"本期 ({latest_day}) 新增違規數"
-        requests.append({
+        header_requests.append({
             "replaceAllText": {
                 "replaceText": new_h1,
                 "containsText": {"matchCase": False, "text": "本期新增違規數"}
@@ -138,12 +139,21 @@ def update_slides_three_major(df_summary_final, latest_day):
         })
 
         new_h2 = f"本期合計 ({latest_day})"
-        requests.append({
+        header_requests.append({
             "replaceAllText": {
                 "replaceText": new_h2,
                 "containsText": {"matchCase": False, "text": "本期合計"}
             }
         })
+
+        try:
+            if header_requests:
+                service.presentations().batchUpdate(
+                    presentationId=THREE_MAJOR_PRESENTATION_ID,
+                    body={"requests": header_requests}
+                ).execute()
+        except Exception as e:
+            st.warning(f"⚠️ 標題／副標題更新失敗：{e}")
 
         # ========================================================
         # (2) 篩選 7 所隊並重新計算合計（嚴格排除科技執法與警備隊）
@@ -184,10 +194,31 @@ def update_slides_three_major(df_summary_final, latest_day):
                 return txt, elem.get("objectId")
             return "", None
 
+        def collect_shapes_recursive(elem, out):
+            """遞迴搜尋 elementGroup，避免巢狀群組（手動編輯後常見）導致文字框遺漏"""
+            if "shape" in elem and "text" in elem["shape"]:
+                txt, oid = get_shape_text_and_id(elem)
+                if txt and oid:
+                    out.append((oid, txt))
+            elif "elementGroup" in elem:
+                for child in elem["elementGroup"].get("children", []):
+                    collect_shapes_recursive(child, out)
+
+        def vals_for_unit(r):
+            return [
+                str(r[col_r_d]), str(r[col_v_d]), str(r[col_p_d]), str(r[col_t_d]),
+                str(r[col_r_t]), str(r[col_v_t]), str(r[col_p_t]), str(r[col_t_t])
+            ]
+
+        updated_units = []
+        failed_units = []
+
         # ========================================================
         # (3) 數值填入：支援原生 Table 與一般 Shape / Group
+        #     每個「單位」各自獨立 batchUpdate，單一物件失效不影響其他單位
         # ========================================================
         for pe in slide.get("pageElements", []):
+
             # 情況 A：原生 Google Slides 表格 (Table)
             if "table" in pe:
                 table_id = pe["objectId"]
@@ -200,61 +231,84 @@ def update_slides_three_major(df_summary_final, latest_day):
                     first_cell_txt = "".join([x.get("textRun", {}).get("content", "") for x in first_cell_te]).strip()
 
                     matched_row = df_slides_data[df_slides_data["單位"] == first_cell_txt]
-                    if not matched_row.empty:
-                        r = matched_row.iloc[0]
-                        vals = [
-                            str(r[col_r_d]), str(r[col_v_d]), str(r[col_p_d]), str(r[col_t_d]),
-                            str(r[col_r_t]), str(r[col_v_t]), str(r[col_p_t]), str(r[col_t_t])
-                        ]
-                        for c_offset, val_str in enumerate(vals, start=1):
-                            if c_offset < len(cells):
-                                requests.append({
-                                    "deleteText": {
-                                        "objectId": table_id,
-                                        "cellLocation": {"rowIndex": r_idx, "columnIndex": c_offset},
-                                        "textRange": {"type": "ALL"}
-                                    }
-                                })
-                                requests.append({
-                                    "insertText": {
-                                        "objectId": table_id,
-                                        "cellLocation": {"rowIndex": r_idx, "columnIndex": c_offset},
-                                        "text": val_str,
-                                        "insertionIndex": 0
-                                    }
-                                })
+                    if matched_row.empty:
+                        continue
 
-            # 情況 B：由多個文字方塊組合的排版
+                    r = matched_row.iloc[0]
+                    vals = vals_for_unit(r)
+                    row_requests = []
+                    for c_offset, val_str in enumerate(vals, start=1):
+                        if c_offset < len(cells):
+                            row_requests.append({
+                                "deleteText": {
+                                    "objectId": table_id,
+                                    "cellLocation": {"rowIndex": r_idx, "columnIndex": c_offset},
+                                    "textRange": {"type": "ALL"}
+                                }
+                            })
+                            row_requests.append({
+                                "insertText": {
+                                    "objectId": table_id,
+                                    "cellLocation": {"rowIndex": r_idx, "columnIndex": c_offset},
+                                    "text": val_str,
+                                    "insertionIndex": 0
+                                }
+                            })
+
+                    if not row_requests:
+                        continue
+
+                    try:
+                        service.presentations().batchUpdate(
+                            presentationId=THREE_MAJOR_PRESENTATION_ID,
+                            body={"requests": row_requests}
+                        ).execute()
+                        updated_units.append(first_cell_txt)
+                    except Exception as e:
+                        failed_units.append(first_cell_txt)
+                        st.warning(f"⚠️「{first_cell_txt}」表格列更新失敗（物件可能已被手動編輯過）：{e}")
+
+            # 情況 B：由多個文字方塊組合的排版（含巢狀群組）
             elif "elementGroup" in pe:
-                children = pe["elementGroup"].get("children", [])
                 txt_boxes = []
-                for ch in children:
-                    t, oid = get_shape_text_and_id(ch)
-                    if t and oid:
-                        txt_boxes.append((oid, t))
+                collect_shapes_recursive(pe, txt_boxes)
 
                 if len(txt_boxes) >= 9:
                     unit_candidate = txt_boxes[0][1]
                     matched_row = df_slides_data[df_slides_data["單位"] == unit_candidate]
-                    if not matched_row.empty:
-                        r = matched_row.iloc[0]
-                        vals = [
-                            str(r[col_r_d]), str(r[col_v_d]), str(r[col_p_d]), str(r[col_t_d]),
-                            str(r[col_r_t]), str(r[col_v_t]), str(r[col_p_t]), str(r[col_t_t])
-                        ]
-                        for (cell_oid, _), val_str in zip(txt_boxes[1:9], vals):
-                            requests.append({"deleteText": {"objectId": cell_oid, "textRange": {"type": "ALL"}}})
-                            requests.append({"insertText": {"objectId": cell_oid, "text": val_str, "insertionIndex": 0}})
+                    if matched_row.empty:
+                        continue
+
+                    r = matched_row.iloc[0]
+                    vals = vals_for_unit(r)
+                    unit_requests = []
+                    for (cell_oid, _), val_str in zip(txt_boxes[1:9], vals):
+                        unit_requests.append({"deleteText": {"objectId": cell_oid, "textRange": {"type": "ALL"}}})
+                        unit_requests.append({"insertText": {"objectId": cell_oid, "text": val_str, "insertionIndex": 0}})
+
+                    if not unit_requests:
+                        continue
+
+                    try:
+                        service.presentations().batchUpdate(
+                            presentationId=THREE_MAJOR_PRESENTATION_ID,
+                            body={"requests": unit_requests}
+                        ).execute()
+                        updated_units.append(unit_candidate)
+                    except Exception as e:
+                        failed_units.append(unit_candidate)
+                        st.warning(f"⚠️「{unit_candidate}」欄位更新失敗（物件可能已被手動編輯過，建議重新整理該區塊排版）：{e}")
 
         # ========================================================
-        # (4) 執行批次更新
+        # (4) 結果回報
         # ========================================================
-        if requests:
-            service.presentations().batchUpdate(
-                presentationId=THREE_MAJOR_PRESENTATION_ID,
-                body={"requests": requests}
-            ).execute()
-            st.success("🎉 【方案 A】三項重點違規專案簡報母本已全自動更新（已排除科技執法與警備隊）！")
+        if updated_units:
+            st.success(f"🎉 【方案 A】三項重點違規專案簡報母本已自動更新（成功：{len(updated_units)} 個單位）！")
+        if failed_units:
+            st.warning(f"⚠️ 有 {len(failed_units)} 個單位更新失敗，其餘單位已正常同步：{'、'.join(failed_units)}")
+        if not updated_units and not failed_units:
+            st.info("💡 未在簡報中找到可比對的單位欄位，請確認簡報版面或已共用給服務帳號。")
+
     except Exception as e:
         st.info(f"💡 簡報自動同步提示（若需全自動更新，請確認簡報已共用給服務帳號）：{e}")
 
@@ -1689,7 +1743,7 @@ def process_three_major_daily(files, sh):
             grid = [[title] + [""] * (len(df_summary_final.columns) - 1)] + [df_summary_final.columns.tolist()] + df_summary_final.values.tolist()
             _ws_update(ws, "A1", grid)
             st.success("✅ 三項重點違規數據已精確校正並同步至 Google Sheets！")
-            
+
             # 方案 A：全自動連線更新 Google Slides 簡報母本
             update_slides_three_major(df_summary_final, latest_day)
         except Exception as e:
