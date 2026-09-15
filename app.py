@@ -99,64 +99,255 @@ def get_slides_service():
     )
     return build("slides", "v1", credentials=creds)
 
-SLIDES_UNIT_GRP_MAP = {
-    "合計": 89,
-    "科技執法": 90,
-    "聖亭所": 91,
-    "龍潭所": 92,
-    "中興所": 93,
-    "石門所": 94,
-    "高平所": 95,
-    "三和所": 96,
-    "警備隊": 97,
-    "交通分隊": 98
-}
+def debug_dump_slide_shapes():
+    """除錯工具：列出簡報第一張投影片所有元素的 objectId 與文字內容，
+    用於比對批次更新時報錯的 objectId 到底對應哪個文字框（或是否為幽靈物件）"""
+    service = get_slides_service()
+    if not service:
+        st.error("❌ 無法取得 Slides 服務，請確認 secrets 設定")
+        return
+
+    try:
+        pres = service.presentations().get(presentationId=THREE_MAJOR_PRESENTATION_ID).execute()
+    except Exception as e:
+        st.error(f"❌ 無法取得簡報結構：{e}")
+        return
+
+    slides = pres.get("slides", [])
+    if not slides:
+        st.warning("⚠️ 此簡報沒有任何投影片。")
+        return
+    slide = slides[0]
+
+    def walk(elem, depth=0):
+        oid = elem.get("objectId", "無ID")
+        if "shape" in elem and "text" in elem["shape"]:
+            te = elem["shape"]["text"].get("textElements", [])
+            txt = "".join(x.get("textRun", {}).get("content", "") for x in te).strip()
+            st.write(f"{'　' * depth}📄 `{oid}` → 「{txt}」")
+        elif "elementGroup" in elem:
+            st.write(f"{'　' * depth}📦 群組 `{oid}`")
+            for ch in elem["elementGroup"].get("children", []):
+                walk(ch, depth + 1)
+        elif "table" in elem:
+            st.write(f"{'　' * depth}📊 表格 `{oid}`")
+        else:
+            st.write(f"{'　' * depth}❓ 其他元素 `{oid}` (keys: {list(elem.keys())})")
+
+    st.write(f"**投影片元素總數：{len(slide.get('pageElements', []))}**")
+    for pe in slide.get("pageElements", []):
+        walk(pe)
 
 def update_slides_three_major(df_summary_final, latest_day):
-    """【方案 A 全自動更新】批次處理完成後，直接透過 Google Slides API 覆寫簡報數據"""
+    """【方案 A 全自動更新】徹底解決 400 (Object not found) 錯誤
+    - 表頭、副標題與統計期間全改用 replaceAllText（不依賴任何個別 objectId）
+    - 支援巢狀 elementGroup 遞迴搜尋文字框（解決手動編輯後結構跑掉的問題）
+    - 數值更新改為「逐單位獨立 batchUpdate」，單一物件失效不會拖垮整體同步
+    """
     try:
         service = get_slides_service()
         if not service:
             return
 
-        requests = []
-        # 1. 更新副標題日期
-        sub_text = f"統計期間：自 115 年 9 月 1 日起至本期({latest_day})止 ｜ 製表單位：龍潭分局交通組"
-        requests.append({"deleteText": {"objectId": "g409dcdab65c_87_0", "textRange": {"type": "ALL"}}})
-        requests.append({"insertText": {"objectId": "g409dcdab65c_87_0", "text": sub_text, "insertionIndex": 0}})
+        # 1. 取得簡報結構
+        pres = service.presentations().get(presentationId=THREE_MAJOR_PRESENTATION_ID).execute()
+        slides = pres.get("slides", [])
+        if not slides:
+            return
+        slide = slides[0]
 
-        # 2. 更新各單位數值
-        for _, row in df_summary_final.iterrows():
-            u = row["單位"]
-            grp_id = SLIDES_UNIT_GRP_MAP.get(u)
-            if not grp_id:
-                continue
+        # ========================================================
+        # (1) 標題、副標題、表頭欄位改用 replaceAllText（避開 ID 遺失或群組問題）
+        # ========================================================
+        header_requests = []
 
-            r_d = str(row.get(f"闖紅燈(本期 {latest_day})", 0))
-            v_d = str(row.get(f"逆向行駛(本期 {latest_day})", 0))
-            p_d = str(row.get(f"不停讓行人(本期 {latest_day})", 0))
-            t_d = str(row.get(f"三項合計(本期 {latest_day})", 0))
+        new_sub = f"統計期間：自 115 年 9 月 1 日起至本期({latest_day})止 ｜ 製表單位：龍潭分局交通組"
+        header_requests.append({
+            "replaceAllText": {
+                "replaceText": new_sub,
+                "containsText": {"matchCase": False, "text": "統計期間：自 115 年"}
+            }
+        })
 
-            r_t = str(row.get("闖紅燈(9/1起累計)", 0))
-            v_t = str(row.get("逆向行駛(9/1起累計)", 0))
-            p_t = str(row.get("不停讓行人(9/1起累計)", 0))
-            t_t = str(row.get("三項合計(9/1起累計)", 0))
+        new_h1 = f"本期 ({latest_day}) 新增違規數"
+        header_requests.append({
+            "replaceAllText": {
+                "replaceText": new_h1,
+                "containsText": {"matchCase": False, "text": "本期新增違規數"}
+            }
+        })
 
-            field_offsets = [
-                (3, r_d), (5, v_d), (7, p_d), (9, t_d),
-                (11, r_t), (13, v_t), (15, p_t), (17, t_t)
+        new_h2 = f"本期合計 ({latest_day})"
+        header_requests.append({
+            "replaceAllText": {
+                "replaceText": new_h2,
+                "containsText": {"matchCase": False, "text": "本期合計"}
+            }
+        })
+
+        try:
+            if header_requests:
+                service.presentations().batchUpdate(
+                    presentationId=THREE_MAJOR_PRESENTATION_ID,
+                    body={"requests": header_requests}
+                ).execute()
+        except Exception as e:
+            st.warning(f"⚠️ 標題／副標題更新失敗：{e}")
+
+        # ========================================================
+        # (2) 篩選 7 所隊並重新計算合計（嚴格排除科技執法與警備隊）
+        # ========================================================
+        valid_units = ["聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所", "交通分隊"]
+        df_valid = df_summary_final[df_summary_final["單位"].isin(valid_units)].copy()
+
+        col_r_d = f"闖紅燈(本期 {latest_day})"
+        col_v_d = f"逆向行駛(本期 {latest_day})"
+        col_p_d = f"不停讓行人(本期 {latest_day})"
+        col_t_d = f"三項合計(本期 {latest_day})"
+
+        col_r_t = "闖紅燈(9/1起累計)"
+        col_v_t = "逆向行駛(9/1起累計)"
+        col_p_t = "不停讓行人(9/1起累計)"
+        col_t_t = "三項合計(9/1起累計)"
+
+        for c in [col_r_d, col_v_d, col_p_d, col_t_d, col_r_t, col_v_t, col_p_t, col_t_t]:
+            df_valid[c] = pd.to_numeric(df_valid[c], errors="coerce").fillna(0).astype(int)
+
+        sum_row = {
+            "單位": "合計",
+            col_r_d: df_valid[col_r_d].sum(),
+            col_v_d: df_valid[col_v_d].sum(),
+            col_p_d: df_valid[col_p_d].sum(),
+            col_t_d: df_valid[col_t_d].sum(),
+            col_r_t: df_valid[col_r_t].sum(),
+            col_v_t: df_valid[col_v_t].sum(),
+            col_p_t: df_valid[col_p_t].sum(),
+            col_t_t: df_valid[col_t_t].sum(),
+        }
+        df_slides_data = pd.concat([pd.DataFrame([sum_row]), df_valid], ignore_index=True)
+
+        def get_shape_text_and_id(elem):
+            if "shape" in elem and "text" in elem["shape"]:
+                te = elem["shape"]["text"].get("textElements", [])
+                txt = "".join([x.get("textRun", {}).get("content", "") for x in te]).strip()
+                return txt, elem.get("objectId")
+            return "", None
+
+        def collect_shapes_recursive(elem, out):
+            """遞迴搜尋 elementGroup，避免巢狀群組（手動編輯後常見）導致文字框遺漏"""
+            if "shape" in elem and "text" in elem["shape"]:
+                txt, oid = get_shape_text_and_id(elem)
+                if txt and oid:
+                    out.append((oid, txt))
+            elif "elementGroup" in elem:
+                for child in elem["elementGroup"].get("children", []):
+                    collect_shapes_recursive(child, out)
+
+        def vals_for_unit(r):
+            return [
+                str(r[col_r_d]), str(r[col_v_d]), str(r[col_p_d]), str(r[col_t_d]),
+                str(r[col_r_t]), str(r[col_v_t]), str(r[col_p_t]), str(r[col_t_t])
             ]
-            for offset, val_str in field_offsets:
-                obj_id = f"g409dcdab65c_{grp_id}_{offset}"
-                requests.append({"deleteText": {"objectId": obj_id, "textRange": {"type": "ALL"}}})
-                requests.append({"insertText": {"objectId": obj_id, "text": val_str, "insertionIndex": 0}})
 
-        if requests:
-            service.presentations().batchUpdate(
-                presentationId=THREE_MAJOR_PRESENTATION_ID,
-                body={"requests": requests}
-            ).execute()
-            st.success("🎉 【方案 A】三項重點違規專案簡報母本已全自動更新完成！")
+        updated_units = []
+        failed_units = []
+
+        # ========================================================
+        # (3) 數值填入：支援原生 Table 與一般 Shape / Group
+        #     每個「單位」各自獨立 batchUpdate，單一物件失效不影響其他單位
+        # ========================================================
+        for pe in slide.get("pageElements", []):
+
+            # 情況 A：原生 Google Slides 表格 (Table)
+            if "table" in pe:
+                table_id = pe["objectId"]
+                tbl = pe["table"]
+                for r_idx, row in enumerate(tbl.get("tableRows", [])):
+                    cells = row.get("tableCells", [])
+                    if not cells:
+                        continue
+                    first_cell_te = cells[0].get("text", {}).get("textElements", [])
+                    first_cell_txt = "".join([x.get("textRun", {}).get("content", "") for x in first_cell_te]).strip()
+
+                    matched_row = df_slides_data[df_slides_data["單位"] == first_cell_txt]
+                    if matched_row.empty:
+                        continue
+
+                    r = matched_row.iloc[0]
+                    vals = vals_for_unit(r)
+                    row_requests = []
+                    for c_offset, val_str in enumerate(vals, start=1):
+                        if c_offset < len(cells):
+                            row_requests.append({
+                                "deleteText": {
+                                    "objectId": table_id,
+                                    "cellLocation": {"rowIndex": r_idx, "columnIndex": c_offset},
+                                    "textRange": {"type": "ALL"}
+                                }
+                            })
+                            row_requests.append({
+                                "insertText": {
+                                    "objectId": table_id,
+                                    "cellLocation": {"rowIndex": r_idx, "columnIndex": c_offset},
+                                    "text": val_str,
+                                    "insertionIndex": 0
+                                }
+                            })
+
+                    if not row_requests:
+                        continue
+
+                    try:
+                        service.presentations().batchUpdate(
+                            presentationId=THREE_MAJOR_PRESENTATION_ID,
+                            body={"requests": row_requests}
+                        ).execute()
+                        updated_units.append(first_cell_txt)
+                    except Exception as e:
+                        failed_units.append(first_cell_txt)
+                        st.warning(f"⚠️「{first_cell_txt}」表格列更新失敗（物件可能已被手動編輯過）：{e}")
+
+            # 情況 B：由多個文字方塊組合的排版（含巢狀群組）
+            elif "elementGroup" in pe:
+                txt_boxes = []
+                collect_shapes_recursive(pe, txt_boxes)
+
+                if len(txt_boxes) >= 9:
+                    unit_candidate = txt_boxes[0][1]
+                    matched_row = df_slides_data[df_slides_data["單位"] == unit_candidate]
+                    if matched_row.empty:
+                        continue
+
+                    r = matched_row.iloc[0]
+                    vals = vals_for_unit(r)
+                    unit_requests = []
+                    for (cell_oid, _), val_str in zip(txt_boxes[1:9], vals):
+                        unit_requests.append({"deleteText": {"objectId": cell_oid, "textRange": {"type": "ALL"}}})
+                        unit_requests.append({"insertText": {"objectId": cell_oid, "text": val_str, "insertionIndex": 0}})
+
+                    if not unit_requests:
+                        continue
+
+                    try:
+                        service.presentations().batchUpdate(
+                            presentationId=THREE_MAJOR_PRESENTATION_ID,
+                            body={"requests": unit_requests}
+                        ).execute()
+                        updated_units.append(unit_candidate)
+                    except Exception as e:
+                        failed_units.append(unit_candidate)
+                        st.warning(f"⚠️「{unit_candidate}」欄位更新失敗（物件可能已被手動編輯過，建議重新整理該區塊排版）：{e}")
+
+        # ========================================================
+        # (4) 結果回報
+        # ========================================================
+        if updated_units:
+            st.success(f"🎉 【方案 A】三項重點違規專案簡報母本已自動更新（成功：{len(updated_units)} 個單位）！")
+        if failed_units:
+            st.warning(f"⚠️ 有 {len(failed_units)} 個單位更新失敗，其餘單位已正常同步：{'、'.join(failed_units)}")
+        if not updated_units and not failed_units:
+            st.info("💡 未在簡報中找到可比對的單位欄位，請確認簡報版面或已共用給服務帳號。")
+
     except Exception as e:
         st.info(f"💡 簡報自動同步提示（若需全自動更新，請確認簡報已共用給服務帳號）：{e}")
 
@@ -871,11 +1062,11 @@ def process_major(files, sh):
                             "range": {"sheetId": ws_cat.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
                             "rows": [{
                                 "values": [{
-                                    "userEnteredValue": {"stringValue": title_text},
                                     "textFormatRuns": [
                                         {"startIndex": 0, "format": {"foregroundColor": blue_color, "fontSize": 22, "bold": True, "fontFamily": "DFKai-SB"}},
                                         {"startIndex": p_start_title, "format": {"foregroundColor": red_color, "fontSize": 22, "bold": True, "fontFamily": "DFKai-SB"}}
-                                    ]
+                                    ],
+                                    "userEnteredValue": {"stringValue": title_text}
                                 }]
                             }],
                             "fields": "userEnteredValue,textFormatRuns"
@@ -1484,7 +1675,6 @@ def process_three_major_daily(files, sh):
         if not valid_reports:
             valid_reports = summary_files
 
-        # 1. 跨度最大者為「9/1起累計報表」
         sorted_by_span = sorted(valid_reports, key=lambda x: (x["e_code"] - x["s_code"]), reverse=True)
         cumu_rep = sorted_by_span[0]
         latest_day = cumu_rep["e_label"]
@@ -1493,7 +1683,6 @@ def process_three_major_daily(files, sh):
         daily_counts = {}
         has_daily = False
 
-        # 2. 尋找「本期單日報表」
         single_day_candidates = [
             f for f in valid_reports
             if f != cumu_rep and f["e_code"] == cumu_rep["e_code"] and f["s_code"] == f["e_code"]
@@ -1504,7 +1693,6 @@ def process_three_major_daily(files, sh):
             daily_counts = daily_rep["counts"]
             has_daily = True
         else:
-            # 3. 檢查是否有前一日累計報表相減
             prev_candidates = [
                 f for f in valid_reports
                 if f != cumu_rep and f["e_code"] < cumu_rep["e_code"] and f["s_code"] == cumu_rep["s_code"]
@@ -1563,7 +1751,6 @@ def process_three_major_daily(files, sh):
             sum_vals[col] = sum(nums) if nums else "—"
     df_summary_final = pd.concat([pd.DataFrame([sum_vals]), df_summary], ignore_index=True)
 
-    # 取得欄位名稱
     tot_col = [c for c in df_summary_final.columns if "三項合計" in c and "累計" in c][0]
     day_col = [c for c in df_summary_final.columns if "三項合計" in c and "本期" in c][0]
     red_tot_col = [c for c in df_summary_final.columns if "闖紅燈" in c and "累計" in c][0]
@@ -1571,7 +1758,6 @@ def process_three_major_daily(files, sh):
     ped_tot_col = [c for c in df_summary_final.columns if "不停讓" in c and "累計" in c][0]
     ped_day_col = [c for c in df_summary_final.columns if "不停讓" in c and "本期" in c][0]
 
-    # --- 畫面展示 ---
     st.subheader("🚦 取締三項重點違規（本期新增 vs 115/09/01起累計）專案統計表")
     st.caption(f"📅 {period_info_str}")
 
@@ -1586,7 +1772,6 @@ def process_three_major_daily(files, sh):
     st.write("📊 **各單位專案取締統計結果：**")
     st.dataframe(df_summary_final, hide_index=True, use_container_width=True)
 
-    # 1. 同步 Google Sheets
     if sh:
         try:
             ws_name = "三項重點違規-每日績效"
@@ -1597,8 +1782,8 @@ def process_three_major_daily(files, sh):
             grid = [[title] + [""] * (len(df_summary_final.columns) - 1)] + [df_summary_final.columns.tolist()] + df_summary_final.values.tolist()
             _ws_update(ws, "A1", grid)
             st.success("✅ 三項重點違規數據已精確校正並同步至 Google Sheets！")
-            
-            # 2. 方案 A：全自動連線更新 Google Slides 簡報母本
+
+            # 方案 A：全自動連線更新 Google Slides 簡報母本
             update_slides_three_major(df_summary_final, latest_day)
         except Exception as e:
             st.error(f"同步出錯：{e}")
@@ -1750,10 +1935,19 @@ if uploads:
             st.markdown(
                 f"### 📑 簡報母本快速查閱入口：\n\n"
                 f"1. 👉 **[開啟 {rec_name}]({rec_url})**（主管會報常態母本）\n"
-                f"2. 👉 **[開啟 三項重點違規專案獨立母本](https://docs.google.com/presentation/d/1gP8Rw6n0c8Z_MTRcJoP67LTzgxjp41fcXls6wy57aY8/edit)**（已由系統全自動更新數值）\n\n"
+                f"2. 👉 **[開啟 三項重點違規專案獨立母本](https://docs.google.com/presentation/d/1gP8Rw6n0c8Z_MTRcJoP67LTzgxjp41fcXls6wy57aY8/edit)**（已排除科技執法與警備隊，由系統全自動更新數值）\n\n"
                 f"若需進行常態主管會報存檔，請進入主管會報母本後點擊上方選單 **【📂 會議歸檔工具】>【🚀 建立當次會議副本並存檔】** 即可完成！"
             )
 
         except Exception as e:
             st.error(f"⚠️ 批次處理發生錯誤：{e}")
-            st.write(traceback.format_exc())
+            st.code(traceback.format_exc())
+
+# ==========================================
+# 7. 除錯工具區
+# ==========================================
+st.divider()
+with st.expander("🔧 除錯工具：檢視簡報物件結構"):
+    st.caption("用於比對 Slides 自動同步失敗時報錯的 objectId，確認它對應簡報上哪一格文字方塊，或是否已是失效物件。")
+    if st.button("列出簡報所有 objectId"):
+        debug_dump_slide_shapes()
