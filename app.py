@@ -100,8 +100,7 @@ def get_slides_service():
     return build("slides", "v1", credentials=creds)
 
 def debug_dump_slide_shapes():
-    """除錯工具：列出簡報第一張投影片所有元素的 objectId 與文字內容，
-    用於比對批次更新時報錯的 objectId 到底對應哪個文字框（或是否為幽靈物件）"""
+    """除錯工具：列出簡報第一張投影片所有元素的 objectId 與文字內容"""
     service = get_slides_service()
     if not service:
         st.error("❌ 無法取得 Slides 服務，請確認 secrets 設定")
@@ -124,25 +123,25 @@ def debug_dump_slide_shapes():
         if "shape" in elem and "text" in elem["shape"]:
             te = elem["shape"]["text"].get("textElements", [])
             txt = "".join(x.get("textRun", {}).get("content", "") for x in te).strip()
-            st.write(f"{'　' * depth}📄 `{oid}` → 「{txt}」")
+            st.write(f"{' ' * depth}📄 `{oid}` → 「{txt}」")
         elif "elementGroup" in elem:
-            st.write(f"{'　' * depth}📦 群組 `{oid}`")
+            st.write(f"{' ' * depth}📦 群組 `{oid}`")
             for ch in elem["elementGroup"].get("children", []):
                 walk(ch, depth + 1)
         elif "table" in elem:
-            st.write(f"{'　' * depth}📊 表格 `{oid}`")
+            st.write(f"{' ' * depth}📊 表格 `{oid}`")
         else:
-            st.write(f"{'　' * depth}❓ 其他元素 `{oid}` (keys: {list(elem.keys())})")
+            st.write(f"{' ' * depth}❓ 其他元素 `{oid}` (keys: {list(elem.keys())})")
 
     st.write(f"**投影片元素總數：{len(slide.get('pageElements', []))}**")
     for pe in slide.get("pageElements", []):
         walk(pe)
 
 def update_slides_three_major(df_summary_final, latest_day):
-    """【方案 A 全自動更新】徹底解決 400 (Object not found) 錯誤
-    - 表頭、副標題與統計期間全改用 replaceAllText（不依賴任何個別 objectId）
-    - 支援巢狀 elementGroup 遞迴搜尋文字框（解決手動編輯後結構跑掉的問題）
-    - 數值更新改為「逐單位獨立 batchUpdate」，單一物件失效不會拖垮整體同步
+    """【方案 A 全自動更新】徹底解決局部文字替換導致的殘留、重複與 400 錯誤
+    - 表頭、副標題改採「動態掃描現有文字 + 整串精準覆蓋」
+    - 支援原生 Table 與巢狀 elementGroup 遞迴搜尋
+    - 數值更新改為「逐單位獨立 batchUpdate」
     """
     try:
         service = get_slides_service()
@@ -157,33 +156,85 @@ def update_slides_three_major(df_summary_final, latest_day):
         slide = slides[0]
 
         # ========================================================
-        # (1) 標題、副標題、表頭欄位改用 replaceAllText（避開 ID 遺失或群組問題）
+        # (1) 標題、副標題、表頭欄位：動態抓取舊文字進行「全字串精確覆蓋」
         # ========================================================
         header_requests = []
 
         new_sub = f"統計期間：自 115 年 9 月 1 日起至本期({latest_day})止 ｜ 製表單位：龍潭分局交通組"
-        header_requests.append({
-            "replaceAllText": {
-                "replaceText": new_sub,
-                "containsText": {"matchCase": False, "text": "統計期間：自 115 年"}
-            }
-        })
-
         new_h1 = f"本期 ({latest_day}) 新增違規數"
-        header_requests.append({
-            "replaceAllText": {
-                "replaceText": new_h1,
-                "containsText": {"matchCase": False, "text": "本期新增違規數"}
-            }
-        })
-
         new_h2 = f"本期合計 ({latest_day})"
-        header_requests.append({
-            "replaceAllText": {
-                "replaceText": new_h2,
-                "containsText": {"matchCase": False, "text": "本期合計"}
-            }
-        })
+
+        existing_texts = []
+        def find_all_texts(elem):
+            if "shape" in elem and "text" in elem["shape"]:
+                te = elem["shape"]["text"].get("textElements", [])
+                t = "".join([x.get("textRun", {}).get("content", "") for x in te]).strip()
+                if t:
+                    existing_texts.append(t)
+            elif "elementGroup" in elem:
+                for ch in elem["elementGroup"].get("children", []):
+                    find_all_texts(ch)
+            elif "table" in elem:
+                for row in elem["table"].get("tableRows", []):
+                    for cell in row.get("tableCells", []):
+                        te = cell.get("text", {}).get("textElements", [])
+                        t = "".join([x.get("textRun", {}).get("content", "") for x in te]).strip()
+                        if t:
+                            existing_texts.append(t)
+
+        for pe in slide.get("pageElements", []):
+            find_all_texts(pe)
+
+        # 1. 替換副標題（抓出開頭為「統計期間：自 115 年」的整段舊文字並覆蓋）
+        old_sub = next((t for t in existing_texts if t.startswith("統計期間：自 115 年")), None)
+        if old_sub:
+            header_requests.append({
+                "replaceAllText": {
+                    "replaceText": new_sub,
+                    "containsText": {"matchCase": False, "text": old_sub}
+                }
+            })
+        else:
+            header_requests.append({
+                "replaceAllText": {
+                    "replaceText": new_sub,
+                    "containsText": {"matchCase": False, "text": "統計期間：自 115 年"}
+                }
+            })
+
+        # 2. 替換「本期新增違規數」（抓出包含「新增違規數」且包含「本期」的整段舊文字）
+        old_h1 = next((t for t in existing_texts if "本期" in t and "新增違規數" in t), None)
+        if old_h1:
+            header_requests.append({
+                "replaceAllText": {
+                    "replaceText": new_h1,
+                    "containsText": {"matchCase": False, "text": old_h1}
+                }
+            })
+        else:
+            header_requests.append({
+                "replaceAllText": {
+                    "replaceText": new_h1,
+                    "containsText": {"matchCase": False, "text": "新增違規數"}
+                }
+            })
+
+        # 3. 替換「本期合計」（抓出以「本期合計」開頭的整段舊文字）
+        old_h2 = next((t for t in existing_texts if t.startswith("本期合計")), None)
+        if old_h2:
+            header_requests.append({
+                "replaceAllText": {
+                    "replaceText": new_h2,
+                    "containsText": {"matchCase": False, "text": old_h2}
+                }
+            })
+        else:
+            header_requests.append({
+                "replaceAllText": {
+                    "replaceText": new_h2,
+                    "containsText": {"matchCase": False, "text": "本期合計"}
+                }
+            })
 
         try:
             if header_requests:
@@ -234,7 +285,7 @@ def update_slides_three_major(df_summary_final, latest_day):
             return "", None
 
         def collect_shapes_recursive(elem, out):
-            """遞迴搜尋 elementGroup，避免巢狀群組（手動編輯後常見）導致文字框遺漏"""
+            """遞迴搜尋 elementGroup，避免巢狀群組導致文字框遺漏"""
             if "shape" in elem and "text" in elem["shape"]:
                 txt, oid = get_shape_text_and_id(elem)
                 if txt and oid:
@@ -254,7 +305,6 @@ def update_slides_three_major(df_summary_final, latest_day):
 
         # ========================================================
         # (3) 數值填入：支援原生 Table 與一般 Shape / Group
-        #     每個「單位」各自獨立 batchUpdate，單一物件失效不影響其他單位
         # ========================================================
         for pe in slide.get("pageElements", []):
 
@@ -305,7 +355,7 @@ def update_slides_three_major(df_summary_final, latest_day):
                         updated_units.append(first_cell_txt)
                     except Exception as e:
                         failed_units.append(first_cell_txt)
-                        st.warning(f"⚠️「{first_cell_txt}」表格列更新失敗（物件可能已被手動編輯過）：{e}")
+                        st.warning(f"⚠️「{first_cell_txt}」表格列更新失敗：{e}")
 
             # 情況 B：由多個文字方塊組合的排版（含巢狀群組）
             elif "elementGroup" in pe:
@@ -336,7 +386,7 @@ def update_slides_three_major(df_summary_final, latest_day):
                         updated_units.append(unit_candidate)
                     except Exception as e:
                         failed_units.append(unit_candidate)
-                        st.warning(f"⚠️「{unit_candidate}」欄位更新失敗（物件可能已被手動編輯過，建議重新整理該區塊排版）：{e}")
+                        st.warning(f"⚠️「{unit_candidate}」欄位更新失敗：{e}")
 
         # ========================================================
         # (4) 結果回報
@@ -349,7 +399,7 @@ def update_slides_three_major(df_summary_final, latest_day):
             st.info("💡 未在簡報中找到可比對的單位欄位，請確認簡報版面或已共用給服務帳號。")
 
     except Exception as e:
-        st.info(f"💡 簡報自動同步提示（若需全自動更新，請確認簡報已共用給服務帳號）：{e}")
+        st.info(f"💡 簡報自動同步提示：{e}")
 
 def fetch_files_from_drive(folder_id):
     """限定資料夾範圍查詢並下載 Excel/CSV 檔案"""
