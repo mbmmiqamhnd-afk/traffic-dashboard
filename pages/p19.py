@@ -49,7 +49,7 @@ WS_CP_NAME  = "二合一_擴大臨檢組"
 
 DEFAULT_UNIT    = "桃園市政府警察局龍潭分局"
 DEFAULT_TIME    = "115年3月25日 18時至22時"
-DEFAULT_PROJ    = "0325「雷霆除暴專案」暨自辦擴大臨檢與取締酒後驾車二合一專案"
+DEFAULT_PROJ    = "0325「雷霆除暴專案」暨自辦擴大臨檢與取締酒後駕車二合一專案"
 
 DEFAULT_BRIEF   = (
     "一、 工作重點任務提示：同仁執行盤查、臨檢及路檢勤務過程中，應強化敵情觀念，提高危機意識，"
@@ -71,17 +71,17 @@ DEFAULT_CP_FOCUS = (
 )
 
 DEFAULT_CMD = pd.DataFrame([
-    {"項目": "指揮官",     "通訊代號": "隆安1號",   "任務目標": "勤務核定並重點機動督導",             "負責人員": "分局長 施宇峰",            "共同執行人員": "巡官 陳鵬翔、警員 張庭溱"},
-    {"項目": "上級指導官", "通訊代號": "建興",       "任務目標": "重點機動督導",                        "負責人員": "駐區督察 孫三揚",          "共同執行人員": ""},
-    {"項目": "副指揮官",   "通訊代號": "隆安2號",   "任務目標": "襄助指揮、重點機動督導",             "負責人員": "副分局長 何憶雯",          "共同執行人員": "警務佐 曾威仁"},
-    {"項目": "副指揮官",   "通訊代號": "隆安3號",   "任務目標": "襄助指揮、重點機動督導",             "負責人員": "副分局長 蔡志明",          "共同執行人員": "警員 陳明祥"},
-    {"項目": "行政組",     "通訊代號": "隆安5號",   "任務目標": "督導場所臨檢威力掃蕩第一臨檢組",     "負責人員": "組長 周金柱",              "共同執行人員": "巡官 蕭凱文、警務佐 張晋忠、警員 謝明展"},
-    {"項目": "督察組",     "通訊代號": "隆安6號",   "任務目標": "機動督導各單位勤務紀律",             "負責人員": "組長 黃長旗",              "共同執行人員": "督察員 黃中彥、警務員 陳冠彰、巡官 古家杰"},
-    {"項目": "保安民防組", "通訊代號": "隆安9號",   "任務目標": "督導場所臨檢威力掃蕩第二臨檢組",     "負責人員": "組長 林良鍾",              "共同執行人員": "警務員 曾盛鉉、巡官 吳國棟、警務佐 許榮裕、警員 呂紹臺"},
-    {"項目": "交通組",     "通訊代號": "隆安13號",  "任務目標": "規劃本案勤務及督導第一階段機動攔查", "負責人員": "組長 楊孟竟",              "共同執行人員": "警務員 李峯甫、警務員 盧冠仁、警務員 葉佳媛、警員 吳享運"},
-    {"項目": "聯絡組",     "通訊代號": "隆安",       "任務目標": "擔任通訊聯絡、指揮管制事宜",         "負責人員": "勤務指揮中心主任 蔡奇青", "共同執行人員": "執勤官 李文章、執勤員 黃文興"},
-    {"項目": "偵訊組",     "通訊代號": "隆安10號",  "任務目標": "負責按捺指紋、照相及移送",            "負責人員": "偵查隊隊長 柯志賢",        "共同執行人員": "偵查隊值日小隊"},
-    {"項目": "指導組",     "通訊代號": "隆安685",   "任務目標": "指導組合警力執行要領",                "負責人員": "助教 高偉綋",              "共同執行人員": "助教 周薇"},
+    {"項目": "指揮官",     "通訊代號": "隆安1號",   "任務目標": "勤務核定並重點機動督導",              "負責人員": "分局長 施宇峰",            "共同執行人員": "巡官 陳鵬翔、警員 張庭溱"},
+    {"項目": "上級指導官", "通訊代號": "建興",       "任務目標": "重點機動督導",                         "負責人員": "駐區督察 孫三揚",          "共同執行人員": ""},
+    {"項目": "副指揮官",   "通訊代號": "隆安2號",   "任務目標": "襄助指揮、重點機動督導",              "負責人員": "副分局長 何憶雯",          "共同執行人員": "警務佐 曾威仁"},
+    {"項目": "副指揮官",   "通訊代號": "隆安3號",   "任務目標": "襄助指揮、重點機動督導",              "負責人員": "副分局長 蔡志明",          "共同執行人員": "警員 陳明祥"},
+    {"項目": "行政組",     "通訊代號": "隆安5號",   "任務目標": "督導場所臨檢威力掃蕩第一臨檢組",      "負責人員": "組長 周金柱",              "共同執行人員": "巡官 蕭凱文、警務佐 張晉忠、警員 謝明展"},
+    {"項目": "督察組",     "通訊代號": "隆安6號",   "任務目標": "機動督導各單位勤務紀律",              "負責人員": "組長 黃長旗",              "共同執行人員": "督察員 黃中彥、警務員 陳冠彰、巡官 古家杰"},
+    {"項目": "保安民防組", "通訊代號": "隆安9號",   "任務目標": "督導場所臨檢威力掃蕩第二臨檢組",      "負責人員": "組長 林良鍾",              "共同執行人員": "警務員 曾盛鉉、巡官 吳國棟、警務佐 許榮裕、警員 呂紹臺"},
+    {"項目": "交通組",     "通訊代號": "隆安13號",  "任務目標": "規劃本案勤務及督導第一階段機動攔查",  "負責人員": "組長 楊孟竟",              "共同執行人員": "警務員 李峯甫、警務員 盧冠仁、警務員 葉佳媛、警員 吳享運"},
+    {"項目": "聯絡組",     "通訊代號": "隆安",       "任務目標": "擔任通訊聯絡、指揮管制事宜",          "負責人員": "勤務指揮中心主任 蔡奇青",  "共同執行人員": "執勤官 李文章、執勤員 黃文興"},
+    {"項目": "偵訊組",     "通訊代號": "隆安10號",  "任務目標": "負責按捺指紋、照相及移送",             "負責人員": "偵查隊隊長 柯志賢",        "共同執行人員": "偵查隊值日小隊"},
+    {"項目": "指導組",     "通訊代號": "隆安685",   "任務目標": "指導組合警力執行要領",                 "負責人員": "助教 高偉綋",              "共同執行人員": "助教 周薇"},
 ])
 
 DEFAULT_PTL = pd.DataFrame([
@@ -93,23 +93,23 @@ DEFAULT_PTL = pd.DataFrame([
     {"組別": "第2路檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "副所長", "姓名": "林榮裕", "任務分工": "帶班兼管制",   "攜行裝備": "槍彈、無線電、小電腦、密錄器", "路檢地點": "北龍路319號隊面前\n（攔檢龍潭市區往中興路方向）\n20時20分分局一樓集合出發臨檢"},
     {"組別": "第2路檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "警員",   "姓名": "陳琦",   "任務分工": "指揮管制",     "攜行裝備": "槍彈、無線電、小電腦、密錄器", "路檢地點": "北龍路319號隊面前\n（攔檢龍潭市區往中興路方向）\n20時20分分局一樓集合出發臨檢"},
     {"組別": "第2路檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "巡佐",   "姓名": "蕭漢祥", "任務分工": "攔檢盤查",     "攜行裝備": "槍彈、無線電、小電腦、密錄器", "路檢地點": "北龍路319號隊面前\n（攔檢龍潭市區往中興路方向）\n20時20分分局一樓集合出發臨檢"},
-    {"組別": "第2路檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "警員",   "姓名": "江益德", "任務分工": "攔檢盤查",     "攜行裝備": "槍彈、無線電、小電腍、密錄器", "路檢地點": "北龍路319號隊面前\n（攔檢龍潭市區往中興路方向）\n20時20分分局一樓集合出發臨檢"},
+    {"組別": "第2路檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "警員",   "姓名": "江益德", "任務分工": "攔檢盤查",     "攜行裝備": "槍彈、無線電、小電腦、密錄器", "路檢地點": "北龍路319號隊面前\n（攔檢龍潭市區往中興路方向）\n20時20分分局一樓集合出發臨檢"},
     {"組別": "第2路檢組", "無線電代號": "隆安82", "派遣單位": "交通分隊", "職別": "小隊長", "姓名": "林振生", "任務分工": "攔檢盤查",     "攜行裝備": "槍彈、無線電、小電腦、密錄器", "路檢地點": "北龍路319號隊面前\n（攔檢龍潭市區往中興路方向）\n20時20分分局一樓集合出發臨檢"},
     {"組別": "第2路檢組", "無線電代號": "隆安82", "派遣單位": "交通分隊", "職別": "警員",   "姓名": "吳沛軒", "任務分工": "警戒兼蒐證",   "攜行裝備": "槍彈、無線電、小電腦、密錄器", "路檢地點": "北龍路319號隊面前\n（攔檢龍潭市區往中興路方向）\n20時20分分局一樓集合出發臨檢"},
 ])
 
 DEFAULT_CHECKPOINT = pd.DataFrame([
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "所長",   "姓名": "鄭榮捷", "任務分工": "帶班",                             "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",                     "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（死中正路506號）IA318"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "詹宗澤", "任務分工": "製作臨檢紀錄",                     "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "聖亭所", "職別": "警員",   "姓名": "劉柏延", "任務分工": "盤查兼蒐證",                       "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",   "姓名": "林宸緯", "任務分工": "盤查兼蒐證",                       "攜行裝備": "小電腦、密錄器",                "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（飲食中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "龍潭所", "職別": "警員",   "姓名": "林宸緯", "任務分工": "盤查兼蒐證",                       "攜行裝備": "小電腦、密錄器",                "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "高平所", "職別": "警員",   "姓名": "黃丞穎", "任務分工": "大門警(車)戒兼蒐證",               "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "偵查佐", "姓名": "賴享宏", "任務分工": "刑案偵防、社維法案件之處理及移送", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（Play館）（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
-    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "張峻銨", "任務分工": "刑案偵防、社維法案件之處理及移送", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（心中正路506號）IA318"},
+    {"組別": "第1臨檢組", "無線電代號": "隆安51", "派遣單位": "偵查隊", "職別": "警員",   "姓名": "張峻銨", "任務分工": "刑案偵防、社維法案件之處理及移送", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nC. 丹陽泰養生館（中豐路281號）IC335\nD. 溫馨汽車旅館（中正路457號）IA337\nE. 凱虹汽車旅館（中正路506號）IA318"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "副所長", "姓名": "林榮裕", "任務分工": "帶班",                             "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "石門所",   "職別": "警員",   "姓名": "陳琦",   "任務分工": "製作臨檢紀錄",                     "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "巡佐",   "姓名": "蕭漢祥", "任務分工": "盤查兼蒐證",                       "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
-    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "警員",   "姓名": "江益德", "任務分工": "盤查兼蒐證",                       "攜行裝備": "槍彈、無線電、小電腍、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
+    {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "中興所",   "職別": "警員",   "姓名": "江益德", "任務分工": "盤查兼蒐證",                       "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "交通分隊", "職別": "小隊長", "姓名": "林振生", "任務分工": "盤查兼蒐證",                       "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "交通分隊", "職別": "警員",   "姓名": "吳沛軒", "任務分工": "大門警(車)戒兼蒐證",               "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
     {"組別": "第2臨檢組", "無線電代號": "隆安82", "派遣單位": "偵查隊",   "職別": "警員",   "姓名": "駿宏",   "任務分工": "刑案偵防、社維法案件之處理及移送", "攜行裝備": "槍彈、無線電、小電腦、密錄器", "臨檢場所": "A. 鉅大撞球館（中豐路558號）IC329\nB. 台灣麻將協會（中豐路558之1號）IC328\nF. 憤怒鳥網咖（中興路269號）IB330\nG. 真情男女養生館（中興路387號）IB329\nH. 萬紫千紅舒壓館（中興路491-3號）IB326"},
@@ -142,7 +142,6 @@ def safe_str(val):
 def clean_df_to_list(df):
     return df.astype(str).values.tolist()
 
-# 動態獲取指揮官姓名
 def get_commander_name(df_cmd):
     if not df_cmd.empty and "項目" in df_cmd.columns and "負責人員" in df_cmd.columns:
         cmd_row = df_cmd[df_cmd["項目"].str.contains("指揮官", na=False)]
@@ -163,9 +162,9 @@ def get_client():
         st.error(f"Google 授權失敗：{e}")
         return None
 
-# ─────────────── 資料載入 ───────────────
+# ─────────────── 資料載入 (最佳化快取，避免 429 錯誤) ───────────────
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=60, show_spinner=False)
 def load_data():
     try:
         client = get_client()
@@ -279,11 +278,9 @@ def apply_simulated_span(data_table, ts_list, m_groups, cols):
     total_rows = len(data_table)
     for (rs, re) in m_groups:
         if re > rs:
-            # 將重複的儲存格文字清空
             for r_idx in range(rs + 1, re + 1):
                 for col in cols:
                     data_table[r_idx][col] = ""
-        # 繪製群組的底部邊界線
         if re < total_rows - 1:
             for col in cols:
                 ts_list.append(("LINEBELOW", (col, re), (col, re), 0.5, colors.black))
@@ -354,7 +351,8 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
 
     ptl_road = stats.get("ptl_road", 0)
     ptl_cp   = stats.get("ptl_cp",   0)
-    total    = stats["cmd"] + ptl_road + ptl_cp + stats["inv"] + stats["civ"]
+    # 總計使用排除重複後的總參與警力 (stats['total'])
+    total    = stats.get("total", stats["cmd"] + stats.get("ptl", ptl_road + ptl_cp) + stats["inv"] + stats["civ"])
 
     data_stats = [
         [Paragraph(f"<b>{h}</b>", style_cell) for h in ["督導組", "路檢組", "臨檢組", "偵訊組", "民力", "總計"]],
@@ -405,7 +403,7 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     t_locs.setStyle(TableStyle([
         ("FONTNAME",   (0,0),(-1,-1), font),
         ("GRID",       (0,0),(-1,-1), 0.5, colors.black),
-        ("BACKGROUND", (0,0),( -1, 0), colors.HexColor("#f2f2f2")),
+        ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#f2f2f2")),
         ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
         ("BOTTOMPADDING", (0,0),(-1,-1), 6),
         ("TOPPADDING", (0,0),(-1,-1), 6),
@@ -487,24 +485,21 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
     if prev_unit is not None:
         unit_merge_groups.append((unit_start_idx, len(rows_ptl)))
 
-    # 將文字轉為 Paragraph 物件
     for r_idx in range(1, len(data_ptl)):
         for c_idx in range(len(data_ptl[r_idx])):
             style = style_cell_left if c_idx in [6, 7] else style_cell
             data_ptl[r_idx][c_idx] = Paragraph(data_ptl[r_idx][c_idx], style)
         
-    # 改用「視覺合併」 (Simulated Span) 以避開跨頁引擎崩潰
     ts_ptl = [
         ("FONTNAME",   (0,0),(-1,-1), font),
         ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#f2f2f2")),
-        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"), # Header 置中
-        ("VALIGN",     (0,1),(-1,-1), "TOP"),    # 內容靠上，因為下方會留白
+        ("VALIGN",     (0,0),(-1,-1), "MIDDLE"),
+        ("VALIGN",     (0,1),(-1,-1), "TOP"),
         ("BOX",        (0,0),(-1,-1), 0.5, colors.black),
         ("LINEBEFORE", (1,0),(-1,-1), 0.5, colors.black),
         ("LINEBELOW",  (0,0),(-1,0),  0.5, colors.black),
     ]
     
-    # 獨立欄位（3, 4, 5, 6）正常加上每一列的橫線
     for r_idx in range(1, len(data_ptl) - 1):
         for col in [3, 4, 5, 6]:
             ts_ptl.append(("LINEBELOW", (col, r_idx), (col, r_idx), 0.5, colors.black))
@@ -567,13 +562,11 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
         if cp_prev_unit is not None:
             cp_unit_merge_groups.append((cp_unit_start, len(rows_cp)))
 
-        # 將文字轉為 Paragraph 物件
         for r_idx in range(1, len(data_cp)):
             for c_idx in range(len(data_cp[r_idx])):
                 style = style_cp_target if c_idx == 7 else (style_cell_left if c_idx in [5, 6] else style_cell)
                 data_cp[r_idx][c_idx] = Paragraph(data_cp[r_idx][c_idx], style)
 
-        # 改用「視覺合併」 (Simulated Span) 以避開跨頁引擎崩潰
         ts_cp = [
             ("FONTNAME",   (0,0),(-1,-1), font),
             ("BACKGROUND", (0,0),(-1, 0), colors.HexColor("#e6e6e6")),
@@ -584,7 +577,6 @@ def generate_pdf_from_data(unit, project, time_str, briefing, df_cmd, df_ptl, df
             ("LINEBELOW",  (0,0),(-1,0),  0.5, colors.black),
         ]
         
-        # 獨立欄位（3, 4, 5, 6）正常加上每一列的橫線
         for r_idx in range(1, len(data_cp) - 1):
             for col in [3, 4, 5, 6]:
                 ts_cp.append(("LINEBELOW", (col, r_idx), (col, r_idx), 0.5, colors.black))
@@ -675,7 +667,6 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
             "",
         ])
 
-    # 調整列高，將 20*mm 增加至 26*mm，確保高度放大但不超過 A4 一頁 (297mm)
     t = Table(
         table_data,
         colWidths=[page_width*0.2, page_width*0.3, page_width*0.2, page_width*0.3],
@@ -689,7 +680,6 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
         ("BACKGROUND", (0,0),(3,  0), colors.whitesmoke),
     ]
     
-    # 單位相同自動合併儲存格 (簽到表不會跨頁，因此 SPAN 非常安全)
     for col_idx, tuple_idx in [(0, 0), (2, 1)]:
         start_idx = 0
         while start_idx < len(rows):
@@ -700,7 +690,6 @@ def generate_attendance_pdf(unit, project, time_str, stats, df_cmd):
             end_idx = start_idx + 1
             while end_idx < len(rows) and rows[end_idx][tuple_idx] == val:
                 end_idx += 1
-            # 若發現連續相同單位，加入 SPAN 屬性 (注意 table_data 的 0 列為標題，需 +1)
             if end_idx - start_idx > 1:
                 ts.append(("SPAN", (col_idx, start_idx + 1), (col_idx, end_idx)))
             start_idx = end_idx
@@ -734,7 +723,6 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
         part1.set_payload(pdf1)
         encoders.encode_base64(part1)
         
-        # ★ 將規劃表 PDF 名稱改為完整標題
         plan_filename = f"{unit}執行{project}勤務規劃表.pdf".replace(" ", "")
         part1.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(plan_filename)}")
         msg.attach(part1)
@@ -744,7 +732,6 @@ def send_report_email(unit, project, time_str, briefing, df_cmd, df_ptl, df_cp, 
         part2.set_payload(pdf2)
         encoders.encode_base64(part2)
         
-        # ★ 將簽到表 PDF 名稱改為完整標題
         sign_filename = f"{unit}執行{project}簽到表.pdf".replace(" ", "")
         part2.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(sign_filename)}")
         msg.attach(part2)
@@ -775,9 +762,9 @@ default_stats = {
 }
 
 if err or df_set is None:
-    u             = DEFAULT_UNIT
-    t             = DEFAULT_TIME
-    p             = DEFAULT_PROJ
+    u           = DEFAULT_UNIT
+    t           = DEFAULT_TIME
+    p           = DEFAULT_PROJ
     ed_cmd        = DEFAULT_CMD.copy()
     ed_ptl        = DEFAULT_PTL.copy()
     ed_cp         = DEFAULT_CHECKPOINT.copy()
@@ -856,7 +843,7 @@ with tab1:
         column_config={
             "組別":       st.column_config.TextColumn("組別",      width="small"),
             "無線電代號": st.column_config.TextColumn("無線電代號", width="small"),
-            "派遣單位":   st.column_config.TextColumn("派遣單位",  width="small"),
+            "派遣單位":   st.column_config.TextColumn("派遣單位",   width="small"),
             "職別":       st.column_config.TextColumn("職別",      width="small"),
             "姓名":       st.column_config.TextColumn("姓名",      width="small"),
             "任務分工":   st.column_config.TextColumn("任務分工",  width="medium"),
@@ -881,14 +868,10 @@ with tab2:
         new_rows = res_ptl[~res_ptl["姓名"].astype(str).isin(existing_names)].copy()
         
         if not new_rows.empty:
-            # 僅保留要帶入的欄位，其餘欄位（如組別、路檢地點）不選取，因此不會連動。
             allowed_cols = ["無線電代號", "派遣單位", "職別", "姓名", "任務分工", "攜行裝備"]
             new_rows = new_rows[[c for c in allowed_cols if c in new_rows.columns]]
-            
-            # 使用 pd.concat 進行合併，缺少的欄位會自動變成 NaN，並由後方的 fillna("") 填為空字串，不會產生強制清空的問題。
             sync_cp = pd.concat([sync_cp, new_rows], ignore_index=True)
             
-    # 確保全部欄位順序均與 CP_COLS 規範一致
     for col in CP_COLS:
         if col not in sync_cp.columns:
             sync_cp[col] = ""
@@ -918,7 +901,6 @@ def count_personnel_string(text):
     if not text or text.lower() == 'nan':
         return 0
     
-    # 支援多種分隔符號：將換行、半形/全形逗號等統一替換為頓號
     text = text.replace('\n', '、').replace(',', '、').replace('，', '、')
     
     count = 0
@@ -926,54 +908,62 @@ def count_personnel_string(text):
         item = item.strip()
         if not item: 
             continue
-        
-        # 排除明顯的群體或非人員敘述，不列入單一警力計算
         if any(k in item for k in ["小隊", "待命", "處置", "人員", "事宜", "案件"]):
             continue
-            
         count += 1
     return count
 
 calc_cmd_count = 0
 if not res_cmd.empty:
     for _, row in res_cmd.iterrows():
-        # 「偵訊組」在統計表中有獨立的計算欄位 (c_inv)
-        # 為避免重複計算，將其從「督導組」的人數統計中排除
         if "偵訊" in str(row.get("項目", "")):
             continue
-        
         if "負責人員" in res_cmd.columns:
             calc_cmd_count += count_personnel_string(row["負責人員"])
         if "共同執行人員" in res_cmd.columns:
             calc_cmd_count += count_personnel_string(row["共同執行人員"])
 
-ptl_road_count = 0
+# ★ 收集兩階段姓名並去重（防止人員重複計算）
+ptl_names = set()
 if not res_ptl.empty and "姓名" in res_ptl.columns:
-    ptl_series = res_ptl["姓名"].astype(str).str.strip()
-    ptl_road_count = int(ptl_series[(ptl_series != "") & (ptl_series.str.lower() != "nan")].count())
+    for name in res_ptl["姓名"].astype(str).str.strip():
+        if name and name.lower() != "nan":
+            ptl_names.add(name)
 
-ptl_cp_count = 0
+cp_names = set()
 if not res_cp.empty and "姓名" in res_cp.columns:
-    cp_series = res_cp["姓名"].astype(str).str.strip()
-    ptl_cp_count = int(cp_series[(cp_series != "") & (cp_series.str.lower() != "nan")].count())
+    for name in res_cp["姓名"].astype(str).str.strip():
+        if name and name.lower() != "nan":
+            cp_names.add(name)
+
+# 路檢組、臨檢組各組實際人數
+ptl_road_count = len(ptl_names)
+ptl_cp_count   = len(cp_names)
+
+# 兩階段合併後不重複之現場警力
+unique_operational_personnel = ptl_names.union(cp_names)
+total_operational_count      = len(unique_operational_personnel)
 
 # ── 貳、警力統計與地點統計顯示區塊 ──
 st.subheader("貳、 警力統計及地點統計")
 
 col_adj1, col_adj2 = st.columns(2)
 with col_adj1:
-    c_inv  = col_adj1.number_input("偵訊組人數調整", value=default_stats["inv"], min_value=0)
+    c_inv = col_adj1.number_input("偵訊組人數調整", value=default_stats["inv"], min_value=0)
 with col_adj2:
-    c_civ  = col_adj2.number_input("民力人數調整",   value=default_stats["civ"], min_value=0)
+    c_civ = col_adj2.number_input("民力人數調整",   value=default_stats["civ"], min_value=0)
+
+# 總警力 = 督導組 + (兩階段現場不重複警力) + 偵訊組 + 民力
+total_calc_personnel = calc_cmd_count + total_operational_count + c_inv + c_civ
 
 current_stats = {
     "cmd":      calc_cmd_count,
     "ptl_road": ptl_road_count,
     "ptl_cp":   ptl_cp_count,
-    "ptl":      ptl_road_count + ptl_cp_count,
+    "ptl":      total_operational_count,
     "inv":      c_inv,
     "civ":      c_civ,
-    "total":    calc_cmd_count + ptl_road_count + ptl_cp_count + c_inv + c_civ,
+    "total":    total_calc_personnel,
     "b_time":   input_b_time,
     "b_loc":    input_b_loc,
     "loc_1":    default_stats["loc_1"],
@@ -984,7 +974,7 @@ current_stats = {
 # 警力儀表板卡片
 st.markdown("##### 📊 本次編組警力一覽")
 m_col1, m_col2, m_col3, m_col4, m_col5, m_col6 = st.columns(6)
-m_col1.metric("總警力 (總計)", f"{current_stats['total']} 人")
+m_col1.metric("總警力 (去重總計)", f"{current_stats['total']} 人")
 m_col2.metric("督導組", f"{current_stats['cmd']} 人")
 m_col3.metric("路檢組 (一階)", f"{current_stats['ptl_road']} 人")
 m_col4.metric("臨檢組 (二階)", f"{current_stats['ptl_cp']} 人")
