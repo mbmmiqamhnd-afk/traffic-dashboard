@@ -147,8 +147,8 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-    def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = ""):
-        """【標準表格頁】自動計算排版、支援合計列淡藍底色高亮與備註"""
+    def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", highlight_below_target: float = None):
+        """【標準表格頁】自動計算排版、支援合計列淡藍底色高亮、備註及落後指標紅字預警"""
         slide_id = f"s_{uuid.uuid4().hex[:8]}"
         title_id = f"t_{uuid.uuid4().hex[:8]}"
         table_id = f"tbl_{uuid.uuid4().hex[:8]}"
@@ -247,7 +247,7 @@ class ComprehensiveSlidesBuilder:
                 }
             })
 
-        # 設定樣式：合計列自動標記淡藍色底 (#EAF2F8)
+        # 設定樣式：合計列淡藍底色 (#EAF2F8)、落後項目自動標紅
         for r_idx in range(num_rows):
             is_header = (r_idx == 0)
             is_total_row = (r_idx == 1 and str(df.iloc[0].values[0]).strip() in ["合計", "總計"])
@@ -269,6 +269,25 @@ class ComprehensiveSlidesBuilder:
 
             for c_idx in range(num_cols):
                 fg = {"red": 1.0, "green": 1.0, "blue": 1.0} if is_header else {"red": 0.1, "green": 0.1, "blue": 0.1}
+                is_bold = (is_header or is_total_row)
+
+                # 智慧色彩預警：達成率低於目前標準或進度負值時標為紅色
+                if not is_header:
+                    cell_val = str(df.iloc[r_idx - 1, c_idx]).strip()
+                    col_name = str(df.columns[c_idx])
+                    
+                    if "落後" in cell_val or cell_val.startswith("-"):
+                        fg = {"red": 0.85, "green": 0.0, "blue": 0.0}
+                        is_bold = True
+                    elif highlight_below_target is not None and "達成率" in col_name:
+                        try:
+                            rate_num = float(cell_val.replace("%", "").strip())
+                            if rate_num < highlight_below_target:
+                                fg = {"red": 0.85, "green": 0.0, "blue": 0.0}
+                                is_bold = True
+                        except Exception:
+                            pass
+
                 self.requests.append({
                     "updateTextStyle": {
                         "objectId": table_id,
@@ -276,7 +295,7 @@ class ComprehensiveSlidesBuilder:
                         "style": {
                             "fontFamily": "Microsoft JhengHei",
                             "fontSize": {"magnitude": font_size, "unit": "PT"},
-                            "bold": (is_header or is_total_row),
+                            "bold": is_bold,
                             "foregroundColor": {"opaqueColor": {"rgbColor": fg}}
                         },
                         "textRange": {"type": "ALL"},
@@ -441,8 +460,26 @@ class ComprehensiveSlidesBuilder:
         return f"https://docs.google.com/presentation/d/{self.presentation_id}/edit"
 
 # ==========================================
-# 3. 數據準備層（真實數據優先，備援模擬資料）
+# 3. 數據準備層（含動態「目前應達成率」計算）
 # ==========================================
+
+# ── 動態計算「目前應達成率 (以年底 100% 為基準)」 ──
+now_dt = datetime.now()
+roc_year = now_dt.year - 1911
+month = now_dt.month
+day = now_dt.day
+day_of_year = now_dt.timetuple().tm_yday
+is_leap = (now_dt.year % 4 == 0 and now_dt.year % 100 != 0) or (now_dt.year % 400 == 0)
+total_days = 366 if is_leap else 365
+current_expected_rate = round((day_of_year / total_days) * 100, 1)
+
+overload_footnote_dynamic = (
+    f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，"
+    f"統計截至 {roc_year}年{month:02d}月{day:02d}日(入案日期)目前應達成率為 {current_expected_rate:.1f}%"
+)
+overload_subtitle_dynamic = f"本期 vs 本年累計 ｜ 目前應達成率：{current_expected_rate:.1f}%"
+
+# 1. 三項重點違規
 df_three = st.session_state.get("df_three", pd.DataFrame([
     {"單位": "合計", "闖紅燈(本期)": 15, "闖紅燈(累計)": 128, "逆向(本期)": 8, "逆向(累計)": 72, "不停讓行人(本期)": 5, "不停讓行人(累計)": 43, "三項合計(本期)": 28, "三項合計(累計)": 243},
     {"單位": "聖亭所", "闖紅燈(本期)": 3, "闖紅燈(累計)": 24, "逆向(本期)": 1, "逆向(累計)": 15, "不停讓行人(本期)": 1, "不停讓行人(累計)": 8, "三項合計(本期)": 5, "三項合計(累計)": 47},
@@ -454,6 +491,7 @@ df_three = st.session_state.get("df_three", pd.DataFrame([
     {"單位": "交通分隊", "闖紅燈(本期)": 3, "闖紅燈(累計)": 13, "逆向(本期)": 2, "逆向(累計)": 6, "不停讓行人(本期)": 1, "不停讓行人(累計)": 5, "三項合計(本期)": 6, "三項合計(累計)": 24},
 ]))
 
+# 2. 交通事故 (A1 / A2)
 df_a1 = st.session_state.get("df_a1", pd.DataFrame([
     {"統計期間": "合計", "本期": 0, "本年累計": 3, "去年同期": 4, "增減比較": -1},
     {"統計期間": "聖亭所", "本期": 0, "本年累計": 1, "去年同期": 1, "增減比較": 0},
@@ -468,12 +506,13 @@ df_a2 = st.session_state.get("df_a2", pd.DataFrame([
     {"統計期間": "合計", "本期": 32, "前期": 35, "本年累計": 1284, "去年累計": 1390, "比較": -106, "增減比例": "-7.63%"},
     {"統計期間": "聖亭所", "本期": 7, "前期": 8, "本年累計": 312, "去年累計": 330, "比較": -18, "增減比例": "-5.45%"},
     {"統計期間": "龍潭所", "本期": 11, "前期": 12, "本年累計": 445, "去年累計": 472, "比較": -27, "增減比例": "-5.72%"},
-    {"統計期間": "中興所", "本期": 6, "前期": 7, "本年累計": 268, "去年累計": 290, "比較": -22, "增減比例": "-7.59%"},
+    {"統計期間": "中興所", "本期": 6, "前期": 7, "本年累計": 268, "抽取": 290, "比較": -22, "增減比例": "-7.59%"},
     {"統計期間": "石門所", "本期": 4, "前期": 5, "本年累計": 142, "去年累計": 160, "比較": -18, "增減比例": "-11.25%"},
     {"統計期間": "高平所", "本期": 3, "前期": 2, "本年累計": 92, "去年累計": 105, "比較": -13, "增減比例": "-12.38%"},
     {"統計期間": "三和所", "本期": 1, "前期": 1, "本年累計": 25, "去年累計": 33, "比較": -8, "增減比例": "-24.24%"},
 ]))
 
+# 3. 重大交通違規 (總表)
 df_major = st.session_state.get("df_major", pd.DataFrame([
     {"單位": "合計", "本期(攔停)": 48, "本期(逕舉)": 152, "本年(攔停)": 1840, "本年(逕舉)": 6420, "去年同期": 7950, "增減比較": 310, "目標值": 18115, "達成率": "45.6%"},
     {"單位": "科技執法", "本期(攔停)": 0, "本期(逕舉)": 88, "本年(攔停)": 0, "本年(逕舉)": 3120, "去年同期": 2900, "增減比較": 220, "目標值": 6006, "達成率": "51.9%"},
@@ -486,6 +525,7 @@ df_major = st.session_state.get("df_major", pd.DataFrame([
     {"單位": "交通分隊", "本期(攔停)": 10, "本期(逕舉)": 10, "本年(攔停)": 260, "本年(逕舉)": 490, "去年同期": 820, "增減比較": -70, "目標值": 2526, "達成率": "29.7%"},
 ]))
 
+# 4. 強化專案
 df_project = st.session_state.get("df_project", pd.DataFrame([
     {"單位": "合計", "酒駕件數": 88, "酒駕目標": 150, "酒駕達成率": "58.7%", "闖紅燈件數": 620, "闖紅燈目標": 880, "闖紅燈達成率": "70.5%", "超速件數": 82, "超速目標": 120, "超速達成率": "68.3%", "車不讓人件數": 115, "車不讓人目標": 150, "車不讓人達成率": "76.7%", "大型車件數": 54, "大型車目標": 70, "大型車達成率": "77.1%"},
     {"單位": "聖亭所", "酒駕件數": 14, "酒駕目標": 25, "酒駕達成率": "56.0%", "闖紅燈件數": 98, "闖紅燈目標": 140, "闖紅燈達成率": "70.0%", "超速件數": 12, "超速目標": 20, "超速達成率": "60.0%", "車不讓人件數": 18, "車不讓人目標": 25, "車不讓人達成率": "72.0%", "大型車件數": 8, "大型車目標": 10, "大型車達成率": "80.0%"},
@@ -497,17 +537,45 @@ df_project = st.session_state.get("df_project", pd.DataFrame([
     {"單位": "交通分隊", "酒駕件數": 14, "酒駕目標": 20, "酒駕達成率": "70.0%", "闖紅燈件數": 110, "闖紅燈目標": 140, "闖紅燈達成率": "78.6%", "超速件數": 15, "超速目標": 15, "超速達成率": "100.0%", "車不讓人件數": 19, "車不讓人目標": 20, "車不讓人達成率": "95.0%", "大型車件數": 10, "大型車目標": 8, "大型車達成率": "125.0%"},
 ]))
 
-df_overload = st.session_state.get("df_overload", pd.DataFrame([
-    {"統計期間": "合計", "本期": 4, "本年累計": 86, "去年同期": 78, "比較": 8, "目標值": 127, "達成率": "68%"},
-    {"統計期間": "聖亭所", "本期": 1, "本年累計": 15, "去年同期": 12, "比較": 3, "目標值": 20, "達成率": "75%"},
-    {"統計期間": "龍潭所", "本期": 1, "本年累計": 21, "去年同期": 18, "比較": 3, "目標值": 27, "達成率": "78%"},
-    {"統計期間": "中興所", "本期": 0, "本年累計": 14, "去年同期": 13, "比較": 1, "目標值": 20, "達成率": "70%"},
-    {"統計期間": "石門所", "本期": 1, "本年累計": 12, "去年同期": 10, "比較": 2, "目標值": 16, "達成率": "75%"},
-    {"統計期間": "高平所", "本期": 0, "本年累計": 9, "去年同期": 8, "比較": 1, "目標值": 14, "達成率": "64%"},
-    {"統計期間": "三和所", "本期": 0, "本年累計": 4, "去年同期": 4, "比較": 0, "目標值": 8, "達成率": "50%"},
-    {"統計期間": "交通分隊", "本期": 1, "本年累計": 11, "去年同期": 13, "比較": -2, "目標值": 22, "達成率": "50%"},
-]))
+# 5. 超載取締統計（動態精算「達成率」與「進度差距」）
+raw_overload = [
+    {"統計期間": "合計", "本期": 4, "本年累計": 86, "去年同期": 78, "比較": 8, "目標值": 127},
+    {"統計期間": "聖亭所", "本期": 1, "本年累計": 15, "去年同期": 12, "比較": 3, "目標值": 20},
+    {"統計期間": "龍潭所", "本期": 1, "本年累計": 21, "去年同期": 18, "比較": 3, "目標值": 27},
+    {"統計期間": "中興所", "本期": 0, "本年累計": 14, "去年同期": 13, "比較": 1, "目標值": 20},
+    {"統計期間": "石門所", "本期": 1, "本年累計": 12, "去年同期": 10, "比較": 2, "目標值": 16},
+    {"統計期間": "高平所", "本期": 0, "本年累計": 9, "去年同期": 8, "比較": 1, "目標值": 14},
+    {"統計期間": "三和所", "本期": 0, "本年累計": 4, "去年同期": 4, "比較": 0, "目標值": 8},
+    {"統計期間": "交通分隊", "本期": 1, "本年累計": 11, "去年同期": 13, "比較": -2, "目標值": 22},
+]
 
+# 若 session_state 內已有真實數據則取用，否則以 raw_overload 進行動態結算
+if "df_overload" in st.session_state and isinstance(st.session_state["df_overload"], pd.DataFrame):
+    df_overload = st.session_state["df_overload"].copy()
+else:
+    df_overload = pd.DataFrame(raw_overload)
+    # 動態計算「達成率」與「進度差距」
+    rates = []
+    diffs = []
+    for _, r in df_overload.iterrows():
+        tgt = float(r["目標值"])
+        cumu = float(r["本年累計"])
+        if tgt > 0:
+            calc_rate = round((cumu / tgt) * 100, 1)
+            diff_from_target = round(calc_rate - current_expected_rate, 1)
+            rates.append(f"{calc_rate:.0f}%")
+            if diff_from_target >= 0:
+                diffs.append(f"🟢 達標 (+{diff_from_target:.1f}%)")
+            else:
+                diffs.append(f"🔴 落後 ({diff_from_target:.1f}%)")
+        else:
+            rates.append("—")
+            diffs.append("—")
+            
+    df_overload["達成率"] = rates
+    df_overload["進度評比"] = diffs
+
+# 6. 靜桃計畫
 df_jingtao = st.session_state.get("df_jingtao", pd.DataFrame([
     {"單位": "合計", "本期(22-06時)": 12, "本期(06-22時)": 8, "累計(22-06時)": 184, "累計(06-22時)": 142, "專案總計": 326},
     {"單位": "聖亭所", "本期(22-06時)": 2, "本期(06-22時)": 1, "累計(22-06時)": 32, "累計(06-22時)": 24, "專案總計": 56},
@@ -519,6 +587,7 @@ df_jingtao = st.session_state.get("df_jingtao", pd.DataFrame([
     {"單位": "交通分隊", "本期(22-06時)": 2, "本期(06-22時)": 2, "累計(22-06時)": 26, "累計(06-22時)": 20, "專案總計": 46},
 ]))
 
+# 7. 科技執法
 df_tech = st.session_state.get("df_tech", pd.DataFrame([
     {"排名": "第 1 名", "路段名稱": "中豐路與大昌路口", "違規態樣": "闖紅燈/未依標誌行駛", "舉發件數": 1248},
     {"排名": "第 2 名", "路段名稱": "大昌路二段與五福街口", "違規態樣": "闖紅燈/不禮讓行人", "舉發件數": 892},
@@ -532,8 +601,11 @@ df_tech = st.session_state.get("df_tech", pd.DataFrame([
     {"排名": "第 10 名", "路段名稱": "高原路與高平路口", "違規態樣": "超速", "舉發件數": 182},
 ]))
 
-with st.expander("👀 點擊展開預覽 7 大統計業務表格內容"):
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點", "事故分析", "重大違規", "強化專案", "超載取締", "靜桃計畫", "科技執法"])
+# ==========================================
+# 4. 前端檢視區
+# ==========================================
+with st.expander("👀 點擊展開預覽 7 大統計業務表格內容（含超載動態達成率）"):
+    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點", "事故分析", "重大違規", "強化專案", "超載取締 (新)", "靜桃計畫", "科技執法"])
     with t1: st.dataframe(df_three, hide_index=True)
     with t2:
         c1, c2 = st.columns(2)
@@ -541,14 +613,17 @@ with st.expander("👀 點擊展開預覽 7 大統計業務表格內容"):
         c2.dataframe(df_a2, hide_index=True)
     with t3: st.dataframe(df_major, hide_index=True)
     with t4: st.dataframe(df_project, hide_index=True)
-    with t5: st.dataframe(df_overload, hide_index=True)
+    with t5: 
+        st.caption(f"🎯 **{overload_subtitle_dynamic}**")
+        st.dataframe(df_overload, hide_index=True)
+        st.caption(f"📝 {overload_footnote_dynamic}")
     with t6: st.dataframe(df_jingtao, hide_index=True)
     with t7: st.dataframe(df_tech, hide_index=True)
 
 st.write("")
 
 # ==========================================
-# 4. 啟動重繪
+# 5. 啟動重繪
 # ==========================================
 if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報簡報】", type="primary"):
     slides_svc = get_slides_service()
@@ -567,7 +642,7 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報�
                 builder.add_cover_slide(
                     main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制數據分析報告",
                     subtitle="週次主管會報專案報告",
-                    date_range_str="115 年 9 月 1 日起至本期止"
+                    date_range_str=f"115 年 9 月 1 日起至 {month:02d}月{day:02d}日 止"
                 )
 
                 # 3. P.2 三項重點違規專案
@@ -602,12 +677,13 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報�
                     footnote="六大項目：酒後駕車、闖紅燈、嚴重超速、車不讓人、行人違規及大型車違規。"
                 )
 
-                # 7. P.6 取締超載違規件數統計
+                # 7. P.6 取締超載違規件數統計（✅ 動態帶入「目前應達成率」與落後紅字標註）
                 builder.add_table_slide(
                     slide_title="取締超載違規件數統計表",
                     df=df_overload,
-                    subtitle="本期 vs 本年累計及達成率",
-                    footnote="本期定義：係指該期昱通系統入案件數；以年底達成率 100% 為基準。"
+                    subtitle=overload_subtitle_dynamic,
+                    footnote=overload_footnote_dynamic,
+                    highlight_below_target=current_expected_rate
                 )
 
                 # 8. P.7 「靜桃計畫」大執法專案
@@ -637,7 +713,7 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報�
                 st.markdown(
                     f"### 📑 簡報入口：\n"
                     f"👉 **[點此直接開啟全新會報簡報]({final_url})**\n\n"
-                    f"舊內容已被全數清空，全 8 頁深藍封面與業務表格已全自動編譯上架！"
+                    f"✅ **更新亮點**：P.6 超載統計表已精確計算「目前應達成率（{current_expected_rate:.1f}%）」與進度差距，落後單位將在投影片中自動以紅字突顯，頁尾亦動態生成完整法定備註說明。"
                 )
 
             except HttpError as e:
