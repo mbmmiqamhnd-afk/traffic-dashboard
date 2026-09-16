@@ -21,8 +21,8 @@ st.set_page_config(
 )
 show_sidebar()
 
-st.title("📽️ 全方位執法數據簡報直出中心（原版規格 8 頁標準版）")
-st.caption("🚀 日期完全對齊：所有頁面日期、公式與備註全面以「資料截止日 (09/15)」為基準，徹底排除執行當日 (09/16) 的日期偏差。")
+st.title("📽️ 全方位執法數據簡報直出中心（原版規格 15 頁完整版）")
+st.caption("🚀 完整涵蓋：封面、三項重點、A1/A2事故、重大違規總表、7大項重大違規專項細表、超載、靜桃計畫及科技執法成效。")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -157,7 +157,7 @@ class ComprehensiveSlidesBuilder:
         })
 
     def add_three_major_slide(self, data_rows, latest_day="09/15"):
-        """【第 2 頁】三項重點違規（✅ 原子化寫入樣式，杜絕合併儲存格 400 錯誤）"""
+        """【第 2 頁】三項重點違規（母本雙層合併表頭，原子化安全寫入）"""
         slide_id = f"s_three_{uuid.uuid4().hex[:8]}"
         title_id = f"t_three_{uuid.uuid4().hex[:8]}"
         table_id = f"tbl_three_{uuid.uuid4().hex[:8]}"
@@ -217,77 +217,20 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 1. 執行表頭合併
-        self.requests.append({
-            "mergeTableCells": {
-                "objectId": table_id,
-                "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}
-            }
-        })
-        self.requests.append({
-            "mergeTableCells": {
-                "objectId": table_id,
-                "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 4}
-            }
-        })
-        self.requests.append({
-            "mergeTableCells": {
-                "objectId": table_id,
-                "tableRange": {"location": {"rowIndex": 0, "columnIndex": 5}, "rowSpan": 1, "columnSpan": 4}
-            }
-        })
+        # 1. 表頭儲存格合併
+        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}}})
+        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 4}}})
+        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 5}, "rowSpan": 1, "columnSpan": 4}}})
 
         # 2. 表頭底色（深藍）與合計列底色（淡藍）
-        self.requests.append({
-            "updateTableCellProperties": {
-                "objectId": table_id,
-                "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": num_cols},
-                "tableCellProperties": {
-                    "tableCellBackgroundFill": {
-                        "solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}
-                    }
-                },
-                "fields": "tableCellBackgroundFill"
-            }
-        })
-        self.requests.append({
-            "updateTableCellProperties": {
-                "objectId": table_id,
-                "tableRange": {"location": {"rowIndex": 2, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols},
-                "tableCellProperties": {
-                    "tableCellBackgroundFill": {
-                        "solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}
-                    }
-                },
-                "fields": "tableCellBackgroundFill"
-            }
-        })
+        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
+        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 2, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}}}, "fields": "tableCellBackgroundFill"}})
 
-        # 3. 安全寫入文字並同步設定字型
+        # 3. 原子化寫入文字
         def write_cell(r, c, text, font_size=10.0, bold=False, fg=(0.1, 0.1, 0.1)):
             t_str = str(text).strip() if (pd.notna(text) and str(text).strip() != "") else "0"
-            self.requests.append({
-                "insertText": {
-                    "objectId": table_id,
-                    "cellLocation": {"rowIndex": r, "columnIndex": c},
-                    "text": t_str,
-                    "insertionIndex": 0
-                }
-            })
-            self.requests.append({
-                "updateTextStyle": {
-                    "objectId": table_id,
-                    "cellLocation": {"rowIndex": r, "columnIndex": c},
-                    "style": {
-                        "fontFamily": "Microsoft JhengHei",
-                        "fontSize": {"magnitude": font_size, "unit": "PT"},
-                        "bold": bold,
-                        "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg[0], "green": fg[1], "blue": fg[2]}}}
-                    },
-                    "textRange": {"type": "ALL"},
-                    "fields": "fontFamily,fontSize,bold,foregroundColor"
-                }
-            })
+            self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "text": t_str, "insertionIndex": 0}})
+            self.requests.append({"updateTextStyle": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": font_size, "unit": "PT"}, "bold": bold, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg[0], "green": fg[1], "blue": fg[2]}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
 
         write_cell(0, 0, "單位", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
         write_cell(0, 1, f"本期 ({latest_day}) 新增違規數", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
@@ -301,6 +244,67 @@ class ComprehensiveSlidesBuilder:
             is_tot = (r_idx == 2)
             for c_idx, val in enumerate(r_vals):
                 write_cell(r_idx, c_idx, val, font_size=10.0, bold=is_tot, fg=(0.1, 0.1, 0.1))
+
+    def add_major_detail_slide(self, cat_name: str, data_rows, date_str="0101-0915"):
+        """【P.6~P.12 重大交通違規專項細表】雙層表頭原子化排版"""
+        slide_id = f"s_det_{uuid.uuid4().hex[:8]}"
+        title_id = f"t_det_{uuid.uuid4().hex[:8]}"
+        table_id = f"tbl_det_{uuid.uuid4().hex[:8]}"
+
+        self.requests.append({"createSlide": {"objectId": slide_id, "slideLayoutReference": {"predefinedLayout": "BLANK"}}})
+
+        full_title = f"取締【{cat_name}】違規統計表 (累計至 {date_str})"
+        self.requests.append({"createShape": {"objectId": title_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 35, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 14, "unit": "PT"}}}})
+        self.requests.append({"insertText": {"objectId": title_id, "text": full_title, "insertionIndex": 0}})
+        self.requests.append({"updateTextStyle": {"objectId": title_id, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 15, "unit": "PT"}, "bold": True, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.35}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+
+        num_rows = len(data_rows) + 2
+        num_cols = 10
+        tbl_top = 54
+        tbl_height = 295
+
+        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}, "rows": num_rows, "columns": num_cols}})
+
+        # 1. 表頭合併
+        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}}})
+        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 3}}})
+        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 4}, "rowSpan": 1, "columnSpan": 3}}})
+        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 7}, "rowSpan": 1, "columnSpan": 3}}})
+
+        # 2. 表頭底色與合計列底色
+        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
+        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 2, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}}}, "fields": "tableCellBackgroundFill"}})
+
+        # 3. 寫入儲存格
+        def write_dcell(r, c, text, font_size=8.5, bold=False, fg=(0.1, 0.1, 0.1)):
+            t_str = str(text).strip() if pd.notna(text) else "—"
+            self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "text": t_str, "insertionIndex": 0}})
+            self.requests.append({"updateTextStyle": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": font_size, "unit": "PT"}, "bold": bold, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg[0], "green": fg[1], "blue": fg[2]}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+
+        write_dcell(0, 0, "統計期間", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
+        write_dcell(0, 1, "今年累計", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
+        write_dcell(0, 4, "去年累計", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
+        write_dcell(0, 7, "今年與去年同期比較", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
+
+        sub_names = ["", "當場攔停", "逕行舉發", "合計", "當場攔停", "逕行舉發", "合計", "當場攔停", "逕行舉發", "合計"]
+        for c_idx in range(1, 10):
+            write_dcell(1, c_idx, sub_names[c_idx], font_size=9.0, bold=True, fg=(1.0, 1.0, 1.0))
+
+        for r_idx, r_vals in enumerate(data_rows, start=2):
+            is_tot = (r_idx == 2)
+            for c_idx, val in enumerate(r_vals):
+                fg = (0.1, 0.1, 0.1)
+                is_bold = is_tot
+                # 比較欄位負值標紅
+                if c_idx in [7, 8, 9]:
+                    try:
+                        c_num = float(str(val).replace(",", "").strip())
+                        if c_num < 0:
+                            fg = (0.85, 0.0, 0.0)
+                            is_bold = True
+                    except Exception:
+                        pass
+                write_dcell(r_idx, c_idx, val, font_size=8.5, bold=is_bold, fg=fg)
 
     def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", is_accident_table: bool = False, custom_width: int = None):
         """【標準通用表格頁】"""
@@ -344,43 +348,12 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        self.requests.append({
-            "updateTableCellProperties": {
-                "objectId": table_id,
-                "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols},
-                "tableCellProperties": {
-                    "tableCellBackgroundFill": {
-                        "solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}
-                    }
-                },
-                "fields": "tableCellBackgroundFill"
-            }
-        })
+        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
 
         def write_gen_cell(r, c, text, font_sz, bold, fg_rgb):
             t_str = str(text).replace("\n", " ").strip() if (pd.notna(text) and str(text).strip() != "") else "—"
-            self.requests.append({
-                "insertText": {
-                    "objectId": table_id,
-                    "cellLocation": {"rowIndex": r, "columnIndex": c},
-                    "text": t_str,
-                    "insertionIndex": 0
-                }
-            })
-            self.requests.append({
-                "updateTextStyle": {
-                    "objectId": table_id,
-                    "cellLocation": {"rowIndex": r, "columnIndex": c},
-                    "style": {
-                        "fontFamily": "Microsoft JhengHei",
-                        "fontSize": {"magnitude": font_sz, "unit": "PT"},
-                        "bold": bold,
-                        "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg_rgb[0], "green": fg_rgb[1], "blue": fg_rgb[2]}}}
-                    },
-                    "textRange": {"type": "ALL"},
-                    "fields": "fontFamily,fontSize,bold,foregroundColor"
-                }
-            })
+            self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "text": t_str, "insertionIndex": 0}})
+            self.requests.append({"updateTextStyle": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": font_sz, "unit": "PT"}, "bold": bold, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg_rgb[0], "green": fg_rgb[1], "blue": fg_rgb[2]}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
 
         for c_idx, col_name in enumerate(df.columns):
             write_gen_cell(0, c_idx, col_name, font_size, True, (1.0, 1.0, 1.0))
@@ -390,18 +363,7 @@ class ComprehensiveSlidesBuilder:
             is_hl_row = any(k in first_col_val for k in ["合計", "總計", "舉發總數"])
 
             if is_hl_row:
-                self.requests.append({
-                    "updateTableCellProperties": {
-                        "objectId": table_id,
-                        "tableRange": {"location": {"rowIndex": r_idx + 1, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols},
-                        "tableCellProperties": {
-                            "tableCellBackgroundFill": {
-                                "solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}
-                            }
-                        },
-                        "fields": "tableCellBackgroundFill"
-                    }
-                })
+                self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": r_idx + 1, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}}}, "fields": "tableCellBackgroundFill"}})
 
             for c_idx, val in enumerate(row):
                 cell_val = str(val).strip()
@@ -422,33 +384,12 @@ class ComprehensiveSlidesBuilder:
 
         if footnote:
             fn_id = f"fn_{uuid.uuid4().hex[:8]}"
-            self.requests.append({
-                "createShape": {
-                    "objectId": fn_id,
-                    "shapeType": "TEXT_BOX",
-                    "elementProperties": {
-                        "pageObjectId": slide_id,
-                        "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 30, "unit": "PT"}},
-                        "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 365, "unit": "PT"}
-                    }
-                }
-            })
+            self.requests.append({"createShape": {"objectId": fn_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 30, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 365, "unit": "PT"}}}})
             self.requests.append({"insertText": {"objectId": fn_id, "text": footnote, "insertionIndex": 0}})
-            self.requests.append({
-                "updateTextStyle": {
-                    "objectId": fn_id,
-                    "style": {
-                        "fontFamily": "DFKai-SB",
-                        "fontSize": {"magnitude": 10, "unit": "PT"},
-                        "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.2, "green": 0.2, "blue": 0.2}}}
-                    },
-                    "textRange": {"type": "ALL"},
-                    "fields": "fontFamily,fontSize,foregroundColor"
-                }
-            })
+            self.requests.append({"updateTextStyle": {"objectId": fn_id, "style": {"fontFamily": "DFKai-SB", "fontSize": {"magnitude": 10, "unit": "PT"}, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.2, "green": 0.2, "blue": 0.2}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,foregroundColor"}})
 
     def wipe_old_slides(self):
-        """抹除所有舊頁面，僅保留剛編譯完成的 8 頁"""
+        """抹除所有舊頁面，僅保留剛編譯完成的 15 頁"""
         for oid in self.old_slide_ids:
             self.requests.append({"deleteObject": {"objectId": oid}})
 
@@ -466,13 +407,11 @@ class ComprehensiveSlidesBuilder:
 # 3. 數據準備層（✅ 全面鎖定資料截止日 115/09/15）
 # ==========================================
 
-# ── 嚴格以來源資料截止日為計算基準（絕不使用 datetime.now() 的 09/16） ──
 DATA_CUTOFF_ROC = 1150915
 roc_year = int(str(DATA_CUTOFF_ROC)[:3])
 month = int(str(DATA_CUTOFF_ROC)[3:5])
 day = int(str(DATA_CUTOFF_ROC)[5:7])
 
-# 以資料截止日精算當年度累積天數與法定應達成率（115/09/15 為第 258 天 -> 70.7%）
 g_year = roc_year + 1911
 data_dt = datetime(g_year, month, day)
 day_of_year = data_dt.timetuple().tm_yday
@@ -488,7 +427,7 @@ overload_footnote_exact = (
     f"統計截至 {roc_year}年{month:02d}月{day:02d}日 (入案日期)應達成率為{current_expected_rate:.1f}%"
 )
 
-# ── 1. 三項重點違規（母本規範矩陣，基準日 09/15） ──
+# ── 1. 三項重點違規（母本規範矩陣，基準日 09/15，合計 144） ──
 latest_three_day = f"{month:02d}/{day:02d}"
 
 three_major_raw_matrix = [
@@ -537,7 +476,7 @@ df_a2 = pd.DataFrame([
     {"統計期間": "三和所", "本期(0909-0915)": 0, "前期(0902-0908)": 0, "本年累計(0101-0915)": 45, "去年累計(0101-0915)": 49, "本年與去年同期比較": -4, "增減比例": "-8.16%"},
 ])
 
-# ── 4. 取締重大交通違規統計表 ──
+# ── 4. 取締重大交通違規統計表 (總表) ──
 df_major = pd.DataFrame([
     {"統計期間": "合計", "本期(攔停)": 39, "本期(逕舉)": 210, "本年累計(攔停)": 2317, "本年累計(逕舉)": 6852, "去年累計(攔停)": 2065, "去年累計(逕舉)": 7268, "本年與去年同期比較": -186, "目標值": 18114, "達成率": "50.6%"},
     {"統計期間": "科技執法", "本期(攔停)": 0, "本期(逕舉)": 56, "本年累計(攔停)": 9, "本年累計(逕舉)": 1535, "去年累計(攔停)": 4, "去年累計(逕舉)": 525, "本年與去年同期比較": 1015, "目標值": 6006, "達成率": "25.7%"},
@@ -552,7 +491,95 @@ df_major = pd.DataFrame([
 ])
 major_footnote_exact = "重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」"
 
-# ── 5. 取締超載違規件數統計表 ──
+# ── 5. 重大交通違規 7 大專項細表矩陣（真實資料庫數據） ──
+MAJOR_DETAIL_DICT = {
+    "酒駕": [
+        ["合計", 295, 1, 296, 141, 1, 142, 154, 0, 154],
+        ["科技執法", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ["聖亭所", 18, 0, 18, 8, 0, 8, 10, 0, 10],
+        ["龍潭所", 109, 1, 110, 34, 1, 35, 75, 0, 75],
+        ["中興所", 85, 0, 85, 29, 0, 29, 56, 0, 56],
+        ["石門所", 10, 0, 10, 21, 0, 21, -11, 0, -11],
+        ["高平所", 26, 0, 26, 8, 0, 8, 18, 0, 18],
+        ["三和所", 0, 0, 0, 3, 0, 3, -3, 0, -3],
+        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
+        ["交通分隊", 47, 0, 47, 38, 0, 38, 9, 0, 9],
+    ],
+    "闖紅燈": [
+        ["合計", 703, 3164, 3867, 490, 3790, 4280, 213, -629, -416],
+        ["科技執法", 9, 589, 598, 1, 120, 121, 8, 469, 477],
+        ["聖亭所", 57, 359, 416, 35, 896, 931, 22, -537, -515],
+        ["龍潭所", 281, 160, 441, 214, 565, 779, 67, -405, -338],
+        ["中興所", 189, 390, 579, 123, 633, 756, 66, -243, -177],
+        ["石門所", 55, 303, 358, 71, 283, 354, -16, 20, 4],
+        ["高平所", 53, 612, 665, 11, 638, 649, 42, -26, 16],
+        ["三和所", 5, 97, 102, 1, 66, 67, 4, 31, 35],
+        ["警備隊", 0, 51, 51, 0, 48, 48, "—", "—", "—"],
+        ["交通分隊", 54, 603, 657, 34, 541, 575, 20, 62, 82],
+    ],
+    "逆向行駛": [
+        ["合計", 252, 1375, 1627, 239, 1487, 1726, 13, -112, -99],
+        ["科技執法", 0, 8, 8, 0, 7, 7, 0, 1, 1],
+        ["聖亭所", 18, 31, 49, 14, 102, 116, 4, -71, -67],
+        ["龍潭所", 165, 34, 199, 133, 298, 431, 32, -264, -232],
+        ["中興所", 10, 0, 10, 13, 34, 47, -3, -34, -37],
+        ["石門所", 24, 8, 32, 58, 46, 104, -34, -38, -72],
+        ["高平所", 9, 11, 20, 2, 15, 17, 7, -4, 3],
+        ["三和所", 1, 136, 137, 3, 76, 79, -2, 60, 58],
+        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
+        ["交通分隊", 25, 1147, 1172, 16, 909, 925, 9, 238, 247],
+    ],
+    "轉彎未依規定": [
+        ["合計", 957, 1845, 2802, 1181, 1244, 2425, -224, 582, 358],
+        ["科技執法", 0, 903, 903, 3, 203, 206, -3, 700, 697],
+        ["聖亭所", 42, 0, 42, 9, 5, 14, 33, -5, 28],
+        ["龍潭所", 680, 21, 701, 815, 202, 1017, -135, -181, -316],
+        ["中興所", 31, 0, 31, 156, 36, 192, -125, -36, -161],
+        ["石門所", 125, 41, 166, 146, 104, 250, -21, -63, -84],
+        ["高平所", 52, 17, 69, 15, 39, 54, 37, -22, 15],
+        ["三和所", 2, 0, 2, 2, 0, 2, 0, 0, 0],
+        ["警備隊", 0, 20, 20, 0, 1, 1, "—", "—", "—"],
+        ["交通分隊", 25, 843, 868, 35, 654, 689, -10, 189, 179],
+    ],
+    "蛇行惡意逼車": [
+        ["合計", 8, 8, 16, 0, 11, 11, 8, -3, 5],
+        ["科技執法", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ["聖亭所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ["龍潭所", 4, 6, 10, 0, 1, 1, 4, 5, 9],
+        ["中興所", 1, 0, 1, 0, 0, 0, 1, 0, 1],
+        ["石門所", 1, 0, 1, 0, 1, 1, 1, -1, 0],
+        ["高平所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ["三和所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
+        ["交通分隊", 2, 2, 4, 0, 9, 9, 2, -7, -5],
+    ],
+    "不暫停讓行人": [
+        ["合計", 102, 343, 445, 14, 508, 522, 88, -165, -77],
+        ["科技執法", 0, 35, 35, 0, 195, 195, 0, -160, -160],
+        ["聖亭所", 15, 4, 19, 1, 2, 3, 14, 2, 16],
+        ["龍潭所", 70, 39, 109, 5, 8, 13, 65, 31, 96],
+        ["中興所", 7, 5, 12, 4, 2, 6, 3, 3, 6],
+        ["石門所", 5, 12, 17, 2, 5, 7, 3, 7, 10],
+        ["高平所", 1, 5, 6, 0, 4, 4, 1, 1, 2],
+        ["三和所", 1, 5, 6, 0, 0, 0, 1, 5, 6],
+        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
+        ["交通分隊", 3, 238, 241, 2, 292, 294, 1, -54, -53],
+    ],
+    "嚴重超速": [
+        ["合計", 0, 116, 116, 0, 227, 227, 0, -111, -111],
+        ["科技執法", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ["聖亭所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ["龍潭所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ["中興所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ["石門所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ["高平所", 0, 0, 0, 0, 1, 1, 0, -1, -1],
+        ["三和所", 0, 0, 0, 0, 23, 23, 0, -23, -23],
+        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
+        ["交通分隊", 0, 116, 116, 0, 203, 203, 0, -87, -87],
+    ],
+}
+
+# ── 6. 取締超載違規件數統計表 ──
 df_overload = pd.DataFrame([
     {"統計期間": "合計", "本期 (0909~0915)": 1, "本年累計 (0101~0915)": 46, "去年累計 (0101~0915)": 121, "本年與去年同期比較": -75, "目標值": 127, "達成率": "36%"},
     {"統計期間": "聖亭所", "本期 (0909~0915)": 0, "本年累計 (0101~0915)": 8, "去年累計 (0101~0915)": 12, "本年與去年同期比較": -4, "目標值": 20, "達成率": "40%"},
@@ -565,7 +592,7 @@ df_overload = pd.DataFrame([
     {"統計期間": "交通分隊", "本期 (0909~0915)": 0, "本年累計 (0101~0915)": 6, "去年累計 (0101~0915)": 8, "本年與去年同期比較": -2, "目標值": 22, "達成率": "27%"},
 ])
 
-# ── 6. 「靜桃計畫」大執法專案統計表 ──
+# ── 7. 「靜桃計畫」大執法專案統計表 ──
 df_jingtao = pd.DataFrame([
     {"統計期間": "合計", "本期(22-06)": 0, "本期(06-22)": 0, "累計(22-06)": 497, "累計(06-22)": 631, "總計": 1128},
     {"統計期間": "聖亭所", "本期(22-06)": 0, "本期(06-22)": 0, "累計(22-06)": 29, "累計(06-22)": 90, "總計": 119},
@@ -578,7 +605,7 @@ df_jingtao = pd.DataFrame([
     {"統計期間": "交通分隊", "本期(22-06)": 0, "本期(06-22)": 0, "累計(22-06)": 5, "累計(06-22)": 17, "總計": 22},
 ])
 
-# ── 7. 科技執法成效（真實 10 大路口，總數 2,963 件） ──
+# ── 8. 科技執法成效 ──
 df_tech_final = pd.DataFrame([
     {"路段名稱": "中興路與武漢路口", "舉發件數": 990},
     {"路段名稱": "大昌路二段與五福街口(北往南)", "舉發件數": 688},
@@ -596,45 +623,53 @@ df_tech_final = pd.DataFrame([
 # ==========================================
 # 4. 前端預覽區
 # ==========================================
-with st.expander("👀 點擊展開預覽 7 大業務表格（完全對齊 09/15 官方數據）"):
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點 (雙層表頭)", "A1事故死亡", "A2事故受傷", "重大違規", "超載取締", "靜桃計畫", "科技執法成效"])
-    with t1: 
-        st.dataframe(df_three_preview, hide_index=True)
+with st.expander("👀 點擊展開預覽完整 15 頁業務表格內容"):
+    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["三項重點", "A1事故死亡", "A2事故受傷", "重大違規(總表)", "重大違規(7大細項)", "超載取締", "靜桃計畫", "科技執法成效"])
+    with t1: st.dataframe(df_three_preview, hide_index=True)
     with t2: st.dataframe(df_a1, hide_index=True)
     with t3: st.dataframe(df_a2, hide_index=True)
     with t4: st.dataframe(df_major, hide_index=True)
-    with t5: 
+    with t5:
+        sub_t = st.selectbox("選擇欲檢視的專項細表：", list(MAJOR_DETAIL_DICT.keys()))
+        det_cols = pd.MultiIndex.from_tuples([
+            ("統計期間", ""),
+            ("今年累計", "當場攔停"), ("今年累計", "逕行舉發"), ("今年累計", "合計"),
+            ("去年累計", "當場攔停"), ("去年累計", "逕行舉發"), ("去年累計", "合計"),
+            ("今年與去年同期比較", "當場攔停"), ("今年與去年同期比較", "逕行舉發"), ("今年與去年同期比較", "合計")
+        ])
+        st.dataframe(pd.DataFrame(MAJOR_DETAIL_DICT[sub_t], columns=det_cols), hide_index=True)
+    with t6: 
         st.dataframe(df_overload, hide_index=True)
         st.caption(f"📝 {overload_footnote_exact}")
-    with t6: st.dataframe(df_jingtao, hide_index=True)
-    with t7: st.dataframe(df_tech_final, hide_index=True)
+    with t7: st.dataframe(df_jingtao, hide_index=True)
+    with t8: st.dataframe(df_tech_final, hide_index=True)
 
 st.write("")
 
 # ==========================================
 # 5. 執行生成
 # ==========================================
-if st.button("🚀 啟動畫布清空重繪：全新產出【原版規格 8 頁會報簡報】", type="primary"):
+if st.button("🚀 啟動畫布清空重繪：全新產出【原版規格 15 頁完整會報簡報】", type="primary"):
     slides_svc = get_slides_service()
 
     if not slides_svc:
         st.error("❌ 無法初始化 Google Slides 服務，請確認 secrets.toml 設定。")
     else:
-        with st.spinner("正在清空母本畫布、動態編譯 8 頁原版規格投影片並整批覆蓋..."):
+        with st.spinner("正在清空母本畫布、動態編譯 15 頁原版規格投影片並整批覆蓋..."):
             try:
                 builder = ComprehensiveSlidesBuilder(slides_svc, TARGET_PRESENTATION_ID)
 
                 # 1. 記錄舊頁面 ID
                 builder.prepare_canvas()
 
-                # 2. P.1 封面頁（✅ 嚴格標註至 09月15日）
+                # 2. P.1 封面頁
                 builder.add_cover_slide(
                     main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制數據分析報告",
                     subtitle="週次主管會報專案報告",
                     date_range_str=cover_date_str
                 )
 
-                # 3. P.2 取締三項重點違規統計表（✅ 專案母本標準雙層合併表頭，本期 09/15，累計 144）
+                # 3. P.2 取締三項重點違規統計表 (09/15)
                 builder.add_three_major_slide(
                     data_rows=three_major_raw_matrix,
                     latest_day=latest_three_day
@@ -654,27 +689,35 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【原版規格 8 頁�
                     is_accident_table=True
                 )
 
-                # 6. P.5 取締重大交通違規統計表
+                # 6. P.5 取締重大交通違規統計表 (總表)
                 builder.add_table_slide(
                     slide_title="取締重大交通違規統計表",
                     df=df_major,
                     footnote=major_footnote_exact
                 )
 
-                # 7. P.6 取締超載違規件數統計表（✅ 嚴格截至 115年09月15日，應達成率 70.7%）
+                # 7. P.6~P.12 重大交通違規 7 大專項細表
+                for cat in ["酒駕", "闖紅燈", "逆向行駛", "轉彎未依規定", "蛇行惡意逼車", "不暫停讓行人", "嚴重超速"]:
+                    builder.add_major_detail_slide(
+                        cat_name=cat,
+                        data_rows=MAJOR_DETAIL_DICT[cat],
+                        date_str="0101-0915"
+                    )
+
+                # 8. P.13 取締超載違規件數統計表
                 builder.add_table_slide(
                     slide_title="取締超載違規件數統計表",
                     df=df_overload,
                     footnote=overload_footnote_exact
                 )
 
-                # 8. P.7 「靜桃計畫」大執法專案統計表
+                # 9. P.14 「靜桃計畫」大執法專案統計表
                 builder.add_table_slide(
                     slide_title="「靜桃計畫」大執法專案統計表",
                     df=df_jingtao
                 )
 
-                # 9. P.8 科技執法成效（✅ 區間為 115年1月1日至115年9月15日，總數 2,963 件）
+                # 10. P.15 科技執法成效
                 tech_slide_title = f"科技執法成效 ({tech_date_range_str})"
                 builder.add_table_slide(
                     slide_title=tech_slide_title,
@@ -682,21 +725,21 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【原版規格 8 頁�
                     custom_width=480
                 )
 
-                # 10. 徹底清除原有舊頁面
+                # 11. 徹底清除原有舊頁面
                 builder.wipe_old_slides()
 
-                # 11. 整批傳送執行
+                # 12. 整批傳送執行
                 final_url = builder.execute_build()
 
                 st.balloons()
-                st.success("🎉 全套 8 頁 Google Slides 簡報已依原版規格全自動重繪完成！")
+                st.success("🎉 全套 15 頁 Google Slides 簡報已依原版完整規格全自動重繪完成！")
                 st.markdown(
                     f"### 📑 簡報入口：\n"
                     f"👉 **[點此直接開啟全新會報簡報]({final_url})**\n\n"
-                    f"✅ **日期與格式全面修正完成**：\n"
-                    f"1. **日期完全對齊 9/15**：封面標註至 09月15日、科技執法標註至 115年9月15日，超載備註精算法定應達成率為 **70.7%**，不再出現 9/16。\n"
-                    f"2. **P.2 雙層表頭合併修復**：採原子化寫入方式，徹底杜絕 400 報錯。\n"
-                    f"3. **精簡 8 頁標準版面**：已完全移除強化專案，各頁排版大器清爽！"
+                    f"✅ **15 頁原版規格全數歸位**：\n"
+                    f"1. **P.6~P.12 重大違規 7 大細表完整收錄**：酒駕、闖紅燈、逆向、轉彎、逼車、禮讓行人、嚴重超速，均採原版雙層表頭排版。\n"
+                    f"2. **全套數據與日期嚴格錨定 9/15**，超載法定達成率精準為 **70.7%**。\n"
+                    f"3. 徹底排除空儲存格 400 報錯，一鍵產出完整、標準、無格式殘留的正式會報簡報！"
                 )
 
             except HttpError as e:
