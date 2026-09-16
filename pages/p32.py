@@ -19,22 +19,16 @@ st.set_page_config(
 show_sidebar()
 
 st.title("📽️ 全方位執法數據簡報直出中心（免試算表、完整 7 大統計）")
+st.caption("🚀 畫布清空重繪機制：由 Python 從零動態繪製全新 8 頁投影片並整批覆蓋，完全不使用舊物件搜尋替換，徹底解決 403 空間不足問題。")
 
 # ==========================================
-# 1. Google 服務連線層
+# 1. Google 服務連線層與常數設定
 # ==========================================
 GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
-DRIVE_FOLDER_ID = st.secrets.get("DRIVE_FOLDER_ID", "").strip()
-SERVICE_ACCOUNT_EMAIL = GCP_CREDS.get("client_email", "未偵測到服務帳號 Email")
+SERVICE_ACCOUNT_EMAIL = GCP_CREDS.get("client_email", "streamlit-bot@streamlit-sheets-482909.iam.gserviceaccount.com")
 
-def get_drive_service():
-    if not GCP_CREDS:
-        return None
-    creds = service_account.Credentials.from_service_account_info(
-        GCP_CREDS,
-        scopes=["https://www.googleapis.com/auth/drive"]
-    )
-    return build("drive", "v3", credentials=creds)
+# 已鎖定您的專屬簡報容器 ID
+TARGET_PRESENTATION_ID = "1h2QNNI8SLvjNEBmky7IWv9ZGBbKsLvV1UDkYJWcOeWU"
 
 def get_slides_service():
     if not GCP_CREDS:
@@ -48,55 +42,30 @@ def get_slides_service():
     )
     return build("slides", "v1", credentials=creds)
 
-# 顯示帳號權限提示卡
 with st.container():
-    c_info1, c_info2 = st.columns([3, 1])
-    with c_info1:
-        st.info(f"🔑 **目前執行之 GCP 服務帳號：** `{SERVICE_ACCOUNT_EMAIL}`")
-    with c_info2:
-        st.caption("⚠️ 請確認目標雲端資料夾已共用此 Email 為「編輯者」")
+    c_s1, c_s2 = st.columns([2, 1])
+    with c_s1:
+        st.info(f"🔑 **執行服務帳號：** `{SERVICE_ACCOUNT_EMAIL}`")
+    with c_s2:
+        st.link_button("📂 開啟目標 Google 簡報", f"https://docs.google.com/presentation/d/{TARGET_PRESENTATION_ID}/edit")
 
 # ==========================================
 # 2. 全方位簡報排版引擎 (ComprehensiveSlidesBuilder)
 # ==========================================
 class ComprehensiveSlidesBuilder:
-    def __init__(self, slides_svc, drive_svc):
+    def __init__(self, slides_svc, presentation_id: str):
         self.slides_svc = slides_svc
-        self.drive_svc = drive_svc
-        self.presentation_id = None
-        self.initial_slide_id = None
+        self.presentation_id = presentation_id.strip()
+        self.old_slide_ids = []
         self.requests = []
 
-    def create_presentation(self, title: str, parent_folder_id: str) -> str:
-        """透過 Drive API 直接在指定的共用資料夾建立簡報"""
-        fid = parent_folder_id.replace('"', '').replace("'", '').strip()
-        
-        file_metadata = {
-            "name": title,
-            "mimeType": "application/vnd.google-apps.presentation"
-        }
-        if fid:
-            file_metadata["parents"] = [fid]
-
-        # 呼叫 Drive API 開檔
-        file = self.drive_svc.files().create(
-            body=file_metadata,
-            fields="id",
-            supportsAllDrives=True
-        ).execute()
-
-        self.presentation_id = file.get("id")
-
-        # 取得系統預設的第一張空白頁 ID
+    def prepare_canvas(self):
+        """記錄簡報所有既有頁面 ID（稍後全數安全抹除）"""
         pres = self.slides_svc.presentations().get(
             presentationId=self.presentation_id
         ).execute()
-        
         slides = pres.get("slides", [])
-        if slides:
-            self.initial_slide_id = slides[0]["objectId"]
-
-        return self.presentation_id
+        self.old_slide_ids = [s["objectId"] for s in slides]
 
     def add_cover_slide(self, main_title: str, subtitle: str, date_range_str: str):
         """【第 1 頁】警政深藍色專業封面"""
@@ -111,14 +80,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 刪除 Google 預設的第一頁
-        if self.initial_slide_id:
-            self.requests.append({
-                "deleteObject": {"objectId": self.initial_slide_id}
-            })
-            self.initial_slide_id = None
-
-        # 封面深藍底色
+        # 封面深藍底色 (#0F2537)
         self.requests.append({
             "updatePageProperties": {
                 "objectId": slide_id,
@@ -131,7 +93,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 主標題
+        # 主標題方塊
         self.requests.append({
             "createShape": {
                 "objectId": title_id,
@@ -158,7 +120,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 副標題
+        # 副標題方塊
         sub_text = f"{subtitle}\n統計區間：{date_range_str}\n製表單位：龍潭分局交通組"
         self.requests.append({
             "createShape": {
@@ -186,7 +148,7 @@ class ComprehensiveSlidesBuilder:
         })
 
     def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = ""):
-        """【標準表格頁】自動調整字級、合計列淡藍高亮"""
+        """【標準表格頁】自動計算排版、支援合計列淡藍底色高亮與備註"""
         slide_id = f"s_{uuid.uuid4().hex[:8]}"
         title_id = f"t_{uuid.uuid4().hex[:8]}"
         table_id = f"tbl_{uuid.uuid4().hex[:8]}"
@@ -245,6 +207,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
+        # 標題列文字
         for c_idx, col_name in enumerate(df.columns):
             c_str = str(col_name).replace("\n", " ").strip()
             self.requests.append({
@@ -256,6 +219,7 @@ class ComprehensiveSlidesBuilder:
                 }
             })
 
+        # 資料列文字
         for r_idx, row in df.iterrows():
             for c_idx, val in enumerate(row):
                 v_str = str(val).strip() if pd.notna(val) else "—"
@@ -268,6 +232,7 @@ class ComprehensiveSlidesBuilder:
                     }
                 })
 
+        # 表頭底色（警政深藍）
         for c_idx in range(num_cols):
             self.requests.append({
                 "updateTableCellProperties": {
@@ -282,6 +247,7 @@ class ComprehensiveSlidesBuilder:
                 }
             })
 
+        # 設定樣式：合計列自動標記淡藍色底 (#EAF2F8)
         for r_idx in range(num_rows):
             is_header = (r_idx == 0)
             is_total_row = (r_idx == 1 and str(df.iloc[0].values[0]).strip() in ["合計", "總計"])
@@ -346,7 +312,7 @@ class ComprehensiveSlidesBuilder:
             })
 
     def add_side_by_side_tables(self, slide_title: str, df_left: pd.DataFrame, title_left: str, df_right: pd.DataFrame, title_right: str, subtitle: str = ""):
-        """【雙表並排頁】A1 與 A2 對稱並列"""
+        """【雙表並排頁】A1 與 A2 左右對稱對照"""
         slide_id = f"s_dual_{uuid.uuid4().hex[:8]}"
         title_id = f"t_dual_{uuid.uuid4().hex[:8]}"
 
@@ -457,6 +423,13 @@ class ComprehensiveSlidesBuilder:
         build_one_tbl(df_left, title_left, x_offset=25, w=325)
         build_one_tbl(df_right, title_right, x_offset=365, w=330)
 
+    def wipe_old_slides(self):
+        """抹除所有舊頁面，僅保留剛編譯完成的 8 頁"""
+        for oid in self.old_slide_ids:
+            self.requests.append({
+                "deleteObject": {"objectId": oid}
+            })
+
     def execute_build(self) -> str:
         batch_size = 150
         for i in range(0, len(self.requests), batch_size):
@@ -468,7 +441,7 @@ class ComprehensiveSlidesBuilder:
         return f"https://docs.google.com/presentation/d/{self.presentation_id}/edit"
 
 # ==========================================
-# 3. 數據準備層
+# 3. 數據準備層（真實數據優先，備援模擬資料）
 # ==========================================
 df_three = st.session_state.get("df_three", pd.DataFrame([
     {"單位": "合計", "闖紅燈(本期)": 15, "闖紅燈(累計)": 128, "逆向(本期)": 8, "逆向(累計)": 72, "不停讓行人(本期)": 5, "不停讓行人(累計)": 43, "三項合計(本期)": 28, "三項合計(累計)": 243},
@@ -559,18 +532,7 @@ df_tech = st.session_state.get("df_tech", pd.DataFrame([
     {"排名": "第 10 名", "路段名稱": "高原路與高平路口", "違規態樣": "超速", "舉發件數": 182},
 ]))
 
-# ==========================================
-# 4. 前端設定
-# ==========================================
-st.subheader("⚙️ 簡報匯出參數")
-c_p1, c_p2 = st.columns([2, 1])
-with c_p1:
-    target_folder = st.text_input("雲端硬碟共用資料夾 ID (DRIVE_FOLDER_ID)：", value=DRIVE_FOLDER_ID)
-with c_p2:
-    today_str = datetime.now().strftime("%m%d")
-    report_title = st.text_input("輸出簡報檔名：", value=f"龍潭分局主管會報交通執法專案報告_{today_str}")
-
-with st.expander("👀 點擊展開預覽 7 大統計表格"):
+with st.expander("👀 點擊展開預覽 7 大統計業務表格內容"):
     t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點", "事故分析", "重大違規", "強化專案", "超載取締", "靜桃計畫", "科技執法"])
     with t1: st.dataframe(df_three, hide_index=True)
     with t2:
@@ -586,23 +548,20 @@ with st.expander("👀 點擊展開預覽 7 大統計表格"):
 st.write("")
 
 # ==========================================
-# 5. 執行生成
+# 4. 啟動重繪
 # ==========================================
-if st.button("🚀 立即由零全自動生成【完整 8 頁會報簡報】", type="primary"):
-    drive_svc = get_drive_service()
+if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報簡報】", type="primary"):
     slides_svc = get_slides_service()
 
-    if not drive_svc or not slides_svc:
-        st.error("❌ 無法初始化 Google 服務，請確認 secrets.toml 設定。")
-    elif not target_folder:
-        st.error("❌ 尚未設定雲端硬碟共用資料夾 ID，無法指定建檔目錄。")
+    if not slides_svc:
+        st.error("❌ 無法初始化 Google Slides 服務，請確認 secrets.toml 設定。")
     else:
-        with st.spinner("正在透過 Drive API 建立檔案並呼叫 Slides API 繪製全套投影片..."):
+        with st.spinner("正在讀取簡報畫布、動態編譯 8 頁投影片並整批覆蓋..."):
             try:
-                builder = ComprehensiveSlidesBuilder(slides_svc, drive_svc)
+                builder = ComprehensiveSlidesBuilder(slides_svc, TARGET_PRESENTATION_ID)
 
-                # 1. 建立簡報母體
-                builder.create_presentation(title=report_title, parent_folder_id=target_folder)
+                # 1. 記錄舊頁面 ID
+                builder.prepare_canvas()
 
                 # 2. P.1 封面頁
                 builder.add_cover_slide(
@@ -667,26 +626,21 @@ if st.button("🚀 立即由零全自動生成【完整 8 頁會報簡報】", t
                     footnote="統計包含轄內固定桿、路口多功能科技執法及區間測速設備入案件數。"
                 )
 
+                # 10. 徹底清除原有舊頁面
+                builder.wipe_old_slides()
+
+                # 11. 整批傳送執行
                 final_url = builder.execute_build()
 
                 st.balloons()
-                st.success("🎉 全套 Google Slides 簡報已全自動建構完畢！")
+                st.success("🎉 全套 Google Slides 簡報已全自動重繪完成！")
                 st.markdown(
                     f"### 📑 簡報入口：\n"
                     f"👉 **[點此直接開啟全新會報簡報]({final_url})**\n\n"
-                    f"簡報已安全儲存於指定的共用資料夾，且表頭、合計欄與字級皆已完成最佳化配置。"
+                    f"舊內容已被全數清空，全 8 頁深藍封面與業務表格已全自動編譯上架！"
                 )
 
             except HttpError as e:
-                if "insufficientParentPermissions" in str(e):
-                    st.error(
-                        f"❌ **資料夾寫入權限不足 (insufficientParentPermissions)**\n\n"
-                        f"**排除方式：**\n"
-                        f"1. 請複製服務帳號 Email：`{SERVICE_ACCOUNT_EMAIL}`\n"
-                        f"2. 開啟 Google 雲端硬碟資料夾（ID: `{target_folder}`）\n"
-                        f"3. 點擊「共用」，將此 Email 新增為 **「編輯者」**（若為共用雲端硬碟請給「內容管理員」）。"
-                    )
-                else:
-                    st.error(f"❌ Google API 請求失敗：{e}")
+                st.error(f"❌ Google API 請求失敗：{e}\n\n*提示：請確認簡報是否已共用給 `{SERVICE_ACCOUNT_EMAIL}` 並設定為「編輯者」。*")
             except Exception as e:
                 st.error(f"❌ 建立簡報失敗：{e}")
