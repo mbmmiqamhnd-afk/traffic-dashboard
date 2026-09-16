@@ -71,13 +71,22 @@ class ComprehensiveSlidesBuilder:
         self.old_slide_ids = []
         self.requests = []
 
-    def prepare_canvas(self):
-        """記錄簡報所有既有頁面 ID（稍後全數安全抹除）"""
+    def prepare_canvas(self, protect_first_slide: bool = False):
+        """記錄簡報所有既有頁面 ID（稍後全數安全抹除）。
+
+        若 protect_first_slide=True，會跳過目前簡報的第 1 頁（不記錄其 ID），
+        使其在後續 wipe_old_slides() 執行刪除時被保留下來——
+        用於保護使用者手動在 Google Slides 上編輯過的封面頁，不被自動化流程覆寫或刪除。
+        """
         pres = self.slides_svc.presentations().get(
             presentationId=self.presentation_id
         ).execute()
         slides = pres.get("slides", [])
-        self.old_slide_ids = [s["objectId"] for s in slides]
+        if protect_first_slide and slides:
+            # 跳過第一頁，只記錄第2頁(含)之後的既有頁面 ID
+            self.old_slide_ids = [s["objectId"] for s in slides[1:]]
+        else:
+            self.old_slide_ids = [s["objectId"] for s in slides]
 
     def add_cover_slide(self, main_title: str, subtitle: str, date_range_str: str):
         slide_id = f"cover_{uuid.uuid4().hex[:8]}"
@@ -212,7 +221,7 @@ class ComprehensiveSlidesBuilder:
 
         tbl_width = custom_width if custom_width else (480 if num_cols <= 2 else 670)
         tbl_left = (720 - tbl_width) / 2
-        
+
         if num_cols <= 2:
             row_height = 24
             font_size = 11.0
@@ -518,7 +527,21 @@ col_opt1, col_opt2 = st.columns(2)
 
 with col_opt1:
     st.markdown("##### 🏢 常態會報核心表格")
-    chk_cover = st.checkbox("P.1 簡報封面", value=True)
+
+    # 🔒 保留現有封面：勾選後系統會跳過第1頁的重新產生與刪除，
+    # 讓您在 Google Slides 上手動編輯過的封面樣式不被自動化流程覆蓋。
+    chk_protect_cover = st.checkbox(
+        "🔒 保留現有封面（手動編輯過，不覆寫/不刪除）",
+        value=False,
+        help="勾選後，Google 簡報目前的第1頁會被完整保留（不刪除、不重繪），"
+             "適合您已經手動排版過封面的情況。此時下方「P.1 簡報封面」選項會自動停用。"
+    )
+    chk_cover = st.checkbox(
+        "P.1 簡報封面（自動產生，套用固定樣式）",
+        value=True,
+        disabled=chk_protect_cover
+    )
+
     chk_three = st.checkbox("P.2 取締三項重點違規統計表 (母本雙層)", value=True)
     chk_a1 = st.checkbox("P.3 A1類交通事故死亡人數統計表", value=True)
     chk_a2 = st.checkbox("P.4 A2類交通事故受傷人數統計表", value=True)
@@ -539,7 +562,10 @@ with col_opt2:
 
 # 計算總勾選頁數
 selected_pages = []
-if chk_cover: selected_pages.append("封面")
+if chk_protect_cover:
+    selected_pages.append("封面(保留手動版本)")
+elif chk_cover:
+    selected_pages.append("封面")
 if chk_three: selected_pages.append("三項重點")
 if chk_a1: selected_pages.append("A1事故死亡")
 if chk_a2: selected_pages.append("A2事故受傷")
@@ -555,7 +581,10 @@ if chk_overload: selected_pages.append("超載統計")
 if chk_jingtao: selected_pages.append("靜桃計畫")
 if chk_tech: selected_pages.append("科技執法")
 
-st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出。")
+if chk_protect_cover:
+    st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出（封面將維持現況，不重新產生）。")
+else:
+    st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出。")
 
 with st.expander("👀 點擊展開預覽待輸出業務數據"):
     t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點", "A1事故死亡", "A2事故受傷", "重大違規", "超載取締", "靜桃計畫", "科技執法成效"])
@@ -563,7 +592,7 @@ with st.expander("👀 點擊展開預覽待輸出業務數據"):
     with t2: st.dataframe(df_a1, hide_index=True)
     with t3: st.dataframe(df_a2, hide_index=True)
     with t4: st.dataframe(df_major, hide_index=True)
-    with t5: 
+    with t5:
         st.dataframe(df_overload, hide_index=True)
         st.caption(f"📝 {overload_footnote_exact}")
     with t6: st.dataframe(df_jingtao, hide_index=True)
@@ -585,15 +614,16 @@ if st.button(btn_label, type="primary"):
         if not slides_svc:
             st.error("❌ 無法初始化 Google Slides 服務，請確認 secrets.toml 設定。")
         else:
-            with st.spinner(f"正在清空母本畫布、動態編譯已勾選的 {len(selected_pages)} 頁投影片並整批覆蓋..."):
+            spinner_msg = f"正在{'（保留現有封面）' if chk_protect_cover else '清空母本畫布、'}動態編譯已勾選的 {len(selected_pages)} 頁投影片並整批覆蓋..."
+            with st.spinner(spinner_msg):
                 try:
                     builder = ComprehensiveSlidesBuilder(slides_svc, TARGET_PRESENTATION_ID)
 
-                    # 1. 記錄舊頁面 ID（稍後整批抹除）
-                    builder.prepare_canvas()
+                    # 1. 記錄舊頁面 ID（稍後整批抹除；若勾選保留封面，第1頁會被跳過、不列入刪除清單）
+                    builder.prepare_canvas(protect_first_slide=chk_protect_cover)
 
                     # 2. 依勾選順序動態注入
-                    if chk_cover:
+                    if chk_cover and not chk_protect_cover:
                         builder.add_cover_slide(
                             main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制數據分析報告",
                             subtitle="週次主管會報專案報告",
@@ -662,7 +692,7 @@ if st.button(btn_label, type="primary"):
                             custom_width=480
                         )
 
-                    # 3. 抹除舊頁面
+                    # 3. 抹除舊頁面（若保留封面，第1頁不在此清單中，因此不會被刪除）
                     builder.wipe_old_slides()
 
                     # 4. 整批送出
@@ -670,9 +700,11 @@ if st.button(btn_label, type="primary"):
 
                     st.balloons()
                     st.success(f"🎉 指定的 {len(selected_pages)} 個統計表頁面已全自動重繪完成！")
+                    protect_note = "（第1頁封面已依設定保留，未受影響）\n\n" if chk_protect_cover else ""
                     st.markdown(
                         f"### 📑 簡報入口：\n"
                         f"👉 **[點此直接開啟已更新的簡報]({final_url})**\n\n"
+                        f"{protect_note}"
                         f"未勾選的頁面已全數剔除，目標簡報內僅包含您指定的表格，排版精準到位！"
                     )
 
