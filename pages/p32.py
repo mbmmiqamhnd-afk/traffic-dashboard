@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from menu import show_sidebar
 
@@ -18,13 +19,13 @@ st.set_page_config(
 show_sidebar()
 
 st.title("📽️ 全方位執法數據簡報直出中心（免試算表、完整 7 大統計）")
-st.caption("🚀 核心優化：透過 Google Drive API 直接於共用資料夾開檔，徹底解決 Service Account 403 權限與空間不足問題。")
 
 # ==========================================
 # 1. Google 服務連線層
 # ==========================================
 GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
 DRIVE_FOLDER_ID = st.secrets.get("DRIVE_FOLDER_ID", "").strip()
+SERVICE_ACCOUNT_EMAIL = GCP_CREDS.get("client_email", "未偵測到服務帳號 Email")
 
 def get_drive_service():
     if not GCP_CREDS:
@@ -47,6 +48,14 @@ def get_slides_service():
     )
     return build("slides", "v1", credentials=creds)
 
+# 顯示帳號權限提示卡
+with st.container():
+    c_info1, c_info2 = st.columns([3, 1])
+    with c_info1:
+        st.info(f"🔑 **目前執行之 GCP 服務帳號：** `{SERVICE_ACCOUNT_EMAIL}`")
+    with c_info2:
+        st.caption("⚠️ 請確認目標雲端資料夾已共用此 Email 為「編輯者」")
+
 # ==========================================
 # 2. 全方位簡報排版引擎 (ComprehensiveSlidesBuilder)
 # ==========================================
@@ -59,16 +68,17 @@ class ComprehensiveSlidesBuilder:
         self.requests = []
 
     def create_presentation(self, title: str, parent_folder_id: str) -> str:
-        """透過 Drive API 直接在指定的共用資料夾建立簡報（徹底解決 403 空間/權限衝突）"""
-        parent_folder_id = parent_folder_id.replace('"', '').replace("'", '').strip()
+        """透過 Drive API 直接在指定的共用資料夾建立簡報"""
+        fid = parent_folder_id.replace('"', '').replace("'", '').strip()
         
         file_metadata = {
             "name": title,
             "mimeType": "application/vnd.google-apps.presentation"
         }
-        if parent_folder_id:
-            file_metadata["parents"] = [parent_folder_id]
+        if fid:
+            file_metadata["parents"] = [fid]
 
+        # 呼叫 Drive API 開檔
         file = self.drive_svc.files().create(
             body=file_metadata,
             fields="id",
@@ -77,7 +87,7 @@ class ComprehensiveSlidesBuilder:
 
         self.presentation_id = file.get("id")
 
-        # 讀取簡報以記錄 Google 預設建立的第一張空白投影片 ID
+        # 取得系統預設的第一張空白頁 ID
         pres = self.slides_svc.presentations().get(
             presentationId=self.presentation_id
         ).execute()
@@ -94,7 +104,6 @@ class ComprehensiveSlidesBuilder:
         title_id = f"txt_title_{uuid.uuid4().hex[:8]}"
         sub_id = f"txt_sub_{uuid.uuid4().hex[:8]}"
 
-        # 1. 建立空白頁
         self.requests.append({
             "createSlide": {
                 "objectId": slide_id,
@@ -102,14 +111,14 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 2. 安全刪除 Google 預設的第一頁（此時已有新封面頁，不會觸發全空錯誤）
+        # 刪除 Google 預設的第一頁
         if self.initial_slide_id:
             self.requests.append({
                 "deleteObject": {"objectId": self.initial_slide_id}
             })
             self.initial_slide_id = None
 
-        # 3. 封面底色：警政深藍 (#0F2537)
+        # 封面深藍底色
         self.requests.append({
             "updatePageProperties": {
                 "objectId": slide_id,
@@ -122,7 +131,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 4. 主標題方塊
+        # 主標題
         self.requests.append({
             "createShape": {
                 "objectId": title_id,
@@ -149,7 +158,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 5. 副標題方塊
+        # 副標題
         sub_text = f"{subtitle}\n統計區間：{date_range_str}\n製表單位：龍潭分局交通組"
         self.requests.append({
             "createShape": {
@@ -177,7 +186,7 @@ class ComprehensiveSlidesBuilder:
         })
 
     def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = ""):
-        """【標準表格頁】自動計算排版、支援合計列上色與備註說明"""
+        """【標準表格頁】自動調整字級、合計列淡藍高亮"""
         slide_id = f"s_{uuid.uuid4().hex[:8]}"
         title_id = f"t_{uuid.uuid4().hex[:8]}"
         table_id = f"tbl_{uuid.uuid4().hex[:8]}"
@@ -189,7 +198,6 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 頂部頁籤標題
         full_title = f"{slide_title}  |  {subtitle}" if subtitle else slide_title
         self.requests.append({
             "createShape": {
@@ -237,7 +245,6 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 填寫標題列文字
         for c_idx, col_name in enumerate(df.columns):
             c_str = str(col_name).replace("\n", " ").strip()
             self.requests.append({
@@ -249,7 +256,6 @@ class ComprehensiveSlidesBuilder:
                 }
             })
 
-        # 填寫資料列
         for r_idx, row in df.iterrows():
             for c_idx, val in enumerate(row):
                 v_str = str(val).strip() if pd.notna(val) else "—"
@@ -262,7 +268,6 @@ class ComprehensiveSlidesBuilder:
                     }
                 })
 
-        # 表頭底色（深藍）
         for c_idx in range(num_cols):
             self.requests.append({
                 "updateTableCellProperties": {
@@ -277,12 +282,10 @@ class ComprehensiveSlidesBuilder:
                 }
             })
 
-        # 全表字級與字型格式化（合計列特別標示淡藍底）
         for r_idx in range(num_rows):
             is_header = (r_idx == 0)
             is_total_row = (r_idx == 1 and str(df.iloc[0].values[0]).strip() in ["合計", "總計"])
 
-            # 若為合計列，整列上淡藍色底 (#EAF2F8)
             if is_total_row:
                 for c_idx in range(num_cols):
                     self.requests.append({
@@ -315,7 +318,6 @@ class ComprehensiveSlidesBuilder:
                     }
                 })
 
-        # 底部備註
         if footnote:
             fn_id = f"fn_{uuid.uuid4().hex[:8]}"
             self.requests.append({
@@ -344,7 +346,7 @@ class ComprehensiveSlidesBuilder:
             })
 
     def add_side_by_side_tables(self, slide_title: str, df_left: pd.DataFrame, title_left: str, df_right: pd.DataFrame, title_right: str, subtitle: str = ""):
-        """【雙表並排頁】專供 A1 死亡 與 A2 受傷 在同頁左右對照"""
+        """【雙表並排頁】A1 與 A2 對稱並列"""
         slide_id = f"s_dual_{uuid.uuid4().hex[:8]}"
         title_id = f"t_dual_{uuid.uuid4().hex[:8]}"
 
@@ -452,12 +454,10 @@ class ComprehensiveSlidesBuilder:
                         }
                     })
 
-        # 左右對稱排版：左表 325 pt，右表 330 pt，間距 15 pt
         build_one_tbl(df_left, title_left, x_offset=25, w=325)
         build_one_tbl(df_right, title_right, x_offset=365, w=330)
 
     def execute_build(self) -> str:
-        """整批分段傳送 API 請求並回傳簡報檢視連結"""
         batch_size = 150
         for i in range(0, len(self.requests), batch_size):
             chunk = self.requests[i:i + batch_size]
@@ -468,16 +468,8 @@ class ComprehensiveSlidesBuilder:
         return f"https://docs.google.com/presentation/d/{self.presentation_id}/edit"
 
 # ==========================================
-# 3. 數據準備層（優先取用 session_state，備援預設數據）
+# 3. 數據準備層
 # ==========================================
-has_session_data = "df_three" in st.session_state
-
-if has_session_data:
-    st.success("🟢 偵測到首頁批次分析之最新真實數據，簡報將直接採用當期計算結果！")
-else:
-    st.info("🟡 尚未自首頁執行批次上傳，目前採用完整模擬業務數據進行排版演練。")
-
-# 1. 三項重點違規
 df_three = st.session_state.get("df_three", pd.DataFrame([
     {"單位": "合計", "闖紅燈(本期)": 15, "闖紅燈(累計)": 128, "逆向(本期)": 8, "逆向(累計)": 72, "不停讓行人(本期)": 5, "不停讓行人(累計)": 43, "三項合計(本期)": 28, "三項合計(累計)": 243},
     {"單位": "聖亭所", "闖紅燈(本期)": 3, "闖紅燈(累計)": 24, "逆向(本期)": 1, "逆向(累計)": 15, "不停讓行人(本期)": 1, "不停讓行人(累計)": 8, "三項合計(本期)": 5, "三項合計(累計)": 47},
@@ -489,7 +481,6 @@ df_three = st.session_state.get("df_three", pd.DataFrame([
     {"單位": "交通分隊", "闖紅燈(本期)": 3, "闖紅燈(累計)": 13, "逆向(本期)": 2, "逆向(累計)": 6, "不停讓行人(本期)": 1, "不停讓行人(累計)": 5, "三項合計(本期)": 6, "三項合計(累計)": 24},
 ]))
 
-# 2. 交通事故 (A1 / A2)
 df_a1 = st.session_state.get("df_a1", pd.DataFrame([
     {"統計期間": "合計", "本期": 0, "本年累計": 3, "去年同期": 4, "增減比較": -1},
     {"統計期間": "聖亭所", "本期": 0, "本年累計": 1, "去年同期": 1, "增減比較": 0},
@@ -510,7 +501,6 @@ df_a2 = st.session_state.get("df_a2", pd.DataFrame([
     {"統計期間": "三和所", "本期": 1, "前期": 1, "本年累計": 25, "去年累計": 33, "比較": -8, "增減比例": "-24.24%"},
 ]))
 
-# 3. 重大交通違規 (總表)
 df_major = st.session_state.get("df_major", pd.DataFrame([
     {"單位": "合計", "本期(攔停)": 48, "本期(逕舉)": 152, "本年(攔停)": 1840, "本年(逕舉)": 6420, "去年同期": 7950, "增減比較": 310, "目標值": 18115, "達成率": "45.6%"},
     {"單位": "科技執法", "本期(攔停)": 0, "本期(逕舉)": 88, "本年(攔停)": 0, "本年(逕舉)": 3120, "去年同期": 2900, "增減比較": 220, "目標值": 6006, "達成率": "51.9%"},
@@ -523,7 +513,6 @@ df_major = st.session_state.get("df_major", pd.DataFrame([
     {"單位": "交通分隊", "本期(攔停)": 10, "本期(逕舉)": 10, "本年(攔停)": 260, "本年(逕舉)": 490, "去年同期": 820, "增減比較": -70, "目標值": 2526, "達成率": "29.7%"},
 ]))
 
-# 4. 強化專案
 df_project = st.session_state.get("df_project", pd.DataFrame([
     {"單位": "合計", "酒駕件數": 88, "酒駕目標": 150, "酒駕達成率": "58.7%", "闖紅燈件數": 620, "闖紅燈目標": 880, "闖紅燈達成率": "70.5%", "超速件數": 82, "超速目標": 120, "超速達成率": "68.3%", "車不讓人件數": 115, "車不讓人目標": 150, "車不讓人達成率": "76.7%", "大型車件數": 54, "大型車目標": 70, "大型車達成率": "77.1%"},
     {"單位": "聖亭所", "酒駕件數": 14, "酒駕目標": 25, "酒駕達成率": "56.0%", "闖紅燈件數": 98, "闖紅燈目標": 140, "闖紅燈達成率": "70.0%", "超速件數": 12, "超速目標": 20, "超速達成率": "60.0%", "車不讓人件數": 18, "車不讓人目標": 25, "車不讓人達成率": "72.0%", "大型車件數": 8, "大型車目標": 10, "大型車達成率": "80.0%"},
@@ -535,7 +524,6 @@ df_project = st.session_state.get("df_project", pd.DataFrame([
     {"單位": "交通分隊", "酒駕件數": 14, "酒駕目標": 20, "酒駕達成率": "70.0%", "闖紅燈件數": 110, "闖紅燈目標": 140, "闖紅燈達成率": "78.6%", "超速件數": 15, "超速目標": 15, "超速達成率": "100.0%", "車不讓人件數": 19, "車不讓人目標": 20, "車不讓人達成率": "95.0%", "大型車件數": 10, "大型車目標": 8, "大型車達成率": "125.0%"},
 ]))
 
-# 5. 超載取締統計
 df_overload = st.session_state.get("df_overload", pd.DataFrame([
     {"統計期間": "合計", "本期": 4, "本年累計": 86, "去年同期": 78, "比較": 8, "目標值": 127, "達成率": "68%"},
     {"統計期間": "聖亭所", "本期": 1, "本年累計": 15, "去年同期": 12, "比較": 3, "目標值": 20, "達成率": "75%"},
@@ -547,7 +535,6 @@ df_overload = st.session_state.get("df_overload", pd.DataFrame([
     {"統計期間": "交通分隊", "本期": 1, "本年累計": 11, "去年同期": 13, "比較": -2, "目標值": 22, "達成率": "50%"},
 ]))
 
-# 6. 靜桃計畫
 df_jingtao = st.session_state.get("df_jingtao", pd.DataFrame([
     {"單位": "合計", "本期(22-06時)": 12, "本期(06-22時)": 8, "累計(22-06時)": 184, "累計(06-22時)": 142, "專案總計": 326},
     {"單位": "聖亭所", "本期(22-06時)": 2, "本期(06-22時)": 1, "累計(22-06時)": 32, "累計(06-22時)": 24, "專案總計": 56},
@@ -559,7 +546,6 @@ df_jingtao = st.session_state.get("df_jingtao", pd.DataFrame([
     {"單位": "交通分隊", "本期(22-06時)": 2, "本期(06-22時)": 2, "累計(22-06時)": 26, "累計(06-22時)": 20, "專案總計": 46},
 ]))
 
-# 7. 科技執法
 df_tech = st.session_state.get("df_tech", pd.DataFrame([
     {"排名": "第 1 名", "路段名稱": "中豐路與大昌路口", "違規態樣": "闖紅燈/未依標誌行駛", "舉發件數": 1248},
     {"排名": "第 2 名", "路段名稱": "大昌路二段與五福街口", "違規態樣": "闖紅燈/不禮讓行人", "舉發件數": 892},
@@ -574,7 +560,7 @@ df_tech = st.session_state.get("df_tech", pd.DataFrame([
 ]))
 
 # ==========================================
-# 4. 前端參數設定與預覽
+# 4. 前端設定
 # ==========================================
 st.subheader("⚙️ 簡報匯出參數")
 c_p1, c_p2 = st.columns([2, 1])
@@ -600,14 +586,14 @@ with st.expander("👀 點擊展開預覽 7 大統計表格"):
 st.write("")
 
 # ==========================================
-# 5. 執行全套簡報生成
+# 5. 執行生成
 # ==========================================
 if st.button("🚀 立即由零全自動生成【完整 8 頁會報簡報】", type="primary"):
     drive_svc = get_drive_service()
     slides_svc = get_slides_service()
 
     if not drive_svc or not slides_svc:
-        st.error("❌ 無法初始化 Google 服務，請確認 secrets.toml 的 gcp_service_account 設定。")
+        st.error("❌ 無法初始化 Google 服務，請確認 secrets.toml 設定。")
     elif not target_folder:
         st.error("❌ 尚未設定雲端硬碟共用資料夾 ID，無法指定建檔目錄。")
     else:
@@ -615,7 +601,7 @@ if st.button("🚀 立即由零全自動生成【完整 8 頁會報簡報】", t
             try:
                 builder = ComprehensiveSlidesBuilder(slides_svc, drive_svc)
 
-                # 1. 建立簡報母體（直接開在共用資料夾內）
+                # 1. 建立簡報母體
                 builder.create_presentation(title=report_title, parent_folder_id=target_folder)
 
                 # 2. P.1 封面頁
@@ -681,7 +667,6 @@ if st.button("🚀 立即由零全自動生成【完整 8 頁會報簡報】", t
                     footnote="統計包含轄內固定桿、路口多功能科技執法及區間測速設備入案件數。"
                 )
 
-                # 批次傳送建構請求
                 final_url = builder.execute_build()
 
                 st.balloons()
@@ -689,8 +674,19 @@ if st.button("🚀 立即由零全自動生成【完整 8 頁會報簡報】", t
                 st.markdown(
                     f"### 📑 簡報入口：\n"
                     f"👉 **[點此直接開啟全新會報簡報]({final_url})**\n\n"
-                    f"簡報已安全儲存於指定的共用資料夾，無任何 Google Sheets 依賴，且表頭、合計欄與字級皆已完成最佳化配置。"
+                    f"簡報已安全儲存於指定的共用資料夾，且表頭、合計欄與字級皆已完成最佳化配置。"
                 )
 
+            except HttpError as e:
+                if "insufficientParentPermissions" in str(e):
+                    st.error(
+                        f"❌ **資料夾寫入權限不足 (insufficientParentPermissions)**\n\n"
+                        f"**排除方式：**\n"
+                        f"1. 請複製服務帳號 Email：`{SERVICE_ACCOUNT_EMAIL}`\n"
+                        f"2. 開啟 Google 雲端硬碟資料夾（ID: `{target_folder}`）\n"
+                        f"3. 點擊「共用」，將此 Email 新增為 **「編輯者」**（若為共用雲端硬碟請給「內容管理員」）。"
+                    )
+                else:
+                    st.error(f"❌ Google API 請求失敗：{e}")
             except Exception as e:
                 st.error(f"❌ 建立簡報失敗：{e}")
