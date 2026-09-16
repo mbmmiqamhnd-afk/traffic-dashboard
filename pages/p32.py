@@ -22,7 +22,7 @@ st.set_page_config(
 show_sidebar()
 
 st.title("📽️ 全方位執法數據簡報直出中心（原版規格 8 頁標準版）")
-st.caption("🚀 三項重點專案全面校準：嚴格遵循專案母本 (1gP8Rw...) 雙層合併表頭規範與 7 所隊 144 件基準。")
+st.caption("🚀 核心修復：徹底解決合併儲存格 updateTextStyle 400 錯誤，精準實現專案母本雙層表頭與原版統計格式。")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -157,7 +157,7 @@ class ComprehensiveSlidesBuilder:
         })
 
     def add_three_major_slide(self, data_rows, latest_day="09/15"):
-        """【第 2 頁】取締三項重點違規（✅ 嚴格還原母本雙層合併表頭與 9 欄結構）"""
+        """【第 2 頁】三項重點違規（✅ 原子化寫入樣式，徹底避免空格 400 錯誤）"""
         slide_id = f"s_three_{uuid.uuid4().hex[:8]}"
         title_id = f"t_three_{uuid.uuid4().hex[:8]}"
         table_id = f"tbl_three_{uuid.uuid4().hex[:8]}"
@@ -169,7 +169,6 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 頂部大標題與副標題
         title_text = "桃園市政府警察局龍潭分局 取締三項重點違規本期及累計統計表"
         sub_text = f"統計期間：自 115 年 9 月 1 日起至本期({latest_day})止 ｜ 製表單位：龍潭分局交通組"
         full_header = f"{title_text}\n{sub_text}"
@@ -200,7 +199,6 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 建立 10 列 x 9 欄表格（2列表頭 + 8列資料）
         num_rows = len(data_rows) + 2
         num_cols = 9
         tbl_top = 62
@@ -219,18 +217,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # ── 1. 填入表頭文字 ──
-        # 第 0 列：主分區（注意：非主格留空，避免合併失敗）
-        self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": 0, "columnIndex": 0}, "text": "單位", "insertionIndex": 0}})
-        self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": 0, "columnIndex": 1}, "text": f"本期 ({latest_day}) 新增違規數", "insertionIndex": 0}})
-        self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": 0, "columnIndex": 5}, "text": "115年9月1日起累計數", "insertionIndex": 0}})
-
-        # 第 1 列：細項名稱
-        sub_headers = ["", "闖紅燈", "逆向行駛", "不停讓行人", f"本期合計 ({latest_day})", "闖紅燈", "逆向行駛", "不停讓行人", "累計總計"]
-        for c_idx in range(1, 9):
-            self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": 1, "columnIndex": c_idx}, "text": sub_headers[c_idx], "insertionIndex": 0}})
-
-        # ── 2. 執行表頭儲存格合併 ──
+        # ── 1. 執行表頭合併 ──
         # 合併「單位」欄（跨列 0~1）
         self.requests.append({
             "mergeTableCells": {
@@ -253,71 +240,73 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # ── 3. 填入數據資料列 ──
-        for r_idx, r_vals in enumerate(data_rows, start=2):
-            for c_idx, val in enumerate(r_vals):
-                v_str = str(val).strip() if pd.notna(val) else "0"
-                self.requests.append({
-                    "insertText": {
-                        "objectId": table_id,
-                        "cellLocation": {"rowIndex": r_idx, "columnIndex": c_idx},
-                        "text": v_str,
-                        "insertionIndex": 0
+        # ── 2. 表頭底色（深藍）與合計列底色（淡藍） ──
+        self.requests.append({
+            "updateTableCellProperties": {
+                "objectId": table_id,
+                "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": num_cols},
+                "tableCellProperties": {
+                    "tableCellBackgroundFill": {
+                        "solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}
                     }
-                })
-
-        # ── 4. 表頭美化底色（警政深藍） ──
-        for r_idx in [0, 1]:
-            for c_idx in range(num_cols):
-                self.requests.append({
-                    "updateTableCellProperties": {
-                        "objectId": table_id,
-                        "tableRange": {"location": {"rowIndex": r_idx, "columnIndex": c_idx}, "rowSpan": 1, "columnSpan": 1},
-                        "tableCellProperties": {
-                            "tableCellBackgroundFill": {
-                                "solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}
-                            }
-                        },
-                        "fields": "tableCellBackgroundFill"
+                },
+                "fields": "tableCellBackgroundFill"
+            }
+        })
+        self.requests.append({
+            "updateTableCellProperties": {
+                "objectId": table_id,
+                "tableRange": {"location": {"rowIndex": 2, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols},
+                "tableCellProperties": {
+                    "tableCellBackgroundFill": {
+                        "solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}
                     }
-                })
+                },
+                "fields": "tableCellBackgroundFill"
+            }
+        })
 
-        # ── 5. 合計列標註淡藍色 (#EAF2F8) ──
-        for c_idx in range(num_cols):
+        # ── 3. 安全寫入文字並同步設定字型（只對有文字的格子下指令） ──
+        def write_cell(r, c, text, font_size=10.0, bold=False, fg=(0.1, 0.1, 0.1)):
+            t_str = str(text).strip() if (pd.notna(text) and str(text).strip() != "") else "0"
             self.requests.append({
-                "updateTableCellProperties": {
+                "insertText": {
                     "objectId": table_id,
-                    "tableRange": {"location": {"rowIndex": 2, "columnIndex": c_idx}, "rowSpan": 1, "columnSpan": 1},
-                    "tableCellProperties": {
-                        "tableCellBackgroundFill": {
-                            "solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}
-                        }
+                    "cellLocation": {"rowIndex": r, "columnIndex": c},
+                    "text": t_str,
+                    "insertionIndex": 0
+                }
+            })
+            self.requests.append({
+                "updateTextStyle": {
+                    "objectId": table_id,
+                    "cellLocation": {"rowIndex": r, "columnIndex": c},
+                    "style": {
+                        "fontFamily": "Microsoft JhengHei",
+                        "fontSize": {"magnitude": font_size, "unit": "PT"},
+                        "bold": bold,
+                        "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg[0], "green": fg[1], "blue": fg[2]}}}
                     },
-                    "fields": "tableCellBackgroundFill"
+                    "textRange": {"type": "ALL"},
+                    "fields": "fontFamily,fontSize,bold,foregroundColor"
                 }
             })
 
-        # ── 6. 設定字型與字級 ──
-        for r_idx in range(num_rows):
-            is_header = (r_idx in [0, 1])
-            is_total_row = (r_idx == 2)
-            fg = {"red": 1.0, "green": 1.0, "blue": 1.0} if is_header else {"red": 0.1, "green": 0.1, "blue": 0.1}
+        # 填寫第 0 列合併主標
+        write_cell(0, 0, "單位", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
+        write_cell(0, 1, f"本期 ({latest_day}) 新增違規數", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
+        write_cell(0, 5, "115年9月1日起累計數", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
 
-            for c_idx in range(num_cols):
-                self.requests.append({
-                    "updateTextStyle": {
-                        "objectId": table_id,
-                        "cellLocation": {"rowIndex": r_idx, "columnIndex": c_idx},
-                        "style": {
-                            "fontFamily": "Microsoft JhengHei",
-                            "fontSize": {"magnitude": 10.0 if not is_header else 10.5, "unit": "PT"},
-                            "bold": (is_header or is_total_row),
-                            "foregroundColor": {"opaqueColor": {"rgbColor": fg}}
-                        },
-                        "textRange": {"type": "ALL"},
-                        "fields": "fontFamily,fontSize,bold,foregroundColor"
-                    }
-                })
+        # 填寫第 1 列細部次標（第 0 欄已合併，略過）
+        sub_headers = ["", "闖紅燈", "逆向行駛", "不停讓行人", f"本期合計 ({latest_day})", "闖紅燈", "逆向行駛", "不停讓行人", "累計總計"]
+        for c_idx in range(1, 9):
+            write_cell(1, c_idx, sub_headers[c_idx], font_size=10.0, bold=True, fg=(1.0, 1.0, 1.0))
+
+        # 填寫資料列（第 2 列合計，第 3~9 列單位）
+        for r_idx, r_vals in enumerate(data_rows, start=2):
+            is_tot = (r_idx == 2)
+            for c_idx, val in enumerate(r_vals):
+                write_cell(r_idx, c_idx, val, font_size=10.0, bold=is_tot, fg=(0.1, 0.1, 0.1))
 
     def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", is_accident_table: bool = False, custom_width: int = None):
         """【標準通用表格頁】"""
@@ -361,43 +350,85 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
+        # 表頭底色（整批）
+        self.requests.append({
+            "updateTableCellProperties": {
+                "objectId": table_id,
+                "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols},
+                "tableCellProperties": {
+                    "tableCellBackgroundFill": {
+                        "solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}
+                    }
+                },
+                "fields": "tableCellBackgroundFill"
+            }
+        })
+
+        def write_gen_cell(r, c, text, font_sz, bold, fg_rgb):
+            t_str = str(text).replace("\n", " ").strip() if (pd.notna(text) and str(text).strip() != "") else "—"
+            self.requests.append({
+                "insertText": {
+                    "objectId": table_id,
+                    "cellLocation": {"rowIndex": r, "columnIndex": c},
+                    "text": t_str,
+                    "insertionIndex": 0
+                }
+            })
+            self.requests.append({
+                "updateTextStyle": {
+                    "objectId": table_id,
+                    "cellLocation": {"rowIndex": r, "columnIndex": c},
+                    "style": {
+                        "fontFamily": "Microsoft JhengHei",
+                        "fontSize": {"magnitude": font_sz, "unit": "PT"},
+                        "bold": bold,
+                        "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg_rgb[0], "green": fg_rgb[1], "blue": fg_rgb[2]}}}
+                    },
+                    "textRange": {"type": "ALL"},
+                    "fields": "fontFamily,fontSize,bold,foregroundColor"
+                }
+            })
+
+        # 寫入標題列
         for c_idx, col_name in enumerate(df.columns):
-            self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": 0, "columnIndex": c_idx}, "text": str(col_name).replace("\n", " ").strip(), "insertionIndex": 0}})
+            write_gen_cell(0, c_idx, col_name, font_size, True, (1.0, 1.0, 1.0))
 
+        # 寫入資料列
         for r_idx, row in df.iterrows():
+            first_col_val = str(row.values[0]).strip()
+            is_hl_row = any(k in first_col_val for k in ["合計", "總計", "舉發總數"])
+
+            # 若為合計列上淡藍底色
+            if is_hl_row:
+                self.requests.append({
+                    "updateTableCellProperties": {
+                        "objectId": table_id,
+                        "tableRange": {"location": {"rowIndex": r_idx + 1, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols},
+                        "tableCellProperties": {
+                            "tableCellBackgroundFill": {
+                                "solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}
+                            }
+                        },
+                        "fields": "tableCellBackgroundFill"
+                    }
+                })
+
             for c_idx, val in enumerate(row):
-                self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": r_idx + 1, "columnIndex": c_idx}, "text": str(val).strip() if pd.notna(val) else "—", "insertionIndex": 0}})
+                cell_val = str(val).strip()
+                col_name = str(df.columns[c_idx])
+                fg = (0.1, 0.1, 0.1)
+                is_bold = is_hl_row
 
-        for c_idx in range(num_cols):
-            self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": c_idx}, "rowSpan": 1, "columnSpan": 1}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
+                if is_accident_table and any(k in col_name for k in ["比較", "增減", "比例"]):
+                    try:
+                        clean_num = float(cell_val.replace("%", "").replace("+", "").strip())
+                        if clean_num > 0:
+                            fg = (0.85, 0.0, 0.0)
+                            is_bold = True
+                    except Exception:
+                        pass
 
-        for r_idx in range(num_rows):
-            is_header = (r_idx == 0)
-            first_col_val = str(df.iloc[r_idx - 1].values[0]).strip() if not is_header else ""
-            is_highlight_row = any(k in first_col_val for k in ["合計", "總計", "舉發總數"])
-
-            if is_highlight_row:
-                for c_idx in range(num_cols):
-                    self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": r_idx, "columnIndex": c_idx}, "rowSpan": 1, "columnSpan": 1}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}}}, "fields": "tableCellBackgroundFill"}})
-
-            for c_idx in range(num_cols):
-                fg = {"red": 1.0, "green": 1.0, "blue": 1.0} if is_header else {"red": 0.1, "green": 0.1, "blue": 0.1}
-                is_bold = (is_header or is_highlight_row)
-
-                if not is_header:
-                    cell_val = str(df.iloc[r_idx - 1, c_idx]).strip()
-                    col_name = str(df.columns[c_idx])
-
-                    if is_accident_table and any(k in col_name for k in ["比較", "增減", "比例"]):
-                        try:
-                            clean_num = float(cell_val.replace("%", "").replace("+", "").strip())
-                            if clean_num > 0:
-                                fg = {"red": 0.85, "green": 0.0, "blue": 0.0}
-                                is_bold = True
-                        except Exception:
-                            pass
-
-                self.requests.append({"updateTextStyle": {"objectId": table_id, "cellLocation": {"rowIndex": r_idx, "columnIndex": c_idx}, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": font_size, "unit": "PT"}, "bold": is_bold, "foregroundColor": {"opaqueColor": {"rgbColor": fg}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+                write_gen_cell(r_idx + 1, c_idx, cell_val, font_size, is_bold, fg)
 
         if footnote:
             fn_id = f"fn_{uuid.uuid4().hex[:8]}"
@@ -442,7 +473,7 @@ overload_footnote_exact = (
 )
 tech_date_range_str = f"{yesterday.year - 1911}年1月1日至{yesterday.year - 1911}年{yesterday.month}月{yesterday.day}日"
 
-# ── 1. 三項重點違規（✅ 嚴格對齊專案母本：8 列資料，左4欄本期、右4欄累計，合計 144） ──
+# ── 1. 三項重點違規（母本規範矩陣） ──
 latest_three_day = "09/15"
 
 three_major_raw_matrix = [
@@ -456,7 +487,6 @@ three_major_raw_matrix = [
     ["交通分隊", 0, 0, 0, 0, 20, 29, 12, 61],
 ]
 
-# 預覽用的雙層 MultiIndex 表格
 preview_cols = pd.MultiIndex.from_tuples([
     ("單位", ""),
     (f"本期 ({latest_three_day}) 新增違規數", "闖紅燈"),
@@ -552,7 +582,7 @@ df_tech_final = pd.DataFrame([
 # 4. 前端預覽區
 # ==========================================
 with st.expander("👀 點擊展開預覽 7 大業務表格（完全對齊原版官方格式）"):
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點 (母本雙層)", "A1事故死亡", "A2事故受傷", "重大違規", "超載取締", "靜桃計畫", "科技執法成效"])
+    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點 (雙層表頭)", "A1事故死亡", "A2事故受傷", "重大違規", "超載取締", "靜桃計畫", "科技執法成效"])
     with t1: 
         st.dataframe(df_three_preview, hide_index=True)
     with t2: st.dataframe(df_a1, hide_index=True)
@@ -648,10 +678,7 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【原版規格 8 頁�
                 st.markdown(
                     f"### 📑 簡報入口：\n"
                     f"👉 **[點此直接開啟全新會報簡報]({final_url})**\n\n"
-                    f"✅ **三項重點已完全還原母本規範**：\n"
-                    f"1. **雙層合併表頭**：Row 0 `本期新增違規數` 與 `115年9月1日起累計數` 各跨 4 欄，Row 1 帶出次項目。\n"
-                    f"2. **全所隊累計數精準為 144**（闖紅燈 97、逆向 35、行人 12），嚴格排除非外勤單位。\n"
-                    f"3. 頁首副標題與欄位寬度已最佳化配置，無任何格式錯位！"
+                    f"✅ **修復完畢**：P.2 已安全重構雙層表頭合併與樣式設定，徹底排除 400 錯誤，全套 8 頁皆已高規格呈現！"
                 )
 
             except HttpError as e:
