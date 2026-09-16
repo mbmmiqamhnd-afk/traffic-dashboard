@@ -21,8 +21,8 @@ st.set_page_config(
 )
 show_sidebar()
 
-st.title("📽️ 全方位執法數據簡報直出中心（自選頁面版）")
-st.caption("🚀 自由勾選機制：可任意指定欲輸出的統計表（例如僅匯出重點三項或單獨匯出酒駕細表），系統動態按需編譯並覆蓋目標簡報。")
+st.title("📽️ 全方位執法數據簡報直出中心（手動封面保護版）")
+st.caption("🚀 智慧畫布重繪：若您取消勾選 P.1 封面，系統會自動跳過第一頁，**完美保留您手動排版的封面**，僅動態更新後方所選的統計表格！")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -68,16 +68,16 @@ class ComprehensiveSlidesBuilder:
     def __init__(self, slides_svc, presentation_id: str):
         self.slides_svc = slides_svc
         self.presentation_id = presentation_id.strip()
-        self.old_slide_ids = []
+        self.all_slide_ids = []
         self.requests = []
 
     def prepare_canvas(self):
-        """記錄簡報所有既有頁面 ID（稍後全數安全抹除）"""
+        """記錄簡報所有既有頁面 ID"""
         pres = self.slides_svc.presentations().get(
             presentationId=self.presentation_id
         ).execute()
         slides = pres.get("slides", [])
-        self.old_slide_ids = [s["objectId"] for s in slides]
+        self.all_slide_ids = [s["objectId"] for s in slides]
 
     def add_cover_slide(self, main_title: str, subtitle: str, date_range_str: str):
         slide_id = f"cover_{uuid.uuid4().hex[:8]}"
@@ -115,7 +115,7 @@ class ComprehensiveSlidesBuilder:
         tbl_top = 62
         tbl_height = 290
 
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}, "rows": num_rows, "columns": num_cols}})
+        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}}}, "rows": num_rows, "columns": num_cols})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}}})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 4}}})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 5}, "rowSpan": 1, "columnSpan": 4}}})
@@ -158,7 +158,7 @@ class ComprehensiveSlidesBuilder:
         tbl_top = 54
         tbl_height = 295
 
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}, "rows": num_rows, "columns": num_cols}})
+        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}}}, "rows": num_rows, "columns": num_cols})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}}})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 3}}})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 4}, "rowSpan": 1, "columnSpan": 3}}})
@@ -224,7 +224,7 @@ class ComprehensiveSlidesBuilder:
 
         tbl_height = min(300, max(140, num_rows * row_height))
 
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": tbl_width, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": tbl_left, "translateY": tbl_top, "unit": "PT"}}, "rows": num_rows, "columns": num_cols}})
+        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": tbl_width, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": tbl_left, "translateY": tbl_top, "unit": "PT"}}}}, "rows": num_rows, "columns": num_cols})
         self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
 
         def write_gen_cell(r, c, text, font_sz, bold, fg_rgb):
@@ -265,8 +265,11 @@ class ComprehensiveSlidesBuilder:
             self.requests.append({"insertText": {"objectId": fn_id, "text": footnote, "insertionIndex": 0}})
             self.requests.append({"updateTextStyle": {"objectId": fn_id, "style": {"fontFamily": "DFKai-SB", "fontSize": {"magnitude": 10, "unit": "PT"}, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.2, "green": 0.2, "blue": 0.2}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,foregroundColor"}})
 
-    def wipe_old_slides(self):
-        for oid in self.old_slide_ids:
+    def wipe_old_slides(self, keep_cover: bool = True):
+        """抹除舊頁面：若 keep_cover 為 True，則保留簡報第一張投影片（您的手動封面）不予刪除"""
+        for idx, oid in enumerate(self.all_slide_ids):
+            if keep_cover and idx == 0:
+                continue  # 保留 P.1 手動封面
             self.requests.append({"deleteObject": {"objectId": oid}})
 
     def execute_build(self) -> str:
@@ -280,7 +283,7 @@ class ComprehensiveSlidesBuilder:
         return f"https://docs.google.com/presentation/d/{self.presentation_id}/edit"
 
 # ==========================================
-# 3. 數據準備層（鎖定資料截止日 115/09/15）
+# 3. 數據準備層（鎖定 115/09/15）
 # ==========================================
 
 DATA_CUTOFF_ROC = 1150915
@@ -303,7 +306,6 @@ overload_footnote_exact = (
     f"統計截至 {roc_year}年{month:02d}月{day:02d}日 (入案日期)應達成率為{current_expected_rate:.1f}%"
 )
 
-# 1. 三項重點違規
 latest_three_day = f"{month:02d}/{day:02d}"
 three_major_raw_matrix = [
     ["合計", 0, 0, 0, 0, 97, 35, 12, 144],
@@ -328,7 +330,6 @@ preview_cols = pd.MultiIndex.from_tuples([
 ])
 df_three_preview = pd.DataFrame(three_major_raw_matrix, columns=preview_cols)
 
-# 2. A1 死亡
 df_a1 = pd.DataFrame([
     {"統計期間": "合計", "本期(0909-0915)": 0, "本年累計(0101-0915)": 1, "去年累計(0101-0915)": 6, "本年與去年同期比較": -5},
     {"統計期間": "聖亭所", "本期(0909-0915)": 0, "本年累計(0101-0915)": 0, "去年累計(0101-0915)": 0, "本年與去年同期比較": 0},
@@ -339,7 +340,6 @@ df_a1 = pd.DataFrame([
     {"統計期間": "三和所", "本期(0909-0915)": 0, "本年累計(0101-0915)": 0, "去年累計(0101-0915)": 0, "本年與去年同期比較": 0},
 ])
 
-# 3. A2 受傷
 df_a2 = pd.DataFrame([
     {"統計期間": "合計", "本期(0909-0915)": 25, "前期(0902-0908)": 22, "本年累計(0101-0915)": 1353, "去年累計(0101-0915)": 1532, "本年與去年同期比較": -179, "增減比例": "-11.68%"},
     {"統計期間": "聖亭所", "本期(0909-0915)": 5, "前期(0902-0908)": 4, "本年累計(0101-0915)": 282, "去年累計(0101-0915)": 276, "本年與去年同期比較": 6, "增減比例": "2.17%"},
@@ -350,7 +350,6 @@ df_a2 = pd.DataFrame([
     {"統計期間": "三和所", "本期(0909-0915)": 0, "前期(0902-0908)": 0, "本年累計(0101-0915)": 45, "去年累計(0101-0915)": 49, "本年與去年同期比較": -4, "增減比例": "-8.16%"},
 ])
 
-# 4. 重大違規總表
 df_major = pd.DataFrame([
     {"統計期間": "合計", "本期(攔停)": 39, "本期(逕舉)": 210, "本年累計(攔停)": 2317, "本年累計(逕舉)": 6852, "去年累計(攔停)": 2065, "去年累計(逕舉)": 7268, "本年與去年同期比較": -186, "目標值": 18114, "達成率": "50.6%"},
     {"統計期間": "科技執法", "本期(攔停)": 0, "本期(逕舉)": 56, "本年累計(攔停)": 9, "本年累計(逕舉)": 1535, "去年累計(攔停)": 4, "去年累計(逕舉)": 525, "本年與去年同期比較": 1015, "目標值": 6006, "達成率": "25.7%"},
@@ -365,95 +364,6 @@ df_major = pd.DataFrame([
 ])
 major_footnote_exact = "重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」"
 
-# 5. 重大違規 7 大專項細表
-MAJOR_DETAIL_DICT = {
-    "酒駕": [
-        ["合計", 295, 1, 296, 141, 1, 142, 154, 0, 154],
-        ["科技執法", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["聖亭所", 18, 0, 18, 8, 0, 8, 10, 0, 10],
-        ["龍潭所", 109, 1, 110, 34, 1, 35, 75, 0, 75],
-        ["中興所", 85, 0, 85, 29, 0, 29, 56, 0, 56],
-        ["石門所", 10, 0, 10, 21, 0, 21, -11, 0, -11],
-        ["高平所", 26, 0, 26, 8, 0, 8, 18, 0, 18],
-        ["三和所", 0, 0, 0, 3, 0, 3, -3, 0, -3],
-        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
-        ["交通分隊", 47, 0, 47, 38, 0, 38, 9, 0, 9],
-    ],
-    "闖紅燈": [
-        ["合計", 703, 3164, 3867, 490, 3790, 4280, 213, -629, -416],
-        ["科技執法", 9, 589, 598, 1, 120, 121, 8, 469, 477],
-        ["聖亭所", 57, 359, 416, 35, 896, 931, 22, -537, -515],
-        ["龍潭所", 281, 160, 441, 214, 565, 779, 67, -405, -338],
-        ["中興所", 189, 390, 579, 123, 633, 756, 66, -243, -177],
-        ["石門所", 55, 303, 358, 71, 283, 354, -16, 20, 4],
-        ["高平所", 53, 612, 665, 11, 638, 649, 42, -26, 16],
-        ["三和所", 5, 97, 102, 1, 66, 67, 4, 31, 35],
-        ["警備隊", 0, 51, 51, 0, 48, 48, "—", "—", "—"],
-        ["交通分隊", 54, 603, 657, 34, 541, 575, 20, 62, 82],
-    ],
-    "逆向行駛": [
-        ["合計", 252, 1375, 1627, 239, 1487, 1726, 13, -112, -99],
-        ["科技執法", 0, 8, 8, 0, 7, 7, 0, 1, 1],
-        ["聖亭所", 18, 31, 49, 14, 102, 116, 4, -71, -67],
-        ["龍潭所", 165, 34, 199, 133, 298, 431, 32, -264, -232],
-        ["中興所", 10, 0, 10, 13, 34, 47, -3, -34, -37],
-        ["石門所", 24, 8, 32, 58, 46, 104, -34, -38, -72],
-        ["高平所", 9, 11, 20, 2, 15, 17, 7, -4, 3],
-        ["三和所", 1, 136, 137, 3, 76, 79, -2, 60, 58],
-        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
-        ["交通分隊", 25, 1147, 1172, 16, 909, 925, 9, 238, 247],
-    ],
-    "轉彎未依規定": [
-        ["合計", 957, 1845, 2802, 1181, 1244, 2425, -224, 582, 358],
-        ["科技執法", 0, 903, 903, 3, 203, 206, -3, 700, 697],
-        ["聖亭所", 42, 0, 42, 9, 5, 14, 33, -5, 28],
-        ["龍潭所", 680, 21, 701, 815, 202, 1017, -135, -181, -316],
-        ["中興所", 31, 0, 31, 156, 36, 192, -125, -36, -161],
-        ["石門所", 125, 41, 166, 146, 104, 250, -21, -63, -84],
-        ["高平所", 52, 17, 69, 15, 39, 54, 37, -22, 15],
-        ["三和所", 2, 0, 2, 2, 0, 2, 0, 0, 0],
-        ["警備隊", 0, 20, 20, 0, 1, 1, "—", "—", "—"],
-        ["交通分隊", 25, 843, 868, 35, 654, 689, -10, 189, 179],
-    ],
-    "蛇行惡意逼車": [
-        ["合計", 8, 8, 16, 0, 11, 11, 8, -3, 5],
-        ["科技執法", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["聖亭所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["龍潭所", 4, 6, 10, 0, 1, 1, 4, 5, 9],
-        ["中興所", 1, 0, 1, 0, 0, 0, 1, 0, 1],
-        ["石門所", 1, 0, 1, 0, 1, 1, 1, -1, 0],
-        ["高平所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["三和所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
-        ["交通分隊", 2, 2, 4, 0, 9, 9, 2, -7, -5],
-    ],
-    "不暫停讓行人": [
-        ["合計", 102, 343, 445, 14, 508, 522, 88, -165, -77],
-        ["科技執法", 0, 35, 35, 0, 195, 195, 0, -160, -160],
-        ["聖亭所", 15, 4, 19, 1, 2, 3, 14, 2, 16],
-        ["龍潭所", 70, 39, 109, 5, 8, 13, 65, 31, 96],
-        ["中興所", 7, 5, 12, 4, 2, 6, 3, 3, 6],
-        ["石門所", 5, 12, 17, 2, 5, 7, 3, 7, 10],
-        ["高平所", 1, 5, 6, 0, 4, 4, 1, 1, 2],
-        ["三和所", 1, 5, 6, 0, 0, 0, 1, 5, 6],
-        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
-        ["交通分隊", 3, 238, 241, 2, 292, 294, 1, -54, -53],
-    ],
-    "嚴重超速": [
-        ["合計", 0, 116, 116, 0, 227, 227, 0, -111, -111],
-        ["科技執法", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["聖亭所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["龍潭所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["中興所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["石門所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["高平所", 0, 0, 0, 0, 1, 1, 0, -1, -1],
-        ["三和所", 0, 0, 0, 0, 23, 23, 0, -23, -23],
-        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
-        ["交通分隊", 0, 116, 116, 0, 203, 203, 0, -87, -87],
-    ],
-}
-
-# 6. 超載
 df_overload = pd.DataFrame([
     {"統計期間": "合計", "本期 (0909~0915)": 1, "本年累計 (0101~0915)": 46, "去年累計 (0101~0915)": 121, "本年與去年同期比較": -75, "目標值": 127, "達成率": "36%"},
     {"統計期間": "聖亭所", "本期 (0909~0915)": 0, "本年累計 (0101~0915)": 8, "去年累計 (0101~0915)": 12, "本年與去年同期比較": -4, "目標值": 20, "達成率": "40%"},
@@ -466,7 +376,6 @@ df_overload = pd.DataFrame([
     {"統計期間": "交通分隊", "本期 (0909~0915)": 0, "本年累計 (0101~0915)": 6, "去年累計 (0101~0915)": 8, "本年與去年同期比較": -2, "目標值": 22, "達成率": "27%"},
 ])
 
-# 7. 靜桃
 df_jingtao = pd.DataFrame([
     {"統計期間": "合計", "本期(22-06)": 0, "本期(06-22)": 0, "累計(22-06)": 497, "累計(06-22)": 631, "總計": 1128},
     {"統計期間": "聖亭所", "本期(22-06)": 0, "本期(06-22)": 0, "累計(22-06)": 29, "累計(06-22)": 90, "總計": 119},
@@ -479,7 +388,6 @@ df_jingtao = pd.DataFrame([
     {"統計期間": "交通分隊", "本期(22-06)": 0, "本期(06-22)": 0, "累計(22-06)": 5, "累計(06-22)": 17, "總計": 22},
 ])
 
-# 8. 科技執法
 df_tech_final = pd.DataFrame([
     {"路段名稱": "中興路與武漢路口", "舉發件數": 990},
     {"路段名稱": "大昌路二段與五福街口(北往南)", "舉發件數": 688},
@@ -499,11 +407,7 @@ df_tech_final = pd.DataFrame([
 # ==========================================
 st.subheader("🎯 欲輸出的統計表自選控制")
 
-# 快捷選擇按鈕
 col_btn1, col_btn2, _ = st.columns([1.5, 2, 4])
-if "select_mode" not in st.session_state:
-    st.session_state["select_mode"] = "core"
-
 with col_btn1:
     if st.button("📌 僅常態核心頁 (8頁)"):
         st.session_state["select_mode"] = "core"
@@ -511,14 +415,15 @@ with col_btn2:
     if st.button("📑 全選所有統計表 (15頁)"):
         st.session_state["select_mode"] = "all"
 
+if "select_mode" not in st.session_state:
+    st.session_state["select_mode"] = "core"
+
 is_all = (st.session_state["select_mode"] == "all")
 
-# 區塊勾選選項
 col_opt1, col_opt2 = st.columns(2)
-
 with col_opt1:
     st.markdown("##### 🏢 常態會報核心表格")
-    chk_cover = st.checkbox("P.1 簡報封面", value=True)
+    chk_cover = st.checkbox("P.1 簡報封面 (若取消則保留您手動排版之封面)", value=True)
     chk_three = st.checkbox("P.2 取締三項重點違規統計表 (母本雙層)", value=True)
     chk_a1 = st.checkbox("P.3 A1類交通事故死亡人數統計表", value=True)
     chk_a2 = st.checkbox("P.4 A2類交通事故受傷人數統計表", value=True)
@@ -537,146 +442,78 @@ with col_opt2:
     chk_det_ped = st.checkbox("重大違規細項：【不暫停讓行人】統計表", value=is_all)
     chk_det_speed = st.checkbox("重大違規細項：【嚴重超速】統計表", value=is_all)
 
-# 計算總勾選頁數
-selected_pages = []
-if chk_cover: selected_pages.append("封面")
-if chk_three: selected_pages.append("三項重點")
-if chk_a1: selected_pages.append("A1事故死亡")
-if chk_a2: selected_pages.append("A2事故受傷")
-if chk_major_tot: selected_pages.append("重大違規總表")
-if chk_det_jiu: selected_pages.append("細表-酒駕")
-if chk_det_red: selected_pages.append("細表-闖紅燈")
-if chk_det_rev: selected_pages.append("細表-逆向")
-if chk_det_turn: selected_pages.append("細表-轉彎")
-if chk_det_snake: selected_pages.append("細表-逼車")
-if chk_det_ped: selected_pages.append("細表-讓行人")
-if chk_det_speed: selected_pages.append("細表-嚴重超速")
-if chk_overload: selected_pages.append("超載統計")
-if chk_jingtao: selected_pages.append("靜桃計畫")
-if chk_tech: selected_pages.append("科技執法")
-
-st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出。")
-
-with st.expander("👀 點擊展開預覽待輸出業務數據"):
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點", "A1事故死亡", "A2事故受傷", "重大違規", "超載取締", "靜桃計畫", "科技執法成效"])
-    with t1: st.dataframe(df_three_preview, hide_index=True)
-    with t2: st.dataframe(df_a1, hide_index=True)
-    with t3: st.dataframe(df_a2, hide_index=True)
-    with t4: st.dataframe(df_major, hide_index=True)
-    with t5: 
-        st.dataframe(df_overload, hide_index=True)
-        st.caption(f"📝 {overload_footnote_exact}")
-    with t6: st.dataframe(df_jingtao, hide_index=True)
-    with t7: st.dataframe(df_tech_final, hide_index=True)
-
-st.write("")
-
 # ==========================================
 # 5. 執行指定輸出生成
 # ==========================================
-btn_label = f"🚀 立即編譯產出【已選定的 {len(selected_pages)} 個統計表頁面】"
+if st.button("🚀 啟動畫布重繪：輸出已勾選之統計表頁面", type="primary"):
+    slides_svc = get_slides_service()
 
-if st.button(btn_label, type="primary"):
-    if not selected_pages:
-        st.warning("⚠️ 請至少勾選一個統計表頁面！")
+    if not slides_svc:
+        st.error("❌ 無法初始化 Google Slides 服務，請確認 secrets.toml 設定。")
     else:
-        slides_svc = get_slides_service()
+        with st.spinner("正在編譯並動態更新投影片（手動封面已啟動保護機制）..."):
+            try:
+                builder = ComprehensiveSlidesBuilder(slides_svc, TARGET_PRESENTATION_ID)
 
-        if not slides_svc:
-            st.error("❌ 無法初始化 Google Slides 服務，請確認 secrets.toml 設定。")
-        else:
-            with st.spinner(f"正在清空母本畫布、動態編譯已勾選的 {len(selected_pages)} 頁投影片並整批覆蓋..."):
-                try:
-                    builder = ComprehensiveSlidesBuilder(slides_svc, TARGET_PRESENTATION_ID)
+                # 1. 記錄現有頁面 (keep_cover=True 代表絕不刪除第 1 張投影片)
+                builder.prepare_canvas()
 
-                    # 1. 記錄舊頁面 ID（稍後整批抹除）
-                    builder.prepare_canvas()
-
-                    # 2. 依勾選順序動態注入
-                    if chk_cover:
-                        builder.add_cover_slide(
-                            main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制數據分析報告",
-                            subtitle="週次主管會報專案報告",
-                            date_range_str=cover_date_str
-                        )
-
-                    if chk_three:
-                        builder.add_three_major_slide(
-                            data_rows=three_major_raw_matrix,
-                            latest_day=latest_three_day
-                        )
-
-                    if chk_a1:
-                        builder.add_table_slide(
-                            slide_title="A1類交通事故死亡人數統計表",
-                            df=df_a1,
-                            is_accident_table=True
-                        )
-
-                    if chk_a2:
-                        builder.add_table_slide(
-                            slide_title="A2類交通事故受傷人數統計表",
-                            df=df_a2,
-                            is_accident_table=True
-                        )
-
-                    if chk_major_tot:
-                        builder.add_table_slide(
-                            slide_title="取締重大交通違規統計表",
-                            df=df_major,
-                            footnote=major_footnote_exact
-                        )
-
-                    # 專項細表
-                    det_map = [
-                        (chk_det_jiu, "酒駕"), (chk_det_red, "闖紅燈"), (chk_det_rev, "逆向行駛"),
-                        (chk_det_turn, "轉彎未依規定"), (chk_det_snake, "蛇行惡意逼車"),
-                        (chk_det_ped, "不暫停讓行人"), (chk_det_speed, "嚴重超速")
-                    ]
-                    for is_chk, cat in det_map:
-                        if is_chk:
-                            builder.add_major_detail_slide(
-                                cat_name=cat,
-                                data_rows=MAJOR_DETAIL_DICT[cat],
-                                date_str="0101-0915"
-                            )
-
-                    if chk_overload:
-                        builder.add_table_slide(
-                            slide_title="取締超載違規件數統計表",
-                            df=df_overload,
-                            footnote=overload_footnote_exact
-                        )
-
-                    if chk_jingtao:
-                        builder.add_table_slide(
-                            slide_title="「靜桃計畫」大執法專案統計表",
-                            df=df_jingtao
-                        )
-
-                    if chk_tech:
-                        tech_slide_title = f"科技執法成效 ({tech_date_range_str})"
-                        builder.add_table_slide(
-                            slide_title=tech_slide_title,
-                            df=df_tech_final,
-                            custom_width=480
-                        )
-
-                    # 3. 抹除舊頁面
-                    builder.wipe_old_slides()
-
-                    # 4. 整批送出
-                    final_url = builder.execute_build()
-
-                    st.balloons()
-                    st.success(f"🎉 指定的 {len(selected_pages)} 個統計表頁面已全自動重繪完成！")
-                    st.markdown(
-                        f"### 📑 簡報入口：\n"
-                        f"👉 **[點此直接開啟已更新的簡報]({final_url})**\n\n"
-                        f"未勾選的頁面已全數剔除，目標簡報內僅包含您指定的表格，排版精準到位！"
+                # 2. 依序注入勾選頁面
+                if chk_cover:
+                    builder.add_cover_slide(
+                        main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制數據分析報告",
+                        subtitle="週次主管會報專案報告",
+                        date_range_str=cover_date_str
                     )
 
-                except HttpError as e:
-                    st.error(f"❌ Google API 請求失敗：{e}\n\n*提示：請確認簡報是否已共用給 `{SERVICE_ACCOUNT_EMAIL}` 並設定為「編輯者」。*")
-                except Exception as e:
-                    st.error(f"❌ 建立簡報失敗：{e}")
+                if chk_three:
+                    builder.add_three_major_slide(
+                        data_rows=three_major_raw_matrix,
+                        latest_day=latest_three_day
+                    )
+
+                if chk_a1:
+                    builder.add_table_slide(slide_title="A1類交通事故死亡人數統計表", df=df_a1, is_accident_table=True)
+
+                if chk_a2:
+                    builder.add_table_slide(slide_title="A2類交通事故受傷人數統計表", df=df_a2, is_accident_table=True)
+
+                if chk_major_tot:
+                    builder.add_table_slide(slide_title="取締重大交通違規統計表", df=df_major, footnote=major_footnote_exact)
+
+                det_map = [
+                    (chk_det_jiu, "酒駕"), (chk_det_red, "闖紅燈"), (chk_det_rev, "逆向行駛"),
+                    (chk_det_turn, "轉彎未依規定"), (chk_det_snake, "蛇行惡意逼車"),
+                    (chk_det_ped, "不暫停讓行人"), (chk_det_speed, "嚴重超速")
+                ]
+                for is_chk, cat in det_map:
+                    if is_chk:
+                        builder.add_major_detail_slide(cat_name=cat, data_rows=MAJOR_DETAIL_DICT[cat], date_str="0101-0915")
+
+                if chk_overload:
+                    builder.add_table_slide(slide_title="取締超載違規件數統計表", df=df_overload, footnote=overload_footnote_exact)
+
+                if chk_jingtao:
+                    builder.add_table_slide(slide_title="「靜桃計畫」大執法專案統計表", df=df_jingtao)
+
+                if chk_tech:
+                    builder.add_table_slide(slide_title=f"科技執法成效 ({tech_date_range_str})", df=df_tech_final, custom_width=480)
+
+                # 3. 執行智慧抹除（自動保留 P.1 手動封面）
+                builder.wipe_old_slides(keep_cover=not chk_cover)
+
+                # 4. 送出建構
+                final_url = builder.execute_build()
+
+                st.balloons()
+                st.success("🎉 統計表重繪完成！")
+                st.markdown(
+                    f"### 📑 簡報入口：\n"
+                    f"👉 **[點此直接開啟已更新的簡報]({final_url})**\n\n"
+                    f"✨ **保護機制已生效**：若您未勾選 P.1 封面，您的手動封面已獲完美保留，後方內頁已全數依勾選清單動態重繪更新！"
+                )
+
+            except HttpError as e:
+                st.error(f"❌ Google API 請求失敗：{e}\n\n*提示：請確認簡報是否已共用給 `{SERVICE_ACCOUNT_EMAIL}` 並設定為「編輯者」。*")
+            except Exception as e:
+                st.error(f"❌ 建立簡報失敗：{e}")
