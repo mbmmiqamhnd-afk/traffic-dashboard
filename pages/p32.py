@@ -18,8 +18,8 @@ st.set_page_config(
 )
 show_sidebar()
 
-st.title("📽️ 全方位執法數據簡報直出中心（免試算表、完整 7 大統計）")
-st.caption("🚀 畫布清空重繪機制：由 Python 從零動態繪製全新 8 頁投影片並整批覆蓋，完全不使用舊物件搜尋替換，徹底解決 403 空間不足問題。")
+st.title("📽️ 全方位執法數據簡報直出中心（免試算表、完整 9 頁架構）")
+st.caption("🚀 核心架構：跳過 Google Sheets，交通事故正式獨立拆為 A1 與 A2 專屬投影片，全套 9 頁由 Python 從零動態建構並覆蓋母本。")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -27,7 +27,6 @@ st.caption("🚀 畫布清空重繪機制：由 Python 從零動態繪製全新 
 GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
 SERVICE_ACCOUNT_EMAIL = GCP_CREDS.get("client_email", "streamlit-bot@streamlit-sheets-482909.iam.gserviceaccount.com")
 
-# 已鎖定您的專屬簡報容器 ID
 TARGET_PRESENTATION_ID = "1h2QNNI8SLvjNEBmky7IWv9ZGBbKsLvV1UDkYJWcOeWU"
 
 def get_slides_service():
@@ -93,7 +92,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 主標題方塊
+        # 主標題
         self.requests.append({
             "createShape": {
                 "objectId": title_id,
@@ -120,7 +119,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 副標題方塊
+        # 副標題
         sub_text = f"{subtitle}\n統計區間：{date_range_str}\n製表單位：龍潭分局交通組"
         self.requests.append({
             "createShape": {
@@ -147,8 +146,8 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-    def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", highlight_below_target: float = None):
-        """【標準表格頁】自動計算排版、支援合計列淡藍底色高亮、備註及落後指標紅字預警"""
+    def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", highlight_below_target: float = None, is_accident_table: bool = False):
+        """【標準全版表格頁】合計列淡藍高亮、落後指標紅字預警、支援交通事故事故增加標紅"""
         slide_id = f"s_{uuid.uuid4().hex[:8]}"
         title_id = f"t_{uuid.uuid4().hex[:8]}"
         table_id = f"tbl_{uuid.uuid4().hex[:8]}"
@@ -189,10 +188,10 @@ class ComprehensiveSlidesBuilder:
 
         num_cols = len(df.columns)
         num_rows = len(df) + 1
-        font_size = 7.5 if num_cols >= 12 else (8.5 if num_cols >= 8 else 10)
+        font_size = 7.5 if num_cols >= 12 else (8.5 if num_cols >= 8 else 10.5)
 
         tbl_top = 55
-        tbl_height = min(295, max(140, num_rows * 24))
+        tbl_height = min(295, max(140, num_rows * 26))
 
         self.requests.append({
             "createTable": {
@@ -247,7 +246,7 @@ class ComprehensiveSlidesBuilder:
                 }
             })
 
-        # 設定樣式：合計列淡藍底色 (#EAF2F8)、落後項目自動標紅
+        # 設定樣式：合計列淡藍底色 (#EAF2F8)
         for r_idx in range(num_rows):
             is_header = (r_idx == 0)
             is_total_row = (r_idx == 1 and str(df.iloc[0].values[0]).strip() in ["合計", "總計"])
@@ -271,22 +270,33 @@ class ComprehensiveSlidesBuilder:
                 fg = {"red": 1.0, "green": 1.0, "blue": 1.0} if is_header else {"red": 0.1, "green": 0.1, "blue": 0.1}
                 is_bold = (is_header or is_total_row)
 
-                # 智慧色彩預警：達成率低於目前標準或進度負值時標為紅色
                 if not is_header:
                     cell_val = str(df.iloc[r_idx - 1, c_idx]).strip()
                     col_name = str(df.columns[c_idx])
-                    
-                    if "落後" in cell_val or cell_val.startswith("-"):
-                        fg = {"red": 0.85, "green": 0.0, "blue": 0.0}
-                        is_bold = True
-                    elif highlight_below_target is not None and "達成率" in col_name:
+
+                    # 1. 交通事故模式：增加案件 ( > 0 或 +) 標為紅色
+                    if is_accident_table and any(k in col_name for k in ["比較", "增減", "比例"]):
                         try:
-                            rate_num = float(cell_val.replace("%", "").strip())
-                            if rate_num < highlight_below_target:
+                            clean_num = float(cell_val.replace("%", "").replace("+", "").strip())
+                            if clean_num > 0:
                                 fg = {"red": 0.85, "green": 0.0, "blue": 0.0}
                                 is_bold = True
                         except Exception:
                             pass
+
+                    # 2. 執法取締模式：落後或負值標為紅色
+                    elif not is_accident_table:
+                        if "落後" in cell_val or cell_val.startswith("-"):
+                            fg = {"red": 0.85, "green": 0.0, "blue": 0.0}
+                            is_bold = True
+                        elif highlight_below_target is not None and "達成率" in col_name:
+                            try:
+                                rate_num = float(cell_val.replace("%", "").strip())
+                                if rate_num < highlight_below_target:
+                                    fg = {"red": 0.85, "green": 0.0, "blue": 0.0}
+                                    is_bold = True
+                            except Exception:
+                                pass
 
                 self.requests.append({
                     "updateTextStyle": {
@@ -330,120 +340,8 @@ class ComprehensiveSlidesBuilder:
                 }
             })
 
-    def add_side_by_side_tables(self, slide_title: str, df_left: pd.DataFrame, title_left: str, df_right: pd.DataFrame, title_right: str, subtitle: str = ""):
-        """【雙表並排頁】A1 與 A2 左右對稱對照"""
-        slide_id = f"s_dual_{uuid.uuid4().hex[:8]}"
-        title_id = f"t_dual_{uuid.uuid4().hex[:8]}"
-
-        self.requests.append({
-            "createSlide": {
-                "objectId": slide_id,
-                "slideLayoutReference": {"predefinedLayout": "BLANK"}
-            }
-        })
-
-        full_title = f"{slide_title}  |  {subtitle}" if subtitle else slide_title
-        self.requests.append({
-            "createShape": {
-                "objectId": title_id,
-                "shapeType": "TEXT_BOX",
-                "elementProperties": {
-                    "pageObjectId": slide_id,
-                    "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 35, "unit": "PT"}},
-                    "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 15, "unit": "PT"}
-                }
-            }
-        })
-        self.requests.append({"insertText": {"objectId": title_id, "text": full_title, "insertionIndex": 0}})
-        self.requests.append({
-            "updateTextStyle": {
-                "objectId": title_id,
-                "style": {
-                    "fontFamily": "Microsoft JhengHei",
-                    "fontSize": {"magnitude": 15, "unit": "PT"},
-                    "bold": True,
-                    "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.35}}}
-                },
-                "textRange": {"type": "ALL"},
-                "fields": "fontFamily,fontSize,bold,foregroundColor"
-            }
-        })
-
-        def build_one_tbl(df, t_label, x_offset, w):
-            t_box_id = f"subt_{uuid.uuid4().hex[:8]}"
-            tbl_id = f"tbl_{uuid.uuid4().hex[:8]}"
-
-            self.requests.append({
-                "createShape": {
-                    "objectId": t_box_id,
-                    "shapeType": "TEXT_BOX",
-                    "elementProperties": {
-                        "pageObjectId": slide_id,
-                        "size": {"width": {"magnitude": w, "unit": "PT"}, "height": {"magnitude": 25, "unit": "PT"}},
-                        "transform": {"scaleX": 1, "scaleY": 1, "translateX": x_offset, "translateY": 50, "unit": "PT"}
-                    }
-                }
-            })
-            self.requests.append({"insertText": {"objectId": t_box_id, "text": t_label, "insertionIndex": 0}})
-            self.requests.append({
-                "updateTextStyle": {
-                    "objectId": t_box_id,
-                    "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 11, "unit": "PT"}, "bold": True, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.2, "green": 0.3, "blue": 0.45}}}},
-                    "textRange": {"type": "ALL"},
-                    "fields": "fontFamily,fontSize,bold,foregroundColor"
-                }
-            })
-
-            n_rows, n_cols = len(df) + 1, len(df.columns)
-            h = min(280, n_rows * 27)
-            self.requests.append({
-                "createTable": {
-                    "objectId": tbl_id,
-                    "elementProperties": {
-                        "pageObjectId": slide_id,
-                        "size": {"width": {"magnitude": w, "unit": "PT"}, "height": {"magnitude": h, "unit": "PT"}},
-                        "transform": {"scaleX": 1, "scaleY": 1, "translateX": x_offset, "translateY": 75, "unit": "PT"}
-                    },
-                    "rows": n_rows,
-                    "columns": n_cols
-                }
-            })
-            for c, name in enumerate(df.columns):
-                self.requests.append({"insertText": {"objectId": tbl_id, "cellLocation": {"rowIndex": 0, "columnIndex": c}, "text": str(name), "insertionIndex": 0}})
-            for r, row in df.iterrows():
-                for c, val in enumerate(row):
-                    self.requests.append({"insertText": {"objectId": tbl_id, "cellLocation": {"rowIndex": r + 1, "columnIndex": c}, "text": str(val) if pd.notna(val) else "—", "insertionIndex": 0}})
-            for c in range(n_cols):
-                self.requests.append({
-                    "updateTableCellProperties": {
-                        "objectId": tbl_id,
-                        "tableRange": {"location": {"rowIndex": 0, "columnIndex": c}, "rowSpan": 1, "columnSpan": 1},
-                        "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.18, "green": 0.28, "blue": 0.42}}}}},
-                        "fields": "tableCellBackgroundFill"
-                    }
-                })
-            for r in range(n_rows):
-                for c in range(n_cols):
-                    self.requests.append({
-                        "updateTextStyle": {
-                            "objectId": tbl_id,
-                            "cellLocation": {"rowIndex": r, "columnIndex": c},
-                            "style": {
-                                "fontFamily": "Microsoft JhengHei",
-                                "fontSize": {"magnitude": 8.5 if n_cols > 5 else 9.5, "unit": "PT"},
-                                "bold": (r == 0 or r == 1),
-                                "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 1.0, "green": 1.0, "blue": 1.0} if r == 0 else {"red": 0.1, "green": 0.1, "blue": 0.1}}}
-                            },
-                            "textRange": {"type": "ALL"},
-                            "fields": "fontFamily,fontSize,bold,foregroundColor"
-                        }
-                    })
-
-        build_one_tbl(df_left, title_left, x_offset=25, w=325)
-        build_one_tbl(df_right, title_right, x_offset=365, w=330)
-
     def wipe_old_slides(self):
-        """抹除所有舊頁面，僅保留剛編譯完成的 8 頁"""
+        """抹除所有舊頁面，僅保留剛編譯完成的 9 頁"""
         for oid in self.old_slide_ids:
             self.requests.append({
                 "deleteObject": {"objectId": oid}
@@ -460,7 +358,7 @@ class ComprehensiveSlidesBuilder:
         return f"https://docs.google.com/presentation/d/{self.presentation_id}/edit"
 
 # ==========================================
-# 3. 數據準備層（含動態「目前應達成率」計算）
+# 3. 數據準備層（含動態進度達成率）
 # ==========================================
 
 # ── 動態計算「目前應達成率 (以年底 100% 為基準)」 ──
@@ -491,28 +389,29 @@ df_three = st.session_state.get("df_three", pd.DataFrame([
     {"單位": "交通分隊", "闖紅燈(本期)": 3, "闖紅燈(累計)": 13, "逆向(本期)": 2, "逆向(累計)": 6, "不停讓行人(本期)": 1, "不停讓行人(累計)": 5, "三項合計(本期)": 6, "三項合計(累計)": 24},
 ]))
 
-# 2. 交通事故 (A1 / A2)
+# 2. 交通事故 A1 (死亡人數)
 df_a1 = st.session_state.get("df_a1", pd.DataFrame([
-    {"統計期間": "合計", "本期": 0, "本年累計": 3, "去年同期": 4, "增減比較": -1},
-    {"統計期間": "聖亭所", "本期": 0, "本年累計": 1, "去年同期": 1, "增減比較": 0},
-    {"統計期間": "龍潭所", "本期": 0, "本年累計": 1, "去年同期": 2, "增減比較": -1},
-    {"統計期間": "中興所", "本期": 0, "本年累計": 0, "去年同期": 0, "增減比較": 0},
-    {"統計期間": "石門所", "本期": 0, "本年累計": 1, "去年同期": 1, "增減比較": 0},
-    {"統計期間": "高平所", "本期": 0, "本年累計": 0, "去年同期": 0, "增減比較": 0},
-    {"統計期間": "三和所", "本期": 0, "本年累計": 0, "去年同期": 0, "增減比較": 0},
+    {"統計期間": "合計", "本期(0901-0907)": 0, "本年累計(0101-0907)": 3, "去年同期(0101-0907)": 4, "增減比較": -1},
+    {"統計期間": "聖亭所", "本期(0901-0907)": 0, "本年累計(0101-0907)": 1, "去年同期(0101-0907)": 1, "增減比較": 0},
+    {"統計期間": "龍潭所", "本期(0901-0907)": 0, "本年累計(0101-0907)": 1, "去年同期(0101-0907)": 2, "增減比較": -1},
+    {"統計期間": "中興所", "本期(0901-0907)": 0, "本年累計(0101-0907)": 0, "去年同期(0101-0907)": 0, "增減比較": 0},
+    {"統計期間": "石門所", "本期(0901-0907)": 0, "本年累計(0101-0907)": 1, "去年同期(0101-0907)": 1, "增減比較": 0},
+    {"統計期間": "高平所", "本期(0901-0907)": 0, "本年累計(0101-0907)": 0, "去年同期(0101-0907)": 0, "增減比較": 0},
+    {"統計期間": "三和所", "本期(0901-0907)": 0, "本年累計(0101-0907)": 0, "去年同期(0101-0907)": 0, "增減比較": 0},
 ]))
 
+# 3. 交通事故 A2 (受傷人數)
 df_a2 = st.session_state.get("df_a2", pd.DataFrame([
-    {"統計期間": "合計", "本期": 32, "前期": 35, "本年累計": 1284, "去年累計": 1390, "比較": -106, "增減比例": "-7.63%"},
-    {"統計期間": "聖亭所", "本期": 7, "前期": 8, "本年累計": 312, "去年累計": 330, "比較": -18, "增減比例": "-5.45%"},
-    {"統計期間": "龍潭所", "本期": 11, "前期": 12, "本年累計": 445, "去年累計": 472, "比較": -27, "增減比例": "-5.72%"},
-    {"統計期間": "中興所", "本期": 6, "前期": 7, "本年累計": 268, "抽取": 290, "比較": -22, "增減比例": "-7.59%"},
-    {"統計期間": "石門所", "本期": 4, "前期": 5, "本年累計": 142, "去年累計": 160, "比較": -18, "增減比例": "-11.25%"},
-    {"統計期間": "高平所", "本期": 3, "前期": 2, "本年累計": 92, "去年累計": 105, "比較": -13, "增減比例": "-12.38%"},
-    {"統計期間": "三和所", "本期": 1, "前期": 1, "本年累計": 25, "去年累計": 33, "比較": -8, "增減比例": "-24.24%"},
+    {"統計期間": "合計", "本期(0901-0907)": 32, "前期(0825-0831)": 35, "本年累計(0101-0907)": 1284, "去年累計(0101-0907)": 1390, "增減比較": -106, "增減比例": "-7.63%"},
+    {"統計期間": "聖亭所", "本期(0901-0907)": 7, "前期(0825-0831)": 8, "本年累計(0101-0907)": 312, "去年累計(0101-0907)": 330, "增減比較": -18, "增減比例": "-5.45%"},
+    {"統計期間": "龍潭所", "本期(0901-0907)": 11, "前期(0825-0831)": 12, "本年累計(0101-0907)": 445, "去年累計(0101-0907)": 472, "增減比較": -27, "增減比例": "-5.72%"},
+    {"統計期間": "中興所", "本期(0901-0907)": 6, "前期(0825-0831)": 7, "本年累計(0101-0907)": 268, "去年累計(0101-0907)": 290, "增減比較": -22, "增減比例": "-7.59%"},
+    {"統計期間": "石門所", "本期(0901-0907)": 4, "前期(0825-0831)": 5, "本年累計(0101-0907)": 142, "去年累計(0101-0907)": 160, "增減比較": -18, "增減比例": "-11.25%"},
+    {"統計期間": "高平所", "本期(0901-0907)": 3, "前期(0825-0831)": 2, "本年累計(0101-0907)": 92, "去年累計(0101-0907)": 105, "增減比較": -13, "增減比例": "-12.38%"},
+    {"統計期間": "三和所", "本期(0901-0907)": 1, "前期(0825-0831)": 1, "本年累計(0101-0907)": 25, "去年累計(0101-0907)": 33, "增減比較": -8, "增減比例": "-24.24%"},
 ]))
 
-# 3. 重大交通違規 (總表)
+# 4. 重大交通違規 (總表)
 df_major = st.session_state.get("df_major", pd.DataFrame([
     {"單位": "合計", "本期(攔停)": 48, "本期(逕舉)": 152, "本年(攔停)": 1840, "本年(逕舉)": 6420, "去年同期": 7950, "增減比較": 310, "目標值": 18115, "達成率": "45.6%"},
     {"單位": "科技執法", "本期(攔停)": 0, "本期(逕舉)": 88, "本年(攔停)": 0, "本年(逕舉)": 3120, "去年同期": 2900, "增減比較": 220, "目標值": 6006, "達成率": "51.9%"},
@@ -525,7 +424,7 @@ df_major = st.session_state.get("df_major", pd.DataFrame([
     {"單位": "交通分隊", "本期(攔停)": 10, "本期(逕舉)": 10, "本年(攔停)": 260, "本年(逕舉)": 490, "去年同期": 820, "增減比較": -70, "目標值": 2526, "達成率": "29.7%"},
 ]))
 
-# 4. 強化專案
+# 5. 強化專案
 df_project = st.session_state.get("df_project", pd.DataFrame([
     {"單位": "合計", "酒駕件數": 88, "酒駕目標": 150, "酒駕達成率": "58.7%", "闖紅燈件數": 620, "闖紅燈目標": 880, "闖紅燈達成率": "70.5%", "超速件數": 82, "超速目標": 120, "超速達成率": "68.3%", "車不讓人件數": 115, "車不讓人目標": 150, "車不讓人達成率": "76.7%", "大型車件數": 54, "大型車目標": 70, "大型車達成率": "77.1%"},
     {"單位": "聖亭所", "酒駕件數": 14, "酒駕目標": 25, "酒駕達成率": "56.0%", "闖紅燈件數": 98, "闖紅燈目標": 140, "闖紅燈達成率": "70.0%", "超速件數": 12, "超速目標": 20, "超速達成率": "60.0%", "車不讓人件數": 18, "車不讓人目標": 25, "車不讓人達成率": "72.0%", "大型車件數": 8, "大型車目標": 10, "大型車達成率": "80.0%"},
@@ -537,7 +436,7 @@ df_project = st.session_state.get("df_project", pd.DataFrame([
     {"單位": "交通分隊", "酒駕件數": 14, "酒駕目標": 20, "酒駕達成率": "70.0%", "闖紅燈件數": 110, "闖紅燈目標": 140, "闖紅燈達成率": "78.6%", "超速件數": 15, "超速目標": 15, "超速達成率": "100.0%", "車不讓人件數": 19, "車不讓人目標": 20, "車不讓人達成率": "95.0%", "大型車件數": 10, "大型車目標": 8, "大型車達成率": "125.0%"},
 ]))
 
-# 5. 超載取締統計（動態精算「達成率」與「進度差距」）
+# 6. 超載取締統計
 raw_overload = [
     {"統計期間": "合計", "本期": 4, "本年累計": 86, "去年同期": 78, "比較": 8, "目標值": 127},
     {"統計期間": "聖亭所", "本期": 1, "本年累計": 15, "去年同期": 12, "比較": 3, "目標值": 20},
@@ -549,14 +448,11 @@ raw_overload = [
     {"統計期間": "交通分隊", "本期": 1, "本年累計": 11, "去年同期": 13, "比較": -2, "目標值": 22},
 ]
 
-# 若 session_state 內已有真實數據則取用，否則以 raw_overload 進行動態結算
 if "df_overload" in st.session_state and isinstance(st.session_state["df_overload"], pd.DataFrame):
     df_overload = st.session_state["df_overload"].copy()
 else:
     df_overload = pd.DataFrame(raw_overload)
-    # 動態計算「達成率」與「進度差距」
-    rates = []
-    diffs = []
+    rates, diffs = [], []
     for _, r in df_overload.iterrows():
         tgt = float(r["目標值"])
         cumu = float(r["本年累計"])
@@ -564,18 +460,14 @@ else:
             calc_rate = round((cumu / tgt) * 100, 1)
             diff_from_target = round(calc_rate - current_expected_rate, 1)
             rates.append(f"{calc_rate:.0f}%")
-            if diff_from_target >= 0:
-                diffs.append(f"🟢 達標 (+{diff_from_target:.1f}%)")
-            else:
-                diffs.append(f"🔴 落後 ({diff_from_target:.1f}%)")
+            diffs.append(f"🟢 達標 (+{diff_from_target:.1f}%)" if diff_from_target >= 0 else f"🔴 落後 ({diff_from_target:.1f}%)")
         else:
             rates.append("—")
             diffs.append("—")
-            
     df_overload["達成率"] = rates
     df_overload["進度評比"] = diffs
 
-# 6. 靜桃計畫
+# 7. 靜桃計畫
 df_jingtao = st.session_state.get("df_jingtao", pd.DataFrame([
     {"單位": "合計", "本期(22-06時)": 12, "本期(06-22時)": 8, "累計(22-06時)": 184, "累計(06-22時)": 142, "專案總計": 326},
     {"單位": "聖亭所", "本期(22-06時)": 2, "本期(06-22時)": 1, "累計(22-06時)": 32, "累計(06-22時)": 24, "專案總計": 56},
@@ -587,7 +479,7 @@ df_jingtao = st.session_state.get("df_jingtao", pd.DataFrame([
     {"單位": "交通分隊", "本期(22-06時)": 2, "本期(06-22時)": 2, "累計(22-06時)": 26, "累計(06-22時)": 20, "專案總計": 46},
 ]))
 
-# 7. 科技執法
+# 8. 科技執法
 df_tech = st.session_state.get("df_tech", pd.DataFrame([
     {"排名": "第 1 名", "路段名稱": "中豐路與大昌路口", "違規態樣": "闖紅燈/未依標誌行駛", "舉發件數": 1248},
     {"排名": "第 2 名", "路段名稱": "大昌路二段與五福街口", "違規態樣": "闖紅燈/不禮讓行人", "舉發件數": 892},
@@ -602,36 +494,31 @@ df_tech = st.session_state.get("df_tech", pd.DataFrame([
 ]))
 
 # ==========================================
-# 4. 前端檢視區
+# 4. 前端預覽區
 # ==========================================
-with st.expander("👀 點擊展開預覽 7 大統計業務表格內容（含超載動態達成率）"):
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點", "事故分析", "重大違規", "強化專案", "超載取締 (新)", "靜桃計畫", "科技執法"])
+with st.expander("👀 點擊展開預覽 8 大表格內容（交通事故已分流）"):
+    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["三項重點", "A1事故死亡", "A2事故受傷", "重大違規", "強化專案", "超載取締", "靜桃計畫", "科技執法"])
     with t1: st.dataframe(df_three, hide_index=True)
-    with t2:
-        c1, c2 = st.columns(2)
-        c1.dataframe(df_a1, hide_index=True)
-        c2.dataframe(df_a2, hide_index=True)
-    with t3: st.dataframe(df_major, hide_index=True)
-    with t4: st.dataframe(df_project, hide_index=True)
-    with t5: 
-        st.caption(f"🎯 **{overload_subtitle_dynamic}**")
-        st.dataframe(df_overload, hide_index=True)
-        st.caption(f"📝 {overload_footnote_dynamic}")
-    with t6: st.dataframe(df_jingtao, hide_index=True)
-    with t7: st.dataframe(df_tech, hide_index=True)
+    with t2: st.dataframe(df_a1, hide_index=True)
+    with t3: st.dataframe(df_a2, hide_index=True)
+    with t4: st.dataframe(df_major, hide_index=True)
+    with t5: st.dataframe(df_project, hide_index=True)
+    with t6: st.dataframe(df_overload, hide_index=True)
+    with t7: st.dataframe(df_jingtao, hide_index=True)
+    with t8: st.dataframe(df_tech, hide_index=True)
 
 st.write("")
 
 # ==========================================
-# 5. 啟動重繪
+# 5. 執行生成
 # ==========================================
-if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報簡報】", type="primary"):
+if st.button("🚀 啟動畫布清空重繪：全新產出【完整 9 頁會報簡報】", type="primary"):
     slides_svc = get_slides_service()
 
     if not slides_svc:
         st.error("❌ 無法初始化 Google Slides 服務，請確認 secrets.toml 設定。")
     else:
-        with st.spinner("正在讀取簡報畫布、動態編譯 8 頁投影片並整批覆蓋..."):
+        with st.spinner("正在讀取簡報畫布、動態編譯 9 頁投影片並整批覆蓋..."):
             try:
                 builder = ComprehensiveSlidesBuilder(slides_svc, TARGET_PRESENTATION_ID)
 
@@ -653,15 +540,25 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報�
                     footnote="統計起日：115 年 9 月 1 日；三項重點包含：闖紅燈、逆向行駛、不停讓行人。"
                 )
 
-                # 4. P.3 交通事故成效分析 (雙表並排)
-                builder.add_side_by_side_tables(
-                    slide_title="交通事故分析 (A1 類死亡 vs A2 類受傷)",
-                    df_left=df_a1, title_left="📊 A1 類交通事故死亡統計",
-                    df_right=df_a2, title_right="🚑 A2 類交通事故受傷人數統計",
-                    subtitle="本期 vs 本年累計及去年同期比較"
+                # 4. P.3 交通事故成效分析 (A1 類死亡人數 - 全版單頁)
+                builder.add_table_slide(
+                    slide_title="各分駐（派出）所 A1 類交通事故死亡人數統計表",
+                    df=df_a1,
+                    subtitle="各所本期 vs 本年累計及去年同期比較",
+                    footnote="定義：A1 類係指造成人員當場或二十四小時內死亡之交通事故。",
+                    is_accident_table=True
                 )
 
-                # 5. P.4 重大交通違規績效 (總表)
+                # 5. P.4 交通事故成效分析 (A2 類受傷人數 - 全版單頁)
+                builder.add_table_slide(
+                    slide_title="各分駐（派出）所 A2 類交通事故受傷人數統計表",
+                    df=df_a2,
+                    subtitle="各所本期 vs 前期、本年累計及增減趨勢分析",
+                    footnote="定義：A2 類係指造成人員受傷之交通事故；件數或受傷人數增加以紅字標示。",
+                    is_accident_table=True
+                )
+
+                # 6. P.5 重大交通違規績效 (總表)
                 builder.add_table_slide(
                     slide_title="重大交通違規取締績效統計表 (總表)",
                     df=df_major,
@@ -669,7 +566,7 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報�
                     footnote="重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行惡意逼車」及「不暫停讓行人」。"
                 )
 
-                # 6. P.5 強化交通安全執法專案
+                # 7. P.6 強化交通安全執法專案
                 builder.add_table_slide(
                     slide_title="強化交通安全執法專案勤務取締件數統計表",
                     df=df_project,
@@ -677,7 +574,7 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報�
                     footnote="六大項目：酒後駕車、闖紅燈、嚴重超速、車不讓人、行人違規及大型車違規。"
                 )
 
-                # 7. P.6 取締超載違規件數統計（✅ 動態帶入「目前應達成率」與落後紅字標註）
+                # 8. P.7 取締超載違規件數統計
                 builder.add_table_slide(
                     slide_title="取締超載違規件數統計表",
                     df=df_overload,
@@ -686,7 +583,7 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報�
                     highlight_below_target=current_expected_rate
                 )
 
-                # 8. P.7 「靜桃計畫」大執法專案
+                # 9. P.8 「靜桃計畫」大執法專案
                 builder.add_table_slide(
                     slide_title="「靜桃計畫」大執法專案取締績效統計表",
                     df=df_jingtao,
@@ -694,7 +591,7 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報�
                     footnote="包含通報環保局檢驗及現場舉發噪音改裝車輛案件。"
                 )
 
-                # 9. P.8 科技執法路段排行 (Top 10)
+                # 10. P.9 科技執法路段排行 (Top 10)
                 builder.add_table_slide(
                     slide_title="科技執法設備舉發成效路段排行 (Top 10)",
                     df=df_tech,
@@ -702,18 +599,18 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 8 頁會報�
                     footnote="統計包含轄內固定桿、路口多功能科技執法及區間測速設備入案件數。"
                 )
 
-                # 10. 徹底清除原有舊頁面
+                # 11. 徹底清除原有舊頁面
                 builder.wipe_old_slides()
 
-                # 11. 整批傳送執行
+                # 12. 整批傳送執行
                 final_url = builder.execute_build()
 
                 st.balloons()
-                st.success("🎉 全套 Google Slides 簡報已全自動重繪完成！")
+                st.success("🎉 全套 9 頁 Google Slides 簡報已全自動重繪完成！")
                 st.markdown(
                     f"### 📑 簡報入口：\n"
                     f"👉 **[點此直接開啟全新會報簡報]({final_url})**\n\n"
-                    f"✅ **更新亮點**：P.6 超載統計表已精確計算「目前應達成率（{current_expected_rate:.1f}%）」與進度差距，落後單位將在投影片中自動以紅字突顯，頁尾亦動態生成完整法定備註說明。"
+                    f"✅ **更新亮點**：A1 類死亡與 A2 類受傷已獨立為 P.3 與 P.4 全版投影片，排版更寬敞大方，增減數據若為增加自動以紅字突顯。"
                 )
 
             except HttpError as e:
