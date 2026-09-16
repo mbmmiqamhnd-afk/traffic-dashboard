@@ -22,7 +22,7 @@ st.set_page_config(
 show_sidebar()
 
 st.title("📽️ 全方位執法數據簡報直出中心（原版規格 8 頁標準版）")
-st.caption("🚀 核心修復：徹底解決合併儲存格 updateTextStyle 400 錯誤，精準實現專案母本雙層表頭與原版統計格式。")
+st.caption("🚀 日期完全對齊：所有頁面日期、公式與備註全面以「資料截止日 (09/15)」為基準，徹底排除執行當日 (09/16) 的日期偏差。")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -157,7 +157,7 @@ class ComprehensiveSlidesBuilder:
         })
 
     def add_three_major_slide(self, data_rows, latest_day="09/15"):
-        """【第 2 頁】三項重點違規（✅ 原子化寫入樣式，徹底避免空格 400 錯誤）"""
+        """【第 2 頁】三項重點違規（✅ 原子化寫入樣式，杜絕合併儲存格 400 錯誤）"""
         slide_id = f"s_three_{uuid.uuid4().hex[:8]}"
         title_id = f"t_three_{uuid.uuid4().hex[:8]}"
         table_id = f"tbl_three_{uuid.uuid4().hex[:8]}"
@@ -217,22 +217,19 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # ── 1. 執行表頭合併 ──
-        # 合併「單位」欄（跨列 0~1）
+        # 1. 執行表頭合併
         self.requests.append({
             "mergeTableCells": {
                 "objectId": table_id,
                 "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}
             }
         })
-        # 合併「本期新增違規數」（跨欄 1~4）
         self.requests.append({
             "mergeTableCells": {
                 "objectId": table_id,
                 "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 4}
             }
         })
-        # 合併「115年9月1日起累計數」（跨欄 5~8）
         self.requests.append({
             "mergeTableCells": {
                 "objectId": table_id,
@@ -240,7 +237,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # ── 2. 表頭底色（深藍）與合計列底色（淡藍） ──
+        # 2. 表頭底色（深藍）與合計列底色（淡藍）
         self.requests.append({
             "updateTableCellProperties": {
                 "objectId": table_id,
@@ -266,7 +263,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # ── 3. 安全寫入文字並同步設定字型（只對有文字的格子下指令） ──
+        # 3. 安全寫入文字並同步設定字型
         def write_cell(r, c, text, font_size=10.0, bold=False, fg=(0.1, 0.1, 0.1)):
             t_str = str(text).strip() if (pd.notna(text) and str(text).strip() != "") else "0"
             self.requests.append({
@@ -292,17 +289,14 @@ class ComprehensiveSlidesBuilder:
                 }
             })
 
-        # 填寫第 0 列合併主標
         write_cell(0, 0, "單位", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
         write_cell(0, 1, f"本期 ({latest_day}) 新增違規數", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
         write_cell(0, 5, "115年9月1日起累計數", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
 
-        # 填寫第 1 列細部次標（第 0 欄已合併，略過）
         sub_headers = ["", "闖紅燈", "逆向行駛", "不停讓行人", f"本期合計 ({latest_day})", "闖紅燈", "逆向行駛", "不停讓行人", "累計總計"]
         for c_idx in range(1, 9):
             write_cell(1, c_idx, sub_headers[c_idx], font_size=10.0, bold=True, fg=(1.0, 1.0, 1.0))
 
-        # 填寫資料列（第 2 列合計，第 3~9 列單位）
         for r_idx, r_vals in enumerate(data_rows, start=2):
             is_tot = (r_idx == 2)
             for c_idx, val in enumerate(r_vals):
@@ -350,7 +344,6 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 表頭底色（整批）
         self.requests.append({
             "updateTableCellProperties": {
                 "objectId": table_id,
@@ -389,16 +382,13 @@ class ComprehensiveSlidesBuilder:
                 }
             })
 
-        # 寫入標題列
         for c_idx, col_name in enumerate(df.columns):
             write_gen_cell(0, c_idx, col_name, font_size, True, (1.0, 1.0, 1.0))
 
-        # 寫入資料列
         for r_idx, row in df.iterrows():
             first_col_val = str(row.values[0]).strip()
             is_hl_row = any(k in first_col_val for k in ["合計", "總計", "舉發總數"])
 
-            # 若為合計列上淡藍底色
             if is_hl_row:
                 self.requests.append({
                     "updateTableCellProperties": {
@@ -432,9 +422,30 @@ class ComprehensiveSlidesBuilder:
 
         if footnote:
             fn_id = f"fn_{uuid.uuid4().hex[:8]}"
-            self.requests.append({"createShape": {"objectId": fn_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 30, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 365, "unit": "PT"}}}})
+            self.requests.append({
+                "createShape": {
+                    "objectId": fn_id,
+                    "shapeType": "TEXT_BOX",
+                    "elementProperties": {
+                        "pageObjectId": slide_id,
+                        "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 30, "unit": "PT"}},
+                        "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 365, "unit": "PT"}
+                    }
+                }
+            })
             self.requests.append({"insertText": {"objectId": fn_id, "text": footnote, "insertionIndex": 0}})
-            self.requests.append({"updateTextStyle": {"objectId": fn_id, "style": {"fontFamily": "DFKai-SB", "fontSize": {"magnitude": 10, "unit": "PT"}, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.2, "green": 0.2, "blue": 0.2}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,foregroundColor"}})
+            self.requests.append({
+                "updateTextStyle": {
+                    "objectId": fn_id,
+                    "style": {
+                        "fontFamily": "DFKai-SB",
+                        "fontSize": {"magnitude": 10, "unit": "PT"},
+                        "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.2, "green": 0.2, "blue": 0.2}}}
+                    },
+                    "textRange": {"type": "ALL"},
+                    "fields": "fontFamily,fontSize,foregroundColor"
+                }
+            })
 
     def wipe_old_slides(self):
         """抹除所有舊頁面，僅保留剛編譯完成的 8 頁"""
@@ -452,29 +463,33 @@ class ComprehensiveSlidesBuilder:
         return f"https://docs.google.com/presentation/d/{self.presentation_id}/edit"
 
 # ==========================================
-# 3. 數據準備層（真實資料庫規範標準數據）
+# 3. 數據準備層（✅ 全面鎖定資料截止日 115/09/15）
 # ==========================================
 
-now_dt = datetime.now()
-yesterday = now_dt - timedelta(days=1)
-roc_year = now_dt.year - 1911
-month = now_dt.month
-day = now_dt.day
+# ── 嚴格以來源資料截止日為計算基準（絕不使用 datetime.now() 的 09/16） ──
+DATA_CUTOFF_ROC = 1150915
+roc_year = int(str(DATA_CUTOFF_ROC)[:3])
+month = int(str(DATA_CUTOFF_ROC)[3:5])
+day = int(str(DATA_CUTOFF_ROC)[5:7])
 
-# 超載法定備註
-day_of_year = now_dt.timetuple().tm_yday
-is_leap = (now_dt.year % 4 == 0 and now_dt.year % 100 != 0) or (now_dt.year % 400 == 0)
+# 以資料截止日精算當年度累積天數與法定應達成率（115/09/15 為第 258 天 -> 70.7%）
+g_year = roc_year + 1911
+data_dt = datetime(g_year, month, day)
+day_of_year = data_dt.timetuple().tm_yday
+is_leap = (g_year % 4 == 0 and g_year % 100 != 0) or (g_year % 400 == 0)
 total_days = 366 if is_leap else 365
 current_expected_rate = (day_of_year / total_days) * 100
+
+cover_date_str = f"115 年 9 月 1 日起至 {month:02d}月{day:02d}日 止"
+tech_date_range_str = f"{roc_year}年1月1日至{roc_year}年{month}月{day}日"
 
 overload_footnote_exact = (
     f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，"
     f"統計截至 {roc_year}年{month:02d}月{day:02d}日 (入案日期)應達成率為{current_expected_rate:.1f}%"
 )
-tech_date_range_str = f"{yesterday.year - 1911}年1月1日至{yesterday.year - 1911}年{yesterday.month}月{yesterday.day}日"
 
-# ── 1. 三項重點違規（母本規範矩陣） ──
-latest_three_day = "09/15"
+# ── 1. 三項重點違規（母本規範矩陣，基準日 09/15） ──
+latest_three_day = f"{month:02d}/{day:02d}"
 
 three_major_raw_matrix = [
     ["合計", 0, 0, 0, 0, 97, 35, 12, 144],
@@ -563,7 +578,7 @@ df_jingtao = pd.DataFrame([
     {"統計期間": "交通分隊", "本期(22-06)": 0, "本期(06-22)": 0, "累計(22-06)": 5, "累計(06-22)": 17, "總計": 22},
 ])
 
-# ── 7. 科技執法成效 ──
+# ── 7. 科技執法成效（真實 10 大路口，總數 2,963 件） ──
 df_tech_final = pd.DataFrame([
     {"路段名稱": "中興路與武漢路口", "舉發件數": 990},
     {"路段名稱": "大昌路二段與五福街口(北往南)", "舉發件數": 688},
@@ -581,7 +596,7 @@ df_tech_final = pd.DataFrame([
 # ==========================================
 # 4. 前端預覽區
 # ==========================================
-with st.expander("👀 點擊展開預覽 7 大業務表格（完全對齊原版官方格式）"):
+with st.expander("👀 點擊展開預覽 7 大業務表格（完全對齊 09/15 官方數據）"):
     t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點 (雙層表頭)", "A1事故死亡", "A2事故受傷", "重大違規", "超載取締", "靜桃計畫", "科技執法成效"])
     with t1: 
         st.dataframe(df_three_preview, hide_index=True)
@@ -612,14 +627,14 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【原版規格 8 頁�
                 # 1. 記錄舊頁面 ID
                 builder.prepare_canvas()
 
-                # 2. P.1 封面頁
+                # 2. P.1 封面頁（✅ 嚴格標註至 09月15日）
                 builder.add_cover_slide(
                     main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制數據分析報告",
                     subtitle="週次主管會報專案報告",
-                    date_range_str=f"115 年 9 月 1 日起至 {now_dt.month:02d}月{now_dt.day:02d}日 止"
+                    date_range_str=cover_date_str
                 )
 
-                # 3. P.2 取締三項重點違規統計表（✅ 專案母本標準雙層合併表頭，累計 144）
+                # 3. P.2 取締三項重點違規統計表（✅ 專案母本標準雙層合併表頭，本期 09/15，累計 144）
                 builder.add_three_major_slide(
                     data_rows=three_major_raw_matrix,
                     latest_day=latest_three_day
@@ -646,7 +661,7 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【原版規格 8 頁�
                     footnote=major_footnote_exact
                 )
 
-                # 7. P.6 取締超載違規件數統計表
+                # 7. P.6 取締超載違規件數統計表（✅ 嚴格截至 115年09月15日，應達成率 70.7%）
                 builder.add_table_slide(
                     slide_title="取締超載違規件數統計表",
                     df=df_overload,
@@ -659,7 +674,7 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【原版規格 8 頁�
                     df=df_jingtao
                 )
 
-                # 9. P.8 科技執法成效
+                # 9. P.8 科技執法成效（✅ 區間為 115年1月1日至115年9月15日，總數 2,963 件）
                 tech_slide_title = f"科技執法成效 ({tech_date_range_str})"
                 builder.add_table_slide(
                     slide_title=tech_slide_title,
@@ -678,7 +693,10 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【原版規格 8 頁�
                 st.markdown(
                     f"### 📑 簡報入口：\n"
                     f"👉 **[點此直接開啟全新會報簡報]({final_url})**\n\n"
-                    f"✅ **修復完畢**：P.2 已安全重構雙層表頭合併與樣式設定，徹底排除 400 錯誤，全套 8 頁皆已高規格呈現！"
+                    f"✅ **日期與格式全面修正完成**：\n"
+                    f"1. **日期完全對齊 9/15**：封面標註至 09月15日、科技執法標註至 115年9月15日，超載備註精算法定應達成率為 **70.7%**，不再出現 9/16。\n"
+                    f"2. **P.2 雙層表頭合併修復**：採原子化寫入方式，徹底杜絕 400 報錯。\n"
+                    f"3. **精簡 8 頁標準版面**：已完全移除強化專案，各頁排版大器清爽！"
                 )
 
             except HttpError as e:
