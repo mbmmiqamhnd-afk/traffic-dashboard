@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 from google.oauth2 import service_account
@@ -19,7 +19,7 @@ st.set_page_config(
 show_sidebar()
 
 st.title("📽️ 全方位執法數據簡報直出中心（免試算表、完整 9 頁架構）")
-st.caption("🚀 核心架構：跳過 Google Sheets，交通事故正式獨立拆為 A1 與 A2 專屬投影片，全套 9 頁由 Python 從零動態建構並覆蓋母本。")
+st.caption("🚀 邏輯校準版：科技執法還原為原系統「路段排行 Top 10 + 舉發總數 + 1月1日起累計至昨日」之核心統計邏輯。")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -147,7 +147,7 @@ class ComprehensiveSlidesBuilder:
         })
 
     def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", highlight_below_target: float = None, is_accident_table: bool = False):
-        """【標準全版表格頁】合計列淡藍高亮、落後指標紅字預警、支援交通事故事故增加標紅"""
+        """【標準全版表格頁】合計列淡藍底色高亮、欄位自動置中對齊、智慧預警色彩"""
         slide_id = f"s_{uuid.uuid4().hex[:8]}"
         title_id = f"t_{uuid.uuid4().hex[:8]}"
         table_id = f"tbl_{uuid.uuid4().hex[:8]}"
@@ -206,7 +206,7 @@ class ComprehensiveSlidesBuilder:
             }
         })
 
-        # 標題列文字
+        # 填寫標題列
         for c_idx, col_name in enumerate(df.columns):
             c_str = str(col_name).replace("\n", " ").strip()
             self.requests.append({
@@ -218,7 +218,7 @@ class ComprehensiveSlidesBuilder:
                 }
             })
 
-        # 資料列文字
+        # 填寫資料列
         for r_idx, row in df.iterrows():
             for c_idx, val in enumerate(row):
                 v_str = str(val).strip() if pd.notna(val) else "—"
@@ -246,10 +246,11 @@ class ComprehensiveSlidesBuilder:
                 }
             })
 
-        # 設定樣式：合計列淡藍底色 (#EAF2F8)
+        # 格式化儲存格：合計列標註淡藍色 (#EAF2F8)
         for r_idx in range(num_rows):
             is_header = (r_idx == 0)
-            is_total_row = (r_idx == 1 and str(df.iloc[0].values[0]).strip() in ["合計", "總計"])
+            first_col_val = str(df.iloc[0].values[0]).strip()
+            is_total_row = (r_idx == 1 and any(k in first_col_val for k in ["合計", "總計"]))
 
             if is_total_row:
                 for c_idx in range(num_cols):
@@ -274,7 +275,7 @@ class ComprehensiveSlidesBuilder:
                     cell_val = str(df.iloc[r_idx - 1, c_idx]).strip()
                     col_name = str(df.columns[c_idx])
 
-                    # 1. 交通事故模式：增加案件 ( > 0 或 +) 標為紅色
+                    # 1. 交通事故模式：增加案件標為紅字
                     if is_accident_table and any(k in col_name for k in ["比較", "增減", "比例"]):
                         try:
                             clean_num = float(cell_val.replace("%", "").replace("+", "").strip())
@@ -284,7 +285,7 @@ class ComprehensiveSlidesBuilder:
                         except Exception:
                             pass
 
-                    # 2. 執法取締模式：落後或負值標為紅色
+                    # 2. 執法取締模式：落後或負值標為紅字
                     elif not is_accident_table:
                         if "落後" in cell_val or cell_val.startswith("-"):
                             fg = {"red": 0.85, "green": 0.0, "blue": 0.0}
@@ -358,14 +359,17 @@ class ComprehensiveSlidesBuilder:
         return f"https://docs.google.com/presentation/d/{self.presentation_id}/edit"
 
 # ==========================================
-# 3. 數據準備層（含動態進度達成率）
+# 3. 數據準備層（校準科技執法與超載進度邏輯）
 # ==========================================
 
-# ── 動態計算「目前應達成率 (以年底 100% 為基準)」 ──
+# ── 日期計算基準 ──
 now_dt = datetime.now()
+yesterday = now_dt - timedelta(days=1)
 roc_year = now_dt.year - 1911
 month = now_dt.month
 day = now_dt.day
+
+# 超載目前應達成率
 day_of_year = now_dt.timetuple().tm_yday
 is_leap = (now_dt.year % 4 == 0 and now_dt.year % 100 != 0) or (now_dt.year % 400 == 0)
 total_days = 366 if is_leap else 365
@@ -376,6 +380,9 @@ overload_footnote_dynamic = (
     f"統計截至 {roc_year}年{month:02d}月{day:02d}日(入案日期)目前應達成率為 {current_expected_rate:.1f}%"
 )
 overload_subtitle_dynamic = f"本期 vs 本年累計 ｜ 目前應達成率：{current_expected_rate:.1f}%"
+
+# 科技執法統計區間字串 (還原自 app.py: 115年1月1日至昨日)
+tech_date_range_str = f"{yesterday.year - 1911}年1月1日至{yesterday.year - 1911}年{yesterday.month}月{yesterday.day}日"
 
 # 1. 三項重點違規
 df_three = st.session_state.get("df_three", pd.DataFrame([
@@ -479,33 +486,57 @@ df_jingtao = st.session_state.get("df_jingtao", pd.DataFrame([
     {"單位": "交通分隊", "本期(22-06時)": 2, "本期(06-22時)": 2, "累計(22-06時)": 26, "累計(06-22時)": 20, "專案總計": 46},
 ]))
 
-# 8. 科技執法
-df_tech = st.session_state.get("df_tech", pd.DataFrame([
-    {"排名": "第 1 名", "路段名稱": "中豐路與大昌路口", "違規態樣": "闖紅燈/未依標誌行駛", "舉發件數": 1248},
-    {"排名": "第 2 名", "路段名稱": "大昌路二段與五福街口", "違規態樣": "闖紅燈/不禮讓行人", "舉發件數": 892},
-    {"排名": "第 3 名", "路段名稱": "北龍路與龍元路口", "違規態樣": "不停讓行人", "舉發件數": 645},
-    {"排名": "第 4 名", "路段名稱": "中正路三坑段 580 號前", "違規態樣": "嚴重超速 (區間測速)", "舉發件數": 512},
-    {"排名": "第 5 名", "路段名稱": "中興路九龍段 320 號前", "違規態樣": "闖紅燈/超速", "舉發件數": 438},
-    {"排名": "第 6 名", "路段名稱": "福龍路二段與龍平路口", "違規態樣": "未依規定轉彎", "舉發件數": 386},
-    {"排名": "第 7 名", "路段名稱": "龍晨路與金龍路口", "違規態樣": "闖紅燈", "舉發件數": 312},
-    {"排名": "第 8 名", "路段名稱": "楊銅路二段 (乳姑山周邊)", "違規態樣": "噪音改裝/超速", "舉發件數": 284},
-    {"排名": "第 9 名", "路段名稱": "文化路與石門路口", "違規態樣": "紅燈右轉", "舉發件數": 215},
-    {"排名": "第 10 名", "路段名稱": "高原路與高平路口", "違規態樣": "超速", "舉發件數": 182},
-]))
+# 8. 科技執法（✅ 嚴格還原 app.py 邏輯：路段名稱、舉發件數、總計、排名）
+raw_tech_locations = [
+    ("中豐路與大昌路口", 1248),
+    ("大昌路二段與五福街口", 892),
+    ("北龍路與龍元路口", 645),
+    ("中正路三坑段 580 號前", 512),
+    ("中興路九龍段 320 號前", 438),
+    ("福龍路二段與龍平路口", 386),
+    ("龍晨路與金龍路口", 312),
+    ("楊銅路二段 (乳姑山周邊)", 284),
+    ("文化路與石門路口", 215),
+    ("高原路與高平路口", 182),
+]
+
+if "df_tech" in st.session_state and isinstance(st.session_state["df_tech"], pd.DataFrame):
+    df_raw_tech = st.session_state["df_tech"].copy()
+    # 自動調適：若首頁傳來的欄位為 ["路段名稱", "舉發件數"]
+    if "路段名稱" in df_raw_tech.columns and "舉發件數" in df_raw_tech.columns:
+        items = list(zip(df_raw_tech["路段名稱"], df_raw_tech["舉發件數"]))
+    else:
+        items = raw_tech_locations
+else:
+    items = raw_tech_locations
+
+# 取得全年度科技執法總舉發件數 (若首頁有傳入總數則採用，否則以模擬之全轄總量計算)
+tech_total_cases = st.session_state.get("tech_total_count", sum(c for _, c in items) + 850)
+
+tech_rows = [{"排名": "合計", "路段名稱": "全轄科技執法設備舉發總數", "舉發件數": tech_total_cases}]
+for idx, (loc, cnt) in enumerate(items[:10], start=1):
+    tech_rows.append({"排名": f"第 {idx} 名", "路段名稱": loc, "舉發件數": cnt})
+
+df_tech_final = pd.DataFrame(tech_rows)
 
 # ==========================================
 # 4. 前端預覽區
 # ==========================================
-with st.expander("👀 點擊展開預覽 8 大表格內容（交通事故已分流）"):
-    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["三項重點", "A1事故死亡", "A2事故受傷", "重大違規", "強化專案", "超載取締", "靜桃計畫", "科技執法"])
+with st.expander("👀 點擊展開預覽 8 大業務表格內容（科技執法已校準）"):
+    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["三項重點", "A1事故死亡", "A2事故受傷", "重大違規", "強化專案", "超載取締", "靜桃計畫", "科技執法 (新)"])
     with t1: st.dataframe(df_three, hide_index=True)
     with t2: st.dataframe(df_a1, hide_index=True)
     with t3: st.dataframe(df_a2, hide_index=True)
     with t4: st.dataframe(df_major, hide_index=True)
     with t5: st.dataframe(df_project, hide_index=True)
-    with t6: st.dataframe(df_overload, hide_index=True)
+    with t6: 
+        st.caption(f"🎯 **{overload_subtitle_dynamic}**")
+        st.dataframe(df_overload, hide_index=True)
+        st.caption(f"📝 {overload_footnote_dynamic}")
     with t7: st.dataframe(df_jingtao, hide_index=True)
-    with t8: st.dataframe(df_tech, hide_index=True)
+    with t8:
+        st.caption(f"📸 **統計期間：{tech_date_range_str} ｜ 全轄舉發總數：{tech_total_cases:,} 件**")
+        st.dataframe(df_tech_final, hide_index=True)
 
 st.write("")
 
@@ -554,7 +585,7 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 9 頁會報�
                     slide_title="各分駐（派出）所 A2 類交通事故受傷人數統計表",
                     df=df_a2,
                     subtitle="各所本期 vs 前期、本年累計及增減趨勢分析",
-                    footnote="定義：A2 類係指造成人員受傷之交通事故；件數或受傷人數增加以紅字標示。",
+                    footnote="定義：A2 類係指造成人員受傷之交通事故；受傷人數增加者以紅字警示。",
                     is_accident_table=True
                 )
 
@@ -591,12 +622,12 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 9 頁會報�
                     footnote="包含通報環保局檢驗及現場舉發噪音改裝車輛案件。"
                 )
 
-                # 10. P.9 科技執法路段排行 (Top 10)
+                # 10. P.9 科技執法成效統計表（✅ 邏輯完全對齊 app.py）
                 builder.add_table_slide(
                     slide_title="科技執法設備舉發成效路段排行 (Top 10)",
-                    df=df_tech,
-                    subtitle="熱點路段違規樣態與案件量分析",
-                    footnote="統計包含轄內固定桿、路口多功能科技執法及區間測速設備入案件數。"
+                    df=df_tech_final,
+                    subtitle=f"統計期間：{tech_date_range_str} ｜ 全轄舉發總數：{tech_total_cases:,} 件",
+                    footnote=f"統計範圍：轄內固定桿、路口多功能科技執法及區間測速設備；統計期間為自 {tech_date_range_str}。"
                 )
 
                 # 11. 徹底清除原有舊頁面
@@ -610,7 +641,7 @@ if st.button("🚀 啟動畫布清空重繪：全新產出【完整 9 頁會報�
                 st.markdown(
                     f"### 📑 簡報入口：\n"
                     f"👉 **[點此直接開啟全新會報簡報]({final_url})**\n\n"
-                    f"✅ **更新亮點**：A1 類死亡與 A2 類受傷已獨立為 P.3 與 P.4 全版投影片，排版更寬敞大方，增減數據若為增加自動以紅字突顯。"
+                    f"✅ **校準亮點**：P.9 科技執法已完全對齊原系統邏輯，僅保留「排名、路段名稱、舉發件數」，首列醒目標註全轄舉發總數，且統計區間精準對應本年 1 月 1 日至昨日。"
                 )
 
             except HttpError as e:
