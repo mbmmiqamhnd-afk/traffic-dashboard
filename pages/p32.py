@@ -22,7 +22,7 @@ st.set_page_config(
 show_sidebar()
 
 st.title("📽️ 全方位執法數據簡報直出中心（自選頁面版）")
-st.caption("🚀 自由勾選機制：可任意指定欲輸出的統計表（例如僅匯出重點三項或單獨匯出酒駕細表），系統動態按需編譯並覆蓋目標簡報。")
+st.caption("🚀 自由勾選機制：可任意指定欲輸出的統計表，系統動態編譯並覆蓋目標簡報。")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -31,7 +31,7 @@ GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
 SERVICE_ACCOUNT_EMAIL = GCP_CREDS.get("client_email", "streamlit-bot@streamlit-sheets-482909.iam.gserviceaccount.com")
 
 TARGET_PRESENTATION_ID = "1h2QNNI8SLvjNEBmky7IWv9ZGBbKsLvV1UDkYJWcOeWU"
-DRIVE_FOLDER_ID = st.secrets.get("DRIVE_FOLDER_ID", "1fm6ZK5B5wUmfy7-cgrw8OIkh7iS175dA").strip()
+DRIVE_FOLDER_ID = str(st.secrets.get("DRIVE_FOLDER_ID", "1fm6ZK5B5wUmfy7-cgrw8OIkh7iS175dA")).strip()
 
 def get_drive_service():
     if not GCP_CREDS:
@@ -64,10 +64,10 @@ def fetch_files_from_drive(folder_id):
     service = get_drive_service()
     if not service:
         return []
-    folder_id = str(folder_id).strip().replace('"', '').replace("'", '')
+    f_id = str(folder_id).strip().replace('"', '').replace("'", '')
     try:
         results = service.files().list(
-            q=f"'{folder_id}' in parents and trashed = false",
+            q=f"'{f_id}' in parents and trashed = false",
             fields="files(id, name, size, mimeType)",
             pageSize=100,
             supportsAllDrives=True,
@@ -252,7 +252,7 @@ class ComprehensiveSlidesBuilder:
 
         tbl_width = custom_width if custom_width else (480 if num_cols <= 2 else 670)
         tbl_left = (720 - tbl_width) / 2
-        
+
         if num_cols <= 2:
             row_height = 24
             font_size = 11.0
@@ -264,7 +264,7 @@ class ComprehensiveSlidesBuilder:
 
         tbl_height = min(300, max(140, num_rows * row_height))
 
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": tbl_width, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": tbl_left, "translateY": tbl_top, "unit": "PT"}}}}, "rows": num_rows, "columns": num_cols})
+        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": tbl_width, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": tbl_left, "translateY": tbl_top, "unit": "PT"}}, "rows": num_rows, "columns": num_cols}})
         self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
 
         def write_gen_cell(r, c, text, font_sz, bold, fg_rgb):
@@ -787,6 +787,3 @@ if st.button(btn_label, type="primary"):
                     st.error(f"❌ Google API 請求失敗：{e}\n\n*提示：請確認簡報是否已共用給 `{SERVICE_ACCOUNT_EMAIL}` 並設定為「編輯者」。*")
                 except Exception as e:
                     st.error(f"❌ 建立簡報失敗：{e}")
-```目前這段對話中還沒有看到您剛才貼上的程式碼內容。
-
-請直接將該段程式碼貼在這裡，並說明您希望調整或新增的功能（例如：修改邏輯、修正報錯、新增功能等），我會立即為您進行重構與修改。
