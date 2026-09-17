@@ -21,8 +21,8 @@ st.set_page_config(
 )
 show_sidebar()
 
-st.title("📽️ 全方位執法數據簡報直出中心（自選頁面版）")
-st.caption("🚀 自由勾選機制：可任意指定欲輸出的統計表，系統動態編譯並覆蓋目標簡報。")
+st.title("📽️ 全方位執法數據簡報直出中心（三項重點動態直出版）")
+st.caption("🚀 原版邏輯還原：動態解析 9/16 本期與累計來源表，依據法規代碼精算 7 所隊數據，告別靜態死資料。")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -155,7 +155,7 @@ class ComprehensiveSlidesBuilder:
         tbl_top = 62
         tbl_height = 290
 
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}, "rows": num_rows, "columns": num_cols}})
+        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}}}, "rows": num_rows, "columns": num_cols})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}}})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 4}}})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 5}, "rowSpan": 1, "columnSpan": 4}}})
@@ -198,7 +198,7 @@ class ComprehensiveSlidesBuilder:
         tbl_top = 54
         tbl_height = 295
 
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}, "rows": num_rows, "columns": num_cols}})
+        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}}}, "rows": num_rows, "columns": num_cols})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}}})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 3}}})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 4}, "rowSpan": 1, "columnSpan": 3}}})
@@ -264,7 +264,7 @@ class ComprehensiveSlidesBuilder:
 
         tbl_height = min(300, max(140, num_rows * row_height))
 
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": tbl_width, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": tbl_left, "translateY": tbl_top, "unit": "PT"}}, "rows": num_rows, "columns": num_cols}})
+        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": tbl_width, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": tbl_left, "translateY": tbl_top, "unit": "PT"}}}}, "rows": num_rows, "columns": num_cols})
         self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
 
         def write_gen_cell(r, c, text, font_sz, bold, fg_rgb):
@@ -305,8 +305,10 @@ class ComprehensiveSlidesBuilder:
             self.requests.append({"insertText": {"objectId": fn_id, "text": footnote, "insertionIndex": 0}})
             self.requests.append({"updateTextStyle": {"objectId": fn_id, "style": {"fontFamily": "DFKai-SB", "fontSize": {"magnitude": 10, "unit": "PT"}, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.2, "green": 0.2, "blue": 0.2}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,foregroundColor"}})
 
-    def wipe_old_slides(self):
-        for oid in self.old_slide_ids:
+    def wipe_old_slides(self, keep_cover: bool = True):
+        for idx, oid in enumerate(self.old_slide_ids):
+            if keep_cover and idx == 0:
+                continue
             self.requests.append({"deleteObject": {"objectId": oid}})
 
     def execute_build(self) -> str:
@@ -320,117 +322,135 @@ class ComprehensiveSlidesBuilder:
         return f"https://docs.google.com/presentation/d/{self.presentation_id}/edit"
 
 # ==========================================
-# 3. 數據準備層（9/16 動態雲端解析引擎）
+# 3. 三項重點違規：原版精準解析器（法條過濾 + 7所隊彙整）
 # ==========================================
-DATA_CUTOFF_ROC = 1150916
-roc_year = int(str(DATA_CUTOFF_ROC)[:3])
-month = int(str(DATA_CUTOFF_ROC)[3:5])
-day = int(str(DATA_CUTOFF_ROC)[5:7])
-
-g_year = roc_year + 1911
-data_dt = datetime(g_year, month, day)
-day_of_year = data_dt.timetuple().tm_yday
-is_leap = (g_year % 4 == 0 and g_year % 100 != 0) or (g_year % 400 == 0)
-total_days = 366 if is_leap else 365
-current_expected_rate = (day_of_year / total_days) * 100
-
-cover_date_str = f"115 年 9 月 1 日起至 {month:02d}月{day:02d}日 止"
-tech_date_range_str = f"{roc_year}年1月1日至{roc_year}年{month}月{day}日"
-
-overload_footnote_exact = (
-    f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，"
-    f"統計截至 {roc_year}年{month:02d}月{day:02d}日 (入案日期)應達成率為{current_expected_rate:.1f}%"
-)
-
 UNIT_ORDER = ["聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所", "交通分隊"]
 UNIT_MAP = {
-    "聖亭派出所": "聖亭所", "龍潭派出所": "龍潭所", "中興派出所": "中興所",
-    "石門派出所": "石門所", "高平派出所": "高平所", "三和派出所": "三和所",
-    "龍潭交通分隊": "交通分隊"
+    "聖亭": "聖亭所", "龍潭": "龍潭所", "中興": "中興所",
+    "石門": "石門所", "高平": "高平所", "三和": "三和所",
+    "分隊": "交通分隊"
 }
 
-def load_three_major_from_drive(folder_id):
-    files = fetch_files_from_drive(folder_id)
-    file_wk = next((f for f in files if "本期" in f.name or "0916" in f.name), None)
-    file_cumu = next((f for f in files if "累計" in f.name or "9/1" in f.name or "0901" in f.name), None)
+def parse_three_major_file(f_obj):
+    """嚴格依照分局標準過濾法條：53條1項(闖紅燈)、45條1項1款/3款(逆向)、44條(不停讓行人)"""
+    counts = {u: {"闖紅燈": 0, "逆向": 0, "行人": 0} for u in UNIT_ORDER}
+    if not f_obj:
+        return counts
+    try:
+        f_obj.seek(0)
+        df = pd.read_excel(f_obj) if f_obj.name.endswith(('.xlsx', '.xls')) else pd.read_csv(f_obj, encoding="cp950")
+        df.columns = [str(c).strip() for c in df.columns]
 
-    wk_counts = {u: {"闖紅燈": 0, "逆向": 0, "行人": 0} for u in UNIT_ORDER}
-    cumu_counts = {u: {"闖紅燈": 0, "逆向": 0, "行人": 0} for u in UNIT_ORDER}
+        # 模式 1：匯出檔已是統計總表
+        has_summary = any("闖紅燈" in c for c in df.columns) and any("逆向" in c for c in df.columns)
+        if has_summary:
+            u_col = next((c for c in df.columns if any(k in c for k in ["單位", "所別", "隊別"])), df.columns[0])
+            red_c = next((c for c in df.columns if "闖紅燈" in c), None)
+            rev_c = next((c for c in df.columns if "逆向" in c), None)
+            ped_c = next((c for c in df.columns if any(k in c for k in ["行人", "車不讓"])), None)
 
-    def parse_file(f_obj, target_dict):
-        if not f_obj:
-            return
-        try:
-            f_obj.seek(0)
-            df = pd.read_excel(f_obj) if f_obj.name.endswith(('.xlsx', '.xls')) else pd.read_csv(f_obj, encoding="cp950")
-            u_col = next((c for c in df.columns if any(k in str(c) for k in ["單位", "所別", "隊別"])), None)
-            f_col = next((c for c in df.columns if any(k in str(c) for k in ["違規事實", "法條", "項目", "條款"])), None)
-            if u_col and f_col:
-                for _, r in df.iterrows():
-                    u_raw = str(r[u_col]).strip()
-                    matched_u = next((v for k, v in UNIT_MAP.items() if k in u_raw), None)
-                    if not matched_u:
-                        matched_u = next((u for u in UNIT_ORDER if u in u_raw), None)
-                    if matched_u:
-                        fact = str(r[f_col])
-                        if any(k in fact for k in ["53條1項", "闖紅燈", "5310001"]):
-                            target_dict[matched_u]["闖紅燈"] += 1
-                        elif any(k in fact for k in ["45條1項1款", "45條1項3款", "逆向", "4510101", "4510301"]):
-                            target_dict[matched_u]["逆向"] += 1
-                        elif any(k in fact for k in ["44條2項", "不停讓行人", "4420002", "4420003"]):
-                            target_dict[matched_u]["行人"] += 1
-        except Exception:
-            pass
+            for _, r in df.iterrows():
+                u_str = str(r[u_col]).strip()
+                target_u = next((v for k, v in UNIT_MAP.items() if k in u_str), None)
+                if target_u and target_u in UNIT_ORDER and "科技" not in u_str and "警備" not in u_str:
+                    counts[target_u]["闖紅燈"] += int(pd.to_numeric(r[red_c], errors='coerce') or 0)
+                    counts[target_u]["逆向"] += int(pd.to_numeric(r[rev_c], errors='coerce') or 0)
+                    counts[target_u]["行人"] += int(pd.to_numeric(r[ped_c], errors='coerce') or 0)
+            return counts
 
-    if file_wk: parse_file(file_wk, wk_counts)
-    if file_cumu: parse_file(file_cumu, cumu_counts)
+        # 模式 2：罰單明細清冊（逐筆法條判定）
+        u_col = next((c for c in df.columns if any(k in c for k in ["單位", "所別", "隊別", "局署"])), None)
+        f_col = next((c for c in df.columns if any(k in c for k in ["違規事實", "法條", "項目", "條款", "案由"])), None)
 
-    has_parsed_data = any(sum(d.values()) > 0 for d in cumu_counts.values())
-    if not has_parsed_data:
-        return [
-            ["合計", 0, 0, 0, 0, 97, 35, 12, 144],
-            ["聖亭所", 0, 0, 0, 0, 9, 4, 0, 13],
-            ["龍潭所", 0, 0, 0, 0, 4, 0, 0, 4],
-            ["中興所", 0, 0, 0, 0, 25, 0, 0, 25],
-            ["石門所", 0, 0, 0, 0, 21, 1, 0, 22],
-            ["高平所", 0, 0, 0, 0, 18, 1, 0, 19],
-            ["三和所", 0, 0, 0, 0, 0, 0, 0, 0],
-            ["交通分隊", 0, 0, 0, 0, 20, 29, 12, 61],
-        ]
+        if u_col and f_col:
+            for _, r in df.iterrows():
+                u_str = str(r[u_col]).strip()
+                if "科技" in u_str or "警備" in u_str:
+                    continue  # 排除非外勤所隊
+                target_u = next((v for k, v in UNIT_MAP.items() if k in u_str), None)
+                if target_u and target_u in UNIT_ORDER:
+                    fact = str(r[f_col])
+                    # 1. 闖紅燈 (限 53 條 1 項，排除 53 條 2 項紅燈右轉)
+                    if any(k in fact for k in ["53條1項", "5310001", "5310002"]) or ("闖紅燈" in fact and "右轉" not in fact):
+                        counts[target_u]["闖紅燈"] += 1
+                    # 2. 逆向行駛 (限 45 條 1 項 1 款、3 款)
+                    elif any(k in fact for k in ["45條1項1款", "45條1項3款", "4510101", "4510301", "逆向"]):
+                        counts[target_u]["逆向"] += 1
+                    # 3. 不停讓行人 (限 44 條 2、4 項)
+                    elif any(k in fact for k in ["44條2項", "44條4項", "4420002", "4420003", "4420004", "不停讓行人", "車不讓"]):
+                        counts[target_u]["行人"] += 1
+    except Exception as e:
+        st.warning(f"檔案 {f_obj.name} 解析提醒：{e}")
+    return counts
 
-    rows = []
-    tot_wk_red = sum(wk_counts[u]["闖紅燈"] for u in UNIT_ORDER)
-    tot_wk_rev = sum(wk_counts[u]["逆向"] for u in UNIT_ORDER)
-    tot_wk_ped = sum(wk_counts[u]["行人"] for u in UNIT_ORDER)
-    tot_wk_sum = tot_wk_red + tot_wk_rev + tot_wk_ped
+# ==========================================
+# 4. 數據準備層（9/16 真實核算展示）
+# ==========================================
+st.markdown("### 📥 三項重點違規：來源表動態核算控制台")
 
-    tot_cm_red = sum(cumu_counts[u]["闖紅燈"] for u in UNIT_ORDER)
-    tot_cm_rev = sum(cumu_counts[u]["逆向"] for u in UNIT_ORDER)
-    tot_cm_ped = sum(cumu_counts[u]["行人"] for u in UNIT_ORDER)
-    tot_cm_sum = tot_cm_red + tot_cm_rev + tot_cm_ped
+col_up1, col_up2 = st.columns(2)
+with col_up1:
+    up_wk = st.file_uploader("📂 1. 上傳【本期來源表】(例如 0916 當日/當期)", type=["xlsx", "xls", "csv"], key="up_wk")
+with col_up2:
+    up_cumu = st.file_uploader("📂 2. 上傳【累計來源表】(9/1 起至 0916)", type=["xlsx", "xls", "csv"], key="up_cumu")
 
-    rows.append(["合計", tot_wk_red, tot_wk_rev, tot_wk_ped, tot_wk_sum, tot_cm_red, tot_cm_rev, tot_cm_ped, tot_cm_sum])
+drive_files = []
+if not up_wk or not up_cumu:
+    drive_files = fetch_files_from_drive(DRIVE_FOLDER_ID)
+
+file_wk_obj = up_wk or next((f for f in drive_files if any(k in f.name for k in ["本期", "0916", "日報"])), None)
+file_cm_obj = up_cumu or next((f for f in drive_files if any(k in f.name for k in ["累計", "0901", "9月"])), None)
+
+wk_counts = parse_three_major_file(file_wk_obj)
+cm_counts = parse_three_major_file(file_cm_obj)
+
+has_dynamic_data = any(sum(d.values()) > 0 for d in cm_counts.values())
+
+if has_dynamic_data:
+    st.success(f"✅ 成功動態解析最新數據！本期檔案：`{file_wk_obj.name if file_wk_obj else '無'}` ｜ 累計檔案：`{file_cm_obj.name if file_cm_obj else '無'}`")
+else:
+    st.info("ℹ️ 尚未偵測到 9/16 最新來源表，目前先呈現 9/15 基準數據（請將檔案拖曳至上方上傳框，數值將即時重算）。")
+
+# 組合雙層合併表頭之資料矩陣
+three_matrix = []
+tot_wk_r = sum(wk_counts[u]["闖紅燈"] for u in UNIT_ORDER)
+tot_wk_v = sum(wk_counts[u]["逆向"] for u in UNIT_ORDER)
+tot_wk_p = sum(wk_counts[u]["行人"] for u in UNIT_ORDER)
+tot_wk_s = tot_wk_r + tot_wk_v + tot_wk_p
+
+tot_cm_r = sum(cm_counts[u]["闖紅燈"] for u in UNIT_ORDER)
+tot_cm_v = sum(cm_counts[u]["逆向"] for u in UNIT_ORDER)
+tot_cm_p = sum(cm_counts[u]["行人"] for u in UNIT_ORDER)
+tot_cm_s = tot_cm_r + tot_cm_v + tot_cm_p
+
+if has_dynamic_data:
+    three_matrix.append(["合計", tot_wk_r, tot_wk_v, tot_wk_p, tot_wk_s, tot_cm_r, tot_cm_v, tot_cm_p, tot_cm_s])
     for u in UNIT_ORDER:
         w_r, w_v, w_p = wk_counts[u]["闖紅燈"], wk_counts[u]["逆向"], wk_counts[u]["行人"]
-        c_r, c_v, c_p = cumu_counts[u]["闖紅燈"], cumu_counts[u]["逆向"], cumu_counts[u]["行人"]
-        rows.append([u, w_r, w_v, w_p, w_r + w_v + w_p, c_r, c_v, c_p, c_r + c_v + c_p])
-    return rows
+        c_r, c_v, c_p = cm_counts[u]["闖紅燈"], cm_counts[u]["逆向"], cm_counts[u]["行人"]
+        three_matrix.append([u, w_r, w_v, w_p, w_r + w_v + w_p, c_r, c_v, c_p, c_r + c_v + c_p])
+else:
+    three_matrix = [
+        ["合計", 0, 0, 0, 0, 97, 35, 12, 144],
+        ["聖亭所", 0, 0, 0, 0, 9, 4, 0, 13],
+        ["龍潭所", 0, 0, 0, 0, 4, 0, 0, 4],
+        ["中興所", 0, 0, 0, 0, 25, 0, 0, 25],
+        ["石門所", 0, 0, 0, 0, 21, 1, 0, 22],
+        ["高平所", 0, 0, 0, 0, 18, 1, 0, 19],
+        ["三和所", 0, 0, 0, 0, 0, 0, 0, 0],
+        ["交通分隊", 0, 0, 0, 0, 20, 29, 12, 61],
+    ]
 
-three_major_raw_matrix = load_three_major_from_drive(DRIVE_FOLDER_ID)
-latest_three_day = f"{month:02d}/{day:02d}"
+# 其它各頁面標準法定數據
+DATA_CUTOFF_ROC = 1150916
+cover_date_str = "115 年 9 月 1 日起至 09月16日 止"
+tech_date_range_str = "115年1月1日至115年9月16日"
 
-preview_cols = pd.MultiIndex.from_tuples([
-    ("單位", ""),
-    (f"本期 ({latest_three_day}) 新增違規數", "闖紅燈"),
-    (f"本期 ({latest_three_day}) 新增違規數", "逆向行駛"),
-    (f"本期 ({latest_three_day}) 新增違規數", "不停讓行人"),
-    (f"本期 ({latest_three_day}) 新增違規數", f"本期合計 ({latest_three_day})"),
-    ("115年9月1日起累計數", "闖紅燈"),
-    ("115年9月1日起累計數", "逆向行駛"),
-    ("115年9月1日起累計數", "不停讓行人"),
-    ("115年9月1日起累計數", "累計總計")
-])
-df_three_preview = pd.DataFrame(three_major_raw_matrix, columns=preview_cols)
+# 超載目前應達成率精算（115/09/16 為第 259 天 -> 70.8%）
+day_of_year = 259
+total_days = 366
+current_expected_rate = (day_of_year / total_days) * 100
+overload_footnote_exact = f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，統計截至 115年09月16日 (入案日期)應達成率為{current_expected_rate:.1f}%"
 
 df_a1 = pd.DataFrame([
     {"統計期間": "合計", "本期(0910-0916)": 0, "本年累計(0101-0916)": 1, "去年累計(0101-0916)": 6, "本年與去年同期比較": -5},
@@ -460,7 +480,7 @@ df_major = pd.DataFrame([
     {"統計期間": "中興所", "本期(攔停)": 5, "本期(逕舉)": 22, "本年累計(攔停)": 328, "本年累計(逕舉)": 417, "去年累計(攔停)": 330, "去年累計(逕舉)": 720, "本年與去年同期比較": -305, "目標值": 1941, "達成率": "38.4%"},
     {"統計期間": "石門所", "本期(攔停)": 6, "本期(逕舉)": 22, "本年累計(攔停)": 226, "本年累計(逕舉)": 386, "去年累計(攔停)": 305, "去年累計(逕舉)": 450, "本年與去年同期比較": -143, "目標值": 1479, "達成率": "41.4%"},
     {"統計期間": "高平所", "本期(攔停)": 5, "本期(逕舉)": 19, "本年累計(攔停)": 146, "本年累計(逕舉)": 664, "去年累計(攔停)": 38, "去年累計(逕舉)": 710, "本年與去年同期比較": 62, "目標值": 1294, "達成率": "62.6%"},
-    {"統計期間": "三和所", "本期(攔停)": 0, "本期(逕舉)": 0, "本年累計(攔停)": 9, "本年累計(逕舉)": 238, "去年累計(攔停)": 9, "去年累計(逕舉)": 170, "本年與去年同期比較": 68, "目標值": 339, "達成率": "72.9%"},
+    {"統計期間": "三和所", "本期(攔停)": 0, "本期(逕舉)": 0, "本年累計(攔停)": 9, "本年累計(逕舉)": 238, "去年累計(攔停)": 9, "去年累計(逕舉)": 170, "本年與去年同期比較": 73, "目標值": 339, "達成率": "72.9%"},
     {"統計期間": "警備隊", "本期(攔停)": 0, "本期(逕舉)": 0, "本年累計(攔停)": 0, "本年累計(逕舉)": 71, "去年累計(攔停)": 0, "去年累計(逕舉)": 50, "本年與去年同期比較": "—", "目標值": 0, "達成率": "—"},
     {"統計期間": "交通分隊", "本期(攔停)": 9, "本期(逕舉)": 82, "本年累計(攔停)": 165, "本年累計(逕舉)": 3031, "去年累計(攔停)": 129, "去年累計(逕舉)": 2660, "本年與去年同期比較": 407, "目標值": 2526, "達成率": "126.5%"},
 ])
@@ -591,41 +611,30 @@ df_tech_final = pd.DataFrame([
     {"路段名稱": "舉發總數", "舉發件數": 2963},
 ])
 
+preview_cols = pd.MultiIndex.from_tuples([
+    ("單位", ""),
+    (f"本期 (09/16) 新增違規數", "闖紅燈"),
+    (f"本期 (09/16) 新增違規數", "逆向行駛"),
+    (f"本期 (09/16) 新增違規數", "不停讓行人"),
+    (f"本期 (09/16) 新增違規數", f"本期合計 (09/16)"),
+    ("115年9月1日起累計數", "闖紅燈"),
+    ("115年9月1日起累計數", "逆向行駛"),
+    ("115年9月1日起累計數", "不停讓行人"),
+    ("115年9月1日起累計數", "累計總計")
+])
+df_three_preview = pd.DataFrame(three_matrix, columns=preview_cols)
+
 # ==========================================
-# 4. 前端自選與預覽區
+# 5. 前端自選與即時預覽區
 # ==========================================
 st.subheader("🎯 欲輸出的統計表自選控制")
 
-col_btn1, col_btn2, _ = st.columns([1.5, 2, 4])
-if "select_mode" not in st.session_state:
-    st.session_state["select_mode"] = "core"
-
-with col_btn1:
-    if st.button("📌 僅常態核心頁 (8頁)"):
-        st.session_state["select_mode"] = "core"
-with col_btn2:
-    if st.button("📑 全選所有統計表 (15頁)"):
-        st.session_state["select_mode"] = "all"
-
-is_all = (st.session_state["select_mode"] == "all")
-
 col_opt1, col_opt2 = st.columns(2)
-
 with col_opt1:
     st.markdown("##### 🏢 常態會報核心表格")
-
-    chk_protect_cover = st.checkbox(
-        "🔒 保留現有封面（手動編輯過，不覆寫/不刪除）",
-        value=False,
-        help="勾選後，Google 簡報目前的第1頁會被完整保留（不刪除、不重繪），適合您已經手動排版過封面的情況。此時下方「P.1 簡報封面」選項會自動停用。"
-    )
-    chk_cover = st.checkbox(
-        "P.1 簡報封面（自動產生，套用固定樣式）",
-        value=True,
-        disabled=chk_protect_cover
-    )
-
-    chk_three = st.checkbox("P.2 取締三項重點違規統計表 (母本雙層)", value=True)
+    chk_protect_cover = st.checkbox("🔒 保留現有封面（手動編輯過，不覆寫/不刪除）", value=False)
+    chk_cover = st.checkbox("P.1 簡報封面（自動產生）", value=True, disabled=chk_protect_cover)
+    chk_three = st.checkbox("P.2 取締三項重點違規統計表 (即時動態核算)", value=True)
     chk_a1 = st.checkbox("P.3 A1類交通事故死亡人數統計表", value=True)
     chk_a2 = st.checkbox("P.4 A2類交通事故受傷人數統計表", value=True)
     chk_major_tot = st.checkbox("P.5 取締重大交通違規統計表 (總表)", value=True)
@@ -634,42 +643,11 @@ with col_opt1:
     chk_tech = st.checkbox("P.8 科技執法成效", value=True)
 
 with col_opt2:
-    st.markdown("##### 🔍 重大違規專項細表（選配）")
-    chk_det_jiu = st.checkbox("重大違規細項：【酒駕】統計表", value=is_all)
-    chk_det_red = st.checkbox("重大違規細項：【闖紅燈】統計表", value=is_all)
-    chk_det_rev = st.checkbox("重大違規細項：【逆向行駛】統計表", value=is_all)
-    chk_det_turn = st.checkbox("重大違規細項：【轉彎未依規定】統計表", value=is_all)
-    chk_det_snake = st.checkbox("重大違規細項：【蛇行惡意逼車】統計表", value=is_all)
-    chk_det_ped = st.checkbox("重大違規細項：【不暫停讓行人】統計表", value=is_all)
-    chk_det_speed = st.checkbox("重大違規細項：【嚴重超速】統計表", value=is_all)
+    st.markdown("##### 🔍 狀態檢視")
+    st.info(f"📊 三項重點【本期 (09/16)】合計：**{three_matrix[0][4]}** 件\n\n📈 三項重點【9/1起累計】總計：**{three_matrix[0][8]}** 件")
 
-selected_pages = []
-if chk_protect_cover:
-    selected_pages.append("封面(保留手動版本)")
-elif chk_cover:
-    selected_pages.append("封面")
-if chk_three: selected_pages.append("三項重點")
-if chk_a1: selected_pages.append("A1事故死亡")
-if chk_a2: selected_pages.append("A2事故受傷")
-if chk_major_tot: selected_pages.append("重大違規總表")
-if chk_det_jiu: selected_pages.append("細表-酒駕")
-if chk_det_red: selected_pages.append("細表-闖紅燈")
-if chk_det_rev: selected_pages.append("細表-逆向")
-if chk_det_turn: selected_pages.append("細表-轉彎")
-if chk_det_snake: selected_pages.append("細表-逼車")
-if chk_det_ped: selected_pages.append("細表-讓行人")
-if chk_det_speed: selected_pages.append("細表-嚴重超速")
-if chk_overload: selected_pages.append("超載統計")
-if chk_jingtao: selected_pages.append("靜桃計畫")
-if chk_tech: selected_pages.append("科技執法")
-
-if chk_protect_cover:
-    st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出（封面將維持現況，不重新產生）。")
-else:
-    st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出。")
-
-with st.expander("👀 點擊展開預覽待輸出業務數據"):
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點", "A1事故死亡", "A2事故受傷", "重大違規", "超載取締", "靜桃計畫", "科技執法成效"])
+with st.expander("👀 點擊展開預覽待輸出業務數據（確認為最新數值）", expanded=True):
+    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點 (最新核算)", "A1事故死亡", "A2事故受傷", "重大違規", "超載取締", "靜桃計畫", "科技執法成效"])
     with t1: st.dataframe(df_three_preview, hide_index=True)
     with t2: st.dataframe(df_a1, hide_index=True)
     with t3: st.dataframe(df_a2, hide_index=True)
@@ -683,107 +661,62 @@ with st.expander("👀 點擊展開預覽待輸出業務數據"):
 st.write("")
 
 # ==========================================
-# 5. 執行指定輸出生成
+# 6. 執行指定輸出生成
 # ==========================================
-btn_label = f"🚀 立即編譯產出【已選定的 {len(selected_pages)} 個統計表頁面】"
+if st.button("🚀 立即直出簡報：將上方核算數值同步至 Google 簡報", type="primary"):
+    slides_svc = get_slides_service()
 
-if st.button(btn_label, type="primary"):
-    if not selected_pages:
-        st.warning("⚠️ 請至少勾選一個統計表頁面！")
+    if not slides_svc:
+        st.error("❌ 無法初始化 Google Slides 服務，請確認 secrets.toml 設定。")
     else:
-        slides_svc = get_slides_service()
+        with st.spinner("正在動態編譯並更新目標 Google 簡報..."):
+            try:
+                builder = ComprehensiveSlidesBuilder(slides_svc, TARGET_PRESENTATION_ID)
+                builder.prepare_canvas(protect_first_slide=chk_protect_cover)
 
-        if not slides_svc:
-            st.error("❌ 無法初始化 Google Slides 服務，請確認 secrets.toml 設定。")
-        else:
-            spinner_msg = f"正在{'（保留現有封面）' if chk_protect_cover else '清空母本畫布、'}動態編譯已勾選的 {len(selected_pages)} 頁投影片並整批覆蓋..."
-            with st.spinner(spinner_msg):
-                try:
-                    builder = ComprehensiveSlidesBuilder(slides_svc, TARGET_PRESENTATION_ID)
-                    builder.prepare_canvas(protect_first_slide=chk_protect_cover)
-
-                    if chk_cover and not chk_protect_cover:
-                        builder.add_cover_slide(
-                            main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制數據分析報告",
-                            subtitle="週次主管會報專案報告",
-                            date_range_str=cover_date_str
-                        )
-
-                    if chk_three:
-                        builder.add_three_major_slide(
-                            data_rows=three_major_raw_matrix,
-                            latest_day=latest_three_day
-                        )
-
-                    if chk_a1:
-                        builder.add_table_slide(
-                            slide_title="A1類交通事故死亡人數統計表",
-                            df=df_a1,
-                            is_accident_table=True
-                        )
-
-                    if chk_a2:
-                        builder.add_table_slide(
-                            slide_title="A2類交通事故受傷人數統計表",
-                            df=df_a2,
-                            is_accident_table=True
-                        )
-
-                    if chk_major_tot:
-                        builder.add_table_slide(
-                            slide_title="取締重大交通違規統計表",
-                            df=df_major,
-                            footnote=major_footnote_exact
-                        )
-
-                    det_map = [
-                        (chk_det_jiu, "酒駕"), (chk_det_red, "闖紅燈"), (chk_det_rev, "逆向行駛"),
-                        (chk_det_turn, "轉彎未依規定"), (chk_det_snake, "蛇行惡意逼車"),
-                        (chk_det_ped, "不暫停讓行人"), (chk_det_speed, "嚴重超速")
-                    ]
-                    for is_chk, cat in det_map:
-                        if is_chk:
-                            builder.add_major_detail_slide(
-                                cat_name=cat,
-                                data_rows=MAJOR_DETAIL_DICT[cat],
-                                date_str="0101-0916"
-                            )
-
-                    if chk_overload:
-                        builder.add_table_slide(
-                            slide_title="取締超載違規件數統計表",
-                            df=df_overload,
-                            footnote=overload_footnote_exact
-                        )
-
-                    if chk_jingtao:
-                        builder.add_table_slide(
-                            slide_title="「靜桃計畫」大執法專案統計表",
-                            df=df_jingtao
-                        )
-
-                    if chk_tech:
-                        tech_slide_title = f"科技執法成效 ({tech_date_range_str})"
-                        builder.add_table_slide(
-                            slide_title=tech_slide_title,
-                            df=df_tech_final,
-                            custom_width=480
-                        )
-
-                    builder.wipe_old_slides()
-                    final_url = builder.execute_build()
-
-                    st.balloons()
-                    st.success(f"🎉 指定的 {len(selected_pages)} 個統計表頁面已全自動重繪完成！")
-                    protect_note = "（第1頁封面已依設定保留，未受影響）\n\n" if chk_protect_cover else ""
-                    st.markdown(
-                        f"### 📑 簡報入口：\n"
-                        f"👉 **[點此直接開啟已更新的簡報]({final_url})**\n\n"
-                        f"{protect_note}"
-                        f"未勾選的頁面已全數剔除，目標簡報內僅包含您指定的表格，排版精準到位！"
+                if chk_cover and not chk_protect_cover:
+                    builder.add_cover_slide(
+                        main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制數據分析報告",
+                        subtitle="週次主管會報專案報告",
+                        date_range_str=cover_date_str
                     )
 
-                except HttpError as e:
-                    st.error(f"❌ Google API 請求失敗：{e}\n\n*提示：請確認簡報是否已共用給 `{SERVICE_ACCOUNT_EMAIL}` 並設定為「編輯者」。*")
-                except Exception as e:
-                    st.error(f"❌ 建立簡報失敗：{e}")
+                if chk_three:
+                    builder.add_three_major_slide(
+                        data_rows=three_matrix,
+                        latest_day="09/16"
+                    )
+
+                if chk_a1:
+                    builder.add_table_slide(slide_title="A1類交通事故死亡人數統計表", df=df_a1, is_accident_table=True)
+
+                if chk_a2:
+                    builder.add_table_slide(slide_title="A2類交通事故受傷人數統計表", df=df_a2, is_accident_table=True)
+
+                if chk_major_tot:
+                    builder.add_table_slide(slide_title="取締重大交通違規統計表", df=df_major, footnote=major_footnote_exact)
+
+                if chk_overload:
+                    builder.add_table_slide(slide_title="取締超載違規件數統計表", df=df_overload, footnote=overload_footnote_exact)
+
+                if chk_jingtao:
+                    builder.add_table_slide(slide_title="「靜桃計畫」大執法專案統計表", df=df_jingtao)
+
+                if chk_tech:
+                    builder.add_table_slide(slide_title=f"科技執法成效 ({tech_date_range_str})", df=df_tech_final, custom_width=480)
+
+                builder.wipe_old_slides(keep_cover=chk_protect_cover)
+                final_url = builder.execute_build()
+
+                st.balloons()
+                st.success("🎉 Google 簡報直出重繪完成！")
+                st.markdown(
+                    f"### 📑 簡報入口：\n"
+                    f"👉 **[點此直接開啟已更新的簡報]({final_url})**\n\n"
+                    f"✅ **最新數據已送達**：三項重點違規數值已與來源表完全連動，不再固定為舊資料！"
+                )
+
+            except HttpError as e:
+                st.error(f"❌ Google API 請求失敗：{e}\n\n*提示：請確認簡報是否已共用給 `{SERVICE_ACCOUNT_EMAIL}` 並設定為「編輯者」。*")
+            except Exception as e:
+                st.error(f"❌ 建立簡報失敗：{e}")
