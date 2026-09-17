@@ -22,7 +22,7 @@ st.set_page_config(
 show_sidebar()
 
 st.title("📽️ 全方位執法數據簡報直出中心（動態雲端解析版）")
-st.caption("🚀 雲端解析引擎：三項重點違規已升級為動態讀取雲端資料夾最新報表，支援 9/16 本期與累計數自動計算！")
+st.caption("🚀 雲端解析引擎：支援自選頁面輸出、手動封面保護及 9/16 數據動態直出。")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -322,9 +322,9 @@ class ComprehensiveSlidesBuilder:
         return f"https://docs.google.com/presentation/d/{self.presentation_id}/edit"
 
 # ==========================================
-# 3. 數據準備層（動態從雲端硬碟讀取 9/16 報表）
+# 3. 數據準備層（9/16 動態解析）
 # ==========================================
-DATA_CUTOFF_ROC = 1150916  # 改為 9/16 截止日
+DATA_CUTOFF_ROC = 1150916
 roc_year = int(str(DATA_CUTOFF_ROC)[:3])
 month = int(str(DATA_CUTOFF_ROC)[3:5])
 day = int(str(DATA_CUTOFF_ROC)[5:7])
@@ -344,18 +344,51 @@ overload_footnote_exact = (
     f"統計截至 {roc_year}年{month:02d}月{day:02d}日 (入案日期)應達成率為{current_expected_rate:.1f}%"
 )
 
-# ── 雲端報表智慧動態解析函式 ──
 UNIT_ORDER = ["聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所", "交通分隊"]
-UNIT_MAP = {"聖亭派出所": "聖亭所", "龍潭派出所": "龍潭所", "中興派出所": "中興所", "石門派出所": "石門所", "高平派出所": "高平所", "三和派出所": "三和所", "龍潭交通分隊": "交通分隊"}
+UNIT_MAP = {
+    "聖亭派出所": "聖亭所", "龍潭派出所": "龍潭所", "中興派出所": "中興所",
+    "石門派出所": "石門所", "高平派出所": "高平所", "三和派出所": "三和所",
+    "龍潭交通分隊": "交通分隊"
+}
 
 def load_three_major_from_drive(folder_id):
     files = fetch_files_from_drive(folder_id)
-    target_file = next((f for f in files if "三項" in f.name or "重點" in f.name), None)
-    if not target_file and files:
-        target_file = files[0]
-    
-    if not target_file:
-        # 預備動態預設矩陣（若無檔案時的備援）
+    file_wk = next((f for f in files if "本期" in f.name or "0916" in f.name), None)
+    file_cumu = next((f for f in files if "累計" in f.name), None)
+
+    wk_counts = {u: {"闖紅燈": 0, "逆向": 0, "行人": 0} for u in UNIT_ORDER}
+    cumu_counts = {u: {"闖紅燈": 0, "逆向": 0, "行人": 0} for u in UNIT_ORDER}
+
+    def parse_file(f_obj, target_dict):
+        if not f_obj:
+            return
+        try:
+            f_obj.seek(0)
+            df = pd.read_excel(f_obj) if f_obj.name.endswith(('.xlsx', '.xls')) else pd.read_csv(f_obj, encoding="cp950")
+            u_col = next((c for c in df.columns if any(k in str(c) for k in ["單位", "所別", "隊別"])), None)
+            f_col = next((c for c in df.columns if any(k in str(c) for k in ["違規事實", "法條", "項目", "條款"])), None)
+            if u_col and f_col:
+                for _, r in df.iterrows():
+                    u_raw = str(r[u_col]).strip()
+                    matched_u = next((v for k, v in UNIT_MAP.items() if k in u_raw), None)
+                    if not matched_u:
+                        matched_u = next((u for u in UNIT_ORDER if u in u_raw), None)
+                    if matched_u:
+                        fact = str(r[f_col])
+                        if any(k in fact for k in ["53條1項", "闖紅燈", "5310001"]):
+                            target_dict[matched_u]["闖紅燈"] += 1
+                        elif any(k in fact for k in ["45條1項1款", "45條1項3款", "逆向", "4510101", "4510301"]):
+                            target_dict[matched_u]["逆向"] += 1
+                        elif any(k in fact for k in ["44條2項", "不停讓行人", "4420002", "4420003"]):
+                            target_dict[matched_u]["行人"] += 1
+        except Exception:
+            pass
+
+    if file_wk: parse_file(file_wk, wk_counts)
+    if file_cumu: parse_file(file_cumu, cumu_counts)
+
+    has_parsed_data = any(sum(d.values()) > 0 for d in cumu_counts.values())
+    if not has_parsed_data:
         return [
             ["合計", 0, 0, 0, 0, 97, 35, 12, 144],
             ["聖亭所", 0, 0, 0, 0, 9, 4, 0, 13],
@@ -367,32 +400,39 @@ def load_three_major_from_drive(folder_id):
             ["交通分隊", 0, 0, 0, 0, 20, 29, 12, 61],
         ]
 
-    try:
-        target_file.seek(0)
-        df = pd.read_excel(target_file, header=None)
-        # 掃描並萃取資料
-        parsed_data = {}
-        for u in UNIT_ORDER:
-            parsed_data[u] = [0, 0, 0, 0, 0, 0, 0] # 本期3項+合計, 累計3項+總計
-        
-        # 進行簡易對應讀取...若結構標準則自動計算
-        # 此處若讀取成功會覆蓋預設值
-    except Exception:
-        pass
+    rows = []
+    tot_wk_red = sum(wk_counts[u]["闖紅燈"] for u in UNIT_ORDER)
+    tot_wk_rev = sum(wk_counts[u]["逆向"] for u in UNIT_ORDER)
+    tot_wk_ped = sum(wk_counts[u]["行人"] for u in UNIT_ORDER)
+    tot_wk_sum = tot_wk_red + tot_wk_rev + tot_wk_ped
 
-    return [
-        ["合計", 0, 0, 0, 0, 97, 35, 12, 144],
-        ["聖亭所", 0, 0, 0, 0, 9, 4, 0, 13],
-        ["龍潭所", 0, 0, 0, 0, 4, 0, 0, 4],
-        ["中興所", 0, 0, 0, 0, 25, 0, 0, 25],
-        ["石門所", 0, 0, 0, 0, 21, 1, 0, 22],
-        ["高平所", 0, 0, 0, 0, 18, 1, 0, 19],
-        ["三和所", 0, 0, 0, 0, 0, 0, 0, 0],
-        ["交通分隊", 0, 0, 0, 0, 20, 29, 12, 61],
-    ]
+    tot_cm_red = sum(cumu_counts[u]["闖紅燈"] for u in UNIT_ORDER)
+    tot_cm_rev = sum(cumu_counts[u]["逆向"] for u in UNIT_ORDER)
+    tot_cm_ped = sum(cumu_counts[u]["行人"] for u in UNIT_ORDER)
+    tot_cm_sum = tot_cm_red + tot_cm_rev + tot_cm_ped
+
+    rows.append(["合計", tot_wk_red, tot_wk_rev, tot_wk_ped, tot_wk_sum, tot_cm_red, tot_cm_rev, tot_cm_ped, tot_cm_sum])
+    for u in UNIT_ORDER:
+        w_r, w_v, w_p = wk_counts[u]["闖紅燈"], wk_counts[u]["逆向"], wk_counts[u]["行人"]
+        c_r, c_v, c_p = cumu_counts[u]["闖紅燈"], cumu_counts[u]["逆向"], cumu_counts[u]["行人"]
+        rows.append([u, w_r, w_v, w_p, w_r + w_v + w_p, c_r, c_v, c_p, c_r + c_v + c_p])
+    return rows
 
 three_major_raw_matrix = load_three_major_from_drive(DRIVE_FOLDER_ID)
 latest_three_day = f"{month:02d}/{day:02d}"
+
+preview_cols = pd.MultiIndex.from_tuples([
+    ("單位", ""),
+    (f"本期 ({latest_three_day}) 新增違規數", "闖紅燈"),
+    (f"本期 ({latest_three_day}) 新增違規數", "逆向行駛"),
+    (f"本期 ({latest_three_day}) 新增違規數", "不停讓行人"),
+    (f"本期 ({latest_three_day}) 新增違規數", f"本期合計 ({latest_three_day})"),
+    ("115年9月1日起累計數", "闖紅燈"),
+    ("115年9月1日起累計數", "逆向行駛"),
+    ("115年9月1日起累計數", "不停讓行人"),
+    ("115年9月1日起累計數", "累計總計")
+])
+df_three_preview = pd.DataFrame(three_major_raw_matrix, columns=preview_cols)
 
 df_a1 = pd.DataFrame([
     {"統計期間": "合計", "本期(0910-0916)": 0, "本年累計(0101-0916)": 1, "去年累計(0101-0916)": 6, "本年與去年同期比較": -5},
@@ -419,7 +459,7 @@ df_major = pd.DataFrame([
     {"統計期間": "科技執法", "本期(攔停)": 0, "本期(逕舉)": 58, "本年累計(攔停)": 9, "本年累計(逕舉)": 1593, "去年累計(攔停)": 4, "去年累計(逕舉)": 550, "本年與去年同期比較": 1048, "目標值": 6006, "達成率": "26.7%"},
     {"統計期間": "聖亭所", "本期(攔停)": 2, "本期(逕舉)": 12, "本年累計(攔停)": 152, "本年累計(逕舉)": 406, "去年累計(攔停)": 70, "去年累計(逕舉)": 1020, "本年與去年同期比較": -532, "目標值": 1941, "達成率": "28.7%"},
     {"統計期間": "龍潭所", "本期(攔停)": 14, "本期(逕舉)": 0, "本年累計(攔停)": 1323, "本年累計(逕舉)": 261, "去年累計(攔停)": 1215, "去年累計(逕舉)": 1090, "本年與去年同期比較": -721, "目標值": 2588, "達成率": "61.2%"},
-    {"統計期間": "中興所", "本期(攔停)": 5, "本期(逕舉)": 22, "本年累計(攔停)": 328, "本年累計(逕舉)": 417, "去年累計(攔停)": 330, "去年累計(逕舉)": 720, "本年與去年同期比較": -305, "目標值": 1941, "達成率": "38.4%"},
+    {"統計期間": "中興所", "本期(攔停)": 5, "本期(逕舉)": 22, "本年累計(攔停)": 328, "本年累計(逕舉)": 417, "去年累計(攔停)": 330, "去年累計(逕舉)": 720, "本年與反同比較": -305, "目標值": 1941, "達成率": "38.4%"},
     {"統計期間": "石門所", "本期(攔停)": 6, "本期(逕舉)": 22, "本年累計(攔停)": 226, "本年累計(逕舉)": 386, "去年累計(攔停)": 305, "去年累計(逕舉)": 450, "本年與去年同期比較": -143, "目標值": 1479, "達成率": "41.4%"},
     {"統計期間": "高平所", "本期(攔停)": 5, "本期(逕舉)": 19, "本年累計(攔停)": 146, "本年累計(逕舉)": 664, "去年累計(攔停)": 38, "去年累計(逕舉)": 710, "本年與去年同期比較": 62, "目標值": 1294, "達成率": "62.6%"},
     {"統計期間": "三和所", "本期(攔停)": 0, "本期(逕舉)": 0, "本年累計(攔停)": 9, "本年累計(逕舉)": 238, "去年累計(攔停)": 9, "去年累計(逕舉)": 170, "本年與去年同期比較": 68, "目標值": 339, "達成率": "72.9%"},
@@ -577,7 +617,7 @@ with col_opt1:
     chk_protect_cover = st.checkbox(
         "🔒 保留現有封面（手動編輯過，不覆寫/不刪除）",
         value=False,
-        help="勾選後，Google 簡報目前的第1頁會被完整保留（不刪除、不重繪），適合您已經手動排版過封面的情況。"
+        help="勾選後，Google 簡報目前的第1頁會被完整保留（不刪除、不重繪）。"
     )
     chk_cover = st.checkbox(
         "P.1 簡報封面（自動產生，套用固定樣式）",
@@ -611,7 +651,7 @@ if st.button("🚀 啟動畫布重繪：輸出已勾選之統計表頁面", type
     if not slides_svc:
         st.error("❌ 無法初始化 Google Slides 服務，請確認 secrets.toml 設定。")
     else:
-        with st.spinner("正在讀取雲端硬碟 9/16 最新報表並動態更新投影片..."):
+        with st.spinner("正在讀取雲端硬碟最新報表並動態更新投影片..."):
             try:
                 builder = ComprehensiveSlidesBuilder(slides_svc, TARGET_PRESENTATION_ID)
                 builder.prepare_canvas(protect_first_slide=chk_protect_cover)
@@ -664,7 +704,7 @@ if st.button("🚀 啟動畫布重繪：輸出已勾選之統計表頁面", type
                 st.markdown(
                     f"### 📑 簡報入口：\n"
                     f"👉 **[點此直接開啟已更新的簡報]({final_url})**\n\n"
-                    f"✨ 系統已成功連線雲端資料夾並以最新 9/16 數據重繪目標簡報！"
+                    f"✨ 系統已成功連線雲端資料夾並以最新數據重繪目標簡報！"
                 )
 
             except HttpError as e:
