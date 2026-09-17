@@ -1,63 +1,59 @@
 import io
 import re
-import uuid
 import smtplib
 import urllib.parse as _ul
 from datetime import datetime, timedelta
+from email import encoders
 from email.header import Header
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import pandas as pd
 import streamlit as st
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-from googleapiclient.errors import HttpError
 
-from menu import show_sidebar
+# 嘗試載入 python-pptx，若環境尚未安裝則提供提示
+try:
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN
+    from pptx.enum.shapes import MSO_SHAPE
+    HAS_PPTX = True
+except ImportError:
+    HAS_PPTX = False
+
+# 載入自訂側邊欄
+try:
+    from menu import show_sidebar
+except ImportError:
+    def show_sidebar():
+        pass
 
 # ==========================================
 # 0. 系統初始化與側邊欄
 # ==========================================
 st.set_page_config(
-    page_title="全方位執法數據簡報直出中心",
+    page_title="全方位執法數據簡報直出中心 (PPTX 直出版)",
     page_icon="📽️",
     layout="wide"
 )
 show_sidebar()
 
-st.title("📽️ 全方位執法數據簡報直出中心（自選頁面版）")
-st.caption("🚀 自由勾選機制：可任意指定欲輸出的統計表，系統動態按需編譯並覆蓋目標簡報，並自動產生專屬存檔副本連結與寄送通報至個人信箱。")
+st.title("📽️ 全方位執法數據簡報直出中心（PPTX 實體檔直出版）")
+st.caption("🚀 做法 A 架構：純 Python 本地直出實體 PowerPoint (.pptx) 簡報，徹底擺脫 Google 母本與雲端空間配額限制，隨點即下載並直接附件寄送！")
+
+if not HAS_PPTX:
+    st.error("⚠️ 偵測到環境中尚未安裝 `python-pptx` 套件。請在終端機或 requirements.txt 中執行：`pip install python-pptx`")
+    st.stop()
 
 # ==========================================
-# 1. Google 服務連線層與常數設定
+# 1. 郵件通知函式（參照毒駕專案設定：直接夾帶附件寄給自己）
 # ==========================================
-GCP_CREDS = dict(st.secrets.get("gcp_service_account", {}))
-SERVICE_ACCOUNT_EMAIL = GCP_CREDS.get("client_email", "streamlit-bot@streamlit-sheets-482909.iam.gserviceaccount.com")
-
-TARGET_PRESENTATION_ID = "1h2QNNI8SLvjNEBmky7IWv9ZGBbKsLvV1UDkYJWcOeWU"
-DRIVE_FOLDER_ID = st.secrets.get("DRIVE_FOLDER_ID", "1fm6ZK5B5wUmfy7-cgrw8OIkh7iS175dA").strip()
-
-def get_slides_service():
-    if not GCP_CREDS:
-        return None
-    creds = service_account.Credentials.from_service_account_info(
-        GCP_CREDS,
-        scopes=[
-            "https://www.googleapis.com/auth/drive",
-            "https://www.googleapis.com/auth/presentations"
-        ]
-    )
-    return build("slides", "v1", credentials=creds)
-
-# ==========================================
-# 1.1 參照毒駕專案之「寄給自己」郵件發送函式
-# ==========================================
-def send_report_email_to_self(subject: str, body_html: str):
+def send_pptx_email_to_self(pptx_bytes: io.BytesIO, file_name: str) -> tuple:
     """
-    使用 st.secrets["email"] 設定檔發送電子郵件，直接寄給寄件者自己。
-    相容支援 st.secrets["email"]["user"] 與頂層 SMTP_USER 設定。
+    讀取 st.secrets["email"] 或頂層 SMTP 設定，
+    將產出之 PPTX 簡報檔夾帶為附件寄送至寄件者本人信箱。
     """
     try:
         if "email" in st.secrets:
@@ -68,14 +64,28 @@ def send_report_email_to_self(subject: str, body_html: str):
             pwd = st.secrets.get("SMTP_PASSWORD")
 
         if not sender or not pwd:
-            return False, "未在 secrets.toml 偵測到 [email] 或 SMTP 帳號密碼設定。"
+            return False, "未於 secrets.toml 偵測到 [email] 或 SMTP 帳號密碼設定"
 
-        msg = MIMEMultipart("alternative")
+        msg = MIMEMultipart()
         msg["From"] = f"交通執法自動化戰情室 <{sender}>"
-        msg["To"] = sender  # 依照範例邏輯：直接寄給自己
-        msg["Subject"] = subject
+        msg["To"] = sender
+        msg["Subject"] = f"📊 交通執法數據簡報直出 - {file_name}"
 
-        msg.attach(MIMEText(body_html, "html", "utf-8"))
+        body_text = (
+            f"長官／同仁好：\n\n"
+            f"系統已自動完成交通執法數據簡報之編譯結算。\n"
+            f"附件為最新產出之 PowerPoint 簡報實體檔【{file_name}】。\n\n"
+            f"本檔案可直接在電腦以 Microsoft PowerPoint、WPS 編輯，或直接拖拉上傳至 Google 雲端硬碟使用。\n\n"
+            f"本信件由交通執法自動化分析引擎發送。"
+        )
+        msg.attach(MIMEText(body_text, "plain", "utf-8"))
+
+        # 夾帶 PPTX 實體檔案
+        part = MIMEBase("application", "vnd.openxmlformats-officedocument.presentationml.presentation")
+        part.set_payload(pptx_bytes.getvalue())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{_ul.quote(file_name)}")
+        msg.attach(part)
 
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(sender, pwd)
@@ -84,232 +94,245 @@ def send_report_email_to_self(subject: str, body_html: str):
     except Exception as e:
         return False, str(e)
 
-with st.container():
-    c_s1, c_s2 = st.columns([2, 1])
-    with c_s1:
-        st.info(f"🔑 **執行服務帳號：** `{SERVICE_ACCOUNT_EMAIL}`\n\n📂 **報表資料夾 ID：** `{DRIVE_FOLDER_ID}`")
-    with c_s2:
-        st.link_button("📂 開啟目標 Google 簡報", f"https://docs.google.com/presentation/d/{TARGET_PRESENTATION_ID}/edit")
-
 # ==========================================
-# 2. 全方位簡報排版引擎 (ComprehensiveSlidesBuilder)
+# 2. PPTX 原生簡報排版引擎 (PptxReportBuilder)
 # ==========================================
-class ComprehensiveSlidesBuilder:
-    def __init__(self, slides_svc, presentation_id: str):
-        self.slides_svc = slides_svc
-        self.presentation_id = presentation_id.strip()
-        self.old_slide_ids = []
-        self.requests = []
+class PptxReportBuilder:
+    """專門負責將執法數據以 16:9 比例直出高品質 PPTX 簡報"""
+    def __init__(self):
+        self.prs = Presentation()
+        # 設定為標準 16:9 寬螢幕尺寸 (13.333 x 7.5 英吋)
+        self.prs.slide_width = Inches(13.333)
+        self.prs.slide_height = Inches(7.5)
+        self.blank_layout = self.prs.slide_layouts[6]  # 全空白版型
 
-    def prepare_canvas(self, protect_first_slide: bool = False):
-        pres = self.slides_svc.presentations().get(
-            presentationId=self.presentation_id
-        ).execute()
-        slides = pres.get("slides", [])
-        if protect_first_slide and slides:
-            self.old_slide_ids = [s["objectId"] for s in slides[1:]]
-        else:
-            self.old_slide_ids = [s["objectId"] for s in slides]
+        # 配色常數定義
+        self.C_NAVY = RGBColor(15, 38, 56)        # 深海軍藍 (封面與表頭)
+        self.C_LIGHT_BG = RGBColor(232, 240, 254) # 表格合計/標註淺藍
+        self.C_WHITE = RGBColor(255, 255, 255)
+        self.C_DARK = RGBColor(30, 41, 59)
+        self.C_MUTED = RGBColor(100, 116, 139)
+        self.C_RED = RGBColor(220, 38, 38)        # 衰退或警告紅字
+
+    def _set_cell(self, cell, text, font_size=11, bold=False, color=None, bg_color=None, align=PP_ALIGN.CENTER):
+        """統整設定儲存格內容與樣式"""
+        cell.text = str(text).replace("\n", " ").strip() if (pd.notna(text) and str(text).strip() != "") else "—"
+        if bg_color:
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = bg_color
+
+        for p in cell.text_frame.paragraphs:
+            p.alignment = align
+            for r in p.runs:
+                r.font.name = "Microsoft JhengHei"
+                r.font.size = Pt(font_size)
+                r.font.bold = bold
+                if color:
+                    r.font.color.rgb = color
 
     def add_cover_slide(self, main_title: str, subtitle: str, date_range_str: str):
-        slide_id = f"cover_{uuid.uuid4().hex[:8]}"
-        title_id = f"txt_title_{uuid.uuid4().hex[:8]}"
-        sub_id = f"txt_sub_{uuid.uuid4().hex[:8]}"
+        """封面頁：深海軍藍大器全幅底色"""
+        slide = self.prs.slides.add_slide(self.blank_layout)
 
-        self.requests.append({"createSlide": {"objectId": slide_id, "slideLayoutReference": {"predefinedLayout": "BLANK"}}})
-        self.requests.append({"updatePageProperties": {"objectId": slide_id, "pageProperties": {"pageBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.06, "green": 0.15, "blue": 0.22}}}}}, "fields": "pageBackgroundFill"}})
-        self.requests.append({"createShape": {"objectId": title_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 650, "unit": "PT"}, "height": {"magnitude": 80, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 35, "translateY": 110, "unit": "PT"}}}})
-        self.requests.append({"insertText": {"objectId": title_id, "text": main_title, "insertionIndex": 0}})
-        self.requests.append({"updateTextStyle": {"objectId": title_id, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 26, "unit": "PT"}, "bold": True, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 1.0, "green": 1.0, "blue": 1.0}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+        # 滿版背景形狀
+        bg = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, 0, 0, self.prs.slide_width, self.prs.slide_height
+        )
+        bg.fill.solid()
+        bg.fill.fore_color.rgb = self.C_NAVY
+        bg.line.fill.background()
 
-        sub_text = f"{subtitle}\n統計區間：{date_range_str}\n製表單位：龍潭分局交通組"
-        self.requests.append({"createShape": {"objectId": sub_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 650, "unit": "PT"}, "height": {"magnitude": 90, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 35, "translateY": 210, "unit": "PT"}}}})
-        self.requests.append({"insertText": {"objectId": sub_id, "text": sub_text, "insertionIndex": 0}})
-        self.requests.append({"updateTextStyle": {"objectId": sub_id, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 13, "unit": "PT"}, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.8, "green": 0.85, "blue": 0.9}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,foregroundColor"}})
+        # 主標題文字框
+        tb = slide.shapes.add_textbox(Inches(1.0), Inches(2.2), Inches(11.333), Inches(2.2))
+        tf = tb.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.text = main_title
+        p.font.name = "Microsoft JhengHei"
+        p.font.size = Pt(38)
+        p.font.bold = True
+        p.font.color.rgb = self.C_WHITE
 
-    def add_three_major_slide(self, data_rows, latest_day="09/15"):
-        slide_id = f"s_three_{uuid.uuid4().hex[:8]}"
-        title_id = f"t_three_{uuid.uuid4().hex[:8]}"
-        table_id = f"tbl_three_{uuid.uuid4().hex[:8]}"
+        # 副標題與資訊區
+        tb_sub = slide.shapes.add_textbox(Inches(1.0), Inches(4.5), Inches(11.333), Inches(2.0))
+        tf_sub = tb_sub.text_frame
+        tf_sub.word_wrap = True
 
-        self.requests.append({"createSlide": {"objectId": slide_id, "slideLayoutReference": {"predefinedLayout": "BLANK"}}})
+        p1 = tf_sub.paragraphs[0]
+        p1.text = subtitle
+        p1.font.name = "Microsoft JhengHei"
+        p1.font.size = Pt(20)
+        p1.font.color.rgb = RGBColor(186, 215, 248)
 
-        title_text = "桃園市政府警察局龍潭分局 取締三項重點違規本期及累計統計表"
-        sub_text = f"統計期間：自 115 年 9 月 1 日起至本期({latest_day})止 ｜ 製表單位：龍潭分局交通組"
-        full_header = f"{title_text}\n{sub_text}"
+        p2 = tf_sub.add_paragraph()
+        p2.text = f"統計區間：{date_range_str} ｜ 製表單位：龍潭分局交通組"
+        p2.font.name = "Microsoft JhengHei"
+        p2.font.size = Pt(14)
+        p2.font.color.rgb = RGBColor(203, 213, 225)
+        p2.space_before = Pt(14)
 
-        self.requests.append({"createShape": {"objectId": title_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 45, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 12, "unit": "PT"}}}})
-        self.requests.append({"insertText": {"objectId": title_id, "text": full_header, "insertionIndex": 0}})
-        self.requests.append({"updateTextStyle": {"objectId": title_id, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 14, "unit": "PT"}, "bold": True, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.35}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+    def add_header_box(self, slide, title: str, subtitle: str = ""):
+        """投影片頂端標題區塊"""
+        tb = slide.shapes.add_textbox(Inches(0.6), Inches(0.4), Inches(12.133), Inches(0.9))
+        tf = tb.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.text = title
+        p.font.name = "Microsoft JhengHei"
+        p.font.size = Pt(22)
+        p.font.bold = True
+        p.font.color.rgb = self.C_NAVY
+
+        if subtitle:
+            p2 = tf.add_paragraph()
+            p2.text = subtitle
+            p2.font.name = "Microsoft JhengHei"
+            p2.font.size = Pt(11.5)
+            p2.font.color.rgb = self.C_MUTED
+            p2.space_before = Pt(4)
+
+    def add_three_major_slide(self, data_rows, latest_day="09/16"):
+        """P.2 三項重點違規統計表 (雙層母本表頭)"""
+        slide = self.prs.slides.add_slide(self.blank_layout)
+        self.add_header_box(
+            slide,
+            "桃園市政府警察局龍潭分局 取締三項重點違規本期及累計統計表",
+            f"統計期間：自 115 年 9 月 1 日起至本期({latest_day})止 ｜ 製表單位：龍潭分局交通組"
+        )
 
         num_rows = len(data_rows) + 2
         num_cols = 9
-        tbl_top = 62
-        tbl_height = 290
+        table_shape = slide.shapes.add_table(
+            num_rows, num_cols, Inches(0.6), Inches(1.4), Inches(12.133), Inches(5.4)
+        )
+        tbl = table_shape.table
 
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}, "rows": num_rows, "columns": num_cols}})
-        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}}})
-        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 4}}})
-        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 5}, "rowSpan": 1, "columnSpan": 4}}})
+        # 第一層表頭合併
+        tbl.cell(0, 0).merge(tbl.cell(1, 0))
+        tbl.cell(0, 1).merge(tbl.cell(0, 4))
+        tbl.cell(0, 5).merge(tbl.cell(0, 8))
 
-        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
-        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 2, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}}}, "fields": "tableCellBackgroundFill"}})
+        self._set_cell(tbl.cell(0, 0), "單位", font_size=12, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
+        self._set_cell(tbl.cell(0, 1), f"本期 ({latest_day}) 新增違規數", font_size=12, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
+        self._set_cell(tbl.cell(0, 5), "115年9月1日起累計數", font_size=12, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
 
-        def write_cell(r, c, text, font_size=10.0, bold=False, fg=(0.1, 0.1, 0.1)):
-            t_str = str(text).strip() if (pd.notna(text) and str(text).strip() != "") else "0"
-            self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "text": t_str, "insertionIndex": 0}})
-            self.requests.append({"updateTextStyle": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": font_size, "unit": "PT"}, "bold": bold, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg[0], "green": fg[1], "blue": fg[2]}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+        sub_headers = ["", "闖紅燈", "逆向行駛", "不停讓行人", f"本期合計\n({latest_day})", "闖紅燈", "逆向行駛", "不停讓行人", "累計總計"]
+        for c in range(1, 9):
+            self._set_cell(tbl.cell(1, c), sub_headers[c], font_size=11, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
 
-        write_cell(0, 0, "單位", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
-        write_cell(0, 1, f"本期 ({latest_day}) 新增違規數", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
-        write_cell(0, 5, "115年9月1日起累計數", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
-
-        sub_headers = ["", "闖紅燈", "逆向行駛", "不停讓行人", f"本期合計 ({latest_day})", "闖紅燈", "逆向行駛", "不停讓行人", "累計總計"]
-        for c_idx in range(1, 9):
-            write_cell(1, c_idx, sub_headers[c_idx], font_size=10.0, bold=True, fg=(1.0, 1.0, 1.0))
-
-        for r_idx, r_vals in enumerate(data_rows, start=2):
+        for r_idx, row in enumerate(data_rows, start=2):
             is_tot = (r_idx == 2)
-            for c_idx, val in enumerate(r_vals):
-                write_cell(r_idx, c_idx, val, font_size=10.0, bold=is_tot, fg=(0.1, 0.1, 0.1))
+            bg = self.C_LIGHT_BG if is_tot else None
+            for c_idx, val in enumerate(row):
+                self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=11, bold=is_tot, color=self.C_DARK, bg_color=bg)
 
     def add_major_detail_slide(self, cat_name: str, data_rows, date_str="0101-0915"):
-        slide_id = f"s_det_{uuid.uuid4().hex[:8]}"
-        title_id = f"t_det_{uuid.uuid4().hex[:8]}"
-        table_id = f"tbl_det_{uuid.uuid4().hex[:8]}"
-
-        self.requests.append({"createSlide": {"objectId": slide_id, "slideLayoutReference": {"predefinedLayout": "BLANK"}}})
-
-        full_title = f"取締【{cat_name}】違規統計表 (累計至 {date_str})"
-        self.requests.append({"createShape": {"objectId": title_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 35, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 14, "unit": "PT"}}}})
-        self.requests.append({"insertText": {"objectId": title_id, "text": full_title, "insertionIndex": 0}})
-        self.requests.append({"updateTextStyle": {"objectId": title_id, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 15, "unit": "PT"}, "bold": True, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.35}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+        """重大違規 7 大專項細表"""
+        slide = self.prs.slides.add_slide(self.blank_layout)
+        self.add_header_box(
+            slide,
+            f"取締【{cat_name}】違規統計表 (累計至 {date_str})",
+            "口徑包含現場攔停與逕行舉發 ｜ 製表單位：龍潭分局交通組"
+        )
 
         num_rows = len(data_rows) + 2
         num_cols = 10
-        tbl_top = 54
-        tbl_height = 295
+        table_shape = slide.shapes.add_table(
+            num_rows, num_cols, Inches(0.6), Inches(1.4), Inches(12.133), Inches(5.4)
+        )
+        tbl = table_shape.table
 
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}, "rows": num_rows, "columns": num_cols}})
-        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}}})
-        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 3}}})
-        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 4}, "rowSpan": 1, "columnSpan": 3}}})
-        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 7}, "rowSpan": 1, "columnSpan": 3}}})
+        tbl.cell(0, 0).merge(tbl.cell(1, 0))
+        tbl.cell(0, 1).merge(tbl.cell(0, 3))
+        tbl.cell(0, 4).merge(tbl.cell(0, 6))
+        tbl.cell(0, 7).merge(tbl.cell(0, 9))
 
-        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
-        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 2, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}}}, "fields": "tableCellBackgroundFill"}})
-
-        def write_dcell(r, c, text, font_size=8.5, bold=False, fg=(0.1, 0.1, 0.1)):
-            t_str = str(text).strip() if pd.notna(text) else "—"
-            self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "text": t_str, "insertionIndex": 0}})
-            self.requests.append({"updateTextStyle": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": font_size, "unit": "PT"}, "bold": bold, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg[0], "green": fg[1], "blue": fg[2]}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
-
-        write_dcell(0, 0, "統計期間", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
-        write_dcell(0, 1, "今年累計", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
-        write_dcell(0, 4, "去年累計", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
-        write_dcell(0, 7, "今年與去年同期比較", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
+        self._set_cell(tbl.cell(0, 0), "統計期間", font_size=11, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
+        self._set_cell(tbl.cell(0, 1), "今年累計", font_size=11, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
+        self._set_cell(tbl.cell(0, 4), "去年累計", font_size=11, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
+        self._set_cell(tbl.cell(0, 7), "今年與去年同期比較", font_size=11, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
 
         sub_names = ["", "當場攔停", "逕行舉發", "合計", "當場攔停", "逕行舉發", "合計", "當場攔停", "逕行舉發", "合計"]
-        for c_idx in range(1, 10):
-            write_dcell(1, c_idx, sub_names[c_idx], font_size=9.0, bold=True, fg=(1.0, 1.0, 1.0))
+        for c in range(1, 10):
+            self._set_cell(tbl.cell(1, c), sub_names[c], font_size=10, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
 
-        for r_idx, r_vals in enumerate(data_rows, start=2):
+        for r_idx, row in enumerate(data_rows, start=2):
             is_tot = (r_idx == 2)
-            for c_idx, val in enumerate(r_vals):
-                fg = (0.1, 0.1, 0.1)
+            bg = self.C_LIGHT_BG if is_tot else None
+            for c_idx, val in enumerate(row):
+                fg = self.C_DARK
                 is_bold = is_tot
                 if c_idx in [7, 8, 9]:
                     try:
                         c_num = float(str(val).replace(",", "").strip())
                         if c_num < 0:
-                            fg = (0.85, 0.0, 0.0)
+                            fg = self.C_RED
                             is_bold = True
                     except Exception:
                         pass
-                write_dcell(r_idx, c_idx, val, font_size=8.5, bold=is_bold, fg=fg)
+                self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=10, bold=is_bold, color=fg, bg_color=bg)
 
-    def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", is_accident_table: bool = False, custom_width: int = None):
-        slide_id = f"s_{uuid.uuid4().hex[:8]}"
-        title_id = f"t_{uuid.uuid4().hex[:8]}"
-        table_id = f"tbl_{uuid.uuid4().hex[:8]}"
-
-        self.requests.append({"createSlide": {"objectId": slide_id, "slideLayoutReference": {"predefinedLayout": "BLANK"}}})
-        full_title = f"{slide_title}  |  {subtitle}" if subtitle else slide_title
-        self.requests.append({"createShape": {"objectId": title_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 35, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 15, "unit": "PT"}}}})
-        self.requests.append({"insertText": {"objectId": title_id, "text": full_title, "insertionIndex": 0}})
-        self.requests.append({"updateTextStyle": {"objectId": title_id, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 15, "unit": "PT"}, "bold": True, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.35}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+    def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", is_accident_table: bool = False, custom_width_in: float = None):
+        """標準表格投影片 (A1, A2, 重大違規總表, 超載, 靜桃, 科技執法)"""
+        slide = self.prs.slides.add_slide(self.blank_layout)
+        self.add_header_box(slide, slide_title, subtitle)
 
         num_cols = len(df.columns)
         num_rows = len(df) + 1
 
-        tbl_width = custom_width if custom_width else (480 if num_cols <= 2 else 670)
-        tbl_left = (720 - tbl_width) / 2
+        tbl_width = custom_width_in if custom_width_in else (8.0 if num_cols <= 2 else 12.133)
+        tbl_left = (13.333 - tbl_width) / 2
+        tbl_top = 1.4
+        tbl_height = min(5.2, max(2.5, num_rows * 0.42))
 
-        if num_cols <= 2:
-            row_height = 24
-            font_size = 11.0
-            tbl_top = 60
-        else:
-            row_height = 26
-            font_size = 9.0 if num_cols >= 8 else 10.5
-            tbl_top = 55
+        table_shape = slide.shapes.add_table(
+            num_rows, num_cols, Inches(tbl_left), Inches(tbl_top), Inches(tbl_width), Inches(tbl_height)
+        )
+        tbl = table_shape.table
 
-        tbl_height = min(300, max(140, num_rows * row_height))
-
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": tbl_width, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": tbl_left, "translateY": tbl_top, "unit": "PT"}}, "rows": num_rows, "columns": num_cols}})
-        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
-
-        def write_gen_cell(r, c, text, font_sz, bold, fg_rgb):
-            t_str = str(text).replace("\n", " ").strip() if (pd.notna(text) and str(text).strip() != "") else "—"
-            self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "text": t_str, "insertionIndex": 0}})
-            self.requests.append({"updateTextStyle": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": font_sz, "unit": "PT"}, "bold": bold, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg_rgb[0], "green": fg_rgb[1], "blue": fg_rgb[2]}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
-
+        # 表頭
+        font_sz = 12 if num_cols <= 4 else (10 if num_cols >= 8 else 11)
         for c_idx, col_name in enumerate(df.columns):
-            write_gen_cell(0, c_idx, col_name, font_size, True, (1.0, 1.0, 1.0))
+            self._set_cell(tbl.cell(0, c_idx), col_name, font_size=font_sz, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
 
+        # 內容列
         for r_idx, row in df.iterrows():
-            first_col_val = str(row.values[0]).strip()
-            is_hl_row = any(k in first_col_val for k in ["合計", "總計", "舉發總數"])
-
-            if is_hl_row:
-                self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": r_idx + 1, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}}}, "fields": "tableCellBackgroundFill"}})
+            first_val = str(row.values[0]).strip()
+            is_hl = any(k in first_val for k in ["合計", "總計", "舉發總數"])
+            bg = self.C_LIGHT_BG if is_hl else None
 
             for c_idx, val in enumerate(row):
                 cell_val = str(val).strip()
                 col_name = str(df.columns[c_idx])
-                fg = (0.1, 0.1, 0.1)
-                is_bold = is_hl_row
+                fg = self.C_DARK
+                is_bold = is_hl
 
                 if is_accident_table and any(k in col_name for k in ["比較", "增減", "比例"]):
                     try:
                         clean_num = float(cell_val.replace("%", "").replace("+", "").strip())
                         if clean_num > 0:
-                            fg = (0.85, 0.0, 0.0)
+                            fg = self.C_RED
                             is_bold = True
                     except Exception:
                         pass
 
-                write_gen_cell(r_idx + 1, c_idx, cell_val, font_size, is_bold, fg)
+                self._set_cell(tbl.cell(r_idx + 1, c_idx), cell_val, font_size=font_sz, bold=is_bold, color=fg, bg_color=bg)
 
+        # 頁腳備註
         if footnote:
-            fn_id = f"fn_{uuid.uuid4().hex[:8]}"
-            self.requests.append({"createShape": {"objectId": fn_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 30, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 365, "unit": "PT"}}}})
-            self.requests.append({"insertText": {"objectId": fn_id, "text": footnote, "insertionIndex": 0}})
-            self.requests.append({"updateTextStyle": {"objectId": fn_id, "style": {"fontFamily": "DFKai-SB", "fontSize": {"magnitude": 10, "unit": "PT"}, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.2, "green": 0.2, "blue": 0.2}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,foregroundColor"}})
+            tb_fn = slide.shapes.add_textbox(Inches(0.6), Inches(6.8), Inches(12.133), Inches(0.4))
+            p_fn = tb_fn.text_frame.paragraphs[0]
+            p_fn.text = f"註：{footnote}"
+            p_fn.font.name = "DFKai-SB"
+            p_fn.font.size = Pt(10)
+            p_fn.font.color.rgb = self.C_MUTED
 
-    def wipe_old_slides(self):
-        for oid in self.old_slide_ids:
-            self.requests.append({"deleteObject": {"objectId": oid}})
-
-    def execute_build(self) -> str:
-        batch_size = 150
-        for i in range(0, len(self.requests), batch_size):
-            chunk = self.requests[i:i + batch_size]
-            self.slides_svc.presentations().batchUpdate(
-                presentationId=self.presentation_id,
-                body={"requests": chunk}
-            ).execute()
-        return f"https://docs.google.com/presentation/d/{self.presentation_id}/edit"
+    def build_bytes(self) -> io.BytesIO:
+        """編譯並輸出記憶體 BytesIO 串流"""
+        out = io.BytesIO()
+        self.prs.save(out)
+        out.seek(0)
+        return out
 
 # ==========================================
 # 3. 數據準備層（鎖定資料截止日 115/09/15）
@@ -539,19 +562,8 @@ col_opt1, col_opt2 = st.columns(2)
 
 with col_opt1:
     st.markdown("##### 🏢 常態會報核心表格")
-
-    chk_protect_cover = st.checkbox(
-        "🔒 保留現有封面（手動編輯過，不覆寫/不刪除）",
-        value=False,
-        help="勾選後，Google 簡報目前的第1頁會被完整保留（不刪除、不重繪），適合手動排版過封面的情況。"
-    )
-    chk_cover = st.checkbox(
-        "P.1 簡報封面（自動產生，套用固定樣式）",
-        value=True,
-        disabled=chk_protect_cover
-    )
-
-    chk_three = st.checkbox("P.2 取締三項重點違規統計表 (母本雙層)", value=True)
+    chk_cover = st.checkbox("P.1 簡報封面 (高對比海軍藍大器版型)", value=True)
+    chk_three = st.checkbox("P.2 取締三項重點違規統計表 (雙層表頭)", value=True)
     chk_a1 = st.checkbox("P.3 A1類交通事故死亡人數統計表", value=True)
     chk_a2 = st.checkbox("P.4 A2類交通事故受傷人數統計表", value=True)
     chk_major_tot = st.checkbox("P.5 取締重大交通違規統計表 (總表)", value=True)
@@ -569,12 +581,9 @@ with col_opt2:
     chk_det_ped = st.checkbox("重大違規細項：【不暫停讓行人】統計表", value=is_all)
     chk_det_speed = st.checkbox("重大違規細項：【嚴重超速】統計表", value=is_all)
 
-# 計算總勾選頁數
+# 彙整勾選頁面
 selected_pages = []
-if chk_protect_cover:
-    selected_pages.append("封面(保留手動版本)")
-elif chk_cover:
-    selected_pages.append("封面")
+if chk_cover: selected_pages.append("封面")
 if chk_three: selected_pages.append("三項重點")
 if chk_a1: selected_pages.append("A1事故死亡")
 if chk_a2: selected_pages.append("A2事故受傷")
@@ -590,30 +599,27 @@ if chk_overload: selected_pages.append("超載統計")
 if chk_jingtao: selected_pages.append("靜桃計畫")
 if chk_tech: selected_pages.append("科技執法")
 
-if chk_protect_cover:
-    st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出（封面將維持現況，不重新產生）。")
-else:
-    st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出。")
+st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出。")
 
 # ==========================================
-# 4.1 副本設定（自動寄給 secrets 所設定的自己）
+# 4.1 檔案命名設定
 # ==========================================
 st.markdown("---")
-st.markdown("#### 📁 存檔副本與自動寄信設定")
+st.markdown("#### 📁 簡報檔案命名與信件通知")
 
-default_copy_name = f"龍潭分局執法數據簡報_{datetime.now().strftime('%Y%m%d_%H%M')}"
-custom_copy_title = st.text_input(
-    "✏️ 存檔副本名稱標註（用於自訂副本與信件通知）：",
-    value=default_copy_name,
-    help="系統會將此名稱寫入通知信，並產生一鍵直出副本存檔連結。"
+default_pptx_name = f"龍潭分局執法數據簡報_{datetime.now().strftime('%Y%m%d_%H%M')}.pptx"
+custom_file_name = st.text_input(
+    "✏️ 自訂簡報存檔名稱（副檔名請保留 .pptx）：",
+    value=default_pptx_name,
+    help="產出後下載之檔案及郵件附件均會以此命名。"
 )
 
-# 顯示目前設定的寄件/收件信箱提示
+# 取得目前 secrets 內配置之寄件/收件信箱提示
 curr_user = st.secrets.get("email", {}).get("user") or st.secrets.get("SMTP_USER", "")
 if curr_user:
-    st.caption(f"📬 執行後將自動寄送通報至已綁定之個人信箱：`{curr_user}`")
+    st.caption(f"📬 點擊「直出簡報並寄給我」後，系統將自動夾帶 PPTX 附件發送至：`{curr_user}`")
 else:
-    st.caption("⚠️ 尚未偵測到 `[email]` 設定，請確認 `secrets.toml` 是否包含 `[email] user = ...` 與 `password = ...`。")
+    st.caption("💡 提示：若需自動寄信，請確認 secrets.toml 是否已配置 `[email] user = ...` 與 `password = ...`。即使不寄信也可直接點擊下載檔案。")
 
 with st.expander("👀 點擊展開預覽待輸出業務數據"):
     t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點", "A1事故死亡", "A2事故受傷", "重大違規", "超載取締", "靜桃計畫", "科技執法成效"])
@@ -630,157 +636,152 @@ with st.expander("👀 點擊展開預覽待輸出業務數據"):
 st.write("")
 
 # ==========================================
-# 5. 執行指定輸出生成
+# 5. 執行指定輸出生成（做法 A：純 Python 記憶體編譯 PPTX）
 # ==========================================
-btn_label = f"🚀 立即編譯產出【已選定的 {len(selected_pages)} 個統計表頁面】"
+btn_col1, btn_col2 = st.columns([1.5, 2.5])
 
-if st.button(btn_label, type="primary"):
+with btn_col1:
+    btn_generate = st.button(f"🚀 直出 PPTX 簡報檔 ({len(selected_pages)} 頁)", type="primary", use_container_width=True)
+
+with btn_col2:
+    chk_auto_email = st.checkbox("產出後自動將 PPTX 附件寄到我的信箱", value=True)
+
+if btn_generate:
     if not selected_pages:
         st.warning("⚠️ 請至少勾選一個統計表頁面！")
-    elif not custom_copy_title.strip():
-        st.warning("⚠️ 副本名稱標註不可為空白！")
+    elif not custom_file_name.strip():
+        st.warning("⚠️ 簡報檔案名稱不可為空白！")
     else:
-        slides_svc = get_slides_service()
+        file_save_name = custom_file_name.strip()
+        if not file_save_name.lower().endswith(".pptx"):
+            file_save_name += ".pptx"
 
-        if not slides_svc:
-            st.error("❌ 無法初始化 Google Slides 服務，請確認 secrets.toml 設定。")
-        else:
-            spinner_msg = f"正在{'（保留現有封面）' if chk_protect_cover else '清空母本畫布、'}動態編譯已勾選的 {len(selected_pages)} 頁投影片..."
-            with st.spinner(spinner_msg):
-                try:
-                    builder = ComprehensiveSlidesBuilder(slides_svc, TARGET_PRESENTATION_ID)
+        with st.spinner(f"正在純本地動態編譯已勾選的 {len(selected_pages)} 頁 PPTX 簡報（免雲端等待、零配額衝突）..."):
+            try:
+                builder = PptxReportBuilder()
 
-                    # 1. 記錄舊頁面 ID
-                    builder.prepare_canvas(protect_first_slide=chk_protect_cover)
-
-                    # 2. 依勾選順序動態注入頁面
-                    if chk_cover and not chk_protect_cover:
-                        builder.add_cover_slide(
-                            main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制數據分析報告",
-                            subtitle="週次主管會報專案報告",
-                            date_range_str=cover_date_str
-                        )
-
-                    if chk_three:
-                        builder.add_three_major_slide(
-                            data_rows=three_major_raw_matrix,
-                            latest_day=latest_three_day
-                        )
-
-                    if chk_a1:
-                        builder.add_table_slide(
-                            slide_title="A1類交通事故死亡人數統計表",
-                            df=df_a1,
-                            is_accident_table=True
-                        )
-
-                    if chk_a2:
-                        builder.add_table_slide(
-                            slide_title="A2類交通事故受傷人數統計表",
-                            df=df_a2,
-                            is_accident_table=True
-                        )
-
-                    if chk_major_tot:
-                        builder.add_table_slide(
-                            slide_title="取締重大交通違規統計表",
-                            df=df_major,
-                            footnote=major_footnote_exact
-                        )
-
-                    # 專項細表
-                    det_map = [
-                        (chk_det_jiu, "酒駕"), (chk_det_red, "闖紅燈"), (chk_det_rev, "逆向行駛"),
-                        (chk_det_turn, "轉彎未依規定"), (chk_det_snake, "蛇行惡意逼車"),
-                        (chk_det_ped, "不暫停讓行人"), (chk_det_speed, "嚴重超速")
-                    ]
-                    for is_chk, cat in det_map:
-                        if is_chk:
-                            builder.add_major_detail_slide(
-                                cat_name=cat,
-                                data_rows=MAJOR_DETAIL_DICT[cat],
-                                date_str="0101-0915"
-                            )
-
-                    if chk_overload:
-                        builder.add_table_slide(
-                            slide_title="取締超載違規件數統計表",
-                            df=df_overload,
-                            footnote=overload_footnote_exact
-                        )
-
-                    if chk_jingtao:
-                        builder.add_table_slide(
-                            slide_title="「靜桃計畫」大執法專案統計表",
-                            df=df_jingtao
-                        )
-
-                    if chk_tech:
-                        tech_slide_title = f"科技執法成效 ({tech_date_range_str})"
-                        builder.add_table_slide(
-                            slide_title=tech_slide_title,
-                            df=df_tech_final,
-                            custom_width=480
-                        )
-
-                    # 3. 抹除舊頁面
-                    builder.wipe_old_slides()
-
-                    # 4. 整批送出更新母本
-                    final_url = builder.execute_build()
-
-                    # 5. 產生官方安全一鍵建立個人獨立副本連結
-                    final_copy_title = custom_copy_title.strip()
-                    encoded_title = _ul.quote(final_copy_title)
-                    one_click_copy_url = f"https://docs.google.com/presentation/d/{TARGET_PRESENTATION_ID}/copy?title={encoded_title}"
-
-                    # 6. 發送通報郵件（直接發給自己）
-                    email_html = f"""
-                    <div style="font-family: Arial, 'Microsoft JhengHei', sans-serif; line-height: 1.6; color: #333; max-width: 620px; padding: 22px; border: 1px solid #e2e8f0; border-radius: 8px;">
-                        <h2 style="color: #1e3a5f; margin-top: 0;">📊 龍潭分局執法數據簡報產出通報</h2>
-                        <p>長官／同仁好，全方位執法數據簡報已自動編譯完成，最新數據已更新覆蓋至母本，並已為您產生個人獨立存檔副本連結：</p>
-                        <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
-                            <tr><td style="padding: 6px 0; color: #64748b; width: 110px;"><b>產出時間：</b></td><td>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
-                            <tr><td style="padding: 6px 0; color: #64748b;"><b>自訂副本名稱：</b></td><td><b style="color: #0f172a;">{final_copy_title}</b></td></tr>
-                            <tr><td style="padding: 6px 0; color: #64748b;"><b>包含頁數：</b></td><td>共 {len(selected_pages)} 個指定業務表格</td></tr>
-                        </table>
-                        <div style="margin: 24px 0;">
-                            <a href="{one_click_copy_url}" style="background-color: #0b57d0; color: #ffffff; padding: 12px 22px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
-                                📥 一鍵建立並存檔為個人獨立副本
-                            </a>
-                            &nbsp;&nbsp;
-                            <a href="{final_url}" style="background-color: #f1f5f9; color: #334155; padding: 12px 18px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                                📂 檢視即時母本
-                            </a>
-                        </div>
-                        <p style="font-size: 13px; color: #64748b;">💡 說明：點擊「一鍵建立並存檔」即可在您的 Google 帳戶下自動生成獨立存檔副本，檔案名稱已預設帶入為「<b>{final_copy_title}</b>」，不受後續自動化作業覆蓋影響。</p>
-                        <hr style="border: 0; border-top: 1px solid #edf2f7; margin: 20px 0;">
-                        <small style="color: #94a3b8;">本信件由交通執法自動化分析引擎發送。</small>
-                    </div>
-                    """
-
-                    ok, mail_info = send_report_email_to_self(
-                        subject=f"📊 執法數據簡報產出通報 - {final_copy_title}",
-                        body_html=email_html
+                # 1. 依勾選動態加入頁面
+                if chk_cover:
+                    builder.add_cover_slide(
+                        main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制分析報告",
+                        subtitle="週次主管會報專案報告",
+                        date_range_str=cover_date_str
                     )
 
-                    st.balloons()
-                    st.success(f"🎉 指定的 {len(selected_pages)} 個統計表頁面已成功覆蓋更新至母本！")
+                if chk_three:
+                    builder.add_three_major_slide(
+                        data_rows=three_major_raw_matrix,
+                        latest_day=latest_three_day
+                    )
 
+                if chk_a1:
+                    builder.add_table_slide(
+                        slide_title="A1類交通事故死亡人數統計表",
+                        df=df_a1,
+                        is_accident_table=True
+                    )
+
+                if chk_a2:
+                    builder.add_table_slide(
+                        slide_title="A2類交通事故受傷人數統計表",
+                        df=df_a2,
+                        is_accident_table=True
+                    )
+
+                if chk_major_tot:
+                    builder.add_table_slide(
+                        slide_title="取締重大交通違規統計表",
+                        df=df_major,
+                        footnote=major_footnote_exact
+                    )
+
+                # 專項細表
+                det_map = [
+                    (chk_det_jiu, "酒駕"), (chk_det_red, "闖紅燈"), (chk_det_rev, "逆向行駛"),
+                    (chk_det_turn, "轉彎未依規定"), (chk_det_snake, "蛇行惡意逼車"),
+                    (chk_det_ped, "不暫停讓行人"), (chk_det_speed, "嚴重超速")
+                ]
+                for is_chk, cat in det_map:
+                    if is_chk:
+                        builder.add_major_detail_slide(
+                            cat_name=cat,
+                            data_rows=MAJOR_DETAIL_DICT[cat],
+                            date_str="0101-0915"
+                        )
+
+                if chk_overload:
+                    builder.add_table_slide(
+                        slide_title="取締超載違規件數統計表",
+                        df=df_overload,
+                        footnote=overload_footnote_exact
+                    )
+
+                if chk_jingtao:
+                    builder.add_table_slide(
+                        slide_title="「靜桃計畫」大執法專案統計表",
+                        df=df_jingtao
+                    )
+
+                if chk_tech:
+                    builder.add_table_slide(
+                        slide_title=f"科技執法成效 ({tech_date_range_str})",
+                        df=df_tech_final,
+                        custom_width_in=8.0
+                    )
+
+                # 2. 產出 BytesIO 串流
+                pptx_stream = builder.build_bytes()
+
+                st.session_state["cached_pptx"] = pptx_stream
+                st.session_state["cached_filename"] = file_save_name
+
+                # 3. 處理自動寄件
+                email_sent_msg = None
+                if chk_auto_email:
+                    ok, detail = send_pptx_email_to_self(pptx_stream, file_save_name)
                     if ok:
-                        st.info(f"📧 簡報副本存檔連結已發送至您的信箱：`{mail_info}`")
+                        email_sent_msg = f"📧 簡報附件已成功發送至您的信箱：`{detail}`"
                     else:
-                        st.warning(f"⚠️ 郵件發送未完成：{mail_info}")
+                        email_sent_msg = f"⚠️ 郵件未發送成功（{detail}），您依然可以點擊下方按鈕直接下載簡報！"
 
-                    protect_note = "（第1頁封面已依設定保留，未受影響）\n\n" if chk_protect_cover else ""
-                    st.markdown(
-                        f"### 📑 簡報存取入口：\n"
-                        f"- 📥 **[點此一鍵儲存為獨立副本檔案（名稱：{final_copy_title}）]({one_click_copy_url})**\n"
-                        f"- 👉 **[直接開啟母本簡報（即時更新版）]({final_url})**\n\n"
-                        f"{protect_note}"
-                    )
+                st.balloons()
+                st.success(f"🎉 恭喜！共 {len(selected_pages)} 頁的 PowerPoint 簡報實體檔案已成功生成！")
 
-                except HttpError as e:
-                    st.error(f"❌ Google API 請求失敗：{e}\n\n*提示：請確認簡報是否已共用給 `{SERVICE_ACCOUNT_EMAIL}` 並設定為「編輯者」。*")
-                except Exception as e:
-                    st.error(f"❌ 建立簡報失敗：{e}")
+                if email_sent_msg:
+                    if "📧" in email_sent_msg:
+                        st.info(email_sent_msg)
+                    else:
+                        st.warning(email_sent_msg)
+
+            except Exception as e:
+                st.error(f"❌ 產出 PPTX 簡報時發生錯誤：{str(e)}")
+
+# ==========================================
+# 6. 下載專用按鈕區 (若已產出則維持呈現)
+# ==========================================
+if "cached_pptx" in st.session_state:
+    st.markdown("---")
+    st.subheader("📥 簡報下載與轉存")
+    c_dl, c_mail = st.columns([2, 2])
+
+    with c_dl:
+        st.download_button(
+            label=f"💾 點此立即下載【{st.session_state['cached_filename']}】",
+            data=st.session_state["cached_pptx"].getvalue(),
+            file_name=st.session_state["cached_filename"],
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            type="primary",
+            use_container_width=True
+        )
+
+    with c_mail:
+        if st.button("📧 再次補寄這份 PPTX 到我的信箱", use_container_width=True):
+            with st.spinner("重新寄送中..."):
+                ok, detail = send_pptx_email_to_self(
+                    st.session_state["cached_pptx"],
+                    st.session_state["cached_filename"]
+                )
+                if ok:
+                    st.success(f"✅ 已成功再次補寄至：`{detail}`")
+                else:
+                    st.error(f"❌ 補寄失敗：{detail}")
