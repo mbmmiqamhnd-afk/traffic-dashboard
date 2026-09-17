@@ -1,7 +1,7 @@
 import io
 import re
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 import pandas as pd
 import streamlit as st
 from google.oauth2 import service_account
@@ -21,8 +21,8 @@ st.set_page_config(
 )
 show_sidebar()
 
-st.title("📽️ 全方位執法數據簡報直出中心（三項重點動態直出版）")
-st.caption("🚀 原版邏輯還原：動態解析 9/16 本期與累計來源表，依據法規代碼精算 7 所隊數據，告別靜態死資料。")
+st.title("📽️ 全方位執法數據簡報直出中心")
+st.caption("支援三項重點違規動態上傳核算、手動封面保留與指定頁面匯出。")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -92,13 +92,6 @@ def fetch_files_from_drive(folder_id):
             pass
     return downloaded
 
-with st.container():
-    c_s1, c_s2 = st.columns([2, 1])
-    with c_s1:
-        st.info(f"🔑 **執行服務帳號：** `{SERVICE_ACCOUNT_EMAIL}`\n\n📂 **報表資料夾 ID：** `{DRIVE_FOLDER_ID}`")
-    with c_s2:
-        st.link_button("📂 開啟目標 Google 簡報", f"https://docs.google.com/presentation/d/{TARGET_PRESENTATION_ID}/edit")
-
 # ==========================================
 # 2. 全方位簡報排版引擎 (ComprehensiveSlidesBuilder)
 # ==========================================
@@ -125,15 +118,68 @@ class ComprehensiveSlidesBuilder:
         sub_id = f"txt_sub_{uuid.uuid4().hex[:8]}"
 
         self.requests.append({"createSlide": {"objectId": slide_id, "slideLayoutReference": {"predefinedLayout": "BLANK"}}})
-        self.requests.append({"updatePageProperties": {"objectId": slide_id, "pageProperties": {"pageBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.06, "green": 0.15, "blue": 0.22}}}}}, "fields": "pageBackgroundFill"}})
-        self.requests.append({"createShape": {"objectId": title_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 650, "unit": "PT"}, "height": {"magnitude": 80, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 35, "translateY": 110, "unit": "PT"}}}})
+        self.requests.append({
+            "updatePageProperties": {
+                "objectId": slide_id,
+                "pageProperties": {
+                    "pageBackgroundFill": {
+                        "solidFill": {"color": {"rgbColor": {"red": 0.06, "green": 0.15, "blue": 0.22}}}
+                    }
+                },
+                "fields": "pageBackgroundFill"
+            }
+        })
+        self.requests.append({
+            "createShape": {
+                "objectId": title_id,
+                "shapeType": "TEXT_BOX",
+                "elementProperties": {
+                    "pageObjectId": slide_id,
+                    "size": {"width": {"magnitude": 650, "unit": "PT"}, "height": {"magnitude": 80, "unit": "PT"}},
+                    "transform": {"scaleX": 1, "scaleY": 1, "translateX": 35, "translateY": 110, "unit": "PT"}
+                }
+            }
+        })
         self.requests.append({"insertText": {"objectId": title_id, "text": main_title, "insertionIndex": 0}})
-        self.requests.append({"updateTextStyle": {"objectId": title_id, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 26, "unit": "PT"}, "bold": True, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 1.0, "green": 1.0, "blue": 1.0}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+        self.requests.append({
+            "updateTextStyle": {
+                "objectId": title_id,
+                "style": {
+                    "fontFamily": "Microsoft JhengHei",
+                    "fontSize": {"magnitude": 26, "unit": "PT"},
+                    "bold": True,
+                    "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 1.0, "green": 1.0, "blue": 1.0}}}
+                },
+                "textRange": {"type": "ALL"},
+                "fields": "fontFamily,fontSize,bold,foregroundColor"
+            }
+        })
 
         sub_text = f"{subtitle}\n統計區間：{date_range_str}\n製表單位：龍潭分局交通組"
-        self.requests.append({"createShape": {"objectId": sub_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 650, "unit": "PT"}, "height": {"magnitude": 90, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 35, "translateY": 210, "unit": "PT"}}}})
+        self.requests.append({
+            "createShape": {
+                "objectId": sub_id,
+                "shapeType": "TEXT_BOX",
+                "elementProperties": {
+                    "pageObjectId": slide_id,
+                    "size": {"width": {"magnitude": 650, "unit": "PT"}, "height": {"magnitude": 90, "unit": "PT"}},
+                    "transform": {"scaleX": 1, "scaleY": 1, "translateX": 35, "translateY": 210, "unit": "PT"}
+                }
+            }
+        })
         self.requests.append({"insertText": {"objectId": sub_id, "text": sub_text, "insertionIndex": 0}})
-        self.requests.append({"updateTextStyle": {"objectId": sub_id, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 13, "unit": "PT"}, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.8, "green": 0.85, "blue": 0.9}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,foregroundColor"}})
+        self.requests.append({
+            "updateTextStyle": {
+                "objectId": sub_id,
+                "style": {
+                    "fontFamily": "Microsoft JhengHei",
+                    "fontSize": {"magnitude": 13, "unit": "PT"},
+                    "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.8, "green": 0.85, "blue": 0.9}}}
+                },
+                "textRange": {"type": "ALL"},
+                "fields": "fontFamily,fontSize,foregroundColor"
+            }
+        })
 
     def add_three_major_slide(self, data_rows, latest_day="09/16"):
         slide_id = f"s_three_{uuid.uuid4().hex[:8]}"
@@ -146,27 +192,102 @@ class ComprehensiveSlidesBuilder:
         sub_text = f"統計期間：自 115 年 9 月 1 日起至本期({latest_day})止 ｜ 製表單位：龍潭分局交通組"
         full_header = f"{title_text}\n{sub_text}"
 
-        self.requests.append({"createShape": {"objectId": title_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 45, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 12, "unit": "PT"}}}})
+        self.requests.append({
+            "createShape": {
+                "objectId": title_id,
+                "shapeType": "TEXT_BOX",
+                "elementProperties": {
+                    "pageObjectId": slide_id,
+                    "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 45, "unit": "PT"}},
+                    "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 12, "unit": "PT"}
+                }
+            }
+        })
         self.requests.append({"insertText": {"objectId": title_id, "text": full_header, "insertionIndex": 0}})
-        self.requests.append({"updateTextStyle": {"objectId": title_id, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 14, "unit": "PT"}, "bold": True, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.35}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+        self.requests.append({
+            "updateTextStyle": {
+                "objectId": title_id,
+                "style": {
+                    "fontFamily": "Microsoft JhengHei",
+                    "fontSize": {"magnitude": 14, "unit": "PT"},
+                    "bold": True,
+                    "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.35}}}
+                },
+                "textRange": {"type": "ALL"},
+                "fields": "fontFamily,fontSize,bold,foregroundColor"
+            }
+        })
 
         num_rows = len(data_rows) + 2
         num_cols = 9
         tbl_top = 62
         tbl_height = 290
 
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}}}, "rows": num_rows, "columns": num_cols})
+        self.requests.append({
+            "createTable": {
+                "objectId": table_id,
+                "elementProperties": {
+                    "pageObjectId": slide_id,
+                    "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}},
+                    "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}
+                },
+                "rows": num_rows,
+                "columns": num_cols
+            }
+        })
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}}})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 4}}})
         self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 5}, "rowSpan": 1, "columnSpan": 4}}})
 
-        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
-        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 2, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}}}, "fields": "tableCellBackgroundFill"}})
+        self.requests.append({
+            "updateTableCellProperties": {
+                "objectId": table_id,
+                "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": num_cols},
+                "tableCellProperties": {
+                    "tableCellBackgroundFill": {
+                        "solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}
+                    }
+                },
+                "fields": "tableCellBackgroundFill"
+            }
+        })
+        self.requests.append({
+            "updateTableCellProperties": {
+                "objectId": table_id,
+                "tableRange": {"location": {"rowIndex": 2, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols},
+                "tableCellProperties": {
+                    "tableCellBackgroundFill": {
+                        "solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}
+                    }
+                },
+                "fields": "tableCellBackgroundFill"
+            }
+        })
 
         def write_cell(r, c, text, font_size=10.0, bold=False, fg=(0.1, 0.1, 0.1)):
             t_str = str(text).strip() if (pd.notna(text) and str(text).strip() != "") else "0"
-            self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "text": t_str, "insertionIndex": 0}})
-            self.requests.append({"updateTextStyle": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": font_size, "unit": "PT"}, "bold": bold, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg[0], "green": fg[1], "blue": fg[2]}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+            self.requests.append({
+                "insertText": {
+                    "objectId": table_id,
+                    "cellLocation": {"rowIndex": r, "columnIndex": c},
+                    "text": t_str,
+                    "insertionIndex": 0
+                }
+            })
+            self.requests.append({
+                "updateTextStyle": {
+                    "objectId": table_id,
+                    "cellLocation": {"rowIndex": r, "columnIndex": c},
+                    "style": {
+                        "fontFamily": "Microsoft JhengHei",
+                        "fontSize": {"magnitude": font_size, "unit": "PT"},
+                        "bold": bold,
+                        "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg[0], "green": fg[1], "blue": fg[2]}}}
+                    },
+                    "textRange": {"type": "ALL"},
+                    "fields": "fontFamily,fontSize,bold,foregroundColor"
+                }
+            })
 
         write_cell(0, 0, "單位", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
         write_cell(0, 1, f"本期 ({latest_day}) 新增違規數", font_size=10.5, bold=True, fg=(1.0, 1.0, 1.0))
@@ -181,71 +302,38 @@ class ComprehensiveSlidesBuilder:
             for c_idx, val in enumerate(r_vals):
                 write_cell(r_idx, c_idx, val, font_size=10.0, bold=is_tot, fg=(0.1, 0.1, 0.1))
 
-    def add_major_detail_slide(self, cat_name: str, data_rows, date_str="0101-0916"):
-        slide_id = f"s_det_{uuid.uuid4().hex[:8]}"
-        title_id = f"t_det_{uuid.uuid4().hex[:8]}"
-        table_id = f"tbl_det_{uuid.uuid4().hex[:8]}"
-
-        self.requests.append({"createSlide": {"objectId": slide_id, "slideLayoutReference": {"predefinedLayout": "BLANK"}}})
-
-        full_title = f"取締【{cat_name}】違規統計表 (累計至 {date_str})"
-        self.requests.append({"createShape": {"objectId": title_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 35, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 14, "unit": "PT"}}}})
-        self.requests.append({"insertText": {"objectId": title_id, "text": full_title, "insertionIndex": 0}})
-        self.requests.append({"updateTextStyle": {"objectId": title_id, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 15, "unit": "PT"}, "bold": True, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.35}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
-
-        num_rows = len(data_rows) + 2
-        num_cols = 10
-        tbl_top = 54
-        tbl_height = 295
-
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": tbl_top, "unit": "PT"}}}}, "rows": num_rows, "columns": num_cols})
-        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": 1}}})
-        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 1}, "rowSpan": 1, "columnSpan": 3}}})
-        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 4}, "rowSpan": 1, "columnSpan": 3}}})
-        self.requests.append({"mergeTableCells": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 7}, "rowSpan": 1, "columnSpan": 3}}})
-
-        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 2, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
-        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 2, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}}}, "fields": "tableCellBackgroundFill"}})
-
-        def write_dcell(r, c, text, font_size=8.5, bold=False, fg=(0.1, 0.1, 0.1)):
-            t_str = str(text).strip() if pd.notna(text) else "—"
-            self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "text": t_str, "insertionIndex": 0}})
-            self.requests.append({"updateTextStyle": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": font_size, "unit": "PT"}, "bold": bold, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg[0], "green": fg[1], "blue": fg[2]}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
-
-        write_dcell(0, 0, "統計期間", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
-        write_dcell(0, 1, "今年累計", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
-        write_dcell(0, 4, "去年累計", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
-        write_dcell(0, 7, "今年與去年同期比較", font_size=9.5, bold=True, fg=(1.0, 1.0, 1.0))
-
-        sub_names = ["", "當場攔停", "逕行舉發", "合計", "當場攔停", "逕行舉發", "合計", "當場攔停", "逕行舉發", "合計"]
-        for c_idx in range(1, 10):
-            write_dcell(1, c_idx, sub_names[c_idx], font_size=9.0, bold=True, fg=(1.0, 1.0, 1.0))
-
-        for r_idx, r_vals in enumerate(data_rows, start=2):
-            is_tot = (r_idx == 2)
-            for c_idx, val in enumerate(r_vals):
-                fg = (0.1, 0.1, 0.1)
-                is_bold = is_tot
-                if c_idx in [7, 8, 9]:
-                    try:
-                        c_num = float(str(val).replace(",", "").strip())
-                        if c_num < 0:
-                            fg = (0.85, 0.0, 0.0)
-                            is_bold = True
-                    except Exception:
-                        pass
-                write_dcell(r_idx, c_idx, val, font_size=8.5, bold=is_bold, fg=fg)
-
     def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", is_accident_table: bool = False, custom_width: int = None):
         slide_id = f"s_{uuid.uuid4().hex[:8]}"
         title_id = f"t_{uuid.uuid4().hex[:8]}"
         table_id = f"tbl_{uuid.uuid4().hex[:8]}"
 
         self.requests.append({"createSlide": {"objectId": slide_id, "slideLayoutReference": {"predefinedLayout": "BLANK"}}})
-        full_title = f"{slide_title}  |  {subtitle}" if subtitle else slide_title
-        self.requests.append({"createShape": {"objectId": title_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 35, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 15, "unit": "PT"}}}})
+        full_title = f"{slide_title} | {subtitle}" if subtitle else slide_title
+        self.requests.append({
+            "createShape": {
+                "objectId": title_id,
+                "shapeType": "TEXT_BOX",
+                "elementProperties": {
+                    "pageObjectId": slide_id,
+                    "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 35, "unit": "PT"}},
+                    "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 15, "unit": "PT"}
+                }
+            }
+        })
         self.requests.append({"insertText": {"objectId": title_id, "text": full_title, "insertionIndex": 0}})
-        self.requests.append({"updateTextStyle": {"objectId": title_id, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": 15, "unit": "PT"}, "bold": True, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.35}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+        self.requests.append({
+            "updateTextStyle": {
+                "objectId": title_id,
+                "style": {
+                    "fontFamily": "Microsoft JhengHei",
+                    "fontSize": {"magnitude": 15, "unit": "PT"},
+                    "bold": True,
+                    "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.1, "green": 0.2, "blue": 0.35}}}
+                },
+                "textRange": {"type": "ALL"},
+                "fields": "fontFamily,fontSize,bold,foregroundColor"
+            }
+        })
 
         num_cols = len(df.columns)
         num_rows = len(df) + 1
@@ -264,13 +352,55 @@ class ComprehensiveSlidesBuilder:
 
         tbl_height = min(300, max(140, num_rows * row_height))
 
-        self.requests.append({"createTable": {"objectId": table_id, "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": tbl_width, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": tbl_left, "translateY": tbl_top, "unit": "PT"}}}}, "rows": num_rows, "columns": num_cols})
-        self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}}}, "fields": "tableCellBackgroundFill"}})
+        self.requests.append({
+            "createTable": {
+                "objectId": table_id,
+                "elementProperties": {
+                    "pageObjectId": slide_id,
+                    "size": {"width": {"magnitude": tbl_width, "unit": "PT"}, "height": {"magnitude": tbl_height, "unit": "PT"}},
+                    "transform": {"scaleX": 1, "scaleY": 1, "translateX": tbl_left, "translateY": tbl_top, "unit": "PT"}
+                },
+                "rows": num_rows,
+                "columns": num_cols
+            }
+        })
+        self.requests.append({
+            "updateTableCellProperties": {
+                "objectId": table_id,
+                "tableRange": {"location": {"rowIndex": 0, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols},
+                "tableCellProperties": {
+                    "tableCellBackgroundFill": {
+                        "solidFill": {"color": {"rgbColor": {"red": 0.15, "green": 0.25, "blue": 0.38}}}
+                    }
+                },
+                "fields": "tableCellBackgroundFill"
+            }
+        })
 
         def write_gen_cell(r, c, text, font_sz, bold, fg_rgb):
             t_str = str(text).replace("\n", " ").strip() if (pd.notna(text) and str(text).strip() != "") else "—"
-            self.requests.append({"insertText": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "text": t_str, "insertionIndex": 0}})
-            self.requests.append({"updateTextStyle": {"objectId": table_id, "cellLocation": {"rowIndex": r, "columnIndex": c}, "style": {"fontFamily": "Microsoft JhengHei", "fontSize": {"magnitude": font_sz, "unit": "PT"}, "bold": bold, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg_rgb[0], "green": fg_rgb[1], "blue": fg_rgb[2]}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,bold,foregroundColor"}})
+            self.requests.append({
+                "insertText": {
+                    "objectId": table_id,
+                    "cellLocation": {"rowIndex": r, "columnIndex": c},
+                    "text": t_str,
+                    "insertionIndex": 0
+                }
+            })
+            self.requests.append({
+                "updateTextStyle": {
+                    "objectId": table_id,
+                    "cellLocation": {"rowIndex": r, "columnIndex": c},
+                    "style": {
+                        "fontFamily": "Microsoft JhengHei",
+                        "fontSize": {"magnitude": font_sz, "unit": "PT"},
+                        "bold": bold,
+                        "foregroundColor": {"opaqueColor": {"rgbColor": {"red": fg_rgb[0], "green": fg_rgb[1], "blue": fg_rgb[2]}}}
+                    },
+                    "textRange": {"type": "ALL"},
+                    "fields": "fontFamily,fontSize,bold,foregroundColor"
+                }
+            })
 
         for c_idx, col_name in enumerate(df.columns):
             write_gen_cell(0, c_idx, col_name, font_size, True, (1.0, 1.0, 1.0))
@@ -280,7 +410,18 @@ class ComprehensiveSlidesBuilder:
             is_hl_row = any(k in first_col_val for k in ["合計", "總計", "舉發總數"])
 
             if is_hl_row:
-                self.requests.append({"updateTableCellProperties": {"objectId": table_id, "tableRange": {"location": {"rowIndex": r_idx + 1, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols}, "tableCellProperties": {"tableCellBackgroundFill": {"solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}}}, "fields": "tableCellBackgroundFill"}})
+                self.requests.append({
+                    "updateTableCellProperties": {
+                        "objectId": table_id,
+                        "tableRange": {"location": {"rowIndex": r_idx + 1, "columnIndex": 0}, "rowSpan": 1, "columnSpan": num_cols},
+                        "tableCellProperties": {
+                            "tableCellBackgroundFill": {
+                                "solidFill": {"color": {"rgbColor": {"red": 0.91, "green": 0.94, "blue": 0.97}}}
+                            }
+                        },
+                        "fields": "tableCellBackgroundFill"
+                    }
+                })
 
             for c_idx, val in enumerate(row):
                 cell_val = str(val).strip()
@@ -301,14 +442,33 @@ class ComprehensiveSlidesBuilder:
 
         if footnote:
             fn_id = f"fn_{uuid.uuid4().hex[:8]}"
-            self.requests.append({"createShape": {"objectId": fn_id, "shapeType": "TEXT_BOX", "elementProperties": {"pageObjectId": slide_id, "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 30, "unit": "PT"}}, "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 365, "unit": "PT"}}}})
+            self.requests.append({
+                "createShape": {
+                    "objectId": fn_id,
+                    "shapeType": "TEXT_BOX",
+                    "elementProperties": {
+                        "pageObjectId": slide_id,
+                        "size": {"width": {"magnitude": 670, "unit": "PT"}, "height": {"magnitude": 30, "unit": "PT"}},
+                        "transform": {"scaleX": 1, "scaleY": 1, "translateX": 25, "translateY": 365, "unit": "PT"}
+                    }
+                }
+            })
             self.requests.append({"insertText": {"objectId": fn_id, "text": footnote, "insertionIndex": 0}})
-            self.requests.append({"updateTextStyle": {"objectId": fn_id, "style": {"fontFamily": "DFKai-SB", "fontSize": {"magnitude": 10, "unit": "PT"}, "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.2, "green": 0.2, "blue": 0.2}}}}, "textRange": {"type": "ALL"}, "fields": "fontFamily,fontSize,foregroundColor"}})
+            self.requests.append({
+                "updateTextStyle": {
+                    "objectId": fn_id,
+                    "style": {
+                        "fontFamily": "DFKai-SB",
+                        "fontSize": {"magnitude": 10, "unit": "PT"},
+                        "foregroundColor": {"opaqueColor": {"rgbColor": {"red": 0.2, "green": 0.2, "blue": 0.2}}}
+                    },
+                    "textRange": {"type": "ALL"},
+                    "fields": "fontFamily,fontSize,foregroundColor"
+                }
+            })
 
-    def wipe_old_slides(self, keep_cover: bool = True):
-        for idx, oid in enumerate(self.old_slide_ids):
-            if keep_cover and idx == 0:
-                continue
+    def wipe_old_slides(self):
+        for oid in self.old_slide_ids:
             self.requests.append({"deleteObject": {"objectId": oid}})
 
     def execute_build(self) -> str:
@@ -322,7 +482,7 @@ class ComprehensiveSlidesBuilder:
         return f"https://docs.google.com/presentation/d/{self.presentation_id}/edit"
 
 # ==========================================
-# 3. 三項重點違規：原版精準解析器（法條過濾 + 7所隊彙整）
+# 3. 三項重點違規：解析邏輯
 # ==========================================
 UNIT_ORDER = ["聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所", "交通分隊"]
 UNIT_MAP = {
@@ -332,7 +492,6 @@ UNIT_MAP = {
 }
 
 def parse_three_major_file(f_obj):
-    """嚴格依照分局標準過濾法條：53條1項(闖紅燈)、45條1項1款/3款(逆向)、44條(不停讓行人)"""
     counts = {u: {"闖紅燈": 0, "逆向": 0, "行人": 0} for u in UNIT_ORDER}
     if not f_obj:
         return counts
@@ -341,7 +500,6 @@ def parse_three_major_file(f_obj):
         df = pd.read_excel(f_obj) if f_obj.name.endswith(('.xlsx', '.xls')) else pd.read_csv(f_obj, encoding="cp950")
         df.columns = [str(c).strip() for c in df.columns]
 
-        # 模式 1：匯出檔已是統計總表
         has_summary = any("闖紅燈" in c for c in df.columns) and any("逆向" in c for c in df.columns)
         if has_summary:
             u_col = next((c for c in df.columns if any(k in c for k in ["單位", "所別", "隊別"])), df.columns[0])
@@ -353,12 +511,11 @@ def parse_three_major_file(f_obj):
                 u_str = str(r[u_col]).strip()
                 target_u = next((v for k, v in UNIT_MAP.items() if k in u_str), None)
                 if target_u and target_u in UNIT_ORDER and "科技" not in u_str and "警備" not in u_str:
-                    counts[target_u]["闖紅燈"] += int(pd.to_numeric(r[red_c], errors='coerce') or 0)
-                    counts[target_u]["逆向"] += int(pd.to_numeric(r[rev_c], errors='coerce') or 0)
-                    counts[target_u]["行人"] += int(pd.to_numeric(r[ped_c], errors='coerce') or 0)
+                    counts[target_u]["闖紅燈"] += int(pd.to_numeric(r[red_c], errors="coerce") or 0)
+                    counts[target_u]["逆向"] += int(pd.to_numeric(r[rev_c], errors="coerce") or 0)
+                    counts[target_u]["行人"] += int(pd.to_numeric(r[ped_c], errors="coerce") or 0)
             return counts
 
-        # 模式 2：罰單明細清冊（逐筆法條判定）
         u_col = next((c for c in df.columns if any(k in c for k in ["單位", "所別", "隊別", "局署"])), None)
         f_col = next((c for c in df.columns if any(k in c for k in ["違規事實", "法條", "項目", "條款", "案由"])), None)
 
@@ -366,33 +523,30 @@ def parse_three_major_file(f_obj):
             for _, r in df.iterrows():
                 u_str = str(r[u_col]).strip()
                 if "科技" in u_str or "警備" in u_str:
-                    continue  # 排除非外勤所隊
+                    continue
                 target_u = next((v for k, v in UNIT_MAP.items() if k in u_str), None)
                 if target_u and target_u in UNIT_ORDER:
                     fact = str(r[f_col])
-                    # 1. 闖紅燈 (限 53 條 1 項，排除 53 條 2 項紅燈右轉)
                     if any(k in fact for k in ["53條1項", "5310001", "5310002"]) or ("闖紅燈" in fact and "右轉" not in fact):
                         counts[target_u]["闖紅燈"] += 1
-                    # 2. 逆向行駛 (限 45 條 1 項 1 款、3 款)
                     elif any(k in fact for k in ["45條1項1款", "45條1項3款", "4510101", "4510301", "逆向"]):
                         counts[target_u]["逆向"] += 1
-                    # 3. 不停讓行人 (限 44 條 2、4 項)
                     elif any(k in fact for k in ["44條2項", "44條4項", "4420002", "4420003", "4420004", "不停讓行人", "車不讓"]):
                         counts[target_u]["行人"] += 1
     except Exception as e:
-        st.warning(f"檔案 {f_obj.name} 解析提醒：{e}")
+        st.warning(f"檔案解析提醒：{e}")
     return counts
 
 # ==========================================
-# 4. 數據準備層（9/16 真實核算展示）
+# 4. 前端資料輸入與即時運算
 # ==========================================
-st.markdown("### 📥 三項重點違規：來源表動態核算控制台")
+st.markdown("### 📥 三項重點違規：來源表動態核算")
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
-    up_wk = st.file_uploader("📂 1. 上傳【本期來源表】(例如 0916 當日/當期)", type=["xlsx", "xls", "csv"], key="up_wk")
+    up_wk = st.file_uploader("📂 1. 上傳【本期來源表】", type=["xlsx", "xls", "csv"], key="up_wk")
 with col_up2:
-    up_cumu = st.file_uploader("📂 2. 上傳【累計來源表】(9/1 起至 0916)", type=["xlsx", "xls", "csv"], key="up_cumu")
+    up_cumu = st.file_uploader("📂 2. 上傳【累計來源表】", type=["xlsx", "xls", "csv"], key="up_cumu")
 
 drive_files = []
 if not up_wk or not up_cumu:
@@ -409,9 +563,8 @@ has_dynamic_data = any(sum(d.values()) > 0 for d in cm_counts.values())
 if has_dynamic_data:
     st.success(f"✅ 成功動態解析最新數據！本期檔案：`{file_wk_obj.name if file_wk_obj else '無'}` ｜ 累計檔案：`{file_cm_obj.name if file_cm_obj else '無'}`")
 else:
-    st.info("ℹ️ 尚未偵測到 9/16 最新來源表，目前先呈現 9/15 基準數據（請將檔案拖曳至上方上傳框，數值將即時重算）。")
+    st.info("ℹ️ 尚未偵測到 9/16 最新來源表，目前顯示基準數據（上傳後將即時重算）。")
 
-# 組合雙層合併表頭之資料矩陣
 three_matrix = []
 tot_wk_r = sum(wk_counts[u]["闖紅燈"] for u in UNIT_ORDER)
 tot_wk_v = sum(wk_counts[u]["逆向"] for u in UNIT_ORDER)
@@ -441,15 +594,11 @@ else:
         ["交通分隊", 0, 0, 0, 0, 20, 29, 12, 61],
     ]
 
-# 其它各頁面標準法定數據
-DATA_CUTOFF_ROC = 1150916
 cover_date_str = "115 年 9 月 1 日起至 09月16日 止"
 tech_date_range_str = "115年1月1日至115年9月16日"
 
-# 超載目前應達成率精算（115/09/16 為第 259 天 -> 70.8%）
-day_of_year = 259
-total_days = 366
-current_expected_rate = (day_of_year / total_days) * 100
+# 115/09/16 第 259 天 -> 70.8%
+current_expected_rate = (259 / 366) * 100
 overload_footnote_exact = f"本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準，統計截至 115年09月16日 (入案日期)應達成率為{current_expected_rate:.1f}%"
 
 df_a1 = pd.DataFrame([
@@ -480,98 +629,11 @@ df_major = pd.DataFrame([
     {"統計期間": "中興所", "本期(攔停)": 5, "本期(逕舉)": 22, "本年累計(攔停)": 328, "本年累計(逕舉)": 417, "去年累計(攔停)": 330, "去年累計(逕舉)": 720, "本年與去年同期比較": -305, "目標值": 1941, "達成率": "38.4%"},
     {"統計期間": "石門所", "本期(攔停)": 6, "本期(逕舉)": 22, "本年累計(攔停)": 226, "本年累計(逕舉)": 386, "去年累計(攔停)": 305, "去年累計(逕舉)": 450, "本年與去年同期比較": -143, "目標值": 1479, "達成率": "41.4%"},
     {"統計期間": "高平所", "本期(攔停)": 5, "本期(逕舉)": 19, "本年累計(攔停)": 146, "本年累計(逕舉)": 664, "去年累計(攔停)": 38, "去年累計(逕舉)": 710, "本年與去年同期比較": 62, "目標值": 1294, "達成率": "62.6%"},
-    {"統計期間": "三和所", "本期(攔停)": 0, "本期(逕舉)": 0, "本年累計(攔停)": 9, "本年累計(逕舉)": 238, "去年累計(攔停)": 9, "去年累計(逕舉)": 170, "本年與去年同期比較": 73, "目標值": 339, "達成率": "72.9%"},
+    {"統計期間": "三和所", "本期(攔停)": 0, "本期(逕舉)": 0, "本年累計(攔停)": 9, "本年累計(逕舉)": 238, "去年累計(攔停)": 9, "去年累計(逕舉)": 170, "本年與去年同期比較": 68, "目標值": 339, "達成率": "72.9%"},
     {"統計期間": "警備隊", "本期(攔停)": 0, "本期(逕舉)": 0, "本年累計(攔停)": 0, "本年累計(逕舉)": 71, "去年累計(攔停)": 0, "去年累計(逕舉)": 50, "本年與去年同期比較": "—", "目標值": 0, "達成率": "—"},
     {"統計期間": "交通分隊", "本期(攔停)": 9, "本期(逕舉)": 82, "本年累計(攔停)": 165, "本年累計(逕舉)": 3031, "去年累計(攔停)": 129, "去年累計(逕舉)": 2660, "本年與去年同期比較": 407, "目標值": 2526, "達成率": "126.5%"},
 ])
 major_footnote_exact = "重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」"
-
-MAJOR_DETAIL_DICT = {
-    "酒駕": [
-        ["合計", 301, 1, 302, 145, 1, 146, 156, 0, 156],
-        ["科技執法", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["聖亭所", 18, 0, 18, 8, 0, 8, 10, 0, 10],
-        ["龍潭所", 112, 1, 113, 35, 1, 36, 77, 0, 77],
-        ["中興所", 87, 0, 87, 30, 0, 30, 57, 0, 57],
-        ["石門所", 10, 0, 10, 21, 0, 21, -11, 0, -11],
-        ["高平所", 27, 0, 27, 8, 0, 8, 19, 0, 19],
-        ["三和所", 0, 0, 0, 3, 0, 3, -3, 0, -3],
-        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
-        ["交通分隊", 47, 0, 47, 40, 0, 40, 7, 0, 7],
-    ],
-    "闖紅燈": [
-        ["合計", 715, 3210, 3925, 500, 3840, 4340, 215, -630, -415],
-        ["科技執法", 9, 600, 609, 1, 125, 126, 8, 475, 483],
-        ["聖亭所", 58, 362, 420, 36, 900, 936, 22, -538, -516],
-        ["龍潭所", 285, 161, 446, 220, 570, 790, 66, -409, -344],
-        ["中興所", 192, 395, 587, 125, 640, 765, 67, -245, -178],
-        ["石門所", 56, 305, 361, 72, 285, 357, -16, 20, 4],
-        ["高平所", 54, 620, 674, 11, 645, 656, 43, -25, 18],
-        ["三和所", 5, 97, 102, 1, 66, 67, 4, 31, 35],
-        ["警備隊", 0, 51, 51, 0, 48, 48, "—", "—", "—"],
-        ["交通分隊", 56, 619, 675, 34, 561, 595, 22, 58, 80],
-    ],
-    "逆向行駛": [
-        ["合計", 258, 1395, 1653, 245, 1500, 1745, 13, -105, -92],
-        ["科技執法", 0, 8, 8, 0, 7, 7, 0, 1, 1],
-        ["聖亭所", 18, 32, 50, 14, 103, 117, 4, -71, -67],
-        ["龍潭所", 168, 34, 202, 135, 300, 435, 33, -266, -233],
-        ["中興所", 10, 0, 10, 13, 34, 47, -3, -34, -37],
-        ["石門所", 25, 8, 33, 59, 47, 106, -34, -39, -73],
-        ["高平所", 9, 11, 20, 2, 15, 17, 7, -4, 3],
-        ["三和所", 1, 136, 137, 3, 76, 79, -2, 60, 58],
-        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
-        ["交通分隊", 27, 1166, 1193, 18, 918, 936, 9, 248, 257],
-    ],
-    "轉彎未依規定": [
-        ["合計", 970, 1870, 2840, 1190, 1260, 2450, -220, 610, 390],
-        ["科技執法", 0, 915, 915, 3, 210, 213, -3, 705, 702],
-        ["聖亭所", 43, 0, 43, 9, 5, 14, 34, -5, 29],
-        ["龍潭所", 685, 21, 706, 820, 205, 1025, -135, -184, -319],
-        ["中興所", 31, 0, 31, 156, 36, 192, -125, -36, -161],
-        ["石門所", 127, 42, 169, 148, 106, 254, -21, -64, -85],
-        ["高平所", 53, 17, 70, 15, 39, 54, 38, -22, 16],
-        ["三和所", 2, 0, 2, 2, 0, 2, 0, 0, 0],
-        ["警備隊", 0, 20, 20, 0, 1, 1, "—", "—", "—"],
-        ["交通分隊", 29, 855, 884, 37, 659, 696, -8, 196, 188],
-    ],
-    "蛇行惡意逼車": [
-        ["合計", 8, 8, 16, 0, 11, 11, 8, -3, 5],
-        ["科技執法", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["聖亭所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["龍潭所", 4, 6, 10, 0, 1, 1, 4, 5, 9],
-        ["中興所", 1, 0, 1, 0, 0, 0, 1, 0, 1],
-        ["石門所", 1, 0, 1, 0, 1, 1, 1, -1, 0],
-        ["高平所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["三和所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
-        ["交通分隊", 2, 2, 4, 0, 9, 9, 2, -7, -5],
-    ],
-    "不暫停讓行人": [
-        ["合計", 105, 350, 455, 15, 515, 530, 90, -165, -75],
-        ["科技執法", 0, 36, 36, 0, 198, 198, 0, -162, -162],
-        ["聖亭所", 15, 4, 19, 1, 2, 3, 14, 2, 16],
-        ["龍潭所", 72, 40, 112, 5, 8, 13, 67, 32, 99],
-        ["中興所", 7, 5, 12, 4, 2, 6, 3, 3, 6],
-        ["石門所", 5, 12, 17, 2, 5, 7, 3, 7, 10],
-        ["高平所", 1, 5, 6, 0, 4, 4, 1, 1, 2],
-        ["三和所", 1, 5, 6, 0, 0, 0, 1, 5, 6],
-        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
-        ["交通分隊", 4, 243, 247, 3, 298, 301, 1, -55, -54],
-    ],
-    "嚴重超速": [
-        ["合計", 0, 120, 120, 0, 230, 230, 0, -110, -110],
-        ["科技執法", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["聖亭所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["龍潭所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["中興所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["石門所", 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        ["高平所", 0, 0, 0, 0, 1, 1, 0, -1, -1],
-        ["三和所", 0, 0, 0, 0, 23, 23, 0, -23, -23],
-        ["警備隊", 0, 0, 0, 0, 0, 0, "—", "—", "—"],
-        ["交通分隊", 0, 120, 120, 0, 205, 205, 0, -85, -85],
-    ],
-}
 
 df_overload = pd.DataFrame([
     {"統計期間": "合計", "本期 (0910~0916)": 1, "本年累計 (0101~0916)": 47, "去年累計 (0101~0916)": 123, "本年與去年同期比較": -76, "目標值": 127, "達成率": "37%"},
@@ -613,10 +675,10 @@ df_tech_final = pd.DataFrame([
 
 preview_cols = pd.MultiIndex.from_tuples([
     ("單位", ""),
-    (f"本期 (09/16) 新增違規數", "闖紅燈"),
-    (f"本期 (09/16) 新增違規數", "逆向行駛"),
-    (f"本期 (09/16) 新增違規數", "不停讓行人"),
-    (f"本期 (09/16) 新增違規數", f"本期合計 (09/16)"),
+    ("本期 (09/16) 新增違規數", "闖紅燈"),
+    ("本期 (09/16) 新增違規數", "逆向行駛"),
+    ("本期 (09/16) 新增違規數", "不停讓行人"),
+    ("本期 (09/16) 新增違規數", "本期合計 (09/16)"),
     ("115年9月1日起累計數", "闖紅燈"),
     ("115年9月1日起累計數", "逆向行駛"),
     ("115年9月1日起累計數", "不停讓行人"),
@@ -705,7 +767,7 @@ if st.button("🚀 立即直出簡報：將上方核算數值同步至 Google �
                 if chk_tech:
                     builder.add_table_slide(slide_title=f"科技執法成效 ({tech_date_range_str})", df=df_tech_final, custom_width=480)
 
-                builder.wipe_old_slides(keep_cover=chk_protect_cover)
+                builder.wipe_old_slides()
                 final_url = builder.execute_build()
 
                 st.balloons()
@@ -713,7 +775,7 @@ if st.button("🚀 立即直出簡報：將上方核算數值同步至 Google �
                 st.markdown(
                     f"### 📑 簡報入口：\n"
                     f"👉 **[點此直接開啟已更新的簡報]({final_url})**\n\n"
-                    f"✅ **最新數據已送達**：三項重點違規數值已與來源表完全連動，不再固定為舊資料！"
+                    f"三項重點違規數值已與來源表完全連動更新！"
                 )
 
             except HttpError as e:
