@@ -2,7 +2,7 @@ import io
 import re
 import uuid
 import smtplib
-import urllib.parse
+import urllib.parse as _ul
 from datetime import datetime, timedelta
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
@@ -28,7 +28,7 @@ st.set_page_config(
 show_sidebar()
 
 st.title("📽️ 全方位執法數據簡報直出中心（自選頁面版）")
-st.caption("🚀 自由勾選機制：可任意指定欲輸出的統計表，系統動態按需編譯並覆蓋目標簡報，並自動產生專屬存檔副本連結與寄送信件。")
+st.caption("🚀 自由勾選機制：可任意指定欲輸出的統計表，系統動態按需編譯並覆蓋目標簡報，並自動產生專屬存檔副本連結與寄送通報至個人信箱。")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -38,10 +38,6 @@ SERVICE_ACCOUNT_EMAIL = GCP_CREDS.get("client_email", "streamlit-bot@streamlit-s
 
 TARGET_PRESENTATION_ID = "1h2QNNI8SLvjNEBmky7IWv9ZGBbKsLvV1UDkYJWcOeWU"
 DRIVE_FOLDER_ID = st.secrets.get("DRIVE_FOLDER_ID", "1fm6ZK5B5wUmfy7-cgrw8OIkh7iS175dA").strip()
-
-DEFAULT_NOTIFY_EMAIL = "mbmmiqamhnd@gmail.com"
-SMTP_USER = st.secrets.get("SMTP_USER", "")
-SMTP_PASSWORD = st.secrets.get("SMTP_PASSWORD", "")
 
 def get_slides_service():
     if not GCP_CREDS:
@@ -56,25 +52,37 @@ def get_slides_service():
     return build("slides", "v1", credentials=creds)
 
 # ==========================================
-# 1.1 郵件通知工具函式
+# 1.1 參照毒駕專案之「寄給自己」郵件發送函式
 # ==========================================
-def send_report_email(to_email: str, subject: str, body_html: str, from_email: str = None) -> bool:
-    """使用 SMTP 寄送通報郵件"""
-    sender = from_email or SMTP_USER
-    if not sender or not SMTP_PASSWORD:
-        return False
+def send_report_email_to_self(subject: str, body_html: str):
+    """
+    使用 st.secrets["email"] 設定檔發送電子郵件，直接寄給寄件者自己。
+    相容支援 st.secrets["email"]["user"] 與頂層 SMTP_USER 設定。
+    """
+    try:
+        if "email" in st.secrets:
+            sender = st.secrets["email"].get("user")
+            pwd = st.secrets["email"].get("password")
+        else:
+            sender = st.secrets.get("SMTP_USER")
+            pwd = st.secrets.get("SMTP_PASSWORD")
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = Header(subject, "utf-8")
-    msg["From"] = f"交通戰情室自動通報 <{sender}>"
-    msg["To"] = to_email
+        if not sender or not pwd:
+            return False, "未在 secrets.toml 偵測到 [email] 或 SMTP 帳號密碼設定。"
 
-    msg.attach(MIMEText(body_html, "html", "utf-8"))
+        msg = MIMEMultipart("alternative")
+        msg["From"] = f"交通執法自動化戰情室 <{sender}>"
+        msg["To"] = sender  # 依照範例邏輯：直接寄給自己
+        msg["Subject"] = subject
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(sender, SMTP_PASSWORD)
-        server.sendmail(sender, [to_email], msg.as_string())
-    return True
+        msg.attach(MIMEText(body_html, "html", "utf-8"))
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender, pwd)
+            server.sendmail(sender, sender, msg.as_string())
+        return True, sender
+    except Exception as e:
+        return False, str(e)
 
 with st.container():
     c_s1, c_s2 = st.columns([2, 1])
@@ -326,7 +334,6 @@ overload_footnote_exact = (
     f"統計截至 {roc_year}年{month:02d}月{day:02d}日 (入案日期)應達成率為{current_expected_rate:.1f}%"
 )
 
-# 1. 三項重點違規
 latest_three_day = "09/16"
 three_major_raw_matrix = [
     ["合計", 5, 0, 1, 6, 213, 111, 25, 349],
@@ -351,7 +358,6 @@ preview_cols = pd.MultiIndex.from_tuples([
 ])
 df_three_preview = pd.DataFrame(three_major_raw_matrix, columns=preview_cols)
 
-# 2. A1 死亡
 df_a1 = pd.DataFrame([
     {"統計期間": "合計", "本期(0909-0915)": 0, "本年累計(0101-0915)": 1, "去年累計(0101-0915)": 6, "本年與去年同期比較": -5},
     {"統計期間": "聖亭所", "本期(0909-0915)": 0, "本年累計(0101-0915)": 0, "去年累計(0101-0915)": 0, "本年與去年同期比較": 0},
@@ -362,7 +368,6 @@ df_a1 = pd.DataFrame([
     {"統計期間": "三和所", "本期(0909-0915)": 0, "本年累計(0101-0915)": 0, "去年累計(0101-0915)": 0, "本年與去年同期比較": 0},
 ])
 
-# 3. A2 受傷
 df_a2 = pd.DataFrame([
     {"統計期間": "合計", "本期(0909-0915)": 25, "前期(0902-0908)": 22, "本年累計(0101-0915)": 1353, "去年累計(0101-0915)": 1532, "本年與去年同期比較": -179, "增減比例": "-11.68%"},
     {"統計期間": "聖亭所", "本期(0909-0915)": 5, "前期(0902-0908)": 4, "本年累計(0101-0915)": 282, "去年累計(0101-0915)": 276, "本年與去年同期比較": 6, "增減比例": "2.17%"},
@@ -373,7 +378,6 @@ df_a2 = pd.DataFrame([
     {"統計期間": "三和所", "本期(0909-0915)": 0, "前期(0902-0908)": 0, "本年累計(0101-0915)": 45, "去年累計(0101-0915)": 49, "本年與去年同期比較": -4, "增減比例": "-8.16%"},
 ])
 
-# 4. 重大違規總表
 df_major = pd.DataFrame([
     {"統計期間": "合計", "本期(攔停)": 39, "本期(逕舉)": 210, "本年累計(攔停)": 2317, "本年累計(逕舉)": 6852, "去年累計(攔停)": 2065, "去年累計(逕舉)": 7268, "本年與去年同期比較": -186, "目標值": 18114, "達成率": "50.6%"},
     {"統計期間": "科技執法", "本期(攔停)": 0, "本期(逕舉)": 56, "本年累計(攔停)": 9, "本年累計(逕舉)": 1535, "去年累計(攔停)": 4, "去年累計(逕舉)": 525, "本年與去年同期比較": 1015, "目標值": 6006, "達成率": "25.7%"},
@@ -388,7 +392,6 @@ df_major = pd.DataFrame([
 ])
 major_footnote_exact = "重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」"
 
-# 5. 重大違規 7 大專項細表
 MAJOR_DETAIL_DICT = {
     "酒駕": [
         ["合計", 295, 1, 296, 141, 1, 142, 154, 0, 154],
@@ -476,7 +479,6 @@ MAJOR_DETAIL_DICT = {
     ],
 }
 
-# 6. 超載
 df_overload = pd.DataFrame([
     {"統計期間": "合計", "本期 (0909~0915)": 1, "本年累計 (0101~0915)": 46, "去年累計 (0101~0915)": 121, "本年與去年同期比較": -75, "目標值": 127, "達成率": "36%"},
     {"統計期間": "聖亭所", "本期 (0909~0915)": 0, "本年累計 (0101~0915)": 8, "去年累計 (0101~0915)": 12, "本年與去年同期比較": -4, "目標值": 20, "達成率": "40%"},
@@ -489,7 +491,6 @@ df_overload = pd.DataFrame([
     {"統計期間": "交通分隊", "本期 (0909~0915)": 0, "本年累計 (0101~0915)": 6, "去年累計 (0101~0915)": 8, "本年與去年同期比較": -2, "目標值": 22, "達成率": "27%"},
 ])
 
-# 7. 靜桃
 df_jingtao = pd.DataFrame([
     {"統計期間": "合計", "本期(22-06)": 0, "本期(06-22)": 0, "累計(22-06)": 497, "累計(06-22)": 631, "總計": 1128},
     {"統計期間": "聖亭所", "本期(22-06)": 0, "本期(06-22)": 0, "累計(22-06)": 29, "累計(06-22)": 90, "總計": 119},
@@ -502,7 +503,6 @@ df_jingtao = pd.DataFrame([
     {"統計期間": "交通分隊", "本期(22-06)": 0, "本期(06-22)": 0, "累計(22-06)": 5, "累計(06-22)": 17, "總計": 22},
 ])
 
-# 8. 科技執法
 df_tech_final = pd.DataFrame([
     {"路段名稱": "中興路與武漢路口", "舉發件數": 990},
     {"路段名稱": "大昌路二段與五福街口(北往南)", "舉發件數": 688},
@@ -596,25 +596,24 @@ else:
     st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出。")
 
 # ==========================================
-# 4.1 副本設定與通知信箱配置
+# 4.1 副本設定（自動寄給 secrets 所設定的自己）
 # ==========================================
 st.markdown("---")
-st.markdown("#### 📁 存檔副本與郵件寄送設定")
-col_cfg1, col_cfg2 = st.columns([3, 2])
+st.markdown("#### 📁 存檔副本與自動寄信設定")
 
 default_copy_name = f"龍潭分局執法數據簡報_{datetime.now().strftime('%Y%m%d_%H%M')}"
-with col_cfg1:
-    custom_copy_title = st.text_input(
-        "✏️ 存檔副本名稱標註（用於郵件與存檔提示）：",
-        value=default_copy_name,
-        help="系統會將此名稱寫入通知信主旨與內文，並為您產生一鍵直出副本存檔連結。"
-    )
-with col_cfg2:
-    recipient_email = st.text_input(
-        "✉️ 專案通報寄送信箱：",
-        value=DEFAULT_NOTIFY_EMAIL,
-        help="簡報製作完成後會自動寄送專屬一鍵副本存檔與母本連結至此信箱。"
-    )
+custom_copy_title = st.text_input(
+    "✏️ 存檔副本名稱標註（用於自訂副本與信件通知）：",
+    value=default_copy_name,
+    help="系統會將此名稱寫入通知信，並產生一鍵直出副本存檔連結。"
+)
+
+# 顯示目前設定的寄件/收件信箱提示
+curr_user = st.secrets.get("email", {}).get("user") or st.secrets.get("SMTP_USER", "")
+if curr_user:
+    st.caption(f"📬 執行後將自動寄送通報至已綁定之個人信箱：`{curr_user}`")
+else:
+    st.caption("⚠️ 尚未偵測到 `[email]` 設定，請確認 `secrets.toml` 是否包含 `[email] user = ...` 與 `password = ...`。")
 
 with st.expander("👀 點擊展開預覽待輸出業務數據"):
     t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點", "A1事故死亡", "A2事故受傷", "重大違規", "超載取締", "靜桃計畫", "科技執法成效"])
@@ -730,19 +729,19 @@ if st.button(btn_label, type="primary"):
                     # 4. 整批送出更新母本
                     final_url = builder.execute_build()
 
-                    # 5. 產生安全無配額限制的官方「一鍵建立獨立副本存檔」連結
+                    # 5. 產生官方安全一鍵建立個人獨立副本連結
                     final_copy_title = custom_copy_title.strip()
-                    encoded_title = urllib.parse.quote(final_copy_title)
+                    encoded_title = _ul.quote(final_copy_title)
                     one_click_copy_url = f"https://docs.google.com/presentation/d/{TARGET_PRESENTATION_ID}/copy?title={encoded_title}"
 
-                    # 6. 發送通報郵件
+                    # 6. 發送通報郵件（直接發給自己）
                     email_html = f"""
                     <div style="font-family: Arial, 'Microsoft JhengHei', sans-serif; line-height: 1.6; color: #333; max-width: 620px; padding: 22px; border: 1px solid #e2e8f0; border-radius: 8px;">
                         <h2 style="color: #1e3a5f; margin-top: 0;">📊 龍潭分局執法數據簡報產出通報</h2>
-                        <p>您好，全方位執法數據簡報已自動編譯完成，最新數據已覆蓋至母本，並已產生專屬當期獨立存檔連結：</p>
+                        <p>長官／同仁好，全方位執法數據簡報已自動編譯完成，最新數據已更新覆蓋至母本，並已為您產生個人獨立存檔副本連結：</p>
                         <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
                             <tr><td style="padding: 6px 0; color: #64748b; width: 110px;"><b>產出時間：</b></td><td>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
-                            <tr><td style="padding: 6px 0; color: #64748b;"><b>指定副本名稱：</b></td><td><b style="color: #0f172a;">{final_copy_title}</b></td></tr>
+                            <tr><td style="padding: 6px 0; color: #64748b;"><b>自訂副本名稱：</b></td><td><b style="color: #0f172a;">{final_copy_title}</b></td></tr>
                             <tr><td style="padding: 6px 0; color: #64748b;"><b>包含頁數：</b></td><td>共 {len(selected_pages)} 個指定業務表格</td></tr>
                         </table>
                         <div style="margin: 24px 0;">
@@ -754,27 +753,24 @@ if st.button(btn_label, type="primary"):
                                 📂 檢視即時母本
                             </a>
                         </div>
-                        <p style="font-size: 13px; color: #64748b;">💡 提示：點擊「一鍵建立並存檔」即可自動在您的個人雲端硬碟建立以「<b>{final_copy_title}</b>」命名的獨立簡報檔，永久留存不受後續覆蓋影響。</p>
+                        <p style="font-size: 13px; color: #64748b;">💡 說明：點擊「一鍵建立並存檔」即可在您的 Google 帳戶下自動生成獨立存檔副本，檔案名稱已預設帶入為「<b>{final_copy_title}</b>」，不受後續自動化作業覆蓋影響。</p>
                         <hr style="border: 0; border-top: 1px solid #edf2f7; margin: 20px 0;">
-                        <small style="color: #94a3b8;">此郵件由 Streamlit 龍潭分局交通戰情室自動發送。</small>
+                        <small style="color: #94a3b8;">本信件由交通執法自動化分析引擎發送。</small>
                     </div>
                     """
 
-                    mail_sent = False
-                    if recipient_email.strip():
-                        mail_sent = send_report_email(
-                            to_email=recipient_email.strip(),
-                            subject=f"【簡報通報】{final_copy_title}",
-                            body_html=email_html
-                        )
+                    ok, mail_info = send_report_email_to_self(
+                        subject=f"📊 執法數據簡報產出通報 - {final_copy_title}",
+                        body_html=email_html
+                    )
 
                     st.balloons()
                     st.success(f"🎉 指定的 {len(selected_pages)} 個統計表頁面已成功覆蓋更新至母本！")
 
-                    if mail_sent:
-                        st.info(f"📧 專案報告與一鍵存檔副本連結已寄送至：`{recipient_email.strip()}`")
-                    elif recipient_email.strip() and (not SMTP_USER or not SMTP_PASSWORD):
-                        st.warning("⚠️ 系統未偵測到 SMTP 帳密，已跳過郵件寄送。如需啟用自動發信，請在 secrets.toml 中填入 SMTP_USER 與 SMTP_PASSWORD。")
+                    if ok:
+                        st.info(f"📧 簡報副本存檔連結已發送至您的信箱：`{mail_info}`")
+                    else:
+                        st.warning(f"⚠️ 郵件發送未完成：{mail_info}")
 
                     protect_note = "（第1頁封面已依設定保留，未受影響）\n\n" if chk_protect_cover else ""
                     st.markdown(
