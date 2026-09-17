@@ -19,6 +19,7 @@ try:
     from pptx.dml.color import RGBColor
     from pptx.enum.text import PP_ALIGN
     from pptx.enum.shapes import MSO_SHAPE
+    from pptx.oxml import parse_xml
     HAS_PPTX = True
 except ImportError:
     HAS_PPTX = False
@@ -41,7 +42,7 @@ st.set_page_config(
 show_sidebar()
 
 st.title("📽️ 全方位執法數據簡報直出中心（PPTX 實體檔直出版）")
-st.caption("🚀 做法 A 架構：純 Python 本地直出實體 PowerPoint (.pptx) 簡報，徹底擺脫 Google 母本與雲端空間配額限制，隨點即下載並直接附件寄送！")
+st.caption("🚀 做法 A 架構：純 Python 本地直出實體 PowerPoint (.pptx) 簡報，徹底擺脫 Google 母本與雲端空間配額限制，色彩 100% 精準還原！")
 
 if not HAS_PPTX:
     st.error("⚠️ 偵測到環境中尚未安裝 `python-pptx` 套件。請在終端機或 requirements.txt 中執行：`pip install python-pptx`")
@@ -95,10 +96,10 @@ def send_pptx_email_to_self(pptx_bytes: io.BytesIO, file_name: str) -> tuple:
         return False, str(e)
 
 # ==========================================
-# 2. PPTX 原生簡報排版引擎 (PptxReportBuilder)
+# 2. PPTX 原生簡報排版引擎 (PptxReportBuilder) - 色彩完美復刻
 # ==========================================
 class PptxReportBuilder:
-    """專門負責將執法數據以 16:9 比例直出高品質 PPTX 簡報"""
+    """專門負責將執法數據以 16:9 比例直出高品質 PPTX 簡報，色彩嚴格還原原版 Google 簡報設定"""
     def __init__(self):
         self.prs = Presentation()
         # 設定為標準 16:9 寬螢幕尺寸 (13.333 x 7.5 英吋)
@@ -106,20 +107,59 @@ class PptxReportBuilder:
         self.prs.slide_height = Inches(7.5)
         self.blank_layout = self.prs.slide_layouts[6]  # 全空白版型
 
-        # 配色常數定義
-        self.C_NAVY = RGBColor(15, 38, 56)        # 深海軍藍 (封面與表頭)
-        self.C_LIGHT_BG = RGBColor(232, 240, 254) # 表格合計/標註淺藍
+        # ====================================================
+        # 🎨 原版精準色票定義 (對齊 Google Slides API 原始 RGB 數值)
+        # ====================================================
+        # 1. 封面背景深海軍藍：rgbColor(0.06, 0.15, 0.22)
+        self.C_COVER_BG = RGBColor(15, 38, 56)
+        self.C_COVER_SUBTITLE = RGBColor(204, 217, 230) # rgbColor(0.8, 0.85, 0.9)
         self.C_WHITE = RGBColor(255, 255, 255)
-        self.C_DARK = RGBColor(30, 41, 59)
+
+        # 2. 標題文字深藍：rgbColor(0.1, 0.2, 0.35)
+        self.C_TITLE_NAVY = RGBColor(26, 51, 89)
+
+        # 3. 表格表頭經典雅緻灰海藍：rgbColor(0.15, 0.25, 0.38)
+        self.C_TBL_HEADER_BG = RGBColor(38, 64, 97)
+        self.C_TBL_HEADER_TEXT = RGBColor(255, 255, 255)
+
+        # 4. 合計 / 總計列柔和淺藍：rgbColor(0.91, 0.94, 0.97)
+        self.C_TBL_HIGHLIGHT_BG = RGBColor(232, 240, 247)
+
+        # 5. 一般資料列底色與文字色：純白與 rgbColor(0.1, 0.1, 0.1)
+        self.C_TBL_ROW_BG = RGBColor(255, 255, 255)
+        self.C_TBL_TEXT_DARK = RGBColor(26, 26, 26)
+
+        # 6. 警告 / 衰退 / 事故增加紅字：rgbColor(0.85, 0.0, 0.0)
+        self.C_TBL_RED = RGBColor(217, 0, 0)
+
+        # 7. 頁尾備註與副標文字：rgbColor(0.2, 0.2, 0.2)
         self.C_MUTED = RGBColor(100, 116, 139)
-        self.C_RED = RGBColor(220, 38, 38)        # 衰退或警告紅字
+        self.C_FOOTNOTE = RGBColor(51, 51, 51)
+
+    def _set_border(self, cell, color_hex="CBD5E1", width="12700"):
+        """為儲存格設定細微精準邊框線，維持表格工整俐落"""
+        try:
+            tcPr = cell._tc.get_or_add_tcPr()
+            for border_name in ["lnL", "lnR", "lnT", "lnB"]:
+                border = parse_xml(
+                    f'<a:{border_name} xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" w="{width}" cmpd="s">'
+                    f'<a:solidFill><a:srgbClr val="{color_hex}"/></a:solidFill>'
+                    f'</a:{border_name}>'
+                )
+                tcPr.append(border)
+        except Exception:
+            pass
 
     def _set_cell(self, cell, text, font_size=11, bold=False, color=None, bg_color=None, align=PP_ALIGN.CENTER):
-        """統整設定儲存格內容與樣式"""
-        cell.text = str(text).replace("\n", " ").strip() if (pd.notna(text) and str(text).strip() != "") else "—"
-        if bg_color:
-            cell.fill.solid()
-            cell.fill.fore_color.rgb = bg_color
+        """統整設定儲存格內容與樣式，100% 還原原版色彩與邊框"""
+        cell.text = str(text).strip() if (pd.notna(text) and str(text).strip() != "") else "—"
+        
+        # 明確指定儲存格底色，避免 PPT 預設佈景干擾
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = bg_color if bg_color else self.C_TBL_ROW_BG
+
+        # 套用精緻細邊框
+        self._set_border(cell, color_hex="CBD5E1")
 
         for p in cell.text_frame.paragraphs:
             p.alignment = align
@@ -127,19 +167,17 @@ class PptxReportBuilder:
                 r.font.name = "Microsoft JhengHei"
                 r.font.size = Pt(font_size)
                 r.font.bold = bold
-                if color:
-                    r.font.color.rgb = color
+                r.font.color.rgb = color if color else self.C_TBL_TEXT_DARK
 
     def add_cover_slide(self, main_title: str, subtitle: str, date_range_str: str):
-        """封面頁：深海軍藍大器全幅底色"""
+        """封面頁：原版深海軍藍大器全幅底色"""
         slide = self.prs.slides.add_slide(self.blank_layout)
 
-        # 滿版背景形狀
         bg = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE, 0, 0, self.prs.slide_width, self.prs.slide_height
         )
         bg.fill.solid()
-        bg.fill.fore_color.rgb = self.C_NAVY
+        bg.fill.fore_color.rgb = self.C_COVER_BG
         bg.line.fill.background()
 
         # 主標題文字框
@@ -162,7 +200,7 @@ class PptxReportBuilder:
         p1.text = subtitle
         p1.font.name = "Microsoft JhengHei"
         p1.font.size = Pt(20)
-        p1.font.color.rgb = RGBColor(186, 215, 248)
+        p1.font.color.rgb = self.C_COVER_SUBTITLE
 
         p2 = tf_sub.add_paragraph()
         p2.text = f"統計區間：{date_range_str} ｜ 製表單位：龍潭分局交通組"
@@ -172,16 +210,16 @@ class PptxReportBuilder:
         p2.space_before = Pt(14)
 
     def add_header_box(self, slide, title: str, subtitle: str = ""):
-        """投影片頂端標題區塊"""
+        """投影片頂端標題區塊：採用原版專屬深藍色票"""
         tb = slide.shapes.add_textbox(Inches(0.6), Inches(0.4), Inches(12.133), Inches(0.9))
         tf = tb.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.text = title
         p.font.name = "Microsoft JhengHei"
-        p.font.size = Pt(22)
+        p.font.size = Pt(21)
         p.font.bold = True
-        p.font.color.rgb = self.C_NAVY
+        p.font.color.rgb = self.C_TITLE_NAVY
 
         if subtitle:
             p2 = tf.add_paragraph()
@@ -192,7 +230,7 @@ class PptxReportBuilder:
             p2.space_before = Pt(4)
 
     def add_three_major_slide(self, data_rows, latest_day="09/16"):
-        """P.2 三項重點違規統計表 (雙層母本表頭)"""
+        """P.2 三項重點違規統計表 (雙層表頭 + 原版表頭藍與合計淺藍)"""
         slide = self.prs.slides.add_slide(self.blank_layout)
         self.add_header_box(
             slide,
@@ -212,22 +250,23 @@ class PptxReportBuilder:
         tbl.cell(0, 1).merge(tbl.cell(0, 4))
         tbl.cell(0, 5).merge(tbl.cell(0, 8))
 
-        self._set_cell(tbl.cell(0, 0), "單位", font_size=12, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
-        self._set_cell(tbl.cell(0, 1), f"本期 ({latest_day}) 新增違規數", font_size=12, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
-        self._set_cell(tbl.cell(0, 5), "115年9月1日起累計數", font_size=12, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
+        # 表頭以原版灰海藍 (C_TBL_HEADER_BG) 上色
+        self._set_cell(tbl.cell(0, 0), "單位", font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 1), f"本期 ({latest_day}) 新增違規數", font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 5), "115年9月1日起累計數", font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
         sub_headers = ["", "闖紅燈", "逆向行駛", "不停讓行人", f"本期合計\n({latest_day})", "闖紅燈", "逆向行駛", "不停讓行人", "累計總計"]
         for c in range(1, 9):
-            self._set_cell(tbl.cell(1, c), sub_headers[c], font_size=11, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
+            self._set_cell(tbl.cell(1, c), sub_headers[c], font_size=11, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
         for r_idx, row in enumerate(data_rows, start=2):
             is_tot = (r_idx == 2)
-            bg = self.C_LIGHT_BG if is_tot else None
+            bg = self.C_TBL_HIGHLIGHT_BG if is_tot else self.C_TBL_ROW_BG
             for c_idx, val in enumerate(row):
-                self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=11, bold=is_tot, color=self.C_DARK, bg_color=bg)
+                self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=11, bold=is_tot, color=self.C_TBL_TEXT_DARK, bg_color=bg)
 
     def add_major_detail_slide(self, cat_name: str, data_rows, date_str="0101-0915"):
-        """重大違規 7 大專項細表"""
+        """重大違規 7 大專項細表 (原版配色 + 衰退紅字)"""
         slide = self.prs.slides.add_slide(self.blank_layout)
         self.add_header_box(
             slide,
@@ -247,26 +286,27 @@ class PptxReportBuilder:
         tbl.cell(0, 4).merge(tbl.cell(0, 6))
         tbl.cell(0, 7).merge(tbl.cell(0, 9))
 
-        self._set_cell(tbl.cell(0, 0), "統計期間", font_size=11, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
-        self._set_cell(tbl.cell(0, 1), "今年累計", font_size=11, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
-        self._set_cell(tbl.cell(0, 4), "去年累計", font_size=11, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
-        self._set_cell(tbl.cell(0, 7), "今年與去年同期比較", font_size=11, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
+        self._set_cell(tbl.cell(0, 0), "統計期間", font_size=11, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 1), "今年累計", font_size=11, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 4), "去年累計", font_size=11, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 7), "今年與去年同期比較", font_size=11, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
         sub_names = ["", "當場攔停", "逕行舉發", "合計", "當場攔停", "逕行舉發", "合計", "當場攔停", "逕行舉發", "合計"]
         for c in range(1, 10):
-            self._set_cell(tbl.cell(1, c), sub_names[c], font_size=10, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
+            self._set_cell(tbl.cell(1, c), sub_names[c], font_size=10, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
         for r_idx, row in enumerate(data_rows, start=2):
             is_tot = (r_idx == 2)
-            bg = self.C_LIGHT_BG if is_tot else None
+            bg = self.C_TBL_HIGHLIGHT_BG if is_tot else self.C_TBL_ROW_BG
             for c_idx, val in enumerate(row):
-                fg = self.C_DARK
+                fg = self.C_TBL_TEXT_DARK
                 is_bold = is_tot
+                # 比較欄位衰退以原版警示紅字呈現
                 if c_idx in [7, 8, 9]:
                     try:
                         c_num = float(str(val).replace(",", "").strip())
                         if c_num < 0:
-                            fg = self.C_RED
+                            fg = self.C_TBL_RED
                             is_bold = True
                     except Exception:
                         pass
@@ -290,28 +330,29 @@ class PptxReportBuilder:
         )
         tbl = table_shape.table
 
-        # 表頭
+        # 表頭以原版灰海藍 (C_TBL_HEADER_BG) 上色
         font_sz = 12 if num_cols <= 4 else (10 if num_cols >= 8 else 11)
         for c_idx, col_name in enumerate(df.columns):
-            self._set_cell(tbl.cell(0, c_idx), col_name, font_size=font_sz, bold=True, color=self.C_WHITE, bg_color=self.C_NAVY)
+            self._set_cell(tbl.cell(0, c_idx), col_name, font_size=font_sz, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
-        # 內容列
+        # 內容列：合計列套用原版淺藍 (C_TBL_HIGHLIGHT_BG)，一般列為純白 (C_TBL_ROW_BG)
         for r_idx, row in df.iterrows():
             first_val = str(row.values[0]).strip()
             is_hl = any(k in first_val for k in ["合計", "總計", "舉發總數"])
-            bg = self.C_LIGHT_BG if is_hl else None
+            bg = self.C_TBL_HIGHLIGHT_BG if is_hl else self.C_TBL_ROW_BG
 
             for c_idx, val in enumerate(row):
                 cell_val = str(val).strip()
                 col_name = str(df.columns[c_idx])
-                fg = self.C_DARK
+                fg = self.C_TBL_TEXT_DARK
                 is_bold = is_hl
 
+                # 交通事故增加欄位以原版警示紅字呈現
                 if is_accident_table and any(k in col_name for k in ["比較", "增減", "比例"]):
                     try:
                         clean_num = float(cell_val.replace("%", "").replace("+", "").strip())
                         if clean_num > 0:
-                            fg = self.C_RED
+                            fg = self.C_TBL_RED
                             is_bold = True
                     except Exception:
                         pass
@@ -325,7 +366,7 @@ class PptxReportBuilder:
             p_fn.text = f"註：{footnote}"
             p_fn.font.name = "DFKai-SB"
             p_fn.font.size = Pt(10)
-            p_fn.font.color.rgb = self.C_MUTED
+            p_fn.font.color.rgb = self.C_FOOTNOTE
 
     def build_bytes(self) -> io.BytesIO:
         """編譯並輸出記憶體 BytesIO 串流"""
@@ -656,7 +697,7 @@ if btn_generate:
         if not file_save_name.lower().endswith(".pptx"):
             file_save_name += ".pptx"
 
-        with st.spinner(f"正在純本地動態編譯已勾選的 {len(selected_pages)} 頁 PPTX 簡報（免雲端等待、零配額衝突）..."):
+        with st.spinner(f"正在純本地動態編譯已勾選的 {len(selected_pages)} 頁 PPTX 簡報（免雲端等待、零配額衝突、色彩 100% 還原）..."):
             try:
                 builder = PptxReportBuilder()
 
