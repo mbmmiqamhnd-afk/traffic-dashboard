@@ -2,6 +2,7 @@ import io
 import re
 import uuid
 import smtplib
+import urllib.parse
 from datetime import datetime, timedelta
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
@@ -27,7 +28,7 @@ st.set_page_config(
 show_sidebar()
 
 st.title("📽️ 全方位執法數據簡報直出中心（自選頁面版）")
-st.caption("🚀 自由勾選機制：可任意指定欲輸出的統計表，系統動態按需編譯並覆蓋目標簡報，並可自訂副本名稱與自動寄發通知郵件。")
+st.caption("🚀 自由勾選機制：可任意指定欲輸出的統計表，系統動態按需編譯並覆蓋目標簡報，並自動產生專屬存檔副本連結與寄送信件。")
 
 # ==========================================
 # 1. Google 服務連線層與常數設定
@@ -38,19 +39,9 @@ SERVICE_ACCOUNT_EMAIL = GCP_CREDS.get("client_email", "streamlit-bot@streamlit-s
 TARGET_PRESENTATION_ID = "1h2QNNI8SLvjNEBmky7IWv9ZGBbKsLvV1UDkYJWcOeWU"
 DRIVE_FOLDER_ID = st.secrets.get("DRIVE_FOLDER_ID", "1fm6ZK5B5wUmfy7-cgrw8OIkh7iS175dA").strip()
 
-# 郵件 SMTP 設定（由 secrets.toml 提供）
+DEFAULT_NOTIFY_EMAIL = "mbmmiqamhnd@gmail.com"
 SMTP_USER = st.secrets.get("SMTP_USER", "")
 SMTP_PASSWORD = st.secrets.get("SMTP_PASSWORD", "")
-DEFAULT_RECIPIENT = "mbmmiqamhnd@gmail.com"
-
-def get_drive_service():
-    if not GCP_CREDS:
-        return None
-    creds = service_account.Credentials.from_service_account_info(
-        GCP_CREDS,
-        scopes=["https://www.googleapis.com/auth/drive"]
-    )
-    return build("drive", "v3", credentials=creds)
 
 def get_slides_service():
     if not GCP_CREDS:
@@ -64,39 +55,26 @@ def get_slides_service():
     )
     return build("slides", "v1", credentials=creds)
 
-def create_presentation_copy(drive_svc, source_file_id: str, title: str, folder_id: str = None) -> dict:
-    """利用 Google Drive API 複製簡報並設定指定檔名與存放資料夾"""
-    body = {"name": title}
-    if folder_id:
-        body["parents"] = [folder_id]
-
-    copied_file = drive_svc.files().copy(
-        fileId=source_file_id,
-        body=body,
-        fields="id, name, webViewLink"
-    ).execute()
-    return copied_file
-
-def send_report_email(to_email: str, subject: str, body_html: str, from_email: str = None) -> tuple:
-    """使用 Gmail SMTP 寄送通報郵件"""
+# ==========================================
+# 1.1 郵件通知工具函式
+# ==========================================
+def send_report_email(to_email: str, subject: str, body_html: str, from_email: str = None) -> bool:
+    """使用 SMTP 寄送通報郵件"""
     sender = from_email or SMTP_USER
     if not sender or not SMTP_PASSWORD:
-        return False, "未於 secrets.toml 設定 SMTP_USER 或 SMTP_PASSWORD"
+        return False
 
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = Header(subject, "utf-8")
-        msg["From"] = f"交通戰情室自動通報 <{sender}>"
-        msg["To"] = to_email
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["From"] = f"交通戰情室自動通報 <{sender}>"
+    msg["To"] = to_email
 
-        msg.attach(MIMEText(body_html, "html", "utf-8"))
+    msg.attach(MIMEText(body_html, "html", "utf-8"))
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender, SMTP_PASSWORD)
-            server.sendmail(sender, [to_email], msg.as_string())
-        return True, "寄送成功"
-    except Exception as e:
-        return False, str(e)
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(sender, SMTP_PASSWORD)
+        server.sendmail(sender, [to_email], msg.as_string())
+    return True
 
 with st.container():
     c_s1, c_s2 = st.columns([2, 1])
@@ -544,7 +522,6 @@ df_tech_final = pd.DataFrame([
 # ==========================================
 st.subheader("🎯 欲輸出的統計表自選控制")
 
-# 快捷選擇按鈕
 col_btn1, col_btn2, _ = st.columns([1.5, 2, 4])
 if "select_mode" not in st.session_state:
     st.session_state["select_mode"] = "core"
@@ -558,7 +535,6 @@ with col_btn2:
 
 is_all = (st.session_state["select_mode"] == "all")
 
-# 區塊勾選選項
 col_opt1, col_opt2 = st.columns(2)
 
 with col_opt1:
@@ -567,7 +543,7 @@ with col_opt1:
     chk_protect_cover = st.checkbox(
         "🔒 保留現有封面（手動編輯過，不覆寫/不刪除）",
         value=False,
-        help="勾選後，Google 簡報目前的第1頁會被完整保留（不刪除、不重繪），適合您已手動排版過封面的情況。"
+        help="勾選後，Google 簡報目前的第1頁會被完整保留（不刪除、不重繪），適合手動排版過封面的情況。"
     )
     chk_cover = st.checkbox(
         "P.1 簡報封面（自動產生，套用固定樣式）",
@@ -620,26 +596,24 @@ else:
     st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出。")
 
 # ==========================================
-# 4.1 副本命名與郵件寄送自訂配置
+# 4.1 副本設定與通知信箱配置
 # ==========================================
 st.markdown("---")
-st.markdown("#### 📁 副本命名與郵件寄送設定")
+st.markdown("#### 📁 存檔副本與郵件寄送設定")
 col_cfg1, col_cfg2 = st.columns([3, 2])
 
-default_copy_title = f"龍潭分局執法數據簡報_{datetime.now().strftime('%Y%m%d_%H%M')}"
-
+default_copy_name = f"龍潭分局執法數據簡報_{datetime.now().strftime('%Y%m%d_%H%M')}"
 with col_cfg1:
     custom_copy_title = st.text_input(
-        "✏️ 自訂副本簡報名稱（可隨意修改）：",
-        value=default_copy_title,
-        help="產出後系統將以此名稱複製一份獨立的 Google 簡報存檔於資料夾中。"
+        "✏️ 存檔副本名稱標註（用於郵件與存檔提示）：",
+        value=default_copy_name,
+        help="系統會將此名稱寫入通知信主旨與內文，並為您產生一鍵直出副本存檔連結。"
     )
-
 with col_cfg2:
     recipient_email = st.text_input(
-        "✉️ 接收副本連結信箱：",
-        value=DEFAULT_RECIPIENT,
-        help="產出完成後將自動寄出包含此副本超連結的通報信件。"
+        "✉️ 專案通報寄送信箱：",
+        value=DEFAULT_NOTIFY_EMAIL,
+        help="簡報製作完成後會自動寄送專屬一鍵副本存檔與母本連結至此信箱。"
     )
 
 with st.expander("👀 點擊展開預覽待輸出業務數據"):
@@ -665,23 +639,22 @@ if st.button(btn_label, type="primary"):
     if not selected_pages:
         st.warning("⚠️ 請至少勾選一個統計表頁面！")
     elif not custom_copy_title.strip():
-        st.warning("⚠️ 副本簡報名稱不可為空白！")
+        st.warning("⚠️ 副本名稱標註不可為空白！")
     else:
         slides_svc = get_slides_service()
-        drive_svc = get_drive_service()
 
-        if not slides_svc or not drive_svc:
-            st.error("❌ 無法初始化 Google 服務，請確認 secrets.toml 設定。")
+        if not slides_svc:
+            st.error("❌ 無法初始化 Google Slides 服務，請確認 secrets.toml 設定。")
         else:
             spinner_msg = f"正在{'（保留現有封面）' if chk_protect_cover else '清空母本畫布、'}動態編譯已勾選的 {len(selected_pages)} 頁投影片..."
             with st.spinner(spinner_msg):
                 try:
                     builder = ComprehensiveSlidesBuilder(slides_svc, TARGET_PRESENTATION_ID)
 
-                    # 1. 記錄舊頁面 ID（稍後整批抹除；若保留封面，第1頁不在此清單）
+                    # 1. 記錄舊頁面 ID
                     builder.prepare_canvas(protect_first_slide=chk_protect_cover)
 
-                    # 2. 依勾選順序動態注入
+                    # 2. 依勾選順序動態注入頁面
                     if chk_cover and not chk_protect_cover:
                         builder.add_cover_slide(
                             main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制數據分析報告",
@@ -754,72 +727,64 @@ if st.button(btn_label, type="primary"):
                     # 3. 抹除舊頁面
                     builder.wipe_old_slides()
 
-                    # 4. 整批送出更新目標母本
+                    # 4. 整批送出更新母本
                     final_url = builder.execute_build()
 
-                    # 5. 建立自訂檔名之獨立副本並移入資料夾
+                    # 5. 產生安全無配額限制的官方「一鍵建立獨立副本存檔」連結
                     final_copy_title = custom_copy_title.strip()
-                    copied_info = create_presentation_copy(
-                        drive_svc=drive_svc,
-                        source_file_id=TARGET_PRESENTATION_ID,
-                        title=final_copy_title,
-                        folder_id=DRIVE_FOLDER_ID
-                    )
-                    copy_id = copied_info.get("id")
-                    copy_url = copied_info.get("webViewLink", f"https://docs.google.com/presentation/d/{copy_id}/edit")
+                    encoded_title = urllib.parse.quote(final_copy_title)
+                    one_click_copy_url = f"https://docs.google.com/presentation/d/{TARGET_PRESENTATION_ID}/copy?title={encoded_title}"
 
-                    # 6. 自動寄送通知信件
+                    # 6. 發送通報郵件
                     email_html = f"""
-                    <div style="font-family: Arial, 'Microsoft JhengHei', sans-serif; line-height: 1.6; color: #333; max-width: 600px; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                    <div style="font-family: Arial, 'Microsoft JhengHei', sans-serif; line-height: 1.6; color: #333; max-width: 620px; padding: 22px; border: 1px solid #e2e8f0; border-radius: 8px;">
                         <h2 style="color: #1e3a5f; margin-top: 0;">📊 龍潭分局執法數據簡報產出通報</h2>
-                        <p>您好，全方位執法數據簡報已自動編譯完成，並已產生指定檔名之獨立副本存檔：</p>
-                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-                            <tr><td style="padding: 6px 0; color: #666; width: 100px;"><b>產出時間：</b></td><td>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
-                            <tr><td style="padding: 6px 0; color: #666;"><b>副本檔名：</b></td><td><b>{final_copy_title}</b></td></tr>
-                            <tr><td style="padding: 6px 0; color: #666;"><b>包含頁數：</b></td><td>共 {len(selected_pages)} 個指定頁面</td></tr>
+                        <p>您好，全方位執法數據簡報已自動編譯完成，最新數據已覆蓋至母本，並已產生專屬當期獨立存檔連結：</p>
+                        <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
+                            <tr><td style="padding: 6px 0; color: #64748b; width: 110px;"><b>產出時間：</b></td><td>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
+                            <tr><td style="padding: 6px 0; color: #64748b;"><b>指定副本名稱：</b></td><td><b style="color: #0f172a;">{final_copy_title}</b></td></tr>
+                            <tr><td style="padding: 6px 0; color: #64748b;"><b>包含頁數：</b></td><td>共 {len(selected_pages)} 個指定業務表格</td></tr>
                         </table>
-                        <div style="margin: 25px 0;">
-                            <a href="{copy_url}" style="background-color: #0b57d0; color: #ffffff; padding: 12px 22px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
-                                📑 開啟當期簡報副本
+                        <div style="margin: 24px 0;">
+                            <a href="{one_click_copy_url}" style="background-color: #0b57d0; color: #ffffff; padding: 12px 22px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                                📥 一鍵建立並存檔為個人獨立副本
                             </a>
                             &nbsp;&nbsp;
-                            <a href="{final_url}" style="background-color: #f1f3f4; color: #1f1f1f; padding: 12px 18px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                                📂 檢視母本
+                            <a href="{final_url}" style="background-color: #f1f5f9; color: #334155; padding: 12px 18px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                                📂 檢視即時母本
                             </a>
                         </div>
-                        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                        <small style="color: #888;">此郵件由 Streamlit 龍潭分局執法數據簡報直出系統自動發送。</small>
+                        <p style="font-size: 13px; color: #64748b;">💡 提示：點擊「一鍵建立並存檔」即可自動在您的個人雲端硬碟建立以「<b>{final_copy_title}</b>」命名的獨立簡報檔，永久留存不受後續覆蓋影響。</p>
+                        <hr style="border: 0; border-top: 1px solid #edf2f7; margin: 20px 0;">
+                        <small style="color: #94a3b8;">此郵件由 Streamlit 龍潭分局交通戰情室自動發送。</small>
                     </div>
                     """
 
-                    mail_success, mail_msg = False, ""
-                    target_email = recipient_email.strip()
-                    if target_email:
-                        mail_success, mail_msg = send_report_email(
-                            to_email=target_email,
-                            subject=f"【簡報副本通報】{final_copy_title}",
+                    mail_sent = False
+                    if recipient_email.strip():
+                        mail_sent = send_report_email(
+                            to_email=recipient_email.strip(),
+                            subject=f"【簡報通報】{final_copy_title}",
                             body_html=email_html
                         )
 
                     st.balloons()
-                    st.success(f"🎉 指定的 {len(selected_pages)} 個統計表頁面已重繪完成，並已成功建立自訂副本！")
+                    st.success(f"🎉 指定的 {len(selected_pages)} 個統計表頁面已成功覆蓋更新至母本！")
 
-                    if mail_success:
-                        st.info(f"📧 副本簡報連結已同步發送至信箱：`{target_email}`")
-                    elif target_email and (not SMTP_USER or not SMTP_PASSWORD):
-                        st.warning("⚠️ 副本已建立，但尚未設定 secrets 中的 SMTP 帳密，暫未寄發通知信。若需寄信請在 `.streamlit/secrets.toml` 配置 SMTP_USER 與 SMTP_PASSWORD。")
-                    elif target_email and not mail_success:
-                        st.warning(f"⚠️ 信件寄送未成功：{mail_msg}")
+                    if mail_sent:
+                        st.info(f"📧 專案報告與一鍵存檔副本連結已寄送至：`{recipient_email.strip()}`")
+                    elif recipient_email.strip() and (not SMTP_USER or not SMTP_PASSWORD):
+                        st.warning("⚠️ 系統未偵測到 SMTP 帳密，已跳過郵件寄送。如需啟用自動發信，請在 secrets.toml 中填入 SMTP_USER 與 SMTP_PASSWORD。")
 
                     protect_note = "（第1頁封面已依設定保留，未受影響）\n\n" if chk_protect_cover else ""
                     st.markdown(
-                        f"### 📑 簡報入口連結：\n"
-                        f"- 📎 **[點此直接開啟全新獨立副本：{final_copy_title}]({copy_url})**\n"
-                        f"- 👉 **[開啟目標母本簡報]({final_url})**\n\n"
+                        f"### 📑 簡報存取入口：\n"
+                        f"- 📥 **[點此一鍵儲存為獨立副本檔案（名稱：{final_copy_title}）]({one_click_copy_url})**\n"
+                        f"- 👉 **[直接開啟母本簡報（即時更新版）]({final_url})**\n\n"
                         f"{protect_note}"
                     )
 
                 except HttpError as e:
-                    st.error(f"❌ Google API 請求失敗：{e}\n\n*提示：請確認簡報與雲端硬碟資料夾是否已共用給 `{SERVICE_ACCOUNT_EMAIL}` 並設定為「編輯者」。*")
+                    st.error(f"❌ Google API 請求失敗：{e}\n\n*提示：請確認簡報是否已共用給 `{SERVICE_ACCOUNT_EMAIL}` 並設定為「編輯者」。*")
                 except Exception as e:
                     st.error(f"❌ 建立簡報失敗：{e}")
