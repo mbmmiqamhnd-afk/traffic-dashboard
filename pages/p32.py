@@ -1,4 +1,5 @@
 import io
+import os
 import re
 import smtplib
 import urllib.parse as _ul
@@ -49,7 +50,7 @@ if not HAS_PPTX:
     st.stop()
 
 # ==========================================
-# 1. 郵件通知函式（參照專案設定：直接夾帶附件寄給自己）
+# 1. 郵件通知函式（直接夾帶附件寄給自己）
 # ==========================================
 def send_pptx_email_to_self(pptx_bytes: io.BytesIO, file_name: str) -> tuple:
     """
@@ -96,7 +97,7 @@ def send_pptx_email_to_self(pptx_bytes: io.BytesIO, file_name: str) -> tuple:
         return False, str(e)
 
 # ==========================================
-# 2. PPTX 原生簡報排版引擎 (PptxReportBuilder) - 色彩完美復刻
+# 2. PPTX 原生簡報排版引擎 (PptxReportBuilder)
 # ==========================================
 class PptxReportBuilder:
     """專門負責將執法數據以 16:9 比例直出高品質 PPTX 簡報，色彩嚴格還原原版 Google 簡報設定"""
@@ -108,31 +109,24 @@ class PptxReportBuilder:
         self.blank_layout = self.prs.slide_layouts[6]  # 全空白版型
 
         # ====================================================
-        # 🎨 原版精準色票定義 (對齊 Google Slides API 原始 RGB 數值)
+        # 🎨 原版精準色票定義
         # ====================================================
-        # 1. 封面背景深海軍藍：rgbColor(0.06, 0.15, 0.22)
         self.C_COVER_BG = RGBColor(15, 38, 56)
         self.C_COVER_SUBTITLE = RGBColor(204, 217, 230)
         self.C_WHITE = RGBColor(255, 255, 255)
 
-        # 2. 標題文字深藍：rgbColor(0.1, 0.2, 0.35)
         self.C_TITLE_NAVY = RGBColor(26, 51, 89)
 
-        # 3. 表格表頭經典雅緻灰海藍：rgbColor(0.15, 0.25, 0.38)
         self.C_TBL_HEADER_BG = RGBColor(38, 64, 97)
         self.C_TBL_HEADER_TEXT = RGBColor(255, 255, 255)
 
-        # 4. 合計 / 總計列柔和淺藍：rgbColor(0.91, 0.94, 0.97)
         self.C_TBL_HIGHLIGHT_BG = RGBColor(232, 240, 247)
 
-        # 5. 一般資料列底色與文字色：純白與 rgbColor(0.1, 0.1, 0.1)
         self.C_TBL_ROW_BG = RGBColor(255, 255, 255)
         self.C_TBL_TEXT_DARK = RGBColor(26, 26, 26)
 
-        # 6. 警告 / 衰退 / 事故增加紅字：rgbColor(0.85, 0.0, 0.0)
         self.C_TBL_RED = RGBColor(217, 0, 0)
 
-        # 7. 頁尾備註與副標文字：rgbColor(0.2, 0.2, 0.2)
         self.C_MUTED = RGBColor(100, 116, 139)
         self.C_FOOTNOTE = RGBColor(51, 51, 51)
 
@@ -153,12 +147,9 @@ class PptxReportBuilder:
     def _set_cell(self, cell, text, font_size=11, bold=False, color=None, bg_color=None, align=PP_ALIGN.CENTER):
         """統整設定儲存格內容與樣式，100% 還原原版色彩與邊框"""
         cell.text = str(text).strip() if (pd.notna(text) and str(text).strip() != "") else "—"
-        
-        # 明確指定儲存格底色，避免 PPT 預設佈景干擾
         cell.fill.solid()
         cell.fill.fore_color.rgb = bg_color if bg_color else self.C_TBL_ROW_BG
 
-        # 套用精緻細邊框
         self._set_border(cell, color_hex="CBD5E1")
 
         for p in cell.text_frame.paragraphs:
@@ -180,7 +171,6 @@ class PptxReportBuilder:
         bg.fill.fore_color.rgb = self.C_COVER_BG
         bg.line.fill.background()
 
-        # 主標題文字框
         tb = slide.shapes.add_textbox(Inches(1.0), Inches(2.2), Inches(11.333), Inches(2.2))
         tf = tb.text_frame
         tf.word_wrap = True
@@ -191,7 +181,6 @@ class PptxReportBuilder:
         p.font.bold = True
         p.font.color.rgb = self.C_WHITE
 
-        # 副標題與資訊區
         tb_sub = slide.shapes.add_textbox(Inches(1.0), Inches(4.5), Inches(11.333), Inches(2.0))
         tf_sub = tb_sub.text_frame
         tf_sub.word_wrap = True
@@ -210,7 +199,7 @@ class PptxReportBuilder:
         p2.space_before = Pt(14)
 
     def add_header_box(self, slide, title: str, subtitle: str = ""):
-        """投影片頂端標題區塊：採用原版專屬深藍色票"""
+        """投影片頂端標題區塊"""
         tb = slide.shapes.add_textbox(Inches(0.6), Inches(0.4), Inches(12.133), Inches(0.9))
         tf = tb.text_frame
         tf.word_wrap = True
@@ -229,7 +218,7 @@ class PptxReportBuilder:
             p2.font.color.rgb = self.C_MUTED
             p2.space_before = Pt(4)
 
-    def add_three_major_slide(self, data_rows, latest_day="09/16"):
+    def add_three_major_slide(self, data_rows, latest_day="09/17"):
         """P.2 三項重點違規統計表 (雙層表頭 + 原版表頭藍與合計淺藍)"""
         slide = self.prs.slides.add_slide(self.blank_layout)
         self.add_header_box(
@@ -245,12 +234,10 @@ class PptxReportBuilder:
         )
         tbl = table_shape.table
 
-        # 第一層表頭合併
         tbl.cell(0, 0).merge(tbl.cell(1, 0))
         tbl.cell(0, 1).merge(tbl.cell(0, 4))
         tbl.cell(0, 5).merge(tbl.cell(0, 8))
 
-        # 表頭以原版灰海藍 (C_TBL_HEADER_BG) 上色
         self._set_cell(tbl.cell(0, 0), "單位", font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
         self._set_cell(tbl.cell(0, 1), f"本期 ({latest_day}) 新增違規數", font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
         self._set_cell(tbl.cell(0, 5), "115年9月1日起累計數", font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
@@ -266,7 +253,7 @@ class PptxReportBuilder:
                 self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=11, bold=is_tot, color=self.C_TBL_TEXT_DARK, bg_color=bg)
 
     def add_major_detail_slide(self, cat_name: str, data_rows, date_str="0101-0915"):
-        """重大違規 7 大專項細表 (原版配色 + 負數及該列單位名稱標紅)"""
+        """重大違規 7 大專項細表 (負數及該列單位名稱標紅)"""
         slide = self.prs.slides.add_slide(self.blank_layout)
         self.add_header_box(
             slide,
@@ -299,7 +286,6 @@ class PptxReportBuilder:
             is_tot = (r_idx == 2)
             bg = self.C_TBL_HIGHLIGHT_BG if is_tot else self.C_TBL_ROW_BG
 
-            # 判斷該列合計比較值是否為負數，若為負數則單位名稱也需標紅
             has_negative = False
             try:
                 tot_comp_val = float(str(row[9]).replace(",", "").strip())
@@ -312,12 +298,10 @@ class PptxReportBuilder:
                 fg = self.C_TBL_TEXT_DARK
                 is_bold = is_tot
 
-                # 1. 若該列合計比較為負數，第 0 欄（單位名稱）標紅且加粗
                 if c_idx == 0 and has_negative:
                     fg = self.C_TBL_RED
                     is_bold = True
 
-                # 2. 比較欄位（7:攔停, 8:逕舉, 9:合計）數值為負數時標紅且加粗
                 if c_idx in [7, 8, 9]:
                     try:
                         c_num = float(str(val).replace(",", "").strip())
@@ -347,18 +331,15 @@ class PptxReportBuilder:
         )
         tbl = table_shape.table
 
-        # 表頭以原版灰海藍 (C_TBL_HEADER_BG) 上色
         font_sz = 12 if num_cols <= 4 else (10 if num_cols >= 8 else 11)
         for c_idx, col_name in enumerate(df.columns):
             self._set_cell(tbl.cell(0, c_idx), col_name, font_size=font_sz, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
-        # 內容列：合計列套用原版淺藍 (C_TBL_HIGHLIGHT_BG)，一般列為純白 (C_TBL_ROW_BG)
         for r_idx, row in df.iterrows():
             first_val = str(row.values[0]).strip()
             is_hl = any(k in first_val for k in ["合計", "總計", "舉發總數"])
             bg = self.C_TBL_HIGHLIGHT_BG if is_hl else self.C_TBL_ROW_BG
 
-            # 預先檢查重大違規總表中「同期比較」數值是否小於 0
             has_major_negative = False
             if is_major_table:
                 for c_idx, val in enumerate(row):
@@ -377,7 +358,6 @@ class PptxReportBuilder:
                 fg = self.C_TBL_TEXT_DARK
                 is_bold = is_hl
 
-                # A. 交通事故增加欄位以警示紅字呈現
                 if is_accident_table and any(k in col_name for k in ["比較", "增減", "比例"]):
                     try:
                         clean_num = float(cell_val.replace("%", "").replace("+", "").strip())
@@ -387,7 +367,6 @@ class PptxReportBuilder:
                     except Exception:
                         pass
 
-                # B. 重大違規總表：負數比較值與該列單位名稱均標紅加粗
                 if is_major_table:
                     if c_idx == 0 and has_major_negative:
                         fg = self.C_TBL_RED
@@ -403,7 +382,6 @@ class PptxReportBuilder:
 
                 self._set_cell(tbl.cell(r_idx + 1, c_idx), cell_val, font_size=font_sz, bold=is_bold, color=fg, bg_color=bg)
 
-        # 頁腳備註
         if footnote:
             tb_fn = slide.shapes.add_textbox(Inches(0.6), Inches(6.8), Inches(12.133), Inches(0.4))
             p_fn = tb_fn.text_frame.paragraphs[0]
@@ -420,7 +398,118 @@ class PptxReportBuilder:
         return out
 
 # ==========================================
-# 3. 數據準備層（鎖定資料截止日 115/09/15）
+# 3. 做法 B：自動掃描雲端硬碟/本機資料夾報表引擎
+# ==========================================
+def scan_and_load_three_major():
+    """
+    自動在當前目錄及『執法報表集中處』資料夾掃描《重點違規統計表》
+    自動辨識【月累計表】與【單日本期表】，並解析出最新統計數據
+    """
+    search_dirs = [
+        ".",
+        "執法報表集中處",
+        os.path.expanduser("~/Google 雲端硬碟/執法報表集中處"),
+        os.path.expanduser("~/Google Drive/執法報表集中處"),
+        os.path.expanduser("~/我的雲端硬碟/執法報表集中處"),
+    ]
+
+    found_files = []
+    for d in search_dirs:
+        if os.path.exists(d):
+            for f in os.listdir(d):
+                if "重點違規" in f and f.endswith(".xlsx") and not f.startswith("~$"):
+                    full_p = os.path.join(d, f)
+                    if full_p not in found_files:
+                        found_files.append(full_p)
+
+    if not found_files:
+        return None, None, "未在『執法報表集中處』或目錄下找到《重點違規統計表》Excel 檔案"
+
+    # 解析每個檔案的統計期間
+    file_info = []
+    for fp in found_files:
+        try:
+            df_hdr = pd.read_excel(fp, header=None, nrows=4)
+            period_str = str(df_hdr.iloc[2, 1]) if df_hdr.shape[0] > 2 and df_hdr.shape[1] > 1 else ""
+            m = re.search(r'本年度\d{3}(\d{2})(\d{2})至\d{3}(\d{2})(\d{2})', period_str)
+            if m:
+                s_m, s_d, e_m, e_d = m.groups()
+                is_single_day = (s_m == e_m and s_d == e_d)
+                file_info.append({
+                    "path": fp,
+                    "period_str": period_str,
+                    "is_single_day": is_single_day,
+                    "end_day": f"{e_m}/{e_d}",
+                    "start_day": f"{s_m}/{s_d}",
+                    "mtime": os.path.getmtime(fp)
+                })
+        except Exception:
+            pass
+
+    if not file_info:
+        return None, None, "無法解析檔案內的統計期間文字"
+
+    # 分辨累計表與單日本期表
+    single_files = [x for x in file_info if x["is_single_day"]]
+    cum_files = [x for x in file_info if not x["is_single_day"]]
+
+    if not single_files and len(file_info) >= 2:
+        # 依照修改時間或檔名備援判定
+        file_info.sort(key=lambda x: x["mtime"], reverse=True)
+        cur_info = file_info[0]
+        cum_info = file_info[1]
+    else:
+        cur_info = max(single_files, key=lambda x: x["mtime"]) if single_files else file_info[0]
+        cum_info = max(cum_files, key=lambda x: x["mtime"]) if cum_files else file_info[-1]
+
+    # 解析表格內容
+    def parse_sheet(file_path):
+        df = pd.read_excel(file_path, header=None)
+        data = {}
+        for r in range(5, len(df)):
+            unit = str(df.iloc[r, 0]).strip()
+            if not unit or unit == 'nan':
+                continue
+            # 闖紅燈(攔3,逕4), 逆向(攔7,逕8), 不讓行人(攔13,逕14)
+            red = (df.iloc[r, 3] or 0) + (df.iloc[r, 4] or 0)
+            rev = (df.iloc[r, 7] or 0) + (df.iloc[r, 8] or 0)
+            ped = (df.iloc[r, 13] or 0) + (df.iloc[r, 14] or 0)
+            data[unit] = {'red': int(red), 'rev': int(rev), 'ped': int(ped), 'tot': int(red + rev + ped)}
+        return data
+
+    d_cum = parse_sheet(cum_info["path"])
+    d_cur = parse_sheet(cur_info["path"])
+
+    unit_mapping = [
+        ("合計", "合計"),
+        ("聖亭所", "聖亭派出所"),
+        ("龍潭所", "龍潭派出所"),
+        ("中興所", "中興派出所"),
+        ("石門所", "石門派出所"),
+        ("高平所", "高平派出所"),
+        ("三和所", "三和派出所"),
+        ("交通分隊", "龍潭交通分隊")
+    ]
+
+    matrix = []
+    for display_name, raw_name in unit_mapping:
+        cur = d_cur.get(raw_name, {'red': 0, 'rev': 0, 'ped': 0, 'tot': 0})
+        cum = d_cum.get(raw_name, {'red': 0, 'rev': 0, 'ped': 0, 'tot': 0})
+        matrix.append([
+            display_name,
+            cur['red'], cur['rev'], cur['ped'], cur['tot'],
+            cum['red'], cum['rev'], cum['ped'], cum['tot']
+        ])
+
+    info_msg = (
+        f"🎯 自動載入成功！\n"
+        f"・本期來源：{os.path.basename(cur_info['path'])} ({cur_info['end_day']})\n"
+        f"・累計來源：{os.path.basename(cum_info['path'])} (9/1~{cum_info['end_day']})"
+    )
+    return cur_info["end_day"], matrix, info_msg
+
+# ==========================================
+# 4. 數據準備層（自動載入或安全備援）
 # ==========================================
 DATA_CUTOFF_ROC = 1150915
 roc_year = int(str(DATA_CUTOFF_ROC)[:3])
@@ -442,17 +531,28 @@ overload_footnote_exact = (
     f"統計截至 {roc_year}年{month:02d}月{day:02d}日 (入案日期)應達成率為{current_expected_rate:.1f}%"
 )
 
-latest_three_day = "09/16"
-three_major_raw_matrix = [
-    ["合計", 5, 0, 1, 6, 213, 111, 25, 349],
-    ["聖亭所", 2, 0, 0, 2, 15, 5, 0, 20],
-    ["龍潭所", 1, 0, 1, 2, 11, 0, 1, 12],
-    ["中興所", 0, 0, 0, 0, 38, 0, 0, 38],
-    ["石門所", 2, 0, 0, 2, 40, 1, 0, 41],
-    ["高平所", 0, 0, 0, 0, 28, 1, 0, 29],
-    ["三和所", 0, 0, 0, 0, 32, 34, 0, 66],
-    ["交通分隊", 0, 0, 0, 0, 49, 70, 24, 143],
-]
+# 執行方案 B：自動讀取
+auto_day, auto_matrix, auto_msg = scan_and_load_three_major()
+
+if auto_matrix:
+    latest_three_day = auto_day
+    three_major_raw_matrix = auto_matrix
+    st.sidebar.success(auto_msg)
+else:
+    # 安全備用靜態數據
+    latest_three_day = "09/17"
+    three_major_raw_matrix = [
+        ["合計", 30, 10, 5, 45, 291, 122, 34, 447],
+        ["聖亭所", 0, 1, 1, 2, 15, 6, 1, 22],
+        ["龍潭所", 3, 2, 1, 6, 17, 2, 3, 22],
+        ["中興所", 0, 0, 0, 0, 38, 0, 0, 38],
+        ["石門所", 10, 0, 3, 13, 50, 1, 3, 54],
+        ["高平所", 14, 6, 0, 20, 45, 7, 0, 52],
+        ["三和所", 0, 0, 0, 0, 32, 34, 0, 66],
+        ["交通分隊", 0, 1, 0, 1, 49, 71, 24, 144],
+    ]
+    st.sidebar.info(f"💡 目前使用系統最新內建數據 ({latest_three_day})。")
+
 preview_cols = pd.MultiIndex.from_tuples([
     ("單位", ""),
     (f"本期 ({latest_three_day}) 新增違規數", "闖紅燈"),
@@ -626,7 +726,7 @@ df_tech_final = pd.DataFrame([
 ])
 
 # ==========================================
-# 4. 前端自選與預覽區
+# 5. 前端自選與預覽區
 # ==========================================
 st.subheader("🎯 欲輸出的統計表自選控制")
 
@@ -666,7 +766,6 @@ with col_opt2:
     chk_det_ped = st.checkbox("重大違規細項：【不暫停讓行人】統計表", value=is_all)
     chk_det_speed = st.checkbox("重大違規細項：【嚴重超速】統計表", value=is_all)
 
-# 彙整勾選頁面
 selected_pages = []
 if chk_cover: selected_pages.append("封面")
 if chk_three: selected_pages.append("三項重點")
@@ -687,7 +786,7 @@ if chk_tech: selected_pages.append("科技執法")
 st.caption(f"📊 目前共勾選 **{len(selected_pages)}** 個頁面待編譯輸出。")
 
 # ==========================================
-# 4.1 檔案命名設定
+# 5.1 檔案命名設定
 # ==========================================
 st.markdown("---")
 st.markdown("#### 📁 簡報檔案命名與信件通知")
@@ -699,12 +798,11 @@ custom_file_name = st.text_input(
     help="產出後下載之檔案及郵件附件均會以此命名。"
 )
 
-# 取得目前 secrets 內配置之寄件/收件信箱提示
 curr_user = st.secrets.get("email", {}).get("user") or st.secrets.get("SMTP_USER", "")
 if curr_user:
     st.caption(f"📬 點擊「直出簡報並寄給我」後，系統將自動夾帶 PPTX 附件發送至：`{curr_user}`")
 else:
-    st.caption("💡 提示：若需自動寄信，請確認 secrets.toml 是否已配置 `[email] user = ...` 與 `password = ...`。即使不寄信也可直接點擊下載檔案。")
+    st.caption("💡 提示：若需自動寄信，請確認 secrets.toml 是否已配置 `[email] user = ...` 與 `password = ...`。")
 
 with st.expander("👀 點擊展開預覽待輸出業務數據"):
     t1, t2, t3, t4, t5, t6, t7 = st.tabs(["三項重點", "A1事故死亡", "A2事故受傷", "重大違規", "超載取締", "靜桃計畫", "科技執法成效"])
@@ -721,7 +819,7 @@ with st.expander("👀 點擊展開預覽待輸出業務數據"):
 st.write("")
 
 # ==========================================
-# 5. 執行指定輸出生成（做法 A：純 Python 記憶體編譯 PPTX）
+# 6. 執行指定輸出生成（做法 A：純 Python 記憶體編譯 PPTX）
 # ==========================================
 btn_col1, btn_col2 = st.columns([1.5, 2.5])
 
@@ -773,7 +871,7 @@ if btn_generate:
                         is_accident_table=True
                     )
 
-                # 重大違規總表：啟用 is_major_table=True
+                # 重大違規總表：負數與單位紅字
                 if chk_major_tot:
                     builder.add_table_slide(
                         slide_title="取締重大交通違規統計表",
@@ -782,7 +880,7 @@ if btn_generate:
                         is_major_table=True
                     )
 
-                # 專項細表（內部已設定：若合計為負數則單位名稱與負數均標紅）
+                # 專項細表：負數與單位紅字
                 det_map = [
                     (chk_det_jiu, "酒駕"), (chk_det_red, "闖紅燈"), (chk_det_rev, "逆向行駛"),
                     (chk_det_turn, "轉彎未依規定"), (chk_det_snake, "蛇行惡意逼車"),
@@ -844,7 +942,7 @@ if btn_generate:
                 st.error(f"❌ 產出 PPTX 簡報時發生錯誤：{str(e)}")
 
 # ==========================================
-# 6. 下載專用按鈕區 (若已產出則維持呈現)
+# 7. 下載專用按鈕區
 # ==========================================
 if "cached_pptx" in st.session_state:
     st.markdown("---")
