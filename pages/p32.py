@@ -562,9 +562,11 @@ def load_dynamic_accidents(report_dict):
 
             for r in range(len(df)):
                 col0 = str(df.iloc[r, 0]).strip()
+                # 去除半形/全形空白後再比對，避免報表把「合計」寫成「合 計」或「合　計」而比對失敗
+                col0_norm = col0.replace(" ", "").replace("\u3000", "")
                 matched_unit = None
                 for u in units:
-                    if u in col0:
+                    if u in col0_norm:
                         matched_unit = u
                         break
 
