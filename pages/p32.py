@@ -148,7 +148,7 @@ class PptxReportBuilder:
         cell.margin_left = Inches(0.04)
         cell.margin_right = Inches(0.04)
 
-        cell.text_frame.word_wrap = False  # 防止文字意外雙行膨脹
+        cell.text_frame.word_wrap = False
 
         for p in cell.text_frame.paragraphs:
             p.alignment = align
@@ -1109,12 +1109,12 @@ if btn_generate:
             if chk_three and df_three_preview is not None:
                 builder.add_three_major_slide(data_rows=three_matrix, latest_day=three_day)
 
-            # P.3 A1 死亡
+            # P.3 A1 死亡（已移除「口徑：24小時內死亡」）
             if chk_a1 and df_a1_dyn is not None:
                 a1_sub = (
                     f"本期：{acc_periods.get('cur', '—')} ｜ "
                     f"本年累計：{acc_periods.get('cum', '—')} ｜ "
-                    f"去年同期：{acc_periods.get('ly', '—')} ｜ 口徑：24小時內死亡"
+                    f"去年同期：{acc_periods.get('ly', '—')}"
                 )
                 builder.add_table_slide(
                     slide_title="A1類交通事故死亡人數統計表",
