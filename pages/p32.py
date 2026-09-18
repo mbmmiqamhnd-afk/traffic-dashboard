@@ -628,7 +628,7 @@ def load_dynamic_accidents(report_dict):
 
     return df_a1_dyn, df_a2_dyn, r_cur
 
-# --- 4.3 重大交通違規總表與 7 大專項細表 (修復二進位 Excel 讀取) ---
+# --- 4.3 重大交通違規總表與 7 大專項細表 (萬能容錯解析版) ---
 def load_dynamic_major(report_dict):
     major_files = {k: v for k, v in report_dict.items() if "重大違規" in k or "重點違規" in k}
     if not major_files:
@@ -642,24 +642,24 @@ def load_dynamic_major(report_dict):
     b_cum = get_latest_item("年累計") or get_latest_item("本年累計")
     b_ly = get_latest_item("去年累計")
 
-    # 若未按關鍵字命名，以檔案中統計期間長度識別
     if not (b_cur and b_cum and b_ly):
         all_parsed = []
         for fn, b_data in major_files.items():
             try:
-                df = pd.read_excel(io.BytesIO(b_data), header=None)
-                period_str = ""
-                for r in range(min(5, len(df))):
-                    row_txt = " ".join([str(x) for x in df.iloc[r].dropna()])
-                    m = re.search(r'(\d{7})至(\d{7})', row_txt)
-                    if m:
-                        period_str = f"{m.group(1)}~{m.group(2)}"
-                        break
+                df_test = pd.read_excel(io.BytesIO(b_data), header=None)
+                row_txt = " ".join([str(x) for x in df_test.iloc[2].dropna()]) if len(df_test) > 2 else ""
+                m = re.search(r'(\d{7})至(\d{7})', row_txt)
+                period_str = f"{m.group(1)}~{m.group(2)}" if m else ""
                 all_parsed.append((fn, b_data, period_str))
             except Exception:
-                pass
-        
-        # 尋找年累計 (包含 0101)、去年累計、以及本期 (短天期)
+                try:
+                    raw_text = b_data.decode('utf-8', errors='ignore')
+                    m = re.search(r'(\d{7})至(\d{7})', raw_text)
+                    period_str = f"{m.group(1)}~{m.group(2)}" if m else ""
+                    all_parsed.append((fn, b_data, period_str))
+                except Exception:
+                    pass
+
         for fn, b, p in all_parsed:
             if "0101" in p and not b_cum:
                 b_cum = b
@@ -668,19 +668,29 @@ def load_dynamic_major(report_dict):
             elif not b_cur:
                 b_cur = b
 
-    if not (b_cur and b_cum and b_ly):
+    if not (b_cum and b_ly):
         return None, None, ""
 
-    def parse_major_safe(b_data):
-        """以 pandas 完整讀取 Excel，徹底避免 ZIP 二進位解碼錯誤"""
+    def parse_major_universal(b_data):
         df = None
         try:
             df = pd.read_excel(io.BytesIO(b_data), header=None)
         except Exception:
+            pass
+
+        if df is None or df.empty:
             try:
                 raw_text = b_data.decode('utf-8', errors='ignore')
                 lines = [l.strip() for l in raw_text.split('\n') if ',' in l]
-                df = pd.DataFrame([list(csv.reader([l]))[0] for l in lines])
+                rows = []
+                for l in lines:
+                    if 'http' in l or '!1' in l:
+                        l = l.split('http')[0].split('!1')[0].strip()
+                    if l:
+                        for r in csv.reader([l]):
+                            if len(r) > 1:
+                                rows.append(r)
+                df = pd.DataFrame(rows)
             except Exception:
                 return "", {}
 
@@ -713,9 +723,9 @@ def load_dynamic_major(report_dict):
 
         return period, res
 
-    _, d_cur = parse_major_safe(b_cur)
-    p_cum, d_cum = parse_major_safe(b_cum)
-    _, d_ly = parse_major_safe(b_ly)
+    _, d_cur = parse_major_universal(b_cur) if b_cur else ("", {})
+    p_cum, d_cum = parse_major_universal(b_cum)
+    _, d_ly = parse_major_universal(b_ly)
 
     targets = {
         "合計": 18114, "科技執法": 6006, "聖亭所": 1941, "龍潭所": 2588, "中興所": 1941,
@@ -729,7 +739,6 @@ def load_dynamic_major(report_dict):
         cmv = d_cum.get(u, [0]*20)
         lyv = d_ly.get(u, [0]*20)
 
-        # 數值對齊：第 14 欄現場攔停、第 15 欄逕行舉發、第 16 欄本年總計、第 19 欄去年總計
         cur_s = cv[14] if len(cv) > 14 else 0
         cur_a = cv[15] if len(cv) > 15 else 0
 
@@ -755,7 +764,6 @@ def load_dynamic_major(report_dict):
         })
     df_major_dyn = pd.DataFrame(major_rows)
 
-    # 7 大細表：(攔停, 逕舉) 索引對照
     cat_indices = {
         "酒駕": (0, 1), "闖紅燈": (2, 3), "嚴重超速": (4, 5),
         "逆向行駛": (6, 7), "轉彎未依規定": (8, 9),
@@ -1079,7 +1087,7 @@ if btn_generate:
                 builder.add_table_slide(
                     slide_title="取締重大交通違規統計表",
                     df=df_major_dyn,
-                    footnote="重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」",
+                    footnote="重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行,惡意逼車」及「不暫停讓行人」",
                     is_major_table=True
                 )
 
