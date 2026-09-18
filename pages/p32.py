@@ -395,7 +395,6 @@ def fetch_files_from_gdrive_folder(folder_name="執法統計報表集中處"):
         return {}
     file_dict = {}
     try:
-        # 查詢資料夾 ID
         q_folder = f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
         res_f = service.files().list(q=q_folder, fields="files(id, name)").execute()
         f_items = res_f.get("files", [])
@@ -403,7 +402,6 @@ def fetch_files_from_gdrive_folder(folder_name="執法統計報表集中處"):
             return {}
         folder_id = f_items[0]["id"]
 
-        # 查詢資料夾內檔案
         q_files = f"'{folder_id}' in parents and trashed = false"
         res_files = service.files().list(q=q_files, fields="files(id, name, modifiedTime)").execute()
         for item in res_files.get("files", []):
@@ -427,14 +425,13 @@ MEMORY_REPORTS = {}
 # 1. 先嘗試自 Google 雲端硬碟取得
 gdrive_data = fetch_files_from_gdrive_folder("執法統計報表集中處")
 if not gdrive_data:
-    # 備援嘗試「執法報表集中處」或本機同步資料夾
     gdrive_data = fetch_files_from_gdrive_folder("執法報表集中處")
 
 if gdrive_data:
     MEMORY_REPORTS.update(gdrive_data)
     st.sidebar.success(f"☁️ 成功連接雲端硬碟！共載入 {len(gdrive_data)} 個最新報表")
 else:
-    # 檢查是否為本地同步資料夾
+    # 檢查本地環境下的資料夾（供本機測試）
     local_candidates = ["執法統計報表集中處", "執法報表集中處", "執法統計報表_已歸檔", "."]
     for d in local_candidates:
         if os.path.exists(d):
@@ -463,7 +460,7 @@ if not MEMORY_REPORTS:
     st.warning("⚠️ 目前【雲端硬碟執法報表集中處】無檔案，亦未於【本機上傳至網站】。\n請在側邊欄上傳 Excel 檔案或確認雲端硬碟配置。")
 
 # ==========================================
-# 4. 純動態報表解析核心 (無寫死數據)
+# 4. 純動態報表解析核心 (無寫死數據、絕不 IndexError)
 # ==========================================
 
 # --- 4.1 動態解析：三項重點違規 ---
@@ -525,7 +522,7 @@ def load_dynamic_three_major(report_dict):
 
     return cur_item["day_str"], matrix
 
-# --- 4.2 動態解析：交通事故 (A1 死亡、A2 受傷) ---
+# --- 4.2 動態解析：交通事故 (A1 死亡、A2 受傷) - 容錯強化版 ---
 def load_dynamic_accidents(report_dict):
     acc_files = {k: v for k, v in report_dict.items() if "交通事故" in k}
     if not acc_files:
@@ -543,39 +540,115 @@ def load_dynamic_accidents(report_dict):
     if not (b_cur and b_cum and b_ly):
         return None, None, None
 
-    def parse_acc(b_data):
-        raw_text = b_data.decode('utf-8', errors='ignore')
-        m_date = re.search(r'統計日期：\s*(\d{2,3}/\d{2}/\d{2})\s*至\s*(\d{2,3}/\d{2}/\d{2})', raw_text)
-        date_range = f"{m_date.group(1)}~{m_date.group(2)}" if m_date else ""
-
-        start = raw_text.find('總計,')
-        end = raw_text.find('備註：')
-        data_str = raw_text[start:end].strip() if start != -1 and end != -1 else raw_text
-
-        units = ["三和派出所", "高平派出所", "石門派出所", "中興派出所", "龍潭派出所", "聖亭派出所"]
-        for u in units:
-            data_str = re.sub(r'(\d+|\-|\")\s+' + u, r'\1\n' + u, data_str)
-
-        lines = [l.strip() for l in data_str.split('\n') if l.strip()]
+    def parse_acc_safe(b_data):
+        """雙重容錯解析：先以 pandas 二進位讀取，若失敗回退文字處理，全程保護長度索引"""
+        date_range = ""
         data = {}
-        for l in lines:
-            r = list(csv.reader([l]))[0]
-            u_name = "合計" if "總計" in r[0] else r[0].strip().replace("派出所", "所")
-            def to_i(val):
-                s = str(val).replace('"', '').replace(',', '').replace('-', '0').strip()
-                try: return int(float(s))
-                except: return 0
-            data[u_name] = {"a1_death": to_i(r[-6]), "a2_inj": to_i(r[-2])}
+        df = None
+
+        # 1. 優先使用 pandas / openpyxl 讀取二進位串流
+        try:
+            df = pd.read_excel(io.BytesIO(b_data), header=None)
+        except Exception:
+            pass
+
+        # 2. 若為標準 Excel 轉成的 DataFrame
+        if df is not None and not df.empty:
+            for r in range(min(5, len(df))):
+                row_txt = " ".join([str(x) for x in df.iloc[r].dropna()])
+                m_date = re.search(r'(\d{2,3}/\d{2}/\d{2})\s*至\s*(\d{2,3}/\d{2}/\d{2})', row_txt)
+                if m_date:
+                    date_range = f"{m_date.group(1)}~{m_date.group(2)}"
+                    break
+
+            units = [
+                "總計", "合計", "聖亭派出所", "龍潭派出所", "中興派出所",
+                "石門派出所", "高平派出所", "三和派出所",
+                "聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所"
+            ]
+
+            def clean_num(val):
+                s = str(val).replace(',', '').replace('"', '').replace('-', '0').strip()
+                try:
+                    return int(float(s))
+                except Exception:
+                    return 0
+
+            for r in range(len(df)):
+                col0 = str(df.iloc[r, 0]).strip()
+                matched_unit = None
+                for u in units:
+                    if u in col0:
+                        matched_unit = u
+                        break
+
+                if matched_unit:
+                    u_name = "合計" if any(k in matched_unit for k in ["總計", "合計"]) else matched_unit.replace("派出所", "所")
+                    row_vals = df.iloc[r].values
+
+                    # 警政系統標準格式：第 5 欄為 A1 死亡、第 9 欄為 A2 受傷
+                    a1_death = 0
+                    a2_inj = 0
+                    if len(row_vals) >= 10:
+                        a1_death = clean_num(row_vals[5])
+                        a2_inj = clean_num(row_vals[9])
+                    elif len(row_vals) >= 6:
+                        a1_death = clean_num(row_vals[-6])
+                        a2_inj = clean_num(row_vals[-2]) if len(row_vals) >= 2 else 0
+
+                    data[u_name] = {"a1_death": a1_death, "a2_inj": a2_inj}
+
+            return date_range, data
+
+        # 3. 回退文字模式（嚴格長度檢查，杜絕 IndexError）
+        try:
+            raw_text = b_data.decode('utf-8', errors='ignore')
+            m_date = re.search(r'統計日期：\s*(\d{2,3}/\d{2}/\d{2})\s*至\s*(\d{2,3}/\d{2}/\d{2})', raw_text)
+            date_range = f"{m_date.group(1)}~{m_date.group(2)}" if m_date else ""
+
+            start = raw_text.find('總計,')
+            end = raw_text.find('備註：')
+            data_str = raw_text[start:end].strip() if start != -1 and end != -1 else raw_text
+
+            units = ["三和派出所", "高平派出所", "石門派出所", "中興派出所", "龍潭派出所", "聖亭派出所"]
+            for u in units:
+                data_str = re.sub(r'(\d+|\-|\")\s+' + u, r'\1\n' + u, data_str)
+
+            lines = [l.strip() for l in data_str.split('\n') if l.strip()]
+            for l in lines:
+                row_tokens = list(csv.reader([l]))
+                if not row_tokens or not row_tokens[0]:
+                    continue
+                r = row_tokens[0]
+                if len(r) < 6:
+                    continue  # 長度過濾
+
+                u_name = "合計" if "總計" in r[0] else r[0].strip().replace("派出所", "所")
+
+                def to_i(val):
+                    s = str(val).replace('"', '').replace(',', '').replace('-', '0').strip()
+                    try:
+                        return int(float(s))
+                    except Exception:
+                        return 0
+
+                data[u_name] = {
+                    "a1_death": to_i(r[-6]),
+                    "a2_inj": to_i(r[-2]) if len(r) >= 2 else 0
+                }
+        except Exception:
+            pass
+
         return date_range, data
 
-    r_cur, d_cur = parse_acc(b_cur)
-    r_prev, d_prev = parse_acc(b_prev) if b_prev else ("", {})
-    r_cum, d_cum = parse_acc(b_cum)
-    r_ly, d_ly = parse_acc(b_ly)
+    r_cur, d_cur = parse_acc_safe(b_cur)
+    r_prev, d_prev = parse_acc_safe(b_prev) if b_prev else ("", {})
+    r_cum, d_cum = parse_acc_safe(b_cum)
+    r_ly, d_ly = parse_acc_safe(b_ly)
 
     units_order = ["合計", "聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所"]
 
-    # A1 死亡
+    # 組合 A1 死亡表
     a1_list = []
     for u in units_order:
         c_val = d_cur.get(u, {}).get("a1_death", 0)
@@ -590,7 +663,7 @@ def load_dynamic_accidents(report_dict):
         })
     df_a1_dyn = pd.DataFrame(a1_list)
 
-    # A2 受傷
+    # 組合 A2 受傷表
     a2_list = []
     for u in units_order:
         c_val = d_cur.get(u, {}).get("a2_inj", 0)
@@ -679,7 +752,7 @@ def load_dynamic_major(report_dict):
         })
     df_major_dyn = pd.DataFrame(major_rows)
 
-    # 7 大專項細表
+    # 7 大細表
     cat_indices = {
         "酒駕": (0, 1), "闖紅燈": (2, 3), "逆向行駛": (6, 7),
         "轉彎未依規定": (8, 9), "蛇行惡意逼車": (10, 11),
