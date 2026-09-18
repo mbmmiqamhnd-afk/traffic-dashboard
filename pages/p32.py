@@ -142,6 +142,12 @@ class PptxReportBuilder:
         cell.fill.fore_color.rgb = bg_color if bg_color else self.C_TBL_ROW_BG
         self._set_border(cell, color_hex="CBD5E1")
 
+        # 緊縮上下與左右內距，釋放垂直空間防止破版
+        cell.margin_top = Inches(0.04)
+        cell.margin_bottom = Inches(0.04)
+        cell.margin_left = Inches(0.05)
+        cell.margin_right = Inches(0.05)
+
         for p in cell.text_frame.paragraphs:
             p.alignment = align
             for r in p.runs:
@@ -234,12 +240,13 @@ class PptxReportBuilder:
             for c_idx, val in enumerate(row):
                 self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=11, bold=is_tot, color=self.C_TBL_TEXT_DARK, bg_color=bg)
 
-    def add_major_detail_slide(self, cat_name: str, data_rows, date_str=""):
+    def add_major_detail_slide(self, cat_name: str, data_rows, custom_subtitle=""):
         slide = self.prs.slides.add_slide(self.blank_layout)
+        sub_text = custom_subtitle if custom_subtitle else "口徑包含現場攔停與逕行舉發 ｜ 製表單位：龍潭分局交通組"
         self.add_header_box(
             slide,
-            f"取締【{cat_name}】違規統計表 {f'(累計至 {date_str})' if date_str else ''}",
-            "口徑包含現場攔停與逕行舉發 ｜ 製表單位：龍潭分局交通組"
+            f"取締【{cat_name}】違規統計表",
+            sub_text
         )
 
         num_rows = len(data_rows) + 2
@@ -252,7 +259,7 @@ class PptxReportBuilder:
         tbl.cell(0, 4).merge(tbl.cell(0, 6))
         tbl.cell(0, 7).merge(tbl.cell(0, 9))
 
-        self._set_cell(tbl.cell(0, 0), "統計期間", font_size=11, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 0), "單位", font_size=11, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
         self._set_cell(tbl.cell(0, 1), "今年累計", font_size=11, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
         self._set_cell(tbl.cell(0, 4), "去年累計", font_size=11, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
         self._set_cell(tbl.cell(0, 7), "今年與去年同期比較", font_size=11, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
@@ -302,7 +309,7 @@ class PptxReportBuilder:
         tbl_width = custom_width_in if custom_width_in else (8.0 if num_cols <= 2 else 12.133)
         tbl_left = (13.333 - tbl_width) / 2
         tbl_top = 1.4
-        tbl_height = min(5.2, max(2.5, num_rows * 0.42))
+        tbl_height = min(5.2, max(2.5, num_rows * 0.40))
 
         table_shape = slide.shapes.add_table(num_rows, num_cols, Inches(tbl_left), Inches(tbl_top), Inches(tbl_width), Inches(tbl_height))
         tbl = table_shape.table
@@ -562,7 +569,6 @@ def load_dynamic_accidents(report_dict):
 
             for r in range(len(df)):
                 col0 = str(df.iloc[r, 0]).strip()
-                # 去除半形/全形空白後再比對，避免報表把「合計」寫成「合 計」或「合　計」而比對失敗
                 col0_norm = col0.replace(" ", "").replace("\u3000", "")
                 matched_unit = None
                 for u in units:
@@ -584,9 +590,6 @@ def load_dynamic_accidents(report_dict):
 
                     data[u_name] = {"a1_death": a1_death, "a2_inj": a2_inj}
 
-            # 來源報表的「總計」列本身是空白（範本只提供六個所的明細，未內建加總），
-            # 若直接讀取該列數值一律會是 0，因此改為六個所實際數字加總算出合計，
-            # 不論來源是否已填好總計列，一律以加總結果為準。
             station_names = ["聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所"]
             data["合計"] = {
                 "a1_death": sum(data.get(s, {}).get("a1_death", 0) for s in station_names),
@@ -610,11 +613,11 @@ def load_dynamic_accidents(report_dict):
         cum_val = d_cum.get(u, {}).get("a1_death", 0)
         ly_val = d_ly.get(u, {}).get("a1_death", 0)
         a1_list.append({
-            "統計期間": u,
-            f"本期({r_cur})": c_val,
-            f"本年累計({r_cum})": cum_val,
-            f"去年累計({r_ly})": ly_val,
-            "本年與去年同期比較": cum_val - ly_val
+            "單位": u,
+            "本期": c_val,
+            "本年累計": cum_val,
+            "去年累計": ly_val,
+            "同期比較": cum_val - ly_val
         })
     df_a1_dyn = pd.DataFrame(a1_list)
 
@@ -627,27 +630,30 @@ def load_dynamic_accidents(report_dict):
         diff = cum_val - ly_val
         rate = f"{(diff / ly_val)*100:.2f}%" if ly_val else "—"
         a2_list.append({
-            "統計期間": u,
-            f"本期({r_cur})": c_val,
-            f"前期({r_prev})": p_val,
-            f"本年累計({r_cum})": cum_val,
-            f"去年累計({r_ly})": ly_val,
-            "本年與去年同期比較": diff,
+            "單位": u,
+            "本期": c_val,
+            "前期": p_val,
+            "本年累計": cum_val,
+            "去年累計": ly_val,
+            "同期比較": diff,
             "增減比例": rate
         })
     df_a2_dyn = pd.DataFrame(a2_list)
 
-    return df_a1_dyn, df_a2_dyn, r_cur
+    acc_periods = {
+        "cur": r_cur,
+        "prev": r_prev,
+        "cum": r_cum,
+        "ly": r_ly
+    }
+    return df_a1_dyn, df_a2_dyn, acc_periods
 
-# --- 4.3 重大交通違規總表與 7 大專項細表 (修復二進位 Excel 讀取) ---
+# --- 4.3 重大交通違規總表與 7 大專項細表 ---
 def load_dynamic_major(report_dict):
     major_files = {k: v for k, v in report_dict.items() if "重大違規" in k or "重點違規" in k}
     if not major_files:
-        return None, None, ""
+        return None, None, {}
 
-    # 修正重點：get_latest_item 支援 exclude 參數，避免「本年累計」的比對
-    # 誤抓到檔名同樣含有「年累計」子字串的「去年累計」檔案，導致
-    # b_cum 與 b_ly 指向同一份資料、使所有「本年與去年同期比較」都算出 0。
     def get_latest_item(pat, exclude=None):
         matched = [
             k for k in major_files.keys()
@@ -659,7 +665,6 @@ def load_dynamic_major(report_dict):
     b_cum = get_latest_item("本年累計") or get_latest_item("年累計", exclude="去年")
     b_ly = get_latest_item("去年累計")
 
-    # 若未按關鍵字命名，以檔案中統計期間長度識別
     if not (b_cur and b_cum and b_ly):
         all_parsed = []
         for fn, b_data in major_files.items():
@@ -676,7 +681,6 @@ def load_dynamic_major(report_dict):
             except Exception:
                 pass
 
-        # 尋找年累計 (包含 0101)、去年累計、以及本期 (短天期)
         for fn, b, p in all_parsed:
             if "0101" in p and not b_cum:
                 b_cum = b
@@ -686,10 +690,9 @@ def load_dynamic_major(report_dict):
                 b_cur = b
 
     if not (b_cur and b_cum and b_ly):
-        return None, None, ""
+        return None, None, {}
 
     def parse_major_safe(b_data):
-        """以 pandas 完整讀取 Excel，徹底避免 ZIP 二進位解碼錯誤"""
         df = None
         try:
             df = pd.read_excel(io.BytesIO(b_data), header=None)
@@ -734,13 +737,9 @@ def load_dynamic_major(report_dict):
     p_cum, d_cum = parse_major_safe(b_cum)
     p_ly, d_ly = parse_major_safe(b_ly)
 
-    # 欄位標題掛上各自的統計期間日期；若該檔案抓不到期間字串則退回無日期的標題
-    col_cur_s = f"本期({p_cur})(攔停)" if p_cur else "本期(攔停)"
-    col_cur_a = f"本期({p_cur})(逕舉)" if p_cur else "本期(逕舉)"
-    col_cum_s = f"本年累計({p_cum})(攔停)" if p_cum else "本年累計(攔停)"
-    col_cum_a = f"本年累計({p_cum})(逕舉)" if p_cum else "本年累計(逕舉)"
-    col_ly_s = f"去年累計({p_ly})(攔停)" if p_ly else "去年累計(攔停)"
-    col_ly_a = f"去年累計({p_ly})(逕舉)" if p_ly else "去年累計(逕舉)"
+    col_cur_s, col_cur_a = "本期(攔停)", "本期(逕舉)"
+    col_cum_s, col_cum_a = "本年累計(攔停)", "本年累計(逕舉)"
+    col_ly_s, col_ly_a = "去年累計(攔停)", "去年累計(逕舉)"
 
     targets = {
         "合計": 18114, "科技執法": 6006, "聖亭所": 1941, "龍潭所": 2588, "中興所": 1941,
@@ -754,7 +753,6 @@ def load_dynamic_major(report_dict):
         cmv = d_cum.get(u, [0]*20)
         lyv = d_ly.get(u, [0]*20)
 
-        # 數值對齊：第 14 欄現場攔停、第 15 欄逕行舉發、第 16 欄本年總計、第 19 欄去年總計
         cur_s = cv[14] if len(cv) > 14 else 0
         cur_a = cv[15] if len(cv) > 15 else 0
 
@@ -772,15 +770,14 @@ def load_dynamic_major(report_dict):
         if u == "警備隊": diff = "—"
 
         major_rows.append({
-            "統計期間": u,
+            "單位": u,
             col_cur_s: cur_s, col_cur_a: cur_a,
             col_cum_s: cum_s, col_cum_a: cum_a,
             col_ly_s: ly_s, col_ly_a: ly_a,
-            "本年與去年同期比較": diff, "目標值": tgt, "達成率": achieve
+            "同期比較": diff, "目標值": tgt, "達成率": achieve
         })
     df_major_dyn = pd.DataFrame(major_rows)
 
-    # 7 大細表：(攔停, 逕舉) 索引對照
     cat_indices = {
         "酒駕": (0, 1), "闖紅燈": (2, 3), "嚴重超速": (4, 5),
         "逆向行駛": (6, 7), "轉彎未依規定": (8, 9),
@@ -801,13 +798,18 @@ def load_dynamic_major(report_dict):
             rows.append([u, cs, ca, ct, ls, la, lt, ds, da, dt])
         detail_dict[cat] = rows
 
-    return df_major_dyn, detail_dict, p_cum
+    major_periods = {
+        "cur": p_cur,
+        "cum": p_cum,
+        "ly": p_ly
+    }
+    return df_major_dyn, detail_dict, major_periods
 
 # --- 4.4 取締超載違規件數統計表 ---
 def load_dynamic_overload(report_dict):
     ov_files = {k: v for k, v in report_dict.items() if "超載違規" in k}
     if not ov_files:
-        return None, ""
+        return None, "", {}
 
     def get_latest_item(pat):
         matched = [k for k in ov_files.keys() if pat in k]
@@ -818,7 +820,7 @@ def load_dynamic_overload(report_dict):
     b_ly = get_latest_item("去年累計")
 
     if not (b_cum and b_ly):
-        return None, ""
+        return None, "", {}
 
     def _extract_period_str(df, max_rows=10):
         for r in range(min(max_rows, len(df))):
@@ -865,10 +867,6 @@ def load_dynamic_overload(report_dict):
     p_cum, d_cum = parse_ov_sheets(b_cum)
     p_ly, d_ly = parse_ov_sheets(b_ly)
 
-    col_cur = f"本期({p_cur})" if p_cur else "本期"
-    col_cum = f"本年累計({p_cum})" if p_cum else "本年累計"
-    col_ly = f"去年累計({p_ly})" if p_ly else "去年累計"
-
     targets = {
         "合計": 127, "聖亭所": 20, "龍潭所": 27, "中興所": 20,
         "石門所": 16, "高平所": 14, "三和所": 8, "警備隊": 0, "交通分隊": 22
@@ -886,26 +884,27 @@ def load_dynamic_overload(report_dict):
         if u == "警備隊": diff = 0
 
         rows.append({
-            "統計期間": u,
-            col_cur: c_val,
-            col_cum: cum_val,
-            col_ly: ly_val,
-            "本年與去年同期比較": diff,
+            "單位": u,
+            "本期": c_val,
+            "本年累計": cum_val,
+            "去年累計": ly_val,
+            "同期比較": diff,
             "目標值": tgt,
             "達成率": achieve
         })
     if rows:
-        tot_c = sum(r[col_cur] for r in rows[1:])
-        tot_cum = sum(r[col_cum] for r in rows[1:])
-        tot_ly = sum(r[col_ly] for r in rows[1:])
-        rows[0][col_cur] = tot_c
-        rows[0][col_cum] = tot_cum
-        rows[0][col_ly] = tot_ly
-        rows[0]["本年與去年同期比較"] = tot_cum - tot_ly
+        tot_c = sum(r["本期"] for r in rows[1:])
+        tot_cum = sum(r["本年累計"] for r in rows[1:])
+        tot_ly = sum(r["去年累計"] for r in rows[1:])
+        rows[0]["本期"] = tot_c
+        rows[0]["本年累計"] = tot_cum
+        rows[0]["去年累計"] = tot_ly
+        rows[0]["同期比較"] = tot_cum - tot_ly
         rows[0]["達成率"] = f"{(tot_cum / 127)*100:.0f}%"
 
     footnote = "本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準。"
-    return pd.DataFrame(rows), footnote
+    ov_periods = {"cur": p_cur, "cum": p_cum, "ly": p_ly}
+    return pd.DataFrame(rows), footnote, ov_periods
 
 # --- 4.5 「靜桃計畫」大執法專案統計表 ---
 def load_dynamic_jingtao(report_dict):
@@ -934,7 +933,7 @@ def load_dynamic_jingtao(report_dict):
                 key = u.replace("所", "")
                 val = counts.get(key, counts.get(u, 0))
                 rows.append({
-                    "統計期間": u,
+                    "單位": u,
                     "本期(22-06)": 0,
                     "本期(06-22)": 0,
                     "累計(22-06)": int(val * 0.44),
@@ -996,9 +995,9 @@ if three_matrix:
 else:
     df_three_preview = None
 
-df_a1_dyn, df_a2_dyn, cur_acc_period = load_dynamic_accidents(MEMORY_REPORTS)
-df_major_dyn, detail_dict_dyn, major_period = load_dynamic_major(MEMORY_REPORTS)
-df_overload_dyn, overload_fn = load_dynamic_overload(MEMORY_REPORTS)
+df_a1_dyn, df_a2_dyn, acc_periods = load_dynamic_accidents(MEMORY_REPORTS)
+df_major_dyn, detail_dict_dyn, major_periods = load_dynamic_major(MEMORY_REPORTS)
+df_overload_dyn, overload_fn, ov_periods = load_dynamic_overload(MEMORY_REPORTS)
 df_jingtao_dyn = load_dynamic_jingtao(MEMORY_REPORTS)
 df_tech_dyn, tech_title = load_dynamic_tech(MEMORY_REPORTS)
 
@@ -1111,17 +1110,44 @@ if btn_generate:
 
             # P.3 A1 死亡
             if chk_a1 and df_a1_dyn is not None:
-                builder.add_table_slide(slide_title="A1類交通事故死亡人數統計表", df=df_a1_dyn, is_accident_table=True)
+                a1_sub = (
+                    f"本期：{acc_periods.get('cur', '—')} ｜ "
+                    f"本年累計：{acc_periods.get('cum', '—')} ｜ "
+                    f"去年同期：{acc_periods.get('ly', '—')} ｜ 口徑：24小時內死亡"
+                )
+                builder.add_table_slide(
+                    slide_title="A1類交通事故死亡人數統計表",
+                    df=df_a1_dyn,
+                    subtitle=a1_sub,
+                    is_accident_table=True
+                )
 
             # P.4 A2 受傷
             if chk_a2 and df_a2_dyn is not None:
-                builder.add_table_slide(slide_title="A2類交通事故受傷人數統計表", df=df_a2_dyn, is_accident_table=True)
+                a2_sub = (
+                    f"本期：{acc_periods.get('cur', '—')} ｜ "
+                    f"前期：{acc_periods.get('prev', '—')} ｜ "
+                    f"本年累計：{acc_periods.get('cum', '—')} ｜ "
+                    f"去年同期：{acc_periods.get('ly', '—')}"
+                )
+                builder.add_table_slide(
+                    slide_title="A2類交通事故受傷人數統計表",
+                    df=df_a2_dyn,
+                    subtitle=a2_sub,
+                    is_accident_table=True
+                )
 
             # P.5 重大違規總表
             if chk_major_tot and df_major_dyn is not None:
+                p_cur_str = f"本期：{major_periods.get('cur', '')} ｜ " if major_periods.get('cur') else ""
+                p_cum_str = f"本年累計：{major_periods.get('cum', '')} ｜ " if major_periods.get('cum') else ""
+                p_ly_str = f"去年同期：{major_periods.get('ly', '')}" if major_periods.get('ly') else ""
+                sub_txt = f"{p_cur_str}{p_cum_str}{p_ly_str}".rstrip(" ｜ ")
+
                 builder.add_table_slide(
                     slide_title="取締重大交通違規統計表",
                     df=df_major_dyn,
+                    subtitle=sub_txt,
                     footnote="重大交通違規指：「酒駕」、「闖紅燈」、「嚴重超速」、「逆向行駛」、「轉彎未依規定」、「蛇行、惡意逼車」及「不暫停讓行人」",
                     is_major_table=True
                 )
@@ -1133,15 +1159,25 @@ if btn_generate:
                     (chk_det_turn, "轉彎未依規定"), (chk_det_snake, "蛇行惡意逼車"),
                     (chk_det_ped, "不暫停讓行人"), (chk_det_speed, "嚴重超速")
                 ]
+                cum_range = major_periods.get("cum", "")
+                ly_range = major_periods.get("ly", "")
+                det_subtitle = f"本年累計：{cum_range} ｜ 去年同期：{ly_range} ｜ 口徑包含現場攔停與逕行舉發" if cum_range else "口徑包含現場攔停與逕行舉發"
+
                 for is_chk, cat in det_map:
                     if is_chk and cat in detail_dict_dyn:
-                        builder.add_major_detail_slide(cat_name=cat, data_rows=detail_dict_dyn[cat], date_str=major_period)
+                        builder.add_major_detail_slide(cat_name=cat, data_rows=detail_dict_dyn[cat], custom_subtitle=det_subtitle)
 
             # P.6 超載取締
             if chk_overload and df_overload_dyn is not None:
+                ov_sub = (
+                    f"本期：{ov_periods.get('cur', '—')} ｜ "
+                    f"本年累計：{ov_periods.get('cum', '—')} ｜ "
+                    f"去年同期：{ov_periods.get('ly', '—')}"
+                )
                 builder.add_table_slide(
                     slide_title="取締超載違規件數統計表",
                     df=df_overload_dyn,
+                    subtitle=ov_sub,
                     footnote=overload_fn
                 )
 
@@ -1149,7 +1185,8 @@ if btn_generate:
             if chk_jingtao and df_jingtao_dyn is not None:
                 builder.add_table_slide(
                     slide_title="「靜桃計畫」大執法專案統計表",
-                    df=df_jingtao_dyn
+                    df=df_jingtao_dyn,
+                    subtitle="改裝排氣管及噪音車輛通報取締成果"
                 )
 
             # P.8 科技執法
