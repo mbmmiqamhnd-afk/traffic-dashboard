@@ -49,7 +49,7 @@ if not HAS_PPTX:
     st.stop()
 
 # ==========================================
-# 1. 郵件通知函式（參照毒駕專案設定：直接夾帶附件寄給自己）
+# 1. 郵件通知函式（參照專案設定：直接夾帶附件寄給自己）
 # ==========================================
 def send_pptx_email_to_self(pptx_bytes: io.BytesIO, file_name: str) -> tuple:
     """
@@ -112,7 +112,7 @@ class PptxReportBuilder:
         # ====================================================
         # 1. 封面背景深海軍藍：rgbColor(0.06, 0.15, 0.22)
         self.C_COVER_BG = RGBColor(15, 38, 56)
-        self.C_COVER_SUBTITLE = RGBColor(204, 217, 230) # rgbColor(0.8, 0.85, 0.9)
+        self.C_COVER_SUBTITLE = RGBColor(204, 217, 230)
         self.C_WHITE = RGBColor(255, 255, 255)
 
         # 2. 標題文字深藍：rgbColor(0.1, 0.2, 0.35)
@@ -266,7 +266,7 @@ class PptxReportBuilder:
                 self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=11, bold=is_tot, color=self.C_TBL_TEXT_DARK, bg_color=bg)
 
     def add_major_detail_slide(self, cat_name: str, data_rows, date_str="0101-0915"):
-        """重大違規 7 大專項細表 (原版配色 + 衰退紅字)"""
+        """重大違規 7 大專項細表 (原版配色 + 負數及該列單位名稱標紅)"""
         slide = self.prs.slides.add_slide(self.blank_layout)
         self.add_header_box(
             slide,
@@ -298,10 +298,26 @@ class PptxReportBuilder:
         for r_idx, row in enumerate(data_rows, start=2):
             is_tot = (r_idx == 2)
             bg = self.C_TBL_HIGHLIGHT_BG if is_tot else self.C_TBL_ROW_BG
+
+            # 判斷該列合計比較值是否為負數，若為負數則單位名稱也需標紅
+            has_negative = False
+            try:
+                tot_comp_val = float(str(row[9]).replace(",", "").strip())
+                if tot_comp_val < 0:
+                    has_negative = True
+            except Exception:
+                pass
+
             for c_idx, val in enumerate(row):
                 fg = self.C_TBL_TEXT_DARK
                 is_bold = is_tot
-                # 比較欄位衰退以原版警示紅字呈現
+
+                # 1. 若該列合計比較為負數，第 0 欄（單位名稱）標紅且加粗
+                if c_idx == 0 and has_negative:
+                    fg = self.C_TBL_RED
+                    is_bold = True
+
+                # 2. 比較欄位（7:攔停, 8:逕舉, 9:合計）數值為負數時標紅且加粗
                 if c_idx in [7, 8, 9]:
                     try:
                         c_num = float(str(val).replace(",", "").strip())
@@ -310,9 +326,10 @@ class PptxReportBuilder:
                             is_bold = True
                     except Exception:
                         pass
+
                 self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=10, bold=is_bold, color=fg, bg_color=bg)
 
-    def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", is_accident_table: bool = False, custom_width_in: float = None):
+    def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", is_accident_table: bool = False, is_major_table: bool = False, custom_width_in: float = None):
         """標準表格投影片 (A1, A2, 重大違規總表, 超載, 靜桃, 科技執法)"""
         slide = self.prs.slides.add_slide(self.blank_layout)
         self.add_header_box(slide, slide_title, subtitle)
@@ -341,13 +358,26 @@ class PptxReportBuilder:
             is_hl = any(k in first_val for k in ["合計", "總計", "舉發總數"])
             bg = self.C_TBL_HIGHLIGHT_BG if is_hl else self.C_TBL_ROW_BG
 
+            # 預先檢查重大違規總表中「同期比較」數值是否小於 0
+            has_major_negative = False
+            if is_major_table:
+                for c_idx, val in enumerate(row):
+                    col_name = str(df.columns[c_idx])
+                    if "同期比較" in col_name or "比較" in col_name:
+                        try:
+                            clean_num = float(str(val).replace(",", "").strip())
+                            if clean_num < 0:
+                                has_major_negative = True
+                        except Exception:
+                            pass
+
             for c_idx, val in enumerate(row):
                 cell_val = str(val).strip()
                 col_name = str(df.columns[c_idx])
                 fg = self.C_TBL_TEXT_DARK
                 is_bold = is_hl
 
-                # 交通事故增加欄位以原版警示紅字呈現
+                # A. 交通事故增加欄位以警示紅字呈現
                 if is_accident_table and any(k in col_name for k in ["比較", "增減", "比例"]):
                     try:
                         clean_num = float(cell_val.replace("%", "").replace("+", "").strip())
@@ -356,6 +386,20 @@ class PptxReportBuilder:
                             is_bold = True
                     except Exception:
                         pass
+
+                # B. 重大違規總表：負數比較值與該列單位名稱均標紅加粗
+                if is_major_table:
+                    if c_idx == 0 and has_major_negative:
+                        fg = self.C_TBL_RED
+                        is_bold = True
+                    elif "同期比較" in col_name or "比較" in col_name:
+                        try:
+                            clean_num = float(cell_val.replace(",", "").strip())
+                            if clean_num < 0:
+                                fg = self.C_TBL_RED
+                                is_bold = True
+                        except Exception:
+                            pass
 
                 self._set_cell(tbl.cell(r_idx + 1, c_idx), cell_val, font_size=font_sz, bold=is_bold, color=fg, bg_color=bg)
 
@@ -729,14 +773,16 @@ if btn_generate:
                         is_accident_table=True
                     )
 
+                # 重大違規總表：啟用 is_major_table=True
                 if chk_major_tot:
                     builder.add_table_slide(
                         slide_title="取締重大交通違規統計表",
                         df=df_major,
-                        footnote=major_footnote_exact
+                        footnote=major_footnote_exact,
+                        is_major_table=True
                     )
 
-                # 專項細表
+                # 專項細表（內部已設定：若合計為負數則單位名稱與負數均標紅）
                 det_map = [
                     (chk_det_jiu, "酒駕"), (chk_det_red, "闖紅燈"), (chk_det_rev, "逆向行駛"),
                     (chk_det_turn, "轉彎未依規定"), (chk_det_snake, "蛇行惡意逼車"),
