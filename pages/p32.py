@@ -719,9 +719,17 @@ def load_dynamic_major(report_dict):
 
         return period, res
 
-    _, d_cur = parse_major_safe(b_cur)
+    p_cur, d_cur = parse_major_safe(b_cur)
     p_cum, d_cum = parse_major_safe(b_cum)
-    _, d_ly = parse_major_safe(b_ly)
+    p_ly, d_ly = parse_major_safe(b_ly)
+
+    # 欄位標題掛上各自的統計期間日期；若該檔案抓不到期間字串則退回無日期的標題
+    col_cur_s = f"本期({p_cur})(攔停)" if p_cur else "本期(攔停)"
+    col_cur_a = f"本期({p_cur})(逕舉)" if p_cur else "本期(逕舉)"
+    col_cum_s = f"本年累計({p_cum})(攔停)" if p_cum else "本年累計(攔停)"
+    col_cum_a = f"本年累計({p_cum})(逕舉)" if p_cum else "本年累計(逕舉)"
+    col_ly_s = f"去年累計({p_ly})(攔停)" if p_ly else "去年累計(攔停)"
+    col_ly_a = f"去年累計({p_ly})(逕舉)" if p_ly else "去年累計(逕舉)"
 
     targets = {
         "合計": 18114, "科技執法": 6006, "聖亭所": 1941, "龍潭所": 2588, "中興所": 1941,
@@ -754,9 +762,9 @@ def load_dynamic_major(report_dict):
 
         major_rows.append({
             "統計期間": u,
-            "本期(攔停)": cur_s, "本期(逕舉)": cur_a,
-            "本年累計(攔停)": cum_s, "本年累計(逕舉)": cum_a,
-            "去年累計(攔停)": ly_s, "去年累計(逕舉)": ly_a,
+            col_cur_s: cur_s, col_cur_a: cur_a,
+            col_cum_s: cum_s, col_cum_a: cum_a,
+            col_ly_s: ly_s, col_ly_a: ly_a,
             "本年與去年同期比較": diff, "目標值": tgt, "達成率": achieve
         })
     df_major_dyn = pd.DataFrame(major_rows)
@@ -801,12 +809,26 @@ def load_dynamic_overload(report_dict):
     if not (b_cum and b_ly):
         return None, ""
 
+    def _extract_period_str(df, max_rows=10):
+        for r in range(min(max_rows, len(df))):
+            row_txt = " ".join([str(x) for x in df.iloc[r].dropna()])
+            m = re.search(r'(\d{7})至(\d{7})', row_txt)
+            if m:
+                return f"{m.group(1)}~{m.group(2)}"
+            m2 = re.search(r'(\d{2,3}/\d{2}/\d{2})\s*至\s*(\d{2,3}/\d{2}/\d{2})', row_txt)
+            if m2:
+                return f"{m2.group(1)}~{m2.group(2)}"
+        return ""
+
     def parse_ov_sheets(b_data):
         try:
             xls = pd.ExcelFile(io.BytesIO(b_data))
             counts = {}
+            period = ""
             for sname in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=sname, header=None)
+                if not period:
+                    period = _extract_period_str(df)
                 unit = ""
                 for r in range(min(10, len(df))):
                     txt = " ".join([str(x) for x in df.iloc[r].dropna()])
@@ -824,13 +846,17 @@ def load_dynamic_overload(report_dict):
                 if unit:
                     norm_u = unit.replace("派出所", "所").replace("龍潭交通分隊", "交通分隊")
                     counts[norm_u] = tot
-            return counts
+            return period, counts
         except Exception:
-            return {}
+            return "", {}
 
-    d_cur = parse_ov_sheets(b_cur) if b_cur else {}
-    d_cum = parse_ov_sheets(b_cum)
-    d_ly = parse_ov_sheets(b_ly)
+    p_cur, d_cur = parse_ov_sheets(b_cur) if b_cur else ("", {})
+    p_cum, d_cum = parse_ov_sheets(b_cum)
+    p_ly, d_ly = parse_ov_sheets(b_ly)
+
+    col_cur = f"本期({p_cur})" if p_cur else "本期"
+    col_cum = f"本年累計({p_cum})" if p_cum else "本年累計"
+    col_ly = f"去年累計({p_ly})" if p_ly else "去年累計"
 
     targets = {
         "合計": 127, "聖亭所": 20, "龍潭所": 27, "中興所": 20,
@@ -850,20 +876,20 @@ def load_dynamic_overload(report_dict):
 
         rows.append({
             "統計期間": u,
-            "本期": c_val,
-            "本年累計": cum_val,
-            "去年累計": ly_val,
+            col_cur: c_val,
+            col_cum: cum_val,
+            col_ly: ly_val,
             "本年與去年同期比較": diff,
             "目標值": tgt,
             "達成率": achieve
         })
     if rows:
-        tot_c = sum(r["本期"] for r in rows[1:])
-        tot_cum = sum(r["本年累計"] for r in rows[1:])
-        tot_ly = sum(r["去年累計"] for r in rows[1:])
-        rows[0]["本期"] = tot_c
-        rows[0]["本年累計"] = tot_cum
-        rows[0]["去年累計"] = tot_ly
+        tot_c = sum(r[col_cur] for r in rows[1:])
+        tot_cum = sum(r[col_cum] for r in rows[1:])
+        tot_ly = sum(r[col_ly] for r in rows[1:])
+        rows[0][col_cur] = tot_c
+        rows[0][col_cum] = tot_cum
+        rows[0][col_ly] = tot_ly
         rows[0]["本年與去年同期比較"] = tot_cum - tot_ly
         rows[0]["達成率"] = f"{(tot_cum / 127)*100:.0f}%"
 
