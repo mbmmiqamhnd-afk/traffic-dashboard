@@ -584,6 +584,15 @@ def load_dynamic_accidents(report_dict):
 
                     data[u_name] = {"a1_death": a1_death, "a2_inj": a2_inj}
 
+            # 來源報表的「總計」列本身是空白（範本只提供六個所的明細，未內建加總），
+            # 若直接讀取該列數值一律會是 0，因此改為六個所實際數字加總算出合計，
+            # 不論來源是否已填好總計列，一律以加總結果為準。
+            station_names = ["聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所"]
+            data["合計"] = {
+                "a1_death": sum(data.get(s, {}).get("a1_death", 0) for s in station_names),
+                "a2_inj": sum(data.get(s, {}).get("a2_inj", 0) for s in station_names),
+            }
+
             return date_range, data
 
         return date_range, data
