@@ -142,7 +142,7 @@ class PptxReportBuilder:
         cell.fill.fore_color.rgb = bg_color if bg_color else self.C_TBL_ROW_BG
         self._set_border(cell, color_hex="CBD5E1")
 
-        # 針對 14pt 極限緊縮邊距，釋放垂直空間防止破版
+        # 針對 14pt 極限緊縮邊距，釋放最大高度防止破版
         cell.margin_top = Inches(0.02)
         cell.margin_bottom = Inches(0.02)
         cell.margin_left = Inches(0.04)
@@ -402,7 +402,6 @@ def fetch_files_from_gdrive_folder(target_folder_id: str):
         return {}
     file_dict = {}
     try:
-        # 完整支援跨硬碟、共用資料夾查詢
         q_files = f"'{target_folder_id}' in parents and trashed = false"
         res_files = service.files().list(
             q=q_files,
@@ -428,7 +427,6 @@ def fetch_files_from_gdrive_folder(target_folder_id: str):
 
 MEMORY_REPORTS = {}
 
-# 填入您提供的雲端資料夾專用 ID
 GDRIVE_ID_CONFIG = st.secrets.get("GDRIVE_FOLDER_ID", "1fm6ZK5B5wUmfy7-cgrw8OIkh7iS175dA")
 
 # 1. 雲端同步
@@ -471,10 +469,10 @@ if not MEMORY_REPORTS:
     st.warning("⚠️ 目前【雲端硬碟執法報表集中處】無檔案，亦未於【本機上傳至網站】。\n請在側邊欄上傳 Excel 檔案或確認雲端硬碟配置。")
 
 # ==========================================
-# 4. 八大核心報表純動態解析核心
+# 4. 八大核心報表純動態解析核心 (無寫死數據、精確取值)
 # ==========================================
 
-# --- 4.1 三項重點違規 ---
+# --- 4.1 三項重點違規 (容錯強化版) ---
 def load_dynamic_three_major(report_dict):
     three_files = {k: v for k, v in report_dict.items() if "重點違規" in k}
     if not three_files:
@@ -482,16 +480,28 @@ def load_dynamic_three_major(report_dict):
 
     file_meta = []
     for fname, raw_bytes in three_files.items():
-        text = raw_bytes.decode('utf-8', errors='ignore')
-        m = re.search(r'本年度\d{3}(\d{2})(\d{2})至\d{3}(\d{2})(\d{2})', text)
-        if m:
-            s_m, s_d, e_m, e_d = m.groups()
-            file_meta.append({
-                "name": fname,
-                "bytes": raw_bytes,
-                "is_single": (s_m == e_m and s_d == e_d),
-                "day_str": f"{e_m}/{e_d}"
-            })
+        day_str = "本期"
+        is_single = False
+        try:
+            df_head = pd.read_excel(io.BytesIO(raw_bytes), header=None, nrows=6)
+            head_txt = " ".join(df_head.astype(str).values.flatten())
+            m = re.search(r'(\d{2,3})[/-]?(\d{2})[/-]?(\d{2})\s*至\s*(\d{2,3})[/-]?(\d{2})[/-]?(\d{2})', head_txt)
+            if m:
+                _, s_m, s_d, _, e_m, e_d = m.groups()
+                is_single = (s_m == e_m and s_d == e_d)
+                day_str = f"{e_m}/{e_d}"
+            else:
+                if "(1)" in fname or "期" in fname or "新增" in fname:
+                    is_single = True
+        except Exception:
+            pass
+
+        file_meta.append({
+            "name": fname,
+            "bytes": raw_bytes,
+            "is_single": is_single,
+            "day_str": day_str
+        })
 
     if not file_meta:
         return None, None
@@ -506,13 +516,21 @@ def load_dynamic_three_major(report_dict):
         try:
             df = pd.read_excel(io.BytesIO(b_data), header=None)
             res = {}
-            for r in range(5, len(df)):
-                u = str(df.iloc[r, 0]).strip()
-                if not u or u == 'nan': continue
-                red = (df.iloc[r, 3] or 0) + (df.iloc[r, 4] or 0)
-                rev = (df.iloc[r, 7] or 0) + (df.iloc[r, 8] or 0)
-                ped = (df.iloc[r, 13] or 0) + (df.iloc[r, 14] or 0)
-                res[u] = {'red': int(red), 'rev': int(rev), 'ped': int(ped), 'tot': int(red + rev + ped)}
+            for r in range(len(df)):
+                u = str(df.iloc[r, 0]).strip().replace(" ", "").replace("\u3000", "")
+                if not u or u == 'nan':
+                    continue
+                if any(k in u for k in ["合計", "聖亭", "龍潭", "中興", "石門", "高平", "三和", "交通分隊"]):
+                    def safe_num(v):
+                        try:
+                            return int(float(str(v).replace(',', '').strip()))
+                        except Exception:
+                            return 0
+                    
+                    red = safe_num(df.iloc[r, 3] if df.shape[1] > 3 else 0) + safe_num(df.iloc[r, 4] if df.shape[1] > 4 else 0)
+                    rev = safe_num(df.iloc[r, 7] if df.shape[1] > 7 else 0) + safe_num(df.iloc[r, 8] if df.shape[1] > 8 else 0)
+                    ped = safe_num(df.iloc[r, 13] if df.shape[1] > 13 else 0) + safe_num(df.iloc[r, 14] if df.shape[1] > 14 else 0)
+                    res[u] = {'red': red, 'rev': rev, 'ped': ped, 'tot': red + rev + ped}
             return res
         except Exception:
             return {}
@@ -521,14 +539,27 @@ def load_dynamic_three_major(report_dict):
     d_cum = parse_sheet_data(cum_item["bytes"])
 
     units = [
-        ("合計", "合計"), ("聖亭所", "聖亭派出所"), ("龍潭所", "龍潭派出所"),
-        ("中興所", "中興派出所"), ("石門所", "石門派出所"), ("高平所", "高平派出所"),
-        ("三和所", "三和派出所"), ("交通分隊", "龍潭交通分隊")
+        ("合計", ["合計", "總計"]),
+        ("聖亭所", ["聖亭派出所", "聖亭所"]),
+        ("龍潭所", ["龍潭派出所", "龍潭所"]),
+        ("中興所", ["中興派出所", "中興所"]),
+        ("石門所", ["石門派出所", "石門所"]),
+        ("高平所", ["高平派出所", "高平所"]),
+        ("三和所", ["三和派出所", "三和所"]),
+        ("交通分隊", ["龍潭交通分隊", "交通分隊"])
     ]
+
+    def get_unit_val(data_map, keys):
+        for k in keys:
+            for d_key, val in data_map.items():
+                if k in d_key:
+                    return val
+        return {'red': 0, 'rev': 0, 'ped': 0, 'tot': 0}
+
     matrix = []
-    for disp, raw in units:
-        c = d_cur.get(raw, {'red': 0, 'rev': 0, 'ped': 0, 'tot': 0})
-        cm = d_cum.get(raw, {'red': 0, 'rev': 0, 'ped': 0, 'tot': 0})
+    for disp, match_keys in units:
+        c = get_unit_val(d_cur, match_keys)
+        cm = get_unit_val(d_cum, match_keys)
         matrix.append([disp, c['red'], c['rev'], c['ped'], c['tot'], cm['red'], cm['rev'], cm['ped'], cm['tot']])
 
     return cur_item["day_str"], matrix
