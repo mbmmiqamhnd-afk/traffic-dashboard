@@ -136,16 +136,17 @@ class PptxReportBuilder:
         except Exception:
             pass
 
-    def _set_cell(self, cell, text, font_size=14, bold=False, color=None, bg_color=None, align=PP_ALIGN.CENTER):
+    def _set_cell(self, cell, text, font_size=16, bold=False, color=None, bg_color=None, align=PP_ALIGN.CENTER):
         cell.text = str(text).strip() if (pd.notna(text) and str(text).strip() != "") else "—"
         cell.fill.solid()
         cell.fill.fore_color.rgb = bg_color if bg_color else self.C_TBL_ROW_BG
         self._set_border(cell, color_hex="CBD5E1")
 
+        # 針對大字型緊縮上下內距，留出足夠垂直行高
         cell.margin_top = Inches(0.02)
         cell.margin_bottom = Inches(0.02)
-        cell.margin_left = Inches(0.04)
-        cell.margin_right = Inches(0.04)
+        cell.margin_left = Inches(0.03)
+        cell.margin_right = Inches(0.03)
 
         cell.text_frame.word_wrap = False
 
@@ -228,19 +229,22 @@ class PptxReportBuilder:
         tbl.cell(0, 1).merge(tbl.cell(0, 4))
         tbl.cell(0, 5).merge(tbl.cell(0, 8))
 
-        self._set_cell(tbl.cell(0, 0), "單位", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
-        self._set_cell(tbl.cell(0, 1), f"{cur_col_title} 新增違規數", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
-        self._set_cell(tbl.cell(0, 5), f"{cum_col_title}數", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        # 表頭文字維持 12~13pt 避免換行
+        self._set_cell(tbl.cell(0, 0), "單位", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 1), f"{cur_col_title} 新增違規數", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 5), f"{cum_col_title}數", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
         sub_headers = ["", "闖紅燈", "逆向行駛", "不停讓行人", f"{cur_col_title}合計", "闖紅燈", "逆向行駛", "不停讓行人", "累計總計"]
         for c in range(1, 9):
-            self._set_cell(tbl.cell(1, c), sub_headers[c], font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+            self._set_cell(tbl.cell(1, c), sub_headers[c], font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
         for r_idx, row in enumerate(data_rows, start=2):
             is_tot = (r_idx == 2)
             bg = self.C_TBL_HIGHLIGHT_BG if is_tot else self.C_TBL_ROW_BG
             for c_idx, val in enumerate(row):
-                self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=14, bold=is_tot, color=self.C_TBL_TEXT_DARK, bg_color=bg)
+                # 單位欄 13pt，其餘數據欄 16pt (9欄最佳視覺大小)
+                f_sz = 13 if c_idx == 0 else 16
+                self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=f_sz, bold=is_tot, color=self.C_TBL_TEXT_DARK, bg_color=bg)
 
     def add_major_detail_slide(self, cat_name: str, data_rows, custom_subtitle=""):
         slide = self.prs.slides.add_slide(self.blank_layout)
@@ -261,14 +265,14 @@ class PptxReportBuilder:
         tbl.cell(0, 4).merge(tbl.cell(0, 6))
         tbl.cell(0, 7).merge(tbl.cell(0, 9))
 
-        self._set_cell(tbl.cell(0, 0), "單位", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
-        self._set_cell(tbl.cell(0, 1), "今年累計", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
-        self._set_cell(tbl.cell(0, 4), "去年累計", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
-        self._set_cell(tbl.cell(0, 7), "同期比較", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 0), "單位", font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 1), "今年累計", font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 4), "去年累計", font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 7), "同期比較", font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
         sub_names = ["", "攔停", "逕舉", "合計", "攔停", "逕舉", "合計", "攔停", "逕舉", "合計"]
         for c in range(1, 10):
-            self._set_cell(tbl.cell(1, c), sub_names[c], font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+            self._set_cell(tbl.cell(1, c), sub_names[c], font_size=11, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
         for r_idx, row in enumerate(data_rows, start=2):
             is_tot = (r_idx == 2)
@@ -299,7 +303,9 @@ class PptxReportBuilder:
                     except Exception:
                         pass
 
-                self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=14, bold=is_bold, color=fg, bg_color=bg)
+                # 單位欄 12pt，10欄純數字 16pt
+                f_sz = 12 if c_idx == 0 else 16
+                self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=f_sz, bold=is_bold, color=fg, bg_color=bg)
 
     def add_table_slide(self, slide_title: str, df: pd.DataFrame, subtitle: str = "", footnote: str = "", is_accident_table: bool = False, is_major_table: bool = False, custom_width_in: float = None):
         slide = self.prs.slides.add_slide(self.blank_layout)
@@ -316,8 +322,10 @@ class PptxReportBuilder:
         table_shape = slide.shapes.add_table(num_rows, num_cols, Inches(tbl_left), Inches(tbl_top), Inches(tbl_width), Inches(tbl_height))
         tbl = table_shape.table
 
+        # 表頭字級：多欄用 11~12pt，少欄用 13pt
+        hdr_font_sz = 11 if num_cols >= 9 else 13
         for c_idx, col_name in enumerate(df.columns):
-            self._set_cell(tbl.cell(0, c_idx), col_name, font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+            self._set_cell(tbl.cell(0, c_idx), col_name, font_size=hdr_font_sz, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
         for r_idx, row in df.iterrows():
             first_val = str(row.values[0]).strip()
@@ -364,7 +372,15 @@ class PptxReportBuilder:
                         except Exception:
                             pass
 
-                self._set_cell(tbl.cell(r_idx + 1, c_idx), cell_val, font_size=14, bold=is_bold, color=fg, bg_color=bg)
+                # 單位欄維持 13pt；少欄表格(如 A1/A2/超載)數字放大至 18pt，多欄表格數字 16pt
+                if c_idx == 0:
+                    data_font_sz = 13
+                elif num_cols <= 7:
+                    data_font_sz = 18
+                else:
+                    data_font_sz = 16
+
+                self._set_cell(tbl.cell(r_idx + 1, c_idx), cell_val, font_size=data_font_sz, bold=is_bold, color=fg, bg_color=bg)
 
         if footnote:
             tb_fn = slide.shapes.add_textbox(Inches(0.6), Inches(6.85), Inches(12.133), Inches(0.35))
@@ -485,7 +501,6 @@ def load_dynamic_three_major(report_dict):
         """
         try:
             df = pd.read_excel(io.BytesIO(b_data), header=None, nrows=5)
-            # 掃描前 4 列尋找包含「本年度」與「至」的儲存格
             for r in range(min(5, len(df))):
                 for c in range(min(6, df.shape[1])):
                     val = str(df.iloc[r, c])
@@ -1158,7 +1173,7 @@ if btn_generate:
     if not file_save_name.lower().endswith(".pptx"):
         file_save_name += ".pptx"
 
-    with st.spinner("正在自最新報表動態編譯 PPTX 簡報（全表 14pt、期間精確對齊）..."):
+    with st.spinner("正在自最新報表動態編譯 PPTX 簡報（全表 16/18pt、期間精確對齊）..."):
         try:
             builder = PptxReportBuilder()
 
