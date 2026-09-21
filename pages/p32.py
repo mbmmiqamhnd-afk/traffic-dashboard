@@ -142,7 +142,7 @@ class PptxReportBuilder:
         cell.fill.fore_color.rgb = bg_color if bg_color else self.C_TBL_ROW_BG
         self._set_border(cell, color_hex="CBD5E1")
 
-        # 針對 14pt 極限緊縮邊距，釋放最大垂直空間
+        # 針對 14pt 極限緊縮邊距，釋放垂直空間防止破版
         cell.margin_top = Inches(0.02)
         cell.margin_bottom = Inches(0.02)
         cell.margin_left = Inches(0.04)
@@ -381,7 +381,7 @@ class PptxReportBuilder:
         return out
 
 # ==========================================
-# 3. 雙軌數據來源載入器 (強化版：ID 直連 + 支援所有雲端硬碟)
+# 3. 雙軌數據來源載入器 (ID 直連 + 支援所有雲端硬碟)
 # ==========================================
 def get_drive_service():
     if not HAS_GDRIVE or "gcp_service_account" not in st.secrets:
@@ -396,29 +396,14 @@ def get_drive_service():
         st.sidebar.error(f"GCP 認證初始化失敗: {e}")
         return None
 
-def fetch_files_from_gdrive_folder(target_folder):
-    """支援直接帶入 Folder ID 或資料夾名稱"""
+def fetch_files_from_gdrive_folder(target_folder_id: str):
     service = get_drive_service()
-    if not service or not target_folder:
+    if not service or not target_folder_id:
         return {}
     file_dict = {}
     try:
-        folder_id = target_folder
-        # 若不是 ID 格式（純名稱），嘗試名稱搜尋
-        if len(target_folder) < 20 or " " in target_folder:
-            q_folder = f"name = '{target_folder}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-            res_f = service.files().list(
-                q=q_folder,
-                fields="files(id, name)",
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True
-            ).execute()
-            f_items = res_f.get("files", [])
-            if not f_items:
-                return {}
-            folder_id = f_items[0]["id"]
-
-        q_files = f"'{folder_id}' in parents and trashed = false"
+        # 完整支援跨硬碟、共用資料夾查詢
+        q_files = f"'{target_folder_id}' in parents and trashed = false"
         res_files = service.files().list(
             q=q_files,
             fields="files(id, name, modifiedTime)",
@@ -443,22 +428,20 @@ def fetch_files_from_gdrive_folder(target_folder):
 
 MEMORY_REPORTS = {}
 
-# 💡 提示：可將資料夾 ID 放在 secrets.toml 的 GDRIVE_FOLDER_ID
-GDRIVE_ID_CONFIG = st.secrets.get("GDRIVE_FOLDER_ID", "執法統計報表集中處")
+# 填入您提供的雲端資料夾專用 ID
+GDRIVE_ID_CONFIG = st.secrets.get("GDRIVE_FOLDER_ID", "1fm6ZK5B5wUmfy7-cgrw8OIkh7iS175dA")
 
 # 1. 雲端同步
 gdrive_data = fetch_files_from_gdrive_folder(GDRIVE_ID_CONFIG)
-if not gdrive_data and GDRIVE_ID_CONFIG == "執法統計報表集中處":
-    gdrive_data = fetch_files_from_gdrive_folder("執法報表集中處")
 
 if gdrive_data:
     MEMORY_REPORTS.update(gdrive_data)
     st.sidebar.success(f"☁️ 成功連接雲端硬碟！共載入 {len(gdrive_data)} 個最新報表")
-    with st.sidebar.expander("📄 檢視已載入雲端檔案列表", expanded=False):
+    with st.sidebar.expander("📄 雲端硬碟已載入報表清單", expanded=True):
         for fn in sorted(gdrive_data.keys()):
             st.caption(f"• {fn}")
 else:
-    st.sidebar.warning("⚠️ 雲端硬碟尚未讀取到檔案。若已有共用權限，請確認資料夾 ID 是否已設定。")
+    st.sidebar.warning(f"⚠️ 雲端資料夾 (ID: {GDRIVE_ID_CONFIG[:8]}...) 尚未讀取到 .xlsx 或 .csv 檔案。")
 
     local_candidates = ["執法統計報表集中處", "執法報表集中處", "執法統計報表_已歸檔", "."]
     for d in local_candidates:
@@ -1133,7 +1116,7 @@ if btn_generate:
             if chk_three and df_three_preview is not None:
                 builder.add_three_major_slide(data_rows=three_matrix, latest_day=three_day)
 
-            # P.3 A1 死亡
+            # P.3 A1 死亡（已移除「口徑：24小時內死亡」）
             if chk_a1 and df_a1_dyn is not None:
                 a1_sub = (
                     f"本期：{acc_periods.get('cur', '—')} ｜ "
