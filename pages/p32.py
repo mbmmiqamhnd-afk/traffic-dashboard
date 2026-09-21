@@ -142,7 +142,6 @@ class PptxReportBuilder:
         cell.fill.fore_color.rgb = bg_color if bg_color else self.C_TBL_ROW_BG
         self._set_border(cell, color_hex="CBD5E1")
 
-        # 針對 14pt 極限緊縮邊距，釋放最大垂直空間
         cell.margin_top = Inches(0.02)
         cell.margin_bottom = Inches(0.02)
         cell.margin_left = Inches(0.04)
@@ -211,12 +210,13 @@ class PptxReportBuilder:
             p2.font.color.rgb = self.C_MUTED
             p2.space_before = Pt(2)
 
-    def add_three_major_slide(self, data_rows, latest_day="本期"):
+    def add_three_major_slide(self, data_rows, custom_subtitle="", cur_col_title="本期", cum_col_title="本月累計"):
         slide = self.prs.slides.add_slide(self.blank_layout)
+        sub_text = custom_subtitle if custom_subtitle else "製表單位：龍潭分局交通組"
         self.add_header_box(
             slide,
             "桃園市政府警察局龍潭分局 取締三項重點違規本期及累計統計表",
-            f"統計期間：自本月起至本期({latest_day})止 ｜ 製表單位：龍潭分局交通組"
+            sub_text
         )
 
         num_rows = len(data_rows) + 2
@@ -229,10 +229,10 @@ class PptxReportBuilder:
         tbl.cell(0, 5).merge(tbl.cell(0, 8))
 
         self._set_cell(tbl.cell(0, 0), "單位", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
-        self._set_cell(tbl.cell(0, 1), f"本期 ({latest_day}) 新增違規數", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
-        self._set_cell(tbl.cell(0, 5), "本月累計數", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 1), f"{cur_col_title} 新增違規數", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 5), f"{cum_col_title}數", font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
-        sub_headers = ["", "闖紅燈", "逆向行駛", "不停讓行人", f"本期合計({latest_day})", "闖紅燈", "逆向行駛", "不停讓行人", "累計總計"]
+        sub_headers = ["", "闖紅燈", "逆向行駛", "不停讓行人", f"{cur_col_title}合計", "闖紅燈", "逆向行駛", "不停讓行人", "累計總計"]
         for c in range(1, 9):
             self._set_cell(tbl.cell(1, c), sub_headers[c], font_size=14, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
@@ -469,14 +469,45 @@ if not MEMORY_REPORTS:
     st.warning("⚠️ 目前【雲端硬碟執法報表集中處】無檔案，亦未於【本機上傳至網站】。\n請在側邊欄上傳 Excel 檔案或確認雲端硬碟配置。")
 
 # ==========================================
-# 4. 八大核心報表純動態解析核心 (長短天期精準校正)
+# 4. 八大核心報表純動態解析核心 (日期字串全面萃取強化)
 # ==========================================
 
-# --- 4.1 三項重點違規 (自動判斷長短天期：短天期=本期、長天期=累計) ---
+def extract_date_range_flexible(df_or_text, fname=""):
+    """
+    強韌解析各類型報表中的統計期間日期字串
+    支援 1140301至1140307、114/03/01~114/03/07、114-03-01 等多種格式
+    """
+    text_content = ""
+    if isinstance(df_or_text, pd.DataFrame):
+        text_content = " ".join([str(x) for x in df_or_text.iloc[:8].dropna().values.flatten()])
+    else:
+        text_content = str(df_or_text)
+
+    # 1. 民國/西元 帶分隔符號：114/03/01 至 114/03/07 或 114.03.01~114.03.07
+    m1 = re.search(r'(\d{2,4}[/.-]\d{1,2}[/.-]\d{1,2})\s*(?:至|~|-)\s*(\d{2,4}[/.-]\d{1,2}[/.-]\d{1,2})', text_content)
+    if m1:
+        return m1.group(1).strip(), m1.group(2).strip(), f"{m1.group(1)}~{m1.group(2)}"
+
+    # 2. 連續 7 碼民國數字：1140301 至 1140307
+    m2 = re.search(r'(\d{3})(\d{2})(\d{2})\s*(?:至|~|-)\s*(\d{3})(\d{2})(\d{2})', text_content)
+    if m2:
+        s_str = f"{m2.group(1)}/{m2.group(2)}/{m2.group(3)}"
+        e_str = f"{m2.group(4)}/{m2.group(5)}/{m2.group(6)}"
+        return s_str, e_str, f"{s_str}~{e_str}"
+
+    # 3. 檔名備援萃取 (例如 1140301-1140307 或 1140307)
+    m_fn = re.search(r'(\d{3})(\d{2})(\d{2})', fname)
+    if m_fn:
+        d_str = f"{m_fn.group(1)}/{m_fn.group(2)}/{m_fn.group(3)}"
+        return d_str, d_str, d_str
+
+    return "", "", ""
+
+# --- 4.1 三項重點違規 ---
 def load_dynamic_three_major(report_dict):
     three_files = {k: v for k, v in report_dict.items() if "重點違規" in k}
     if not three_files:
-        return None, None
+        return None, None, {}
 
     def parse_sheet_data_and_total(b_data):
         try:
@@ -506,17 +537,17 @@ def load_dynamic_three_major(report_dict):
 
     parsed_files = []
     for fname, raw_bytes in three_files.items():
-        day_str = "本期"
+        s_date, e_date, full_period = "", "", ""
         days_span = -1
         try:
-            df_head = pd.read_excel(io.BytesIO(raw_bytes), header=None, nrows=6)
-            head_txt = " ".join(df_head.astype(str).values.flatten())
-            m = re.search(r'(\d{2,3})[/-]?(\d{2})[/-]?(\d{2})\s*至\s*(\d{2,3})[/-]?(\d{2})[/-]?(\d{2})', head_txt)
-            if m:
-                s_y, s_m, s_d, e_y, e_m, e_d = [int(x) for x in m.groups()]
-                # 計算日期跨度（以月*31+日換算相對天數）
-                days_span = (e_m - s_m) * 31 + (e_d - s_d)
-                day_str = f"{e_m:02d}/{e_d:02d}"
+            df_head = pd.read_excel(io.BytesIO(raw_bytes), header=None, nrows=8)
+            s_date, e_date, full_period = extract_date_range_flexible(df_head, fname)
+            if s_date and e_date:
+                # 計算天數跨度
+                parts_s = [int(n) for n in re.findall(r'\d+', s_date)]
+                parts_e = [int(n) for n in re.findall(r'\d+', e_date)]
+                if len(parts_s) >= 3 and len(parts_e) >= 3:
+                    days_span = (parts_e[1] - parts_s[1]) * 31 + (parts_e[2] - parts_s[2])
         except Exception:
             pass
 
@@ -524,19 +555,18 @@ def load_dynamic_three_major(report_dict):
         parsed_files.append({
             "name": fname,
             "bytes": raw_bytes,
+            "s_date": s_date,
+            "e_date": e_date,
+            "full_period": full_period,
             "days_span": days_span,
             "total_vol": total_vol,
-            "day_str": day_str,
             "data_map": data_map
         })
 
     if not parsed_files:
-        return None, None
+        return None, None, {}
 
-    # 排序規則：
-    # 優先依天數跨度（小 -> 大）；若無法抓到日期，則以總舉發數量（小 -> 大）
-    # 短期間 (數值小) -> 本期 (cur_item)
-    # 長期間 (數值大) -> 累計 (cum_item)
+    # 短期間 (數值小) -> 本期 (cur_item)；長期間 (數值大) -> 累計 (cum_item)
     if len(parsed_files) > 1:
         if all(x["days_span"] >= 0 for x in parsed_files):
             parsed_files.sort(key=lambda x: x["days_span"])
@@ -573,7 +603,13 @@ def load_dynamic_three_major(report_dict):
         cm = get_unit_val(d_cum, match_keys)
         matrix.append([disp, c['red'], c['rev'], c['ped'], c['tot'], cm['red'], cm['rev'], cm['ped'], cm['tot']])
 
-    return cur_item["day_str"], matrix
+    periods_info = {
+        "cur_single": cur_item["e_date"] if cur_item["e_date"] else "本期",
+        "cur_full": cur_item["full_period"] if cur_item["full_period"] else "本期",
+        "cum_full": cum_item["full_period"] if cum_item["full_period"] else "本月累計"
+    }
+
+    return cur_item["e_date"] or "本期", matrix, periods_info
 
 # --- 4.2 交通事故 (A1 死亡、A2 受傷) ---
 def load_dynamic_accidents(report_dict):
@@ -604,12 +640,7 @@ def load_dynamic_accidents(report_dict):
             pass
 
         if df is not None and not df.empty:
-            for r in range(min(5, len(df))):
-                row_txt = " ".join([str(x) for x in df.iloc[r].dropna()])
-                m_date = re.search(r'(\d{2,3}/\d{2}/\d{2})\s*至\s*(\d{2,3}/\d{2}/\d{2})', row_txt)
-                if m_date:
-                    date_range = f"{m_date.group(1)}~{m_date.group(2)}"
-                    break
+            _, _, date_range = extract_date_range_flexible(df)
 
             units = ["總計", "合計", "聖亭派出所", "龍潭派出所", "中興派出所", "石門派出所", "高平派出所", "三和派出所"]
             def clean_num(val):
@@ -720,13 +751,7 @@ def load_dynamic_major(report_dict):
         for fn, b_data in major_files.items():
             try:
                 df = pd.read_excel(io.BytesIO(b_data), header=None)
-                period_str = ""
-                for r in range(min(5, len(df))):
-                    row_txt = " ".join([str(x) for x in df.iloc[r].dropna()])
-                    m = re.search(r'(\d{7})至(\d{7})', row_txt)
-                    if m:
-                        period_str = f"{m.group(1)}~{m.group(2)}"
-                        break
+                _, _, period_str = extract_date_range_flexible(df, fn)
                 all_parsed.append((fn, b_data, period_str))
             except Exception:
                 pass
@@ -757,13 +782,7 @@ def load_dynamic_major(report_dict):
         if df is None or df.empty:
             return "", {}
 
-        period = ""
-        for r in range(min(5, len(df))):
-            row_txt = " ".join([str(x) for x in df.iloc[r].dropna()])
-            m = re.search(r'(\d{7})至(\d{7})', row_txt)
-            if m:
-                period = f"{m.group(1)}~{m.group(2)}"
-                break
+        _, _, period = extract_date_range_flexible(df)
 
         res = {}
         for r in range(len(df)):
@@ -872,17 +891,6 @@ def load_dynamic_overload(report_dict):
     if not (b_cum and b_ly):
         return None, "", {}
 
-    def _extract_period_str(df, max_rows=10):
-        for r in range(min(max_rows, len(df))):
-            row_txt = " ".join([str(x) for x in df.iloc[r].dropna()])
-            m = re.search(r'(\d{7})至(\d{7})', row_txt)
-            if m:
-                return f"{m.group(1)}~{m.group(2)}"
-            m2 = re.search(r'(\d{2,3}/\d{2}/\d{2})\s*至\s*(\d{2,3}/\d{2}/\d{2})', row_txt)
-            if m2:
-                return f"{m2.group(1)}~{m2.group(2)}"
-        return ""
-
     def parse_ov_sheets(b_data):
         try:
             xls = pd.ExcelFile(io.BytesIO(b_data))
@@ -891,7 +899,7 @@ def load_dynamic_overload(report_dict):
             for sname in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=sname, header=None)
                 if not period:
-                    period = _extract_period_str(df)
+                    _, _, period = extract_date_range_flexible(df)
                 unit = ""
                 for r in range(min(10, len(df))):
                     txt = " ".join([str(x) for x in df.iloc[r].dropna()])
@@ -1028,18 +1036,20 @@ def load_dynamic_tech(report_dict):
 # ==========================================
 # 5. 純動態執行載入（完全無假資料）
 # ==========================================
-three_day, three_matrix = load_dynamic_three_major(MEMORY_REPORTS)
+three_day, three_matrix, three_periods = load_dynamic_three_major(MEMORY_REPORTS)
 if three_matrix:
+    col_cur_label = f"本期 ({three_periods.get('cur_single', '本期')})"
+    col_cum_label = f"本月累計 ({three_periods.get('cum_full', '本月累計')})"
     preview_cols = pd.MultiIndex.from_tuples([
         ("單位", ""),
-        (f"本期 ({three_day}) 新增違規數", "闖紅燈"),
-        (f"本期 ({three_day}) 新增違規數", "逆向行駛"),
-        (f"本期 ({three_day}) 新增違規數", "不停讓行人"),
-        (f"本期 ({three_day}) 新增違規數", f"本期合計 ({three_day})"),
-        ("本月累計數", "闖紅燈"),
-        ("本月累計數", "逆向行駛"),
-        ("本月累計數", "不停讓行人"),
-        ("本月累計數", "累計總計")
+        (f"{col_cur_label} 新增違規數", "闖紅燈"),
+        (f"{col_cur_label} 新增違規數", "逆向行駛"),
+        (f"{col_cur_label} 新增違規數", "不停讓行人"),
+        (f"{col_cur_label} 新增違規數", "本期合計"),
+        (f"{col_cum_label}數", "闖紅燈"),
+        (f"{col_cum_label}數", "逆向行駛"),
+        (f"{col_cum_label}數", "不停讓行人"),
+        (f"{col_cum_label}數", "累計總計")
     ])
     df_three_preview = pd.DataFrame(three_matrix, columns=preview_cols)
 else:
@@ -1142,7 +1152,7 @@ if btn_generate:
     if not file_save_name.lower().endswith(".pptx"):
         file_save_name += ".pptx"
 
-    with st.spinner("正在自最新報表動態編譯 PPTX 簡報（全表 14pt、負數自動標紅）..."):
+    with st.spinner("正在自最新報表動態編譯 PPTX 簡報（全表 14pt、期間精確對齊）..."):
         try:
             builder = PptxReportBuilder()
 
@@ -1154,9 +1164,19 @@ if btn_generate:
                     date_range_str=f"統計截止至最新報表 ｜ 製表日期：{datetime.now().strftime('%Y/%m/%d')}"
                 )
 
-            # P.2 三項重點
+            # P.2 三項重點 (精確顯示本期與累計期間)
             if chk_three and df_three_preview is not None:
-                builder.add_three_major_slide(data_rows=three_matrix, latest_day=three_day)
+                cur_dt = three_periods.get("cur_single", "本期")
+                cur_full = three_periods.get("cur_full", cur_dt)
+                cum_full = three_periods.get("cum_full", "本月累計")
+                three_sub = f"本期統計：{cur_full} ｜ 本月累計：{cum_full} ｜ 製表單位：龍潭分局交通組"
+                
+                builder.add_three_major_slide(
+                    data_rows=three_matrix,
+                    custom_subtitle=three_sub,
+                    cur_col_title=f"本期({cur_dt})",
+                    cum_col_title="本月累計"
+                )
 
             # P.3 A1 死亡
             if chk_a1 and df_a1_dyn is not None:
