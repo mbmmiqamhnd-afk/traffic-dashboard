@@ -142,7 +142,7 @@ class PptxReportBuilder:
         cell.fill.fore_color.rgb = bg_color if bg_color else self.C_TBL_ROW_BG
         self._set_border(cell, color_hex="CBD5E1")
 
-        # 針對 14pt 極限緊縮邊距，釋放最大高度防止破版
+        # 針對 14pt 極限緊縮邊距，釋放最大垂直空間
         cell.margin_top = Inches(0.02)
         cell.margin_bottom = Inches(0.02)
         cell.margin_left = Inches(0.04)
@@ -469,53 +469,20 @@ if not MEMORY_REPORTS:
     st.warning("⚠️ 目前【雲端硬碟執法報表集中處】無檔案，亦未於【本機上傳至網站】。\n請在側邊欄上傳 Excel 檔案或確認雲端硬碟配置。")
 
 # ==========================================
-# 4. 八大核心報表純動態解析核心 (無寫死數據、精確取值)
+# 4. 八大核心報表純動態解析核心 (長短天期精準校正)
 # ==========================================
 
-# --- 4.1 三項重點違規 (容錯強化版) ---
+# --- 4.1 三項重點違規 (自動判斷長短天期：短天期=本期、長天期=累計) ---
 def load_dynamic_three_major(report_dict):
     three_files = {k: v for k, v in report_dict.items() if "重點違規" in k}
     if not three_files:
         return None, None
 
-    file_meta = []
-    for fname, raw_bytes in three_files.items():
-        day_str = "本期"
-        is_single = False
-        try:
-            df_head = pd.read_excel(io.BytesIO(raw_bytes), header=None, nrows=6)
-            head_txt = " ".join(df_head.astype(str).values.flatten())
-            m = re.search(r'(\d{2,3})[/-]?(\d{2})[/-]?(\d{2})\s*至\s*(\d{2,3})[/-]?(\d{2})[/-]?(\d{2})', head_txt)
-            if m:
-                _, s_m, s_d, _, e_m, e_d = m.groups()
-                is_single = (s_m == e_m and s_d == e_d)
-                day_str = f"{e_m}/{e_d}"
-            else:
-                if "(1)" in fname or "期" in fname or "新增" in fname:
-                    is_single = True
-        except Exception:
-            pass
-
-        file_meta.append({
-            "name": fname,
-            "bytes": raw_bytes,
-            "is_single": is_single,
-            "day_str": day_str
-        })
-
-    if not file_meta:
-        return None, None
-
-    singles = [x for x in file_meta if x["is_single"]]
-    cums = [x for x in file_meta if not x["is_single"]]
-
-    cur_item = singles[-1] if singles else file_meta[0]
-    cum_item = cums[-1] if cums else file_meta[-1]
-
-    def parse_sheet_data(b_data):
+    def parse_sheet_data_and_total(b_data):
         try:
             df = pd.read_excel(io.BytesIO(b_data), header=None)
             res = {}
+            tot_sum = 0
             for r in range(len(df)):
                 u = str(df.iloc[r, 0]).strip().replace(" ", "").replace("\u3000", "")
                 if not u or u == 'nan':
@@ -531,12 +498,56 @@ def load_dynamic_three_major(report_dict):
                     rev = safe_num(df.iloc[r, 7] if df.shape[1] > 7 else 0) + safe_num(df.iloc[r, 8] if df.shape[1] > 8 else 0)
                     ped = safe_num(df.iloc[r, 13] if df.shape[1] > 13 else 0) + safe_num(df.iloc[r, 14] if df.shape[1] > 14 else 0)
                     res[u] = {'red': red, 'rev': rev, 'ped': ped, 'tot': red + rev + ped}
-            return res
+                    if "合計" not in u and "總計" not in u:
+                        tot_sum += (red + rev + ped)
+            return res, tot_sum
         except Exception:
-            return {}
+            return {}, 0
 
-    d_cur = parse_sheet_data(cur_item["bytes"])
-    d_cum = parse_sheet_data(cum_item["bytes"])
+    parsed_files = []
+    for fname, raw_bytes in three_files.items():
+        day_str = "本期"
+        days_span = -1
+        try:
+            df_head = pd.read_excel(io.BytesIO(raw_bytes), header=None, nrows=6)
+            head_txt = " ".join(df_head.astype(str).values.flatten())
+            m = re.search(r'(\d{2,3})[/-]?(\d{2})[/-]?(\d{2})\s*至\s*(\d{2,3})[/-]?(\d{2})[/-]?(\d{2})', head_txt)
+            if m:
+                s_y, s_m, s_d, e_y, e_m, e_d = [int(x) for x in m.groups()]
+                # 計算日期跨度（以月*31+日換算相對天數）
+                days_span = (e_m - s_m) * 31 + (e_d - s_d)
+                day_str = f"{e_m:02d}/{e_d:02d}"
+        except Exception:
+            pass
+
+        data_map, total_vol = parse_sheet_data_and_total(raw_bytes)
+        parsed_files.append({
+            "name": fname,
+            "bytes": raw_bytes,
+            "days_span": days_span,
+            "total_vol": total_vol,
+            "day_str": day_str,
+            "data_map": data_map
+        })
+
+    if not parsed_files:
+        return None, None
+
+    # 排序規則：
+    # 優先依天數跨度（小 -> 大）；若無法抓到日期，則以總舉發數量（小 -> 大）
+    # 短期間 (數值小) -> 本期 (cur_item)
+    # 長期間 (數值大) -> 累計 (cum_item)
+    if len(parsed_files) > 1:
+        if all(x["days_span"] >= 0 for x in parsed_files):
+            parsed_files.sort(key=lambda x: x["days_span"])
+        else:
+            parsed_files.sort(key=lambda x: x["total_vol"])
+
+    cur_item = parsed_files[0]
+    cum_item = parsed_files[-1] if len(parsed_files) > 1 else parsed_files[0]
+
+    d_cur = cur_item["data_map"]
+    d_cum = cum_item["data_map"]
 
     units = [
         ("合計", ["合計", "總計"]),
@@ -1147,7 +1158,7 @@ if btn_generate:
             if chk_three and df_three_preview is not None:
                 builder.add_three_major_slide(data_rows=three_matrix, latest_day=three_day)
 
-            # P.3 A1 死亡（已移除「口徑：24小時內死亡」）
+            # P.3 A1 死亡
             if chk_a1 and df_a1_dyn is not None:
                 a1_sub = (
                     f"本期：{acc_periods.get('cur', '—')} ｜ "
