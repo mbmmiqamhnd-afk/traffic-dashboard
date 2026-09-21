@@ -469,82 +469,39 @@ if not MEMORY_REPORTS:
     st.warning("⚠️ 目前【雲端硬碟執法報表集中處】無檔案，亦未於【本機上傳至網站】。\n請在側邊欄上傳 Excel 檔案或確認雲端硬碟配置。")
 
 # ==========================================
-# 4. 八大核心報表純動態解析核心 (強化日期萃取引擎)
+# 4. 八大核心報表純動態解析核心 (精準鎖定第 3 列入案期間)
 # ==========================================
-
-def extract_date_range_flexible(raw_or_df, fname=""):
-    """
-    全方位解析各類型警政統計報表的統計期間日期
-    支援：中文字元、連續民國數字、帶有分隔線、檔名備援
-    """
-    text_content = ""
-    try:
-        if isinstance(raw_or_df, bytes):
-            # 讀取首頁前 10 列轉為純文字字串
-            df_temp = pd.read_excel(io.BytesIO(raw_or_df), header=None, nrows=10)
-            text_content = " ".join(df_temp.astype(str).values.flatten())
-        elif isinstance(raw_or_df, pd.DataFrame):
-            text_content = " ".join(raw_or_df.iloc[:10].astype(str).values.flatten())
-        else:
-            text_content = str(raw_or_df)
-    except Exception:
-        text_content = ""
-
-    # 清除全形與半形空白
-    text_clean = text_content.replace(" ", "").replace("\u3000", "")
-
-    # 1. 警政常見中文標題：114年03月01日 至 114年03月07日 (或包含「起」「止」「中華民國」)
-    m_zh = re.search(r'(?:中華民國)?(\d{2,3})年(\d{1,2})月(\d{1,2})日?(?:起|至|~|-)(?:中華民國)?(\d{2,3})年(\d{1,2})月(\d{1,2})日?', text_clean)
-    if m_zh:
-        s_y, s_m, s_d, e_y, e_m, e_d = [int(x) for x in m_zh.groups()]
-        s_str = f"{s_y}/{s_m:02d}/{s_d:02d}"
-        e_str = f"{e_y}/{e_m:02d}/{e_d:02d}"
-        return s_str, e_str, f"{s_str}~{e_str}"
-
-    # 2. 7碼純數字連續：1140301 至 1140307 或 1140301~1140307
-    m_num = re.search(r'(\d{3})(\d{2})(\d{2})(?:至|~|-)(\d{3})(\d{2})(\d{2})', text_clean)
-    if m_num:
-        s_y, s_m, s_d, e_y, e_m, e_d = [int(x) for x in m_num.groups()]
-        s_str = f"{s_y}/{s_m:02d}/{s_d:02d}"
-        e_str = f"{e_y}/{e_m:02d}/{e_d:02d}"
-        return s_str, e_str, f"{s_str}~{e_str}"
-
-    # 3. 帶斜線或橫線：114/03/01 至 114/03/07 或 114-03-01~114-03-07
-    m_slash = re.search(r'(\d{2,3})[/-](\d{1,2})[/-](\d{1,2})(?:至|~|-)(\d{2,3})[/-](\d{1,2})[/-](\d{1,2})', text_clean)
-    if m_slash:
-        s_y, s_m, s_d, e_y, e_m, e_d = [int(x) for x in m_slash.groups()]
-        s_str = f"{s_y}/{s_m:02d}/{s_d:02d}"
-        e_str = f"{e_y}/{e_m:02d}/{e_d:02d}"
-        return s_str, e_str, f"{s_str}~{e_str}"
-
-    # 4. 單一日期 (例如表頭僅有：114年3月7日 或 114/03/07)
-    m_single = re.search(r'(?:中華民國)?(\d{2,3})[年/-](\d{1,2})[月/-](\d{1,2})日?', text_clean)
-    if m_single:
-        y, m, d = [int(x) for x in m_single.groups()]
-        s_str = f"{y}/{m:02d}/{d:02d}"
-        return s_str, s_str, s_str
-
-    # 5. 檔名備援解析 (例如檔名中有 1140301-1140307 或 1140307)
-    if fname:
-        m_fn_pair = re.search(r'(\d{3})(\d{2})(\d{2})[-_~](\d{3})(\d{2})(\d{2})', fname)
-        if m_fn_pair:
-            s_y, s_m, s_d, e_y, e_m, e_d = [int(x) for x in m_fn_pair.groups()]
-            s_str = f"{s_y}/{s_m:02d}/{s_d:02d}"
-            e_str = f"{e_y}/{e_m:02d}/{e_d:02d}"
-            return s_str, e_str, f"{s_str}~{e_str}"
-        m_fn_single = re.search(r'(\d{3})(\d{2})(\d{2})', fname)
-        if m_fn_single:
-            y, m, d = [int(x) for x in m_fn_single.groups()]
-            s_str = f"{y}/{m:02d}/{d:02d}"
-            return s_str, s_str, s_str
-
-    return "", "", ""
 
 # --- 4.1 三項重點違規 ---
 def load_dynamic_three_major(report_dict):
     three_files = {k: v for k, v in report_dict.items() if "重點違規" in k}
     if not three_files:
         return None, None, {}
+
+    def extract_entry_date_info(b_data):
+        """
+        精準讀取第 3 列（Row 2, 0-indexed）的入案日統計期間：
+        例如：(入案日) 統計期間：本年度1150918至1150918
+        """
+        try:
+            df = pd.read_excel(io.BytesIO(b_data), header=None, nrows=5)
+            # 掃描前 4 列尋找包含「本年度」與「至」的儲存格
+            for r in range(min(5, len(df))):
+                for c in range(min(6, df.shape[1])):
+                    val = str(df.iloc[r, c])
+                    if "本年度" in val and "至" in val:
+                        m = re.search(r'本年度\s*(\d{3})(\d{2})(\d{2})\s*至\s*(\d{3})(\d{2})(\d{2})', val)
+                        if m:
+                            s_y, s_m, s_d, e_y, e_m, e_d = [int(x) for x in m.groups()]
+                            s_str = f"{s_y}/{s_m:02d}/{s_d:02d}"
+                            e_str = f"{e_y}/{e_m:02d}/{e_d:02d}"
+                            days_span = (e_m - s_m) * 31 + (e_d - s_d)
+                            short_disp = f"{e_m:02d}/{e_d:02d}"
+                            full_disp = s_str if (s_str == e_str) else f"{s_str}~{e_str}"
+                            return short_disp, full_disp, days_span
+        except Exception:
+            pass
+        return "本期", "本期", -1
 
     def parse_sheet_data_and_total(b_data):
         try:
@@ -574,21 +531,13 @@ def load_dynamic_three_major(report_dict):
 
     parsed_files = []
     for fname, raw_bytes in three_files.items():
-        s_date, e_date, full_period = extract_date_range_flexible(raw_bytes, fname)
-        days_span = -1
-        if s_date and e_date:
-            parts_s = [int(n) for n in re.findall(r'\d+', s_date)]
-            parts_e = [int(n) for n in re.findall(r'\d+', e_date)]
-            if len(parts_s) >= 3 and len(parts_e) >= 3:
-                days_span = (parts_e[1] - parts_s[1]) * 31 + (parts_e[2] - parts_s[2])
-
+        short_disp, full_disp, days_span = extract_entry_date_info(raw_bytes)
         data_map, total_vol = parse_sheet_data_and_total(raw_bytes)
         parsed_files.append({
             "name": fname,
             "bytes": raw_bytes,
-            "s_date": s_date,
-            "e_date": e_date,
-            "full_period": full_period,
+            "short_disp": short_disp,
+            "full_disp": full_disp,
             "days_span": days_span,
             "total_vol": total_vol,
             "data_map": data_map
@@ -606,12 +555,6 @@ def load_dynamic_three_major(report_dict):
 
     cur_item = parsed_files[0]
     cum_item = parsed_files[-1] if len(parsed_files) > 1 else parsed_files[0]
-
-    # 保底日期產生（若報表文字完全沒寫，以當天日期代替）
-    default_now = datetime.now().strftime("%m/%d")
-    cur_date_disp = cur_item["e_date"] if cur_item["e_date"] else default_now
-    cur_full_disp = cur_item["full_period"] if cur_item["full_period"] else cur_date_disp
-    cum_full_disp = cum_item["full_period"] if cum_item["full_period"] else f"本月累計至 {cur_date_disp}"
 
     d_cur = cur_item["data_map"]
     d_cum = cum_item["data_map"]
@@ -641,12 +584,12 @@ def load_dynamic_three_major(report_dict):
         matrix.append([disp, c['red'], c['rev'], c['ped'], c['tot'], cm['red'], cm['rev'], cm['ped'], cm['tot']])
 
     periods_info = {
-        "cur_single": cur_date_disp,
-        "cur_full": cur_full_disp,
-        "cum_full": cum_full_disp
+        "cur_single": cur_item["short_disp"],
+        "cur_full": cur_item["full_disp"],
+        "cum_full": cum_item["full_disp"]
     }
 
-    return cur_date_disp, matrix, periods_info
+    return cur_item["short_disp"], matrix, periods_info
 
 # --- 4.2 交通事故 (A1 死亡、A2 受傷) ---
 def load_dynamic_accidents(report_dict):
@@ -666,7 +609,7 @@ def load_dynamic_accidents(report_dict):
     if not (b_cur and b_cum and b_ly):
         return None, None, {}
 
-    def parse_acc_safe(b_data, fname=""):
+    def parse_acc_safe(b_data):
         date_range = ""
         data = {}
         df = None
@@ -677,7 +620,12 @@ def load_dynamic_accidents(report_dict):
             pass
 
         if df is not None and not df.empty:
-            _, _, date_range = extract_date_range_flexible(df, fname)
+            for r in range(min(5, len(df))):
+                row_txt = " ".join([str(x) for x in df.iloc[r].dropna()])
+                m = re.search(r'(\d{2,3}/\d{2}/\d{2})\s*至\s*(\d{2,3}/\d{2}/\d{2})', row_txt)
+                if m:
+                    date_range = f"{m.group(1)}~{m.group(2)}"
+                    break
 
             units = ["總計", "合計", "聖亭派出所", "龍潭派出所", "中興派出所", "石門派出所", "高平派出所", "三和派出所"]
             def clean_num(val):
@@ -718,10 +666,10 @@ def load_dynamic_accidents(report_dict):
 
         return date_range, data
 
-    r_cur, d_cur = parse_acc_safe(b_cur, "本期")
-    r_prev, d_prev = parse_acc_safe(b_prev, "前期") if b_prev else ("", {})
-    r_cum, d_cum = parse_acc_safe(b_cum, "本年累計")
-    r_ly, d_ly = parse_acc_safe(b_ly, "去年累計")
+    r_cur, d_cur = parse_acc_safe(b_cur)
+    r_prev, d_prev = parse_acc_safe(b_prev) if b_prev else ("", {})
+    r_cum, d_cum = parse_acc_safe(b_cum)
+    r_ly, d_ly = parse_acc_safe(b_ly)
 
     units_order = ["合計", "聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所"]
 
@@ -788,8 +736,14 @@ def load_dynamic_major(report_dict):
         for fn, b_data in major_files.items():
             try:
                 df = pd.read_excel(io.BytesIO(b_data), header=None)
-                _, _, period_str = extract_date_range_flexible(df, fn)
-                all_parsed.append((fn, b_data, period_str))
+                p_str = ""
+                for r in range(min(5, len(df))):
+                    row_txt = " ".join([str(x) for x in df.iloc[r].dropna()])
+                    m = re.search(r'(\d{7})至(\d{7})', row_txt)
+                    if m:
+                        p_str = f"{m.group(1)}~{m.group(2)}"
+                        break
+                all_parsed.append((fn, b_data, p_str))
             except Exception:
                 pass
 
@@ -804,7 +758,7 @@ def load_dynamic_major(report_dict):
     if not (b_cur and b_cum and b_ly):
         return None, None, {}
 
-    def parse_major_safe(b_data, fname=""):
+    def parse_major_safe(b_data):
         df = None
         try:
             df = pd.read_excel(io.BytesIO(b_data), header=None)
@@ -819,7 +773,13 @@ def load_dynamic_major(report_dict):
         if df is None or df.empty:
             return "", {}
 
-        _, _, period = extract_date_range_flexible(df, fname)
+        period = ""
+        for r in range(min(5, len(df))):
+            row_txt = " ".join([str(x) for x in df.iloc[r].dropna()])
+            m = re.search(r'(\d{7})至(\d{7})', row_txt)
+            if m:
+                period = f"{m.group(1)}~{m.group(2)}"
+                break
 
         res = {}
         for r in range(len(df)):
@@ -839,9 +799,9 @@ def load_dynamic_major(report_dict):
 
         return period, res
 
-    p_cur, d_cur = parse_major_safe(b_cur, "本期")
-    p_cum, d_cum = parse_major_safe(b_cum, "本年累計")
-    p_ly, d_ly = parse_major_safe(b_ly, "去年累計")
+    p_cur, d_cur = parse_major_safe(b_cur)
+    p_cum, d_cum = parse_major_safe(b_cum)
+    p_ly, d_ly = parse_major_safe(b_ly)
 
     col_cur_s, col_cur_a = "本期(攔停)", "本期(逕舉)"
     col_cum_s, col_cum_a = "本年累計(攔停)", "本年累計(逕舉)"
@@ -928,7 +888,7 @@ def load_dynamic_overload(report_dict):
     if not (b_cum and b_ly):
         return None, "", {}
 
-    def parse_ov_sheets(b_data, fname=""):
+    def parse_ov_sheets(b_data):
         try:
             xls = pd.ExcelFile(io.BytesIO(b_data))
             counts = {}
@@ -936,7 +896,12 @@ def load_dynamic_overload(report_dict):
             for sname in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=sname, header=None)
                 if not period:
-                    _, _, period = extract_date_range_flexible(df, fname)
+                    for r in range(min(10, len(df))):
+                        txt = " ".join([str(x) for x in df.iloc[r].dropna()])
+                        m = re.search(r'(\d{7})至(\d{7})', txt)
+                        if m:
+                            period = f"{m.group(1)}~{m.group(2)}"
+                            break
                 unit = ""
                 for r in range(min(10, len(df))):
                     txt = " ".join([str(x) for x in df.iloc[r].dropna()])
@@ -958,9 +923,9 @@ def load_dynamic_overload(report_dict):
         except Exception:
             return "", {}
 
-    p_cur, d_cur = parse_ov_sheets(b_cur, "本期") if b_cur else ("", {})
-    p_cum, d_cum = parse_ov_sheets(b_cum, "本年累計")
-    p_ly, d_ly = parse_ov_sheets(b_ly, "去年累計")
+    p_cur, d_cur = parse_ov_sheets(b_cur) if b_cur else ("", {})
+    p_cum, d_cum = parse_ov_sheets(b_cum)
+    p_ly, d_ly = parse_ov_sheets(b_ly)
 
     targets = {
         "合計": 127, "聖亭所": 20, "龍潭所": 27, "中興所": 20,
@@ -1205,12 +1170,12 @@ if btn_generate:
                     date_range_str=f"統計截止至最新報表 ｜ 製表日期：{datetime.now().strftime('%Y/%m/%d')}"
                 )
 
-            # P.2 三項重點 (精確顯示本期與累計期間)
+            # P.2 三項重點 (精確顯示第 3 列入案期間)
             if chk_three and df_three_preview is not None:
                 cur_dt = three_periods.get("cur_single", "本期")
                 cur_full = three_periods.get("cur_full", cur_dt)
                 cum_full = three_periods.get("cum_full", "本月累計")
-                three_sub = f"本期統計：{cur_full} ｜ 本月累計：{cum_full} ｜ 製表單位：龍潭分局交通組"
+                three_sub = f"統計期間：本期 ({cur_full}) ｜ 本月累計 ({cum_full}) ｜ 製表單位：龍潭分局交通組"
                 
                 builder.add_three_major_slide(
                     data_rows=three_matrix,
