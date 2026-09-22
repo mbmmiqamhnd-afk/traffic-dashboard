@@ -710,7 +710,7 @@ def load_dynamic_accidents(report_dict):
     }
     return df_a1_dyn, df_a2_dyn, acc_periods
 
-# --- 4.3 重大交通違規總表與 7 大專項細表 ---
+# --- 4.3 重大交通違規總表與 7 大專項細表 (精確辨識「龍潭交通分隊」) ---
 def load_dynamic_major(report_dict):
     major_files = {k: v for k, v in report_dict.items() if "重大違規" in k or "重點違規" in k}
     if not major_files:
@@ -779,7 +779,7 @@ def load_dynamic_major(report_dict):
 
         res = {}
         for r in range(len(df)):
-            col0 = str(df.iloc[r, 0]).strip()
+            col0 = str(df.iloc[r, 0]).strip().replace(" ", "").replace("\u3000", "")
             if not col0 or col0 == 'nan' or any(k in col0 for k in ['列印', '單位', '本年度', '統計']):
                 continue
             vals = []
@@ -790,7 +790,30 @@ def load_dynamic_major(report_dict):
                 except Exception:
                     vals.append(0)
 
-            norm_u = col0.replace("派出所", "所").replace("龍潭交通分隊", "交通分隊").replace("交通組", "科技執法")
+            # 精準鎖定「龍潭交通分隊」與各所別
+            if "交通分隊" in col0 or "龍潭交通分隊" in col0:
+                norm_u = "交通分隊"
+            elif "交通組" in col0:
+                norm_u = "科技執法"
+            elif "聖亭" in col0:
+                norm_u = "聖亭所"
+            elif "龍潭" in col0 and "所" in col0:
+                norm_u = "龍潭所"
+            elif "中興" in col0:
+                norm_u = "中興所"
+            elif "石門" in col0:
+                norm_u = "石門所"
+            elif "高平" in col0:
+                norm_u = "高平所"
+            elif "三和" in col0:
+                norm_u = "三和所"
+            elif "警備" in col0:
+                norm_u = "警備隊"
+            elif any(k in col0 for k in ["合計", "總計"]):
+                norm_u = "合計"
+            else:
+                norm_u = col0.replace("派出所", "所")
+
             res[norm_u] = vals
 
         return period, res
@@ -867,7 +890,7 @@ def load_dynamic_major(report_dict):
     }
     return df_major_dyn, detail_dict, major_periods
 
-# --- 4.4 取締超載違規件數統計表 (精確合併「龍潭分局」各所與「交通大隊」之龍潭分隊) ---
+# --- 4.4 取締超載違規件數統計表 (精確鎖定「龍潭交通分隊」數據) ---
 def load_dynamic_overload(report_dict):
     ov_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["超載違規", "取締裝載砂石"])}
     if not ov_files:
@@ -894,9 +917,22 @@ def load_dynamic_overload(report_dict):
 
             counts = {}
             for unit, group in df_data.groupby(0):
-                norm_u = str(unit).strip().replace("派出所", "所").replace("龍潭交通分隊", "交通分隊")
+                unit_str = str(unit).strip().replace(" ", "").replace("\u3000", "")
                 cnt = group[2].apply(lambda x: int(float(str(x).replace(',', ''))) if pd.notna(x) and str(x).strip() != '' else 0).sum()
-                counts[norm_u] = cnt
+                
+                # 精準標準化名稱，特別確認「龍潭交通分隊」
+                if "聖亭" in unit_str: norm_u = "聖亭所"
+                elif "龍潭交通分隊" in unit_str or ("龍潭" in unit_str and "分隊" in unit_str): norm_u = "交通分隊"
+                elif "龍潭" in unit_str and "所" in unit_str: norm_u = "龍潭所"
+                elif "中興" in unit_str: norm_u = "中興所"
+                elif "石門" in unit_str: norm_u = "石門所"
+                elif "高平" in unit_str: norm_u = "高平所"
+                elif "三和" in unit_str: norm_u = "三和所"
+                elif "警備" in unit_str: norm_u = "警備隊"
+                elif "交通分隊" in unit_str or "分隊" in unit_str: norm_u = "交通分隊"
+                else: norm_u = unit_str.replace("派出所", "所")
+
+                counts[norm_u] = counts.get(norm_u, 0) + cnt
             return period, counts
         except Exception:
             return "", {}
@@ -912,11 +948,12 @@ def load_dynamic_overload(report_dict):
     if not (d_cum_precinct and d_ly_precinct):
         return None, "", {}
 
+    # 合併邏輯：從交通大隊或分局中提取屬於「龍潭交通分隊」之件數
     def merge_traffic_squad(d_precinct, d_traffic):
         merged = d_precinct.copy()
-        squad_val = 0
+        squad_val = d_precinct.get("交通分隊", 0)
         for k, v in d_traffic.items():
-            if "龍潭" in k:
+            if any(term in k for term in ["龍潭", "交通分隊", "分隊"]):
                 squad_val += v
         merged["交通分隊"] = squad_val
         return merged
