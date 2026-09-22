@@ -890,17 +890,27 @@ def load_dynamic_major(report_dict):
     }
     return df_major_dyn, detail_dict, major_periods
 
-# --- 4.4 取締超載違規件數統計表 (精確鎖定「龍潭交通分隊」數據) ---
+# --- 4.4 取締超載違規件數統計表 (精確鎖定龍潭分局與交大龍潭分隊，杜絕重複累計與欄位偏移) ---
 def load_dynamic_overload(report_dict):
     ov_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["超載違規", "取締裝載砂石"])}
     if not ov_files:
         return None, "", {}
 
-    def get_target_file(period_pat, unit_pat):
-        matched = [k for k in ov_files.keys() if period_pat in k and unit_pat in k]
-        return ov_files[matched[-1]] if matched else None
+    # 1. 嚴格檔案定位，分局與交大絕不交叉誤讀
+    def get_exact_file(period_pat, unit_type):
+        candidates = []
+        for k in ov_files.keys():
+            if period_pat in k:
+                if unit_type == "交大" and "交通大隊" in k:
+                    candidates.append(k)
+                elif unit_type == "分局" and "交通大隊" not in k and ("龍潭分局" in k or "龍潭" in k):
+                    candidates.append(k)
+        if candidates:
+            candidates.sort()
+            return ov_files[candidates[-1]]
+        return None
 
-    def parse_r17_file(b_data):
+    def parse_r17_file(b_data, is_traffic_corps=False):
         if not b_data:
             return "", {}
         try:
@@ -912,55 +922,83 @@ def load_dynamic_overload(report_dict):
                     period = txt.split("統計期間：")[1].strip()
                     break
 
-            df_data = df_full.iloc[7:].copy()
+            # 動態尋找數據開始列與「件數」欄位
+            data_start_row = 7
+            cnt_col_idx = 2  # 預設件數欄
+
+            for r in range(4, min(9, len(df_full))):
+                for c_idx, cell_txt in enumerate(df_full.iloc[r]):
+                    if any(k in str(cell_txt) for k in ["件數", "舉發件數", "取締件數"]):
+                        cnt_col_idx = c_idx
+                        data_start_row = r + 1
+                        break
+
+            df_data = df_full.iloc[data_start_row:].copy()
             df_data[0] = df_data[0].ffill()
 
             counts = {}
             for unit, group in df_data.groupby(0):
                 unit_str = str(unit).strip().replace(" ", "").replace("\u3000", "")
-                cnt = group[2].apply(lambda x: int(float(str(x).replace(',', ''))) if pd.notna(x) and str(x).strip() != '' else 0).sum()
                 
-                # 精準標準化名稱，特別確認「龍潭交通分隊」
-                if "聖亭" in unit_str: norm_u = "聖亭所"
-                elif "龍潭交通分隊" in unit_str or ("龍潭" in unit_str and "分隊" in unit_str): norm_u = "交通分隊"
-                elif "龍潭" in unit_str and "所" in unit_str: norm_u = "龍潭所"
-                elif "中興" in unit_str: norm_u = "中興所"
-                elif "石門" in unit_str: norm_u = "石門所"
-                elif "高平" in unit_str: norm_u = "高平所"
-                elif "三和" in unit_str: norm_u = "三和所"
-                elif "警備" in unit_str: norm_u = "警備隊"
-                elif "交通分隊" in unit_str or "分隊" in unit_str: norm_u = "交通分隊"
-                else: norm_u = unit_str.replace("派出所", "所")
+                # 排除合計/總計列，避免整表總數被誤當作分隊數據
+                if any(k in unit_str for k in ["總計", "合計", "大隊合計", "大隊部"]):
+                    continue
 
-                counts[norm_u] = counts.get(norm_u, 0) + cnt
+                def to_int(x):
+                    try:
+                        s = str(x).replace(',', '').replace('"', '').replace('-', '0').strip()
+                        return int(float(s))
+                    except Exception:
+                        return 0
+
+                cnt = group[cnt_col_idx].apply(to_int).sum()
+
+                if is_traffic_corps:
+                    # 交通大隊報表：只取「龍潭交通分隊」或「龍潭分隊」
+                    if "龍潭" in unit_str and ("分隊" in unit_str or "隊" in unit_str):
+                        counts["交通分隊"] = counts.get("交通分隊", 0) + cnt
+                else:
+                    # 龍潭分局報表：常規派出所對應
+                    if "聖亭" in unit_str: norm_u = "聖亭所"
+                    elif "龍潭" in unit_str and ("分隊" in unit_str or "交通" in unit_str): norm_u = "交通分隊"
+                    elif "龍潭" in unit_str and "所" in unit_str: norm_u = "龍潭所"
+                    elif "中興" in unit_str: norm_u = "中興所"
+                    elif "石門" in unit_str: norm_u = "石門所"
+                    elif "高平" in unit_str: norm_u = "高平所"
+                    elif "三和" in unit_str: norm_u = "三和所"
+                    elif "警備" in unit_str: norm_u = "警備隊"
+                    else: norm_u = unit_str.replace("派出所", "所")
+
+                    counts[norm_u] = counts.get(norm_u, 0) + cnt
+
             return period, counts
         except Exception:
             return "", {}
 
-    p_cur, d_cur_precinct = parse_r17_file(get_target_file("本期", "龍潭分局") or get_target_file("本期", ""))
-    p_cum, d_cum_precinct = parse_r17_file(get_target_file("本年累計", "龍潭分局") or get_target_file("年累計", "龍潭分局") or get_target_file("本年累計", ""))
-    p_ly, d_ly_precinct = parse_r17_file(get_target_file("去年累計", "龍潭分局") or get_target_file("去年累計", ""))
+    # 分別獨立解析龍潭分局與交通大隊的三期報表
+    p_cur, d_cur_precinct = parse_r17_file(get_exact_file("本期", "分局"), is_traffic_corps=False)
+    p_cum, d_cum_precinct = parse_r17_file(get_exact_file("本年累計", "分局") or get_exact_file("年累計", "分局"), is_traffic_corps=False)
+    p_ly, d_ly_precinct = parse_r17_file(get_exact_file("去年累計", "分局"), is_traffic_corps=False)
 
-    _, d_cur_traffic = parse_r17_file(get_target_file("本期", "交通大隊"))
-    _, d_cum_traffic = parse_r17_file(get_target_file("本年累計", "交通大隊") or get_target_file("年累計", "交通大隊"))
-    _, d_ly_traffic = parse_r17_file(get_target_file("去年累計", "交通大隊"))
+    _, d_cur_traffic = parse_r17_file(get_exact_file("本期", "交大"), is_traffic_corps=True)
+    _, d_cum_traffic = parse_r17_file(get_exact_file("本年累計", "交大") or get_exact_file("年累計", "交大"), is_traffic_corps=True)
+    _, d_ly_traffic = parse_r17_file(get_exact_file("去年累計", "交大"), is_traffic_corps=True)
 
-    if not (d_cum_precinct and d_ly_precinct):
+    if not (d_cum_precinct or d_cum_traffic):
         return None, "", {}
 
-    # 合併邏輯：從交通大隊或分局中提取屬於「龍潭交通分隊」之件數
-    def merge_traffic_squad(d_precinct, d_traffic):
-        merged = d_precinct.copy()
-        squad_val = d_precinct.get("交通分隊", 0)
-        for k, v in d_traffic.items():
-            if any(term in k for term in ["龍潭", "交通分隊", "分隊"]):
-                squad_val += v
-        merged["交通分隊"] = squad_val
+    # 合併龍潭分隊數據：優先採用交通大隊報表中的龍潭分隊數字
+    def combine_units(d_p, d_t):
+        merged = d_p.copy()
+        t_squad_val = d_t.get("交通分隊", 0)
+        p_squad_val = d_p.get("交通分隊", 0)
+        # 若交通大隊有龍潭分隊數據則以交大為主，若無則保留分局端
+        merged["交通分隊"] = t_squad_val if t_squad_val > 0 else p_squad_val
         return merged
 
-    d_cur = merge_traffic_squad(d_cur_precinct, d_cur_traffic)
-    d_cum = merge_traffic_squad(d_cum_precinct, d_cum_traffic)
-    d_ly = merge_traffic_squad(d_ly_precinct, d_ly_traffic)
+    d_cur = combine_units(d_cur_precinct, d_cur_traffic)
+    d_cum = combine_units(d_cum_precinct, d_cum_traffic)
+    d_ly = combine_units(d_ly_precinct, d_ly_traffic)
 
     targets = {
         "合計": 127, "聖亭所": 20, "龍潭所": 27, "中興所": 20,
@@ -988,6 +1026,7 @@ def load_dynamic_overload(report_dict):
             "達成率": achieve
         })
 
+    # 合計列由各所隊直接重加，保證不發生數學矛盾
     if rows:
         tot_c = sum(r["本期"] for r in rows[1:])
         tot_cum = sum(r["本年累計"] for r in rows[1:])
