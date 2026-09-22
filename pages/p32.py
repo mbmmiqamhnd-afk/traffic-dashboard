@@ -474,7 +474,7 @@ if not MEMORY_REPORTS:
     st.warning("⚠️ 目前無有效報表檔案。請在側邊欄上傳 Excel 檔案或確認雲端硬碟配置。")
 
 # ==========================================
-# 4. 八大核心報表純動態解析核心 (相容新版系統 1)
+# 4. 八大核心報表純動態解析核心 (無備援，嚴格模式)
 # ==========================================
 
 # --- 4.1 三項重點違規 ---
@@ -867,9 +867,9 @@ def load_dynamic_major(report_dict):
     }
     return df_major_dyn, detail_dict, major_periods
 
-# --- 4.4 取締超載違規件數統計表 (全面相容新版系統 1 R17 砂石大貨車報表與舊版 stoneCnt) ---
+# --- 4.4 取締超載違規件數統計表 (嚴格讀取系統 1 R17 砂石大貨車報表) ---
 def load_dynamic_overload(report_dict):
-    ov_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["超載違規", "取締裝載砂石", "stoneCnt"])}
+    ov_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["超載違規", "取締裝載砂石"])}
     if not ov_files:
         return None, "", {}
 
@@ -884,72 +884,33 @@ def load_dynamic_overload(report_dict):
     if not (b_cum and b_ly):
         return None, "", {}
 
-    def parse_ov_safe(b_data):
+    def parse_r17_strict(b_data):
         try:
-            xls = pd.ExcelFile(io.BytesIO(b_data))
-            # 判斷是否為新版系統 1 R17 報表
-            df_check = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=None, nrows=10)
-            is_r17 = any("取締裝載砂石" in str(x) or "超載" in str(x) for x in df_check.values.flatten())
+            df_full = pd.read_excel(io.BytesIO(b_data), header=None)
+            period = ""
+            for r in range(min(5, len(df_full))):
+                txt = " ".join([str(x) for x in df_full.iloc[r].dropna()])
+                if "統計期間：" in txt:
+                    period = txt.split("統計期間：")[1].strip()
+                    break
 
-            if is_r17:
-                period = ""
-                for r in range(min(5, len(df_check))):
-                    txt = " ".join([str(x) for x in df_check.iloc[r].dropna()])
-                    if "統計期間：" in txt:
-                        period = txt.split("統計期間：")[1].strip()
-                        break
+            # 數據列從第 8 列 (index 7) 開始，向前填補單位名稱以解除合併儲存格
+            df_data = df_full.iloc[7:].copy()
+            df_data[0] = df_data[0].ffill()
 
-                # 讀取完整資料並向下填補單位名稱 (解決合併儲存格問題)
-                df_full = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=None)
-                # 從第 8 列 (index 7) 開始為數據列，第 1 欄 (index 0) 為單位，第 3 欄 (index 2) 為超載
-                df_data = df_full.iloc[7:].copy()
-                df_data[0] = df_data[0].ffill()
-
-                counts = {}
-                for unit, group in df_data.groupby(0):
-                    norm_u = str(unit).strip().replace("派出所", "所").replace("龍潭交通分隊", "交通分隊")
-                    # 統計該單位旗下所有車種在「超載」欄位的加總
-                    cnt = group[2].apply(lambda x: int(float(str(x).replace(',', ''))) if pd.notna(x) and str(x).strip() != '' else 0).sum()
-                    counts[norm_u] = cnt
-                return period, counts
-
-            else:
-                # 兼容舊版系統 2 SSRS 多工作表解析邏輯
-                counts = {}
-                period = ""
-                for sname in xls.sheet_names:
-                    df = pd.read_excel(xls, sheet_name=sname, header=None)
-                    if not period:
-                        for r in range(min(10, len(df))):
-                            txt = " ".join([str(x) for x in df.iloc[r].dropna()])
-                            m = re.search(r'(\d{7})至(\d{7})', txt)
-                            if m:
-                                period = f"{m.group(1)}~{m.group(2)}"
-                                break
-                    unit = ""
-                    for r in range(min(10, len(df))):
-                        txt = " ".join([str(x) for x in df.iloc[r].dropna()])
-                        if "舉發單位：" in txt:
-                            unit = txt.split("舉發單位：")[1].strip()
-                            break
-                    tot = 0
-                    for r in range(len(df)-1, -1, -1):
-                        if "總計" in str(df.iloc[r, 0]):
-                            try:
-                                tot = int(float(str(df.iloc[r].dropna().values[-1]).replace(',', '')))
-                            except Exception:
-                                tot = 0
-                            break
-                    if unit:
-                        norm_u = unit.replace("派出所", "所").replace("龍潭交通分隊", "交通分隊")
-                        counts[norm_u] = tot
-                return period, counts
+            counts = {}
+            for unit, group in df_data.groupby(0):
+                norm_u = str(unit).strip().replace("派出所", "所").replace("龍潭交通分隊", "交通分隊")
+                # 第 3 欄 (index 2) 為「超載」數據欄位
+                cnt = group[2].apply(lambda x: int(float(str(x).replace(',', ''))) if pd.notna(x) and str(x).strip() != '' else 0).sum()
+                counts[norm_u] = cnt
+            return period, counts
         except Exception:
             return "", {}
 
-    p_cur, d_cur = parse_ov_safe(b_cur) if b_cur else ("", {})
-    p_cum, d_cum = parse_ov_safe(b_cum)
-    p_ly, d_ly = parse_ov_safe(b_ly)
+    p_cur, d_cur = parse_r17_strict(b_cur) if b_cur else ("", {})
+    p_cum, d_cum = parse_r17_strict(b_cum)
+    p_ly, d_ly = parse_r17_strict(b_ly)
 
     targets = {
         "合計": 127, "聖亭所": 20, "龍潭所": 27, "中興所": 20,
@@ -1038,7 +999,7 @@ def load_dynamic_jingtao(report_dict):
         pass
     return None
 
-# --- 4.6 科技執法成效統計表 (全面相容新版系統 1 自選匯出「案件明細」工作表與舊版單一表) ---
+# --- 4.6 科技執法成效統計表 (嚴格讀取案件明細之違規地點，無備援) ---
 def load_dynamic_tech(report_dict):
     tech_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["科技執法", "自選匯出"])}
     if not tech_files:
@@ -1047,31 +1008,32 @@ def load_dynamic_tech(report_dict):
     b_data = list(tech_files.values())[-1]
     try:
         xls = pd.ExcelFile(io.BytesIO(b_data))
-        df = None
+        
+        # 嚴格要求必須有「案件明細」工作表
+        if "案件明細" not in xls.sheet_names:
+            st.error("❌ 科技執法報表缺少【案件明細】工作表！")
+            return None, ""
 
-        # 優先檢查是否有新版系統 1 的「案件明細」工作表
-        if "案件明細" in xls.sheet_names:
-            df = pd.read_excel(xls, sheet_name="案件明細", skiprows=3)
-        else:
-            # 兼容舊版單一工作表
-            df = pd.read_excel(xls, sheet_name=0)
+        # 跳過前 3 列標頭讀取資料
+        df_detail = pd.read_excel(xls, sheet_name="案件明細", skiprows=3)
 
-        loc_col = None
-        for c in df.columns:
-            if any(k in str(c) for k in ["違規地點", "路段", "地點"]):
-                loc_col = c
-                break
+        # 嚴格尋找「違規地點」欄位
+        loc_col = next((c for c in df_detail.columns if "違規地點" in str(c)), None)
+        if not loc_col:
+            st.error("❌ 科技執法報表【案件明細】中缺少【違規地點】欄位，請確認匯出時是否有打勾！")
+            return None, ""
 
-        if loc_col is not None:
-            counts = df[loc_col].dropna().value_counts().reset_index()
-            counts.columns = ["路段名稱", "舉發件數"]
-            tot = counts["舉發件數"].sum()
-            tot_row = pd.DataFrame([{"路段名稱": "舉發總數", "舉發件數": tot}])
-            df_out = pd.concat([counts, tot_row], ignore_index=True)
-            return df_out, "科技執法成效統計表"
-    except Exception:
-        pass
-    return None, ""
+        # 統計路段並產出
+        counts = df_detail[loc_col].dropna().value_counts().reset_index()
+        counts.columns = ["路段名稱", "舉發件數"]
+        tot = counts["舉發件數"].sum()
+        tot_row = pd.DataFrame([{"路段名稱": "舉發總數", "舉發件數": tot}])
+        df_out = pd.concat([counts, tot_row], ignore_index=True)
+        return df_out, "科技執法成效統計表"
+
+    except Exception as e:
+        st.error(f"❌ 讀取科技執法報表發生異常：{e}")
+        return None, ""
 
 # ==========================================
 # 5. 純動態執行載入（完全無假資料）
