@@ -474,7 +474,7 @@ if not MEMORY_REPORTS:
     st.warning("⚠️ 目前無有效報表檔案。請在側邊欄上傳 Excel 檔案或確認雲端硬碟配置。")
 
 # ==========================================
-# 4. 八大核心報表純動態解析核心 (無備援，嚴格模式)
+# 4. 八大核心報表純動態解析核心 (嚴格零備援，新版系統 1)
 # ==========================================
 
 # --- 4.1 三項重點違規 ---
@@ -867,24 +867,21 @@ def load_dynamic_major(report_dict):
     }
     return df_major_dyn, detail_dict, major_periods
 
-# --- 4.4 取締超載違規件數統計表 (嚴格讀取系統 1 R17 砂石大貨車報表) ---
+# --- 4.4 取締超載違規件數統計表 (精確合併「龍潭分局」各所與「交通大隊」之龍潭分隊) ---
 def load_dynamic_overload(report_dict):
     ov_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["超載違規", "取締裝載砂石"])}
     if not ov_files:
         return None, "", {}
 
-    def get_latest_item(pat):
-        matched = [k for k in ov_files.keys() if pat in k]
+    # 工具函式：根據期程與單位關鍵字取得最新檔案
+    def get_target_file(period_pat, unit_pat):
+        matched = [k for k in ov_files.keys() if period_pat in k and unit_pat in k]
         return ov_files[matched[-1]] if matched else None
 
-    b_cur = get_latest_item("本期")
-    b_cum = get_latest_item("本年累計") or get_latest_item("(1)本年累計") or get_latest_item("年累計")
-    b_ly = get_latest_item("去年累計") or get_latest_item("(2)去年累計")
-
-    if not (b_cum and b_ly):
-        return None, "", {}
-
-    def parse_r17_strict(b_data):
+    # 單一 R17 檔案解析邏輯
+    def parse_r17_file(b_data):
+        if not b_data:
+            return "", {}
         try:
             df_full = pd.read_excel(io.BytesIO(b_data), header=None)
             period = ""
@@ -908,9 +905,32 @@ def load_dynamic_overload(report_dict):
         except Exception:
             return "", {}
 
-    p_cur, d_cur = parse_r17_strict(b_cur) if b_cur else ("", {})
-    p_cum, d_cum = parse_r17_strict(b_cum)
-    p_ly, d_ly = parse_r17_strict(b_ly)
+    # 1. 抓取分局本體數據
+    p_cur, d_cur_precinct = parse_r17_file(get_target_file("本期", "龍潭分局") or get_target_file("本期", ""))
+    p_cum, d_cum_precinct = parse_r17_file(get_target_file("本年累計", "龍潭分局") or get_target_file("年累計", "龍潭分局") or get_target_file("本年累計", ""))
+    p_ly, d_ly_precinct = parse_r17_file(get_target_file("去年累計", "龍潭分局") or get_target_file("去年累計", ""))
+
+    # 2. 抓取交通大隊數據 (篩選龍潭分隊)
+    _, d_cur_traffic = parse_r17_file(get_target_file("本期", "交通大隊"))
+    _, d_cum_traffic = parse_r17_file(get_target_file("本年累計", "交通大隊") or get_target_file("年累計", "交通大隊"))
+    _, d_ly_traffic = parse_r17_file(get_target_file("去年累計", "交通大隊"))
+
+    if not (d_cum_precinct and d_ly_precinct):
+        return None, "", {}
+
+    # 3. 合併函式：從交大報表提取「龍潭交通分隊」數值
+    def merge_traffic_squad(d_precinct, d_traffic):
+        merged = d_precinct.copy()
+        squad_val = 0
+        for k, v in d_traffic.items():
+            if "龍潭" in k:
+                squad_val += v
+        merged["交通分隊"] = squad_val
+        return merged
+
+    d_cur = merge_traffic_squad(d_cur_precinct, d_cur_traffic)
+    d_cum = merge_traffic_squad(d_cum_precinct, d_cum_traffic)
+    d_ly = merge_traffic_squad(d_ly_precinct, d_ly_traffic)
 
     targets = {
         "合計": 127, "聖亭所": 20, "龍潭所": 27, "中興所": 20,
@@ -937,6 +957,8 @@ def load_dynamic_overload(report_dict):
             "目標值": tgt,
             "達成率": achieve
         })
+
+    # 重新結算全分局總計 (含交通分隊)
     if rows:
         tot_c = sum(r["本期"] for r in rows[1:])
         tot_cum = sum(r["本年累計"] for r in rows[1:])
@@ -947,7 +969,7 @@ def load_dynamic_overload(report_dict):
         rows[0]["同期比較"] = tot_cum - tot_ly
         rows[0]["達成率"] = f"{(tot_cum / 127)*100:.0f}%"
 
-    footnote = "本期定義：係指該期昱通系統入案件數；以年底達成率100%為基準。"
+    footnote = "本期定義：係指該期昱通系統入案件數（含交通警察大隊龍潭分隊）；以年底達成率100%為基準。"
     ov_periods = {
         "cur": p_cur if p_cur else "本期",
         "cum": p_cum if p_cum else "本年累計",
@@ -1009,21 +1031,21 @@ def load_dynamic_tech(report_dict):
     try:
         xls = pd.ExcelFile(io.BytesIO(b_data))
         
-        # 嚴格要求必須有「案件明細」工作表
+        # 嚴格要求必須有「案件明細」工作表[cite: 1]
         if "案件明細" not in xls.sheet_names:
             st.error("❌ 科技執法報表缺少【案件明細】工作表！")
             return None, ""
 
-        # 跳過前 3 列標頭讀取資料
+        # 跳過前 3 列標頭讀取資料[cite: 1]
         df_detail = pd.read_excel(xls, sheet_name="案件明細", skiprows=3)
 
-        # 嚴格尋找「違規地點」欄位
+        # 嚴格尋找「違規地點」欄位[cite: 1]
         loc_col = next((c for c in df_detail.columns if "違規地點" in str(c)), None)
         if not loc_col:
             st.error("❌ 科技執法報表【案件明細】中缺少【違規地點】欄位，請確認匯出時是否有打勾！")
             return None, ""
 
-        # 統計路段並產出
+        # 統計各路段舉發件數[cite: 1]
         counts = df_detail[loc_col].dropna().value_counts().reset_index()
         counts.columns = ["路段名稱", "舉發件數"]
         tot = counts["舉發件數"].sum()
