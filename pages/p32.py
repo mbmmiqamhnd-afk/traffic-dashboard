@@ -142,12 +142,10 @@ class PptxReportBuilder:
         cell.fill.fore_color.rgb = bg_color if bg_color else self.C_TBL_ROW_BG
         self._set_border(cell, color_hex="CBD5E1")
 
-        # 針對大字型緊縮上下內距，留出足夠垂直行高
         cell.margin_top = Inches(0.02)
         cell.margin_bottom = Inches(0.02)
         cell.margin_left = Inches(0.03)
         cell.margin_right = Inches(0.03)
-
         cell.text_frame.word_wrap = False
 
         for p in cell.text_frame.paragraphs:
@@ -229,7 +227,6 @@ class PptxReportBuilder:
         tbl.cell(0, 1).merge(tbl.cell(0, 4))
         tbl.cell(0, 5).merge(tbl.cell(0, 8))
 
-        # 表頭文字維持 12~13pt 避免換行
         self._set_cell(tbl.cell(0, 0), "單位", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
         self._set_cell(tbl.cell(0, 1), f"{cur_col_title} 新增違規數", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
         self._set_cell(tbl.cell(0, 5), f"{cum_col_title}數", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
@@ -242,7 +239,6 @@ class PptxReportBuilder:
             is_tot = (r_idx == 2)
             bg = self.C_TBL_HIGHLIGHT_BG if is_tot else self.C_TBL_ROW_BG
             for c_idx, val in enumerate(row):
-                # 單位欄 13pt，其餘數據欄 16pt (9欄最佳視覺大小)
                 f_sz = 13 if c_idx == 0 else 16
                 self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=f_sz, bold=is_tot, color=self.C_TBL_TEXT_DARK, bg_color=bg)
 
@@ -303,7 +299,6 @@ class PptxReportBuilder:
                     except Exception:
                         pass
 
-                # 單位欄 12pt，10欄純數字 16pt
                 f_sz = 12 if c_idx == 0 else 16
                 self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=f_sz, bold=is_bold, color=fg, bg_color=bg)
 
@@ -322,7 +317,6 @@ class PptxReportBuilder:
         table_shape = slide.shapes.add_table(num_rows, num_cols, Inches(tbl_left), Inches(tbl_top), Inches(tbl_width), Inches(tbl_height))
         tbl = table_shape.table
 
-        # 表頭字級：多欄用 11~12pt，少欄用 13pt
         hdr_font_sz = 11 if num_cols >= 9 else 13
         for c_idx, col_name in enumerate(df.columns):
             self._set_cell(tbl.cell(0, c_idx), col_name, font_size=hdr_font_sz, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
@@ -372,7 +366,6 @@ class PptxReportBuilder:
                         except Exception:
                             pass
 
-                # 單位欄維持 13pt；少欄表格(如 A1/A2/超載)數字放大至 18pt，多欄表格數字 16pt
                 if c_idx == 0:
                     data_font_sz = 13
                 elif num_cols <= 7:
@@ -397,7 +390,7 @@ class PptxReportBuilder:
         return out
 
 # ==========================================
-# 3. 雙軌數據來源載入器 (ID 直連 + 支援所有雲端硬碟)
+# 3. 雙軌數據來源載入器
 # ==========================================
 def get_drive_service():
     if not HAS_GDRIVE or "gcp_service_account" not in st.secrets:
@@ -442,10 +435,8 @@ def fetch_files_from_gdrive_folder(target_folder_id: str):
     return file_dict
 
 MEMORY_REPORTS = {}
-
 GDRIVE_ID_CONFIG = st.secrets.get("GDRIVE_FOLDER_ID", "1fm6ZK5B5wUmfy7-cgrw8OIkh7iS175dA")
 
-# 1. 雲端同步
 gdrive_data = fetch_files_from_gdrive_folder(GDRIVE_ID_CONFIG)
 
 if gdrive_data:
@@ -456,8 +447,7 @@ if gdrive_data:
             st.caption(f"• {fn}")
 else:
     st.sidebar.warning(f"⚠️ 雲端資料夾 (ID: {GDRIVE_ID_CONFIG[:8]}...) 尚未讀取到 .xlsx 或 .csv 檔案。")
-
-    local_candidates = ["執法統計報表集中處", "執法報表集中處", "執法統計報表_已歸檔", "."]
+    local_candidates = ["今日待上傳報表", "執法統計報表集中處", "執法報表集中處", "."]
     for d in local_candidates:
         if os.path.exists(d):
             for f in os.listdir(d):
@@ -466,9 +456,8 @@ else:
                     with open(p, "rb") as f_in:
                         MEMORY_REPORTS[f] = f_in.read()
     if MEMORY_REPORTS:
-        st.sidebar.info(f"📂 偵測到本機集中處資料夾，已載入 {len(MEMORY_REPORTS)} 個報表")
+        st.sidebar.info(f"📂 偵測到本機資料夾，已載入 {len(MEMORY_REPORTS)} 個報表")
 
-# 2. 前端上傳
 st.sidebar.markdown("### 📤 本機手動上傳報表")
 uploaded_files = st.sidebar.file_uploader(
     "拖曳上傳本機報表（支援批次多檔）",
@@ -482,23 +471,19 @@ if uploaded_files:
     st.sidebar.success(f"✅ 前端已成功上傳 {len(uploaded_files)} 個報表並動態更新！")
 
 if not MEMORY_REPORTS:
-    st.warning("⚠️ 目前【雲端硬碟執法報表集中處】無檔案，亦未於【本機上傳至網站】。\n請在側邊欄上傳 Excel 檔案或確認雲端硬碟配置。")
+    st.warning("⚠️ 目前無有效報表檔案。請在側邊欄上傳 Excel 檔案或確認雲端硬碟配置。")
 
 # ==========================================
-# 4. 八大核心報表純動態解析核心 (精準鎖定第 3 列入案期間)
+# 4. 八大核心報表純動態解析核心 (相容新版系統 1)
 # ==========================================
 
 # --- 4.1 三項重點違規 ---
 def load_dynamic_three_major(report_dict):
-    three_files = {k: v for k, v in report_dict.items() if "重點違規" in k}
+    three_files = {k: v for k, v in report_dict.items() if "重點違規" in k or "重大違規" in k}
     if not three_files:
         return None, None, {}
 
     def extract_entry_date_info(b_data):
-        """
-        精準讀取第 3 列（Row 2, 0-indexed）的入案日統計期間：
-        例如：(入案日) 統計期間：本年度1150918至1150918
-        """
         try:
             df = pd.read_excel(io.BytesIO(b_data), header=None, nrows=5)
             for r in range(min(5, len(df))):
@@ -527,7 +512,7 @@ def load_dynamic_three_major(report_dict):
                 u = str(df.iloc[r, 0]).strip().replace(" ", "").replace("\u3000", "")
                 if not u or u == 'nan':
                     continue
-                if any(k in u for k in ["合計", "聖亭", "龍潭", "中興", "石門", "高平", "三和", "交通分隊"]):
+                if any(k in u for k in ["合計", "總計", "聖亭", "龍潭", "中興", "石門", "高平", "三和", "交通分隊"]):
                     def safe_num(v):
                         try:
                             return int(float(str(v).replace(',', '').strip()))
@@ -561,7 +546,6 @@ def load_dynamic_three_major(report_dict):
     if not parsed_files:
         return None, None, {}
 
-    # 短天期 (數值小) -> 本期 (cur_item)；長天期 (數值大) -> 累計 (cum_item)
     if len(parsed_files) > 1:
         if all(x["days_span"] >= 0 for x in parsed_files):
             parsed_files.sort(key=lambda x: x["days_span"])
@@ -603,7 +587,6 @@ def load_dynamic_three_major(report_dict):
         "cur_full": cur_item["full_disp"],
         "cum_full": cum_item["full_disp"]
     }
-
     return cur_item["short_disp"], matrix, periods_info
 
 # --- 4.2 交通事故 (A1 死亡、A2 受傷) ---
@@ -628,7 +611,6 @@ def load_dynamic_accidents(report_dict):
         date_range = ""
         data = {}
         df = None
-
         try:
             df = pd.read_excel(io.BytesIO(b_data), header=None)
         except Exception:
@@ -676,7 +658,6 @@ def load_dynamic_accidents(report_dict):
                 "a1_death": sum(data.get(s, {}).get("a1_death", 0) for s in station_names),
                 "a2_inj": sum(data.get(s, {}).get("a2_inj", 0) for s in station_names),
             }
-
             return date_range, data
 
         return date_range, data
@@ -886,9 +867,9 @@ def load_dynamic_major(report_dict):
     }
     return df_major_dyn, detail_dict, major_periods
 
-# --- 4.4 取締超載違規件數統計表 ---
+# --- 4.4 取締超載違規件數統計表 (全面相容新版系統 1 R17 砂石大貨車報表與舊版 stoneCnt) ---
 def load_dynamic_overload(report_dict):
-    ov_files = {k: v for k, v in report_dict.items() if "超載違規" in k}
+    ov_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["超載違規", "取締裝載砂石", "stoneCnt"])}
     if not ov_files:
         return None, "", {}
 
@@ -897,50 +878,78 @@ def load_dynamic_overload(report_dict):
         return ov_files[matched[-1]] if matched else None
 
     b_cur = get_latest_item("本期")
-    b_cum = get_latest_item("本年累計")
-    b_ly = get_latest_item("去年累計")
+    b_cum = get_latest_item("本年累計") or get_latest_item("(1)本年累計") or get_latest_item("年累計")
+    b_ly = get_latest_item("去年累計") or get_latest_item("(2)去年累計")
 
     if not (b_cum and b_ly):
         return None, "", {}
 
-    def parse_ov_sheets(b_data):
+    def parse_ov_safe(b_data):
         try:
             xls = pd.ExcelFile(io.BytesIO(b_data))
-            counts = {}
-            period = ""
-            for sname in xls.sheet_names:
-                df = pd.read_excel(xls, sheet_name=sname, header=None)
-                if not period:
+            # 判斷是否為新版系統 1 R17 報表
+            df_check = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=None, nrows=10)
+            is_r17 = any("取締裝載砂石" in str(x) or "超載" in str(x) for x in df_check.values.flatten())
+
+            if is_r17:
+                period = ""
+                for r in range(min(5, len(df_check))):
+                    txt = " ".join([str(x) for x in df_check.iloc[r].dropna()])
+                    if "統計期間：" in txt:
+                        period = txt.split("統計期間：")[1].strip()
+                        break
+
+                # 讀取完整資料並向下填補單位名稱 (解決合併儲存格問題)
+                df_full = pd.read_excel(xls, sheet_name=xls.sheet_names[0], header=None)
+                # 從第 8 列 (index 7) 開始為數據列，第 1 欄 (index 0) 為單位，第 3 欄 (index 2) 為超載
+                df_data = df_full.iloc[7:].copy()
+                df_data[0] = df_data[0].ffill()
+
+                counts = {}
+                for unit, group in df_data.groupby(0):
+                    norm_u = str(unit).strip().replace("派出所", "所").replace("龍潭交通分隊", "交通分隊")
+                    # 統計該單位旗下所有車種在「超載」欄位的加總
+                    cnt = group[2].apply(lambda x: int(float(str(x).replace(',', ''))) if pd.notna(x) and str(x).strip() != '' else 0).sum()
+                    counts[norm_u] = cnt
+                return period, counts
+
+            else:
+                # 兼容舊版系統 2 SSRS 多工作表解析邏輯
+                counts = {}
+                period = ""
+                for sname in xls.sheet_names:
+                    df = pd.read_excel(xls, sheet_name=sname, header=None)
+                    if not period:
+                        for r in range(min(10, len(df))):
+                            txt = " ".join([str(x) for x in df.iloc[r].dropna()])
+                            m = re.search(r'(\d{7})至(\d{7})', txt)
+                            if m:
+                                period = f"{m.group(1)}~{m.group(2)}"
+                                break
+                    unit = ""
                     for r in range(min(10, len(df))):
                         txt = " ".join([str(x) for x in df.iloc[r].dropna()])
-                        m = re.search(r'(\d{7})至(\d{7})', txt)
-                        if m:
-                            period = f"{m.group(1)}~{m.group(2)}"
+                        if "舉發單位：" in txt:
+                            unit = txt.split("舉發單位：")[1].strip()
                             break
-                unit = ""
-                for r in range(min(10, len(df))):
-                    txt = " ".join([str(x) for x in df.iloc[r].dropna()])
-                    if "舉發單位：" in txt:
-                        unit = txt.split("舉發單位：")[1].strip()
-                        break
-                tot = 0
-                for r in range(len(df)-1, -1, -1):
-                    if "總計" in str(df.iloc[r, 0]):
-                        try:
-                            tot = int(float(str(df.iloc[r].dropna().values[-1]).replace(',', '')))
-                        except Exception:
-                            tot = 0
-                        break
-                if unit:
-                    norm_u = unit.replace("派出所", "所").replace("龍潭交通分隊", "交通分隊")
-                    counts[norm_u] = tot
-            return period, counts
+                    tot = 0
+                    for r in range(len(df)-1, -1, -1):
+                        if "總計" in str(df.iloc[r, 0]):
+                            try:
+                                tot = int(float(str(df.iloc[r].dropna().values[-1]).replace(',', '')))
+                            except Exception:
+                                tot = 0
+                            break
+                    if unit:
+                        norm_u = unit.replace("派出所", "所").replace("龍潭交通分隊", "交通分隊")
+                        counts[norm_u] = tot
+                return period, counts
         except Exception:
             return "", {}
 
-    p_cur, d_cur = parse_ov_sheets(b_cur) if b_cur else ("", {})
-    p_cum, d_cum = parse_ov_sheets(b_cum)
-    p_ly, d_ly = parse_ov_sheets(b_ly)
+    p_cur, d_cur = parse_ov_safe(b_cur) if b_cur else ("", {})
+    p_cum, d_cum = parse_ov_safe(b_cum)
+    p_ly, d_ly = parse_ov_safe(b_ly)
 
     targets = {
         "合計": 127, "聖亭所": 20, "龍潭所": 27, "中興所": 20,
@@ -1029,22 +1038,32 @@ def load_dynamic_jingtao(report_dict):
         pass
     return None
 
-# --- 4.6 科技執法成效統計表 ---
+# --- 4.6 科技執法成效統計表 (全面相容新版系統 1 自選匯出「案件明細」工作表與舊版單一表) ---
 def load_dynamic_tech(report_dict):
-    tech_files = {k: v for k, v in report_dict.items() if "科技執法" in k}
+    tech_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["科技執法", "自選匯出"])}
     if not tech_files:
         return None, ""
 
     b_data = list(tech_files.values())[-1]
     try:
-        df = pd.read_excel(io.BytesIO(b_data))
+        xls = pd.ExcelFile(io.BytesIO(b_data))
+        df = None
+
+        # 優先檢查是否有新版系統 1 的「案件明細」工作表
+        if "案件明細" in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name="案件明細", skiprows=3)
+        else:
+            # 兼容舊版單一工作表
+            df = pd.read_excel(xls, sheet_name=0)
+
         loc_col = None
         for c in df.columns:
             if any(k in str(c) for k in ["違規地點", "路段", "地點"]):
                 loc_col = c
                 break
+
         if loc_col is not None:
-            counts = df[loc_col].value_counts().reset_index()
+            counts = df[loc_col].dropna().value_counts().reset_index()
             counts.columns = ["路段名稱", "舉發件數"]
             tot = counts["舉發件數"].sum()
             tot_row = pd.DataFrame([{"路段名稱": "舉發總數", "舉發件數": tot}])
@@ -1156,7 +1175,7 @@ with st.expander("👀 點擊展開預覽純動態讀取之數據（無任何寫
                 elif tab_name == "靜桃計畫": st.dataframe(df_jingtao_dyn, hide_index=True)
                 elif tab_name == "科技執法": st.dataframe(df_tech_dyn, hide_index=True)
     else:
-        st.info("💡 目前雲端集中處或本機尚未上傳有效報表，請在左側上傳 Excel 檔案以呈現數據。")
+        st.info("💡 目前尚未偵測到有效報表，請於側邊欄上傳 Excel 檔案。")
 
 # ==========================================
 # 7. 執行指定輸出生成
@@ -1185,7 +1204,7 @@ if btn_generate:
                     date_range_str=f"統計截止至最新報表 ｜ 製表日期：{datetime.now().strftime('%Y/%m/%d')}"
                 )
 
-            # P.2 三項重點 (精確顯示第 3 列入案期間)
+            # P.2 三項重點
             if chk_three and df_three_preview is not None:
                 cur_dt = three_periods.get("cur_single", "本期")
                 cur_full = three_periods.get("cur_full", cur_dt)
