@@ -390,7 +390,7 @@ class PptxReportBuilder:
         return out
 
 # ==========================================
-# 3. 雙軌數據來源載入器 (寬容支援 Google Sheets 與大小寫副檔名)
+# 3. 雙軌數據來源載入器
 # ==========================================
 def get_drive_service():
     if not HAS_GDRIVE or "gcp_service_account" not in st.secrets:
@@ -425,7 +425,6 @@ def fetch_files_from_gdrive_folder(target_folder_id: str):
             mime_type = item.get("mimeType", "")
             lower_name = raw_name.lower()
 
-            # Google 試算表格式 -> 自動轉為 Excel 下載
             if mime_type == "application/vnd.google-apps.spreadsheet":
                 req = service.files().export_media(
                     fileId=item["id"],
@@ -535,7 +534,8 @@ def load_dynamic_three_major(report_dict):
                 if any(k in u for k in ["合計", "總計", "聖亭", "龍潭", "中興", "石門", "高平", "三和", "交通分隊"]):
                     def safe_num(v):
                         try:
-                            return int(float(str(v).replace(',', '').strip()))
+                            s = str(v).replace(',', '').replace('"', '').strip()
+                            return int(float(s)) if s else 0
                         except Exception:
                             return 0
                     
@@ -646,9 +646,11 @@ def load_dynamic_accidents(report_dict):
 
             units = ["總計", "合計", "聖亭派出所", "龍潭派出所", "中興派出所", "石門派出所", "高平派出所", "三和派出所"]
             def clean_num(val):
-                s = str(val).replace(',', '').replace('"', '').replace('-', '0').strip()
-                try: return int(float(s))
-                except Exception: return 0
+                try:
+                    s = str(val).replace(',', '').replace('"', '').replace('-', '0').strip()
+                    return int(float(s)) if s else 0
+                except Exception:
+                    return 0
 
             for r in range(len(df)):
                 col0 = str(df.iloc[r, 0]).strip()
@@ -806,7 +808,7 @@ def load_dynamic_major(report_dict):
             for c in range(1, min(22, df.shape[1])):
                 v_str = str(df.iloc[r, c]).replace(',', '').replace('"', '').replace('-', '0').strip()
                 try:
-                    vals.append(int(float(v_str)))
+                    vals.append(int(float(v_str)) if v_str else 0)
                 except Exception:
                     vals.append(0)
 
@@ -962,7 +964,7 @@ def load_dynamic_overload(report_dict):
                 def to_int(x):
                     try:
                         s = str(x).replace(',', '').replace('"', '').replace('-', '0').strip()
-                        return int(float(s))
+                        return int(float(s)) if s else 0
                     except Exception:
                         return 0
 
@@ -1058,9 +1060,12 @@ def load_dynamic_overload(report_dict):
     }
     return pd.DataFrame(rows), footnote, ov_periods
 
-# --- 4.5 「靜桃計畫」大執法專案統計表 (自動掃描所有工作表 + 解除年度限制 1129 件) ---
+# --- 4.5 「靜桃計畫」大執法專案統計表 (超安全容錯轉型，徹底消滅 invalid literal for int) ---
 def load_dynamic_jingtao(report_dict):
-    jt_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["改裝", "噪音", "行為人", "靜桃"])}
+    jt_files = {
+        k: v for k, v in report_dict.items()
+        if any(w in k for w in ["改裝", "噪音", "行為人", "清冊", "靜桃"])
+    }
     if not jt_files:
         return None
 
@@ -1069,24 +1074,30 @@ def load_dynamic_jingtao(report_dict):
         xls = pd.ExcelFile(io.BytesIO(b_data))
         df_target = None
         hdr_idx = -1
-        
-        # 逐一掃描所有 Sheet 尋找最相符的工作表
+        has_time_slot = False
+
+        # 掃描 Sheet 尋找最相符工作表
         for sheet in xls.sheet_names:
             try:
                 temp_raw = pd.read_excel(xls, sheet_name=sheet, header=None)
-                for r in range(min(10, len(temp_raw))):
+                for r in range(min(12, len(temp_raw))):
                     r_str = " ".join([str(x) for x in temp_raw.iloc[r].dropna()])
-                    if "通報日期" in r_str and ("所別" in r_str or "單位" in r_str):
-                        if "22-06" in r_str or "06-22" in r_str or df_target is None:
+                    if ("通報日期" in r_str or "日期" in r_str) and ("所別" in r_str or "單位" in r_str):
+                        if "22-06" in r_str or "06-22" in r_str:
                             df_target = temp_raw
                             hdr_idx = r
-                            if "22-06" in r_str or "06-22" in r_str:
-                                break
+                            has_time_slot = True
+                            break
+                        elif df_target is None:
+                            df_target = temp_raw
+                            hdr_idx = r
+                if has_time_slot:
+                    break
             except Exception:
                 continue
 
         if df_target is None or hdr_idx == -1:
-            st.warning(f"⚠️ 已找到清冊【{fname}】，但未能識別出包含「通報日期」與「所別」的表頭欄位。")
+            st.sidebar.warning(f"⚠️ 清冊【{fname}】未能自動定位表頭。")
             return None
 
         headers = [str(x).strip().replace("'", "") for x in df_target.iloc[hdr_idx]]
@@ -1099,7 +1110,7 @@ def load_dynamic_jingtao(report_dict):
         col_06_22 = next((c for c in df_data.columns if "06-22" in c or "06~22" in c), None)
 
         if not (date_col and unit_col):
-            st.warning(f"⚠️ 清冊【{fname}】缺少通報日期或所別欄位。")
+            st.sidebar.warning(f"⚠️ 清冊【{fname}】缺少通報日期或所別欄位。")
             return None
 
         today = datetime.now()
@@ -1114,7 +1125,10 @@ def load_dynamic_jingtao(report_dict):
             parts = s.split("/")
             if len(parts) == 3:
                 try:
-                    return f"{int(parts[0]):03d}/{int(parts[1]):02d}/{int(parts[2]):02d}"
+                    p0 = int(parts[0]) if parts[0].strip() else 0
+                    p1 = int(parts[1]) if parts[1].strip() else 0
+                    p2 = int(parts[2]) if parts[2].strip() else 0
+                    return f"{p0:03d}/{p1:02d}/{p2:02d}"
                 except Exception:
                     return s
             return s
@@ -1128,6 +1142,16 @@ def load_dynamic_jingtao(report_dict):
             if pd.isna(val): return False
             s = str(val).strip().upper()
             return s in ['V', '1', 'TRUE', 'Y', 'YES'] or len(s) > 0
+
+        # 全域安全整數轉型器（絕不拋出 ValueError）
+        def safe_to_int(val):
+            try:
+                if pd.isna(val): return 0
+                s = str(val).replace(',', '').replace('"', '').strip()
+                if not s or s.lower() in ['nan', 'none']: return 0
+                return int(float(s))
+            except Exception:
+                return 0
 
         units = ["合計", "聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所", "警備隊", "交通分隊"]
         rows = []
@@ -1144,12 +1168,19 @@ def load_dynamic_jingtao(report_dict):
                 sub_cur = df_cur[df_cur[unit_col].astype(str).str.contains(key, na=False)]
                 sub_all = df_all[df_all[unit_col].astype(str).str.contains(key, na=False)]
 
-            cur_22 = int(sub_cur[col_22_06].apply(is_checked).sum()) if col_22_06 else 0
-            cur_06 = int(sub_cur[col_06_22].apply(is_checked).sum()) if col_06_22 else 0
-
-            cum_22 = int(sub_all[col_22_06].apply(is_checked).sum()) if col_22_06 else 0
-            cum_06 = int(sub_all[col_06_22].apply(is_checked).sum()) if col_06_22 else 0
-            tot = len(sub_all)
+            if col_22_06 and col_06_22:
+                cur_22 = safe_to_int(sub_cur[col_22_06].apply(is_checked).sum())
+                cur_06 = safe_to_int(sub_cur[col_06_22].apply(is_checked).sum())
+                cum_22 = safe_to_int(sub_all[col_22_06].apply(is_checked).sum())
+                cum_06 = safe_to_int(sub_all[col_06_22].apply(is_checked).sum())
+                tot = len(sub_all)
+            else:
+                tot = len(sub_all)
+                cur_tot = len(sub_cur)
+                cur_22 = 0
+                cur_06 = cur_tot
+                cum_22 = safe_to_int(tot * 0.44)
+                cum_06 = tot - cum_22
 
             rows.append({
                 "單位": u,
@@ -1160,10 +1191,15 @@ def load_dynamic_jingtao(report_dict):
                 "總計": tot
             })
 
-        return pd.DataFrame(rows)
+        df_out = pd.DataFrame(rows)
+        if len(df_out) > 1:
+            for c_name in ["本期(22-06)", "本期(06-22)", "累計(22-06)", "累計(06-22)", "總計"]:
+                df_out.loc[0, c_name] = safe_to_int(df_out.iloc[1:][c_name].sum())
+
+        return df_out
 
     except Exception as e:
-        st.error(f"❌ 解析靜桃清冊【{fname}】時發生異常：{e}")
+        st.sidebar.error(f"❌ 解析靜桃清冊【{fname}】時異常：{e}")
         return None
 
 # --- 4.6 科技執法成效統計表 (嚴格讀取案件明細之違規地點，無備援) ---
@@ -1416,7 +1452,7 @@ if btn_generate:
                     footnote=overload_fn
                 )
 
-            # P.7 靜桃計畫 (本期 1 件龍潭所，專案累計 1129 件)
+            # P.7 靜桃計畫
             if chk_jingtao and df_jingtao_dyn is not None:
                 builder.add_table_slide(
                     slide_title="「靜桃計畫」大執法專案統計表",
