@@ -184,7 +184,7 @@ class PptxReportBuilder:
         p1.font.color.rgb = self.C_COVER_SUBTITLE
 
         p2 = tf_sub.add_paragraph()
-        p2.text = f"統計區間：{date_range_str} ｜ 製表單位：龍潭分局交通組"
+        p2.text = f"統計區間：{date_range_str}"
         p2.font.name = "Microsoft JhengHei"
         p2.font.size = Pt(14)
         p2.font.color.rgb = RGBColor(203, 213, 225)
@@ -211,11 +211,10 @@ class PptxReportBuilder:
 
     def add_three_major_slide(self, data_rows, custom_subtitle="", cur_col_title="本期", cum_col_title="本月累計"):
         slide = self.prs.slides.add_slide(self.blank_layout)
-        sub_text = custom_subtitle if custom_subtitle else "製表單位：龍潭分局交通組"
         self.add_header_box(
             slide,
             "桃園市政府警察局龍潭分局 取締三項重點違規本期及累計統計表",
-            sub_text
+            custom_subtitle
         )
 
         num_rows = len(data_rows) + 2
@@ -244,11 +243,10 @@ class PptxReportBuilder:
 
     def add_major_detail_slide(self, cat_name: str, data_rows, custom_subtitle=""):
         slide = self.prs.slides.add_slide(self.blank_layout)
-        sub_text = custom_subtitle if custom_subtitle else "口徑包含現場攔停與逕行舉發 ｜ 製表單位：龍潭分局交通組"
         self.add_header_box(
             slide,
             f"取締【{cat_name}】違規統計表",
-            sub_text
+            custom_subtitle
         )
 
         num_rows = len(data_rows) + 2
@@ -390,7 +388,7 @@ class PptxReportBuilder:
         return out
 
 # ==========================================
-# 3. 雙軌數據來源載入器 (全面寬容支援 Google Sheets 與大小寫副檔名)
+# 3. 雙軌數據來源載入器
 # ==========================================
 def get_drive_service():
     if not HAS_GDRIVE or "gcp_service_account" not in st.secrets:
@@ -538,7 +536,6 @@ def load_dynamic_three_major(report_dict):
                     except Exception:
                         return 0
 
-                # 排除原始合計列，避免讀到錯位或全大隊的數據
                 if any(k in u for k in ["合計", "總計", "大隊"]):
                     continue
 
@@ -608,7 +605,6 @@ def load_dynamic_three_major(report_dict):
                 return v
         return {'red': 0, 'rev': 0, 'ped': 0, 'tot': 0}
 
-    # 1. 先計算出各派出所與交通分隊的行數據
     rows = []
     for disp, key in stations:
         c = get_val(d_cur, key)
@@ -617,7 +613,6 @@ def load_dynamic_three_major(report_dict):
         cm_tot = cm['red'] + cm['rev'] + cm['ped']
         rows.append([disp, c['red'], c['rev'], c['ped'], c_tot, cm['red'], cm['rev'], cm['ped'], cm_tot])
 
-    # 2. 關鍵修正：合計列由 7 個單位的實體數值直接動態加總，徹底消除數學矛盾
     tot_cur_red = sum(r[1] for r in rows)
     tot_cur_rev = sum(r[2] for r in rows)
     tot_cur_ped = sum(r[3] for r in rows)
@@ -1090,14 +1085,14 @@ def load_dynamic_overload(report_dict):
     }
     return pd.DataFrame(rows), footnote, ov_periods
 
-# --- 4.5 「靜桃計畫」大執法專案統計表 (超安全容錯轉型，徹底消滅 invalid literal for int) ---
+# --- 4.5 「靜桃計畫」大執法專案統計表 (超安全容錯轉型 + 統計期間萃取) ---
 def load_dynamic_jingtao(report_dict):
     jt_files = {
         k: v for k, v in report_dict.items()
         if any(w in k for w in ["改裝", "噪音", "行為人", "清冊", "靜桃"])
     }
     if not jt_files:
-        return None
+        return None, {}
 
     fname, b_data = list(jt_files.items())[-1]
     try:
@@ -1106,7 +1101,6 @@ def load_dynamic_jingtao(report_dict):
         hdr_idx = -1
         has_time_slot = False
 
-        # 掃描 Sheet 尋找最相符工作表
         for sheet in xls.sheet_names:
             try:
                 temp_raw = pd.read_excel(xls, sheet_name=sheet, header=None)
@@ -1128,7 +1122,7 @@ def load_dynamic_jingtao(report_dict):
 
         if df_target is None or hdr_idx == -1:
             st.sidebar.warning(f"⚠️ 清冊【{fname}】未能自動定位表頭。")
-            return None
+            return None, {}
 
         headers = [str(x).strip().replace("'", "") for x in df_target.iloc[hdr_idx]]
         df_data = df_target.iloc[hdr_idx+1:].copy()
@@ -1141,7 +1135,7 @@ def load_dynamic_jingtao(report_dict):
 
         if not (date_col and unit_col):
             st.sidebar.warning(f"⚠️ 清冊【{fname}】缺少通報日期或所別欄位。")
-            return None
+            return None, {}
 
         today = datetime.now()
         yesterday = today - timedelta(days=1)
@@ -1173,7 +1167,6 @@ def load_dynamic_jingtao(report_dict):
             s = str(val).strip().upper()
             return s in ['V', '1', 'TRUE', 'Y', 'YES'] or len(s) > 0
 
-        # 全域安全整數轉型器（絕不拋出 ValueError）
         def safe_to_int(val):
             try:
                 if pd.isna(val): return 0
@@ -1226,43 +1219,83 @@ def load_dynamic_jingtao(report_dict):
             for c_name in ["本期(22-06)", "本期(06-22)", "累計(22-06)", "累計(06-22)", "總計"]:
                 df_out.loc[0, c_name] = safe_to_int(df_out.iloc[1:][c_name].sum())
 
-        return df_out
+        valid_dates = df_all["std_date"][df_all["std_date"] != ""].dropna()
+        earliest_date = valid_dates.min() if not valid_dates.empty else "112/05/29"
+        latest_date = valid_dates.max() if not valid_dates.empty else end_cur
+
+        jt_periods = {
+            "cur": f"{start_cur}~{end_cur}",
+            "cum": f"{earliest_date}~{latest_date}"
+        }
+
+        return df_out, jt_periods
 
     except Exception as e:
         st.sidebar.error(f"❌ 解析靜桃清冊【{fname}】時異常：{e}")
-        return None
+        return None, {}
 
-# --- 4.6 科技執法成效統計表 (嚴格讀取案件明細之違規地點，無備援) ---
+# --- 4.6 科技執法成效統計表 (嚴格讀取案件明細之違規地點 + 統計期間提取) ---
 def load_dynamic_tech(report_dict):
     tech_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["科技執法", "自選匯出"])}
     if not tech_files:
-        return None, ""
+        return None, "", {}
 
-    b_data = list(tech_files.values())[-1]
+    fname, b_data = list(tech_files.items())[-1]
     try:
         xls = pd.ExcelFile(io.BytesIO(b_data))
         
         if "案件明細" not in xls.sheet_names:
             st.error("❌ 科技執法報表缺少【案件明細】工作表！")
-            return None, ""
+            return None, "", {}
 
         df_detail = pd.read_excel(xls, sheet_name="案件明細", skiprows=3)
 
         loc_col = next((c for c in df_detail.columns if "違規地點" in str(c)), None)
         if not loc_col:
             st.error("❌ 科技執法報表【案件明細】中缺少【違規地點】欄位，請確認匯出時是否有打勾！")
-            return None, ""
+            return None, "", {}
 
         counts = df_detail[loc_col].dropna().value_counts().reset_index()
         counts.columns = ["路段名稱", "舉發件數"]
         tot = counts["舉發件數"].sum()
         tot_row = pd.DataFrame([{"路段名稱": "舉發總數", "舉發件數": tot}])
         df_out = pd.concat([counts, tot_row], ignore_index=True)
-        return df_out, "科技執法成效統計表"
+
+        tech_period_str = ""
+        try:
+            df_head = pd.read_excel(xls, sheet_name="案件明細", nrows=4, header=None)
+            for r in range(len(df_head)):
+                txt = " ".join([str(x) for x in df_head.iloc[r].dropna()])
+                m = re.search(r'(\d{2,3}/\d{2}/\d{2}|\d{7})\s*(?:至|~|-)\s*(\d{2,3}/\d{2}/\d{2}|\d{7})', txt)
+                if m:
+                    tech_period_str = f"{m.group(1)}~{m.group(2)}"
+                    break
+        except Exception:
+            pass
+
+        if not tech_period_str:
+            date_col = next((c for c in df_detail.columns if any(k in str(c) for k in ["違規時間", "違規日期", "入案日", "舉發日期"])), None)
+            if date_col:
+                valid_d = df_detail[date_col].dropna().astype(str)
+                d_matches = []
+                for dv in valid_d:
+                    m = re.search(r'(\d{2,3}/\d{2}/\d{2}|\d{7})', dv)
+                    if m:
+                        d_matches.append(m.group(1))
+                if d_matches:
+                    d_matches.sort()
+                    tech_period_str = f"{d_matches[0]}~{d_matches[-1]}"
+
+        if not tech_period_str:
+            today = datetime.now()
+            yesterday = today - timedelta(days=1)
+            tech_period_str = f"{str(yesterday.year - 1911)}/01/01~{str(yesterday.year - 1911)}/{yesterday.strftime('%m')}/{yesterday.strftime('%d')}"
+
+        return df_out, "科技執法成效統計表", {"period": tech_period_str}
 
     except Exception as e:
         st.error(f"❌ 讀取科技執法報表發生異常：{e}")
-        return None, ""
+        return None, "", {}
 
 # ==========================================
 # 5. 純動態執行載入（完全無假資料）
@@ -1289,8 +1322,8 @@ else:
 df_a1_dyn, df_a2_dyn, acc_periods = load_dynamic_accidents(MEMORY_REPORTS)
 df_major_dyn, detail_dict_dyn, major_periods = load_dynamic_major(MEMORY_REPORTS)
 df_overload_dyn, overload_fn, ov_periods = load_dynamic_overload(MEMORY_REPORTS)
-df_jingtao_dyn = load_dynamic_jingtao(MEMORY_REPORTS)
-df_tech_dyn, tech_title = load_dynamic_tech(MEMORY_REPORTS)
+df_jingtao_dyn, jt_periods = load_dynamic_jingtao(MEMORY_REPORTS)
+df_tech_dyn, tech_title, tech_periods = load_dynamic_tech(MEMORY_REPORTS)
 
 # ==========================================
 # 6. 前端自選與即時預覽區 (8大常態 + 7大細表)
@@ -1387,7 +1420,7 @@ if btn_generate:
         try:
             builder = PptxReportBuilder()
 
-            # P.1 封面
+            # P.1 封面（移除製表單位）
             if chk_cover:
                 builder.add_cover_slide(
                     main_title="桃園市政府警察局龍潭分局\n交通執法成效與事故防制分析報告",
@@ -1395,12 +1428,12 @@ if btn_generate:
                     date_range_str=f"統計截止至最新報表 ｜ 製表日期：{datetime.now().strftime('%Y/%m/%d')}"
                 )
 
-            # P.2 三項重點
+            # P.2 三項重點（移除製表單位）
             if chk_three and df_three_preview is not None:
                 cur_dt = three_periods.get("cur_single", "本期")
                 cur_full = three_periods.get("cur_full", cur_dt)
                 cum_full = three_periods.get("cum_full", "本月累計")
-                three_sub = f"統計期間：本期 ({cur_full}) ｜ 本月累計 ({cum_full}) ｜ 製表單位：龍潭分局交通組"
+                three_sub = f"統計期間：本期 ({cur_full}) ｜ 本月累計 ({cum_full})"
                 
                 builder.add_three_major_slide(
                     data_rows=three_matrix,
@@ -1409,7 +1442,7 @@ if btn_generate:
                     cum_col_title="本月累計"
                 )
 
-            # P.3 A1 死亡
+            # P.3 A1 死亡（移除製表單位）
             if chk_a1 and df_a1_dyn is not None:
                 a1_sub = (
                     f"本期：{acc_periods.get('cur', '—')} ｜ "
@@ -1423,7 +1456,7 @@ if btn_generate:
                     is_accident_table=True
                 )
 
-            # P.4 A2 受傷
+            # P.4 A2 受傷（移除製表單位）
             if chk_a2 and df_a2_dyn is not None:
                 a2_sub = (
                     f"本期：{acc_periods.get('cur', '—')} ｜ "
@@ -1438,7 +1471,7 @@ if btn_generate:
                     is_accident_table=True
                 )
 
-            # P.5 重大違規總表
+            # P.5 重大違規總表（移除製表單位）
             if chk_major_tot and df_major_dyn is not None:
                 p_cur_str = f"本期：{major_periods.get('cur', '')} ｜ " if major_periods.get('cur') else ""
                 p_cum_str = f"本年累計：{major_periods.get('cum', '')} ｜ " if major_periods.get('cum') else ""
@@ -1453,7 +1486,7 @@ if btn_generate:
                     is_major_table=True
                 )
 
-            # 專項細表
+            # 專項細表（移除口徑說明與製表單位）
             if detail_dict_dyn is not None:
                 det_map = [
                     (chk_det_jiu, "酒駕"), (chk_det_red, "闖紅燈"), (chk_det_rev, "逆向行駛"),
@@ -1462,13 +1495,16 @@ if btn_generate:
                 ]
                 cum_range = major_periods.get("cum", "")
                 ly_range = major_periods.get("ly", "")
-                det_subtitle = f"本年累計：{cum_range} ｜ 去年同期：{ly_range} ｜ 口徑包含現場攔停與逕行舉發" if cum_range else "口徑包含現場攔停與逕行舉發"
+                if cum_range:
+                    det_subtitle = f"本年累計：{cum_range} ｜ 去年同期：{ly_range}"
+                else:
+                    det_subtitle = ""
 
                 for is_chk, cat in det_map:
                     if is_chk and cat in detail_dict_dyn:
                         builder.add_major_detail_slide(cat_name=cat, data_rows=detail_dict_dyn[cat], custom_subtitle=det_subtitle)
 
-            # P.6 超載取締
+            # P.6 超載取締（移除製表單位）
             if chk_overload and df_overload_dyn is not None:
                 ov_sub = (
                     f"本期：{ov_periods.get('cur', '—')} ｜ "
@@ -1482,19 +1518,26 @@ if btn_generate:
                     footnote=overload_fn
                 )
 
-            # P.7 靜桃計畫
+            # P.7 靜桃計畫（移除製表單位）
             if chk_jingtao and df_jingtao_dyn is not None:
+                cur_p = jt_periods.get("cur", "本期")
+                cum_p = jt_periods.get("cum", "專案開辦迄今")
+                jt_sub = f"統計期間：本期 ({cur_p}) ｜ 專案累計 ({cum_p})"
+                
                 builder.add_table_slide(
                     slide_title="「靜桃計畫」大執法專案統計表",
                     df=df_jingtao_dyn,
-                    subtitle="改裝排氣管及噪音車輛通報取締成果"
+                    subtitle=jt_sub
                 )
 
-            # P.8 科技執法
+            # P.8 科技執法（移除製表單位）
             if chk_tech and df_tech_dyn is not None:
+                tech_p = tech_periods.get("period", "")
+                tech_sub = f"統計期間：{tech_p}" if tech_p else ""
                 builder.add_table_slide(
                     slide_title="科技執法成效統計表",
                     df=df_tech_dyn,
+                    subtitle=tech_sub,
                     custom_width_in=8.0
                 )
 
@@ -1510,7 +1553,7 @@ if btn_generate:
                     st.warning(f"⚠️ 郵件未發送成功（{detail}），可直接點擊下方按鈕下載！")
 
             st.balloons()
-            st.success("🎉 恭喜！包含常態 8 頁與專項細表之純動態 PowerPoint 簡報實體檔已成功生成！")
+            st.success("🎉 恭喜！PowerPoint 簡報實體檔已成功生成！")
 
         except Exception as e:
             st.error(f"❌ 產出 PPTX 簡報時發生錯誤：{str(e)}")
