@@ -390,7 +390,7 @@ class PptxReportBuilder:
         return out
 
 # ==========================================
-# 3. 雙軌數據來源載入器
+# 3. 雙軌數據來源載入器 (全面寬容支援 Google Sheets 與各類副檔名)
 # ==========================================
 def get_drive_service():
     if not HAS_GDRIVE or "gcp_service_account" not in st.secrets:
@@ -414,14 +414,34 @@ def fetch_files_from_gdrive_folder(target_folder_id: str):
         q_files = f"'{target_folder_id}' in parents and trashed = false"
         res_files = service.files().list(
             q=q_files,
-            fields="files(id, name, modifiedTime)",
+            fields="files(id, name, mimeType, modifiedTime)",
+            pageSize=100,
             supportsAllDrives=True,
             includeItemsFromAllDrives=True
         ).execute()
 
         for item in res_files.get("files", []):
-            fname = item["name"]
-            if fname.endswith(".xlsx") or fname.endswith(".csv"):
+            raw_name = item["name"].strip()
+            mime_type = item.get("mimeType", "")
+            lower_name = raw_name.lower()
+
+            # 情況 A：Google 試算表原生格式（無副檔名）-> 自動以 Excel 格式匯出
+            if mime_type == "application/vnd.google-apps.spreadsheet":
+                req = service.files().export_media(
+                    fileId=item["id"],
+                    mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, req)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+                fh.seek(0)
+                final_name = raw_name if raw_name.endswith(".xlsx") else f"{raw_name}.xlsx"
+                file_dict[final_name] = fh.read()
+
+            # 情況 B：常規 .xlsx, .xls, .csv 檔案（不分大小寫）
+            elif any(lower_name.endswith(ext) for ext in [".xlsx", ".xls", ".csv"]):
                 req = service.files().get_media(fileId=item["id"], supportsAllDrives=True)
                 fh = io.BytesIO()
                 downloader = MediaIoBaseDownload(fh, req)
@@ -429,7 +449,8 @@ def fetch_files_from_gdrive_folder(target_folder_id: str):
                 while not done:
                     status, done = downloader.next_chunk()
                 fh.seek(0)
-                file_dict[fname] = fh.read()
+                file_dict[raw_name] = fh.read()
+
     except Exception as e:
         st.sidebar.error(f"雲端硬碟連線異常: {e}")
     return file_dict
@@ -446,12 +467,12 @@ if gdrive_data:
         for fn in sorted(gdrive_data.keys()):
             st.caption(f"• {fn}")
 else:
-    st.sidebar.warning(f"⚠️ 雲端資料夾 (ID: {GDRIVE_ID_CONFIG[:8]}...) 尚未讀取到 .xlsx 或 .csv 檔案。")
+    st.sidebar.warning(f"⚠️ 雲端資料夾 (ID: {GDRIVE_ID_CONFIG[:8]}...) 尚未讀取到報表檔案。")
     local_candidates = ["今日待上傳報表", "執法統計報表集中處", "執法報表集中處", "."]
     for d in local_candidates:
         if os.path.exists(d):
             for f in os.listdir(d):
-                if f.endswith(".xlsx") and not f.startswith("~$"):
+                if any(f.lower().endswith(ext) for ext in [".xlsx", ".xls", ".csv"]) and not f.startswith("~$"):
                     p = os.path.join(d, f)
                     with open(p, "rb") as f_in:
                         MEMORY_REPORTS[f] = f_in.read()
@@ -461,7 +482,7 @@ else:
 st.sidebar.markdown("### 📤 本機手動上傳報表")
 uploaded_files = st.sidebar.file_uploader(
     "拖曳上傳本機報表（支援批次多檔）",
-    type=["xlsx", "csv"],
+    type=["xlsx", "xls", "csv"],
     accept_multiple_files=True,
     help="上傳後將優先以此報表進行動態統計運算"
 )
@@ -1021,6 +1042,7 @@ def load_dynamic_overload(report_dict):
             "達成率": achieve
         })
 
+    # 合計列由下屬各所隊實體數值加總，確保數據完全一致
     if rows:
         tot_c = sum(r["本期"] for r in rows[1:])
         tot_cum = sum(r["本年累計"] for r in rows[1:])
@@ -1041,7 +1063,6 @@ def load_dynamic_overload(report_dict):
 
 # --- 4.5 「靜桃計畫」大執法專案統計表 (超寬容相容「改裝車及噪音車輛行為人清冊」) ---
 def load_dynamic_jingtao(report_dict):
-    # 支援檔名包含：改裝、噪音、行為人、靜桃
     jt_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["改裝", "噪音", "行為人", "靜桃"])}
     if not jt_files:
         return None
@@ -1064,7 +1085,6 @@ def load_dynamic_jingtao(report_dict):
                 break
 
         if hdr_idx == -1 or unit_col_idx == -1:
-            # 備用方案：若無明確標題列，直接搜尋內容出現派出所名稱最多的那一直欄
             best_col = -1
             max_matches = 0
             for c in range(df.shape[1]):
