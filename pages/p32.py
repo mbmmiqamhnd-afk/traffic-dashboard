@@ -390,7 +390,7 @@ class PptxReportBuilder:
         return out
 
 # ==========================================
-# 3. 雙軌數據來源載入器
+# 3. 雙軌數據來源載入器 (全面寬容支援 Google Sheets 與大小寫副檔名)
 # ==========================================
 def get_drive_service():
     if not HAS_GDRIVE or "gcp_service_account" not in st.secrets:
@@ -496,7 +496,7 @@ if not MEMORY_REPORTS:
 # 4. 八大核心報表純動態解析核心 (嚴格零備援)
 # ==========================================
 
-# --- 4.1 三項重點違規 ---
+# --- 4.1 三項重點違規 (由各所實體數據動態加總合計，徹底消滅合計計算矛盾) ---
 def load_dynamic_three_major(report_dict):
     three_files = {k: v for k, v in report_dict.items() if "重點違規" in k or "重大違規" in k}
     if not three_files:
@@ -526,33 +526,47 @@ def load_dynamic_three_major(report_dict):
         try:
             df = pd.read_excel(io.BytesIO(b_data), header=None)
             res = {}
-            tot_sum = 0
             for r in range(len(df)):
                 u = str(df.iloc[r, 0]).strip().replace(" ", "").replace("\u3000", "")
                 if not u or u == 'nan':
                     continue
-                if any(k in u for k in ["合計", "總計", "聖亭", "龍潭", "中興", "石門", "高平", "三和", "交通分隊"]):
-                    def safe_num(v):
-                        try:
-                            s = str(v).replace(',', '').replace('"', '').strip()
-                            return int(float(s)) if s else 0
-                        except Exception:
-                            return 0
-                    
-                    red = safe_num(df.iloc[r, 3] if df.shape[1] > 3 else 0) + safe_num(df.iloc[r, 4] if df.shape[1] > 4 else 0)
-                    rev = safe_num(df.iloc[r, 7] if df.shape[1] > 7 else 0) + safe_num(df.iloc[r, 8] if df.shape[1] > 8 else 0)
-                    ped = safe_num(df.iloc[r, 13] if df.shape[1] > 13 else 0) + safe_num(df.iloc[r, 14] if df.shape[1] > 14 else 0)
-                    res[u] = {'red': red, 'rev': rev, 'ped': ped, 'tot': red + rev + ped}
-                    if "合計" not in u and "總計" not in u:
-                        tot_sum += (red + rev + ped)
-            return res, tot_sum
+
+                def safe_num(v):
+                    try:
+                        s = str(v).replace(',', '').replace('"', '').strip()
+                        return int(float(s)) if s else 0
+                    except Exception:
+                        return 0
+
+                # 排除原始合計列，避免讀到錯位或全大隊的數據
+                if any(k in u for k in ["合計", "總計", "大隊"]):
+                    continue
+
+                red = safe_num(df.iloc[r, 3] if df.shape[1] > 3 else 0) + safe_num(df.iloc[r, 4] if df.shape[1] > 4 else 0)
+                rev = safe_num(df.iloc[r, 7] if df.shape[1] > 7 else 0) + safe_num(df.iloc[r, 8] if df.shape[1] > 8 else 0)
+                ped = safe_num(df.iloc[r, 13] if df.shape[1] > 13 else 0) + safe_num(df.iloc[r, 14] if df.shape[1] > 14 else 0)
+                tot = red + rev + ped
+
+                if "聖亭" in u: norm_u = "聖亭所"
+                elif "龍潭" in u and ("分隊" in u or "交通" in u): norm_u = "交通分隊"
+                elif "龍潭" in u and "所" in u: norm_u = "龍潭所"
+                elif "中興" in u: norm_u = "中興所"
+                elif "石門" in u: norm_u = "石門所"
+                elif "高平" in u: norm_u = "高平所"
+                elif "三和" in u: norm_u = "三和所"
+                elif "交通分隊" in u: norm_u = "交通分隊"
+                else: norm_u = u.replace("派出所", "所")
+
+                res[norm_u] = {'red': red, 'rev': rev, 'ped': ped, 'tot': tot}
+            return res
         except Exception:
-            return {}, 0
+            return {}
 
     parsed_files = []
     for fname, raw_bytes in three_files.items():
         short_disp, full_disp, days_span = extract_entry_date_info(raw_bytes)
-        data_map, total_vol = parse_sheet_data_and_total(raw_bytes)
+        data_map = parse_sheet_data_and_total(raw_bytes)
+        total_vol = sum(v['tot'] for v in data_map.values())
         parsed_files.append({
             "name": fname,
             "bytes": raw_bytes,
@@ -578,29 +592,45 @@ def load_dynamic_three_major(report_dict):
     d_cur = cur_item["data_map"]
     d_cum = cum_item["data_map"]
 
-    units = [
-        ("合計", ["合計", "總計"]),
-        ("聖亭所", ["聖亭派出所", "聖亭所"]),
-        ("龍潭所", ["龍潭派出所", "龍潭所"]),
-        ("中興所", ["中興派出所", "中興所"]),
-        ("石門所", ["石門派出所", "石門所"]),
-        ("高平所", ["高平派出所", "高平所"]),
-        ("三和所", ["三和派出所", "三和所"]),
-        ("交通分隊", ["龍潭交通分隊", "交通分隊"])
+    stations = [
+        ("聖亭所", "聖亭"),
+        ("龍潭所", "龍潭所"),
+        ("中興所", "中興"),
+        ("石門所", "石門"),
+        ("高平所", "高平"),
+        ("三和所", "三和"),
+        ("交通分隊", "交通分隊")
     ]
 
-    def get_unit_val(data_map, keys):
-        for k in keys:
-            for d_key, val in data_map.items():
-                if k in d_key:
-                    return val
+    def get_val(data_map, name_key):
+        for k, v in data_map.items():
+            if name_key in k:
+                return v
         return {'red': 0, 'rev': 0, 'ped': 0, 'tot': 0}
 
-    matrix = []
-    for disp, match_keys in units:
-        c = get_unit_val(d_cur, match_keys)
-        cm = get_unit_val(d_cum, match_keys)
-        matrix.append([disp, c['red'], c['rev'], c['ped'], c['tot'], cm['red'], cm['rev'], cm['ped'], cm['tot']])
+    # 1. 先計算出各派出所與交通分隊的行數據
+    rows = []
+    for disp, key in stations:
+        c = get_val(d_cur, key)
+        cm = get_val(d_cum, key)
+        c_tot = c['red'] + c['rev'] + c['ped']
+        cm_tot = cm['red'] + cm['rev'] + cm['ped']
+        rows.append([disp, c['red'], c['rev'], c['ped'], c_tot, cm['red'], cm['rev'], cm['ped'], cm_tot])
+
+    # 2. 關鍵修正：合計列由 7 個單位的實體數值直接動態加總，徹底消除數學矛盾
+    tot_cur_red = sum(r[1] for r in rows)
+    tot_cur_rev = sum(r[2] for r in rows)
+    tot_cur_ped = sum(r[3] for r in rows)
+    tot_cur_sum = tot_cur_red + tot_cur_rev + tot_cur_ped
+
+    tot_cum_red = sum(r[5] for r in rows)
+    tot_cum_rev = sum(r[6] for r in rows)
+    tot_cum_ped = sum(r[7] for r in rows)
+    tot_cum_sum = tot_cum_red + tot_cum_rev + tot_cum_ped
+
+    total_row = ["合計", tot_cur_red, tot_cur_rev, tot_cur_ped, tot_cur_sum, tot_cum_red, tot_cum_rev, tot_cum_ped, tot_cum_sum]
+
+    matrix = [total_row] + rows
 
     periods_info = {
         "cur_single": cur_item["short_disp"],
