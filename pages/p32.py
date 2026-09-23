@@ -1058,39 +1058,50 @@ def load_dynamic_overload(report_dict):
     }
     return pd.DataFrame(rows), footnote, ov_periods
 
-# --- 4.5 「靜桃計畫」大執法專案統計表 (解除年度限制，還原專案全期真實累計 1129 件) ---
+# --- 4.5 「靜桃計畫」大執法專案統計表 (自動掃描所有工作表 + 解除年度限制 1129 件) ---
 def load_dynamic_jingtao(report_dict):
     jt_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["改裝", "噪音", "行為人", "靜桃"])}
     if not jt_files:
         return None
 
-    b_data = list(jt_files.values())[-1]
+    fname, b_data = list(jt_files.items())[-1]
     try:
         xls = pd.ExcelFile(io.BytesIO(b_data))
-        target_sheet = "靜桃" if "靜桃" in xls.sheet_names else xls.sheet_names[0]
-        df_raw = pd.read_excel(xls, sheet_name=target_sheet, header=None)
+        df_target = None
+        hdr_idx = -1
+        
+        # 逐一掃描所有 Sheet 尋找最相符的工作表
+        for sheet in xls.sheet_names:
+            try:
+                temp_raw = pd.read_excel(xls, sheet_name=sheet, header=None)
+                for r in range(min(10, len(temp_raw))):
+                    r_str = " ".join([str(x) for x in temp_raw.iloc[r].dropna()])
+                    if "通報日期" in r_str and ("所別" in r_str or "單位" in r_str):
+                        if "22-06" in r_str or "06-22" in r_str or df_target is None:
+                            df_target = temp_raw
+                            hdr_idx = r
+                            if "22-06" in r_str or "06-22" in r_str:
+                                break
+            except Exception:
+                continue
 
-        # 動態尋找表頭列
-        hdr_idx = 0
-        for r in range(min(5, len(df_raw))):
-            r_str = " ".join([str(x) for x in df_raw.iloc[r].dropna()])
-            if "通報日期" in r_str and "所別" in r_str:
-                hdr_idx = r
-                break
+        if df_target is None or hdr_idx == -1:
+            st.warning(f"⚠️ 已找到清冊【{fname}】，但未能識別出包含「通報日期」與「所別」的表頭欄位。")
+            return None
 
-        headers = [str(x).strip().replace("'", "") for x in df_raw.iloc[hdr_idx]]
-        df_data = df_raw.iloc[hdr_idx+1:].copy()
+        headers = [str(x).strip().replace("'", "") for x in df_target.iloc[hdr_idx]]
+        df_data = df_target.iloc[hdr_idx+1:].copy()
         df_data.columns = headers
 
         date_col = next((c for c in df_data.columns if "通報日期" in c or "日期" in c), None)
-        unit_col = next((c for c in df_data.columns if "所別" in c or "單位" in c), None)
+        unit_col = next((c for c in df_data.columns if "所別" in c or "單位" in c or "通報單位" in c), None)
         col_22_06 = next((c for c in df_data.columns if "22-06" in c or "22~06" in c), None)
         col_06_22 = next((c for c in df_data.columns if "06-22" in c or "06~22" in c), None)
 
         if not (date_col and unit_col):
+            st.warning(f"⚠️ 清冊【{fname}】缺少通報日期或所別欄位。")
             return None
 
-        # 計算本期週次區間
         today = datetime.now()
         yesterday = today - timedelta(days=1)
         end_cur = f"{str(yesterday.year - 1911)}/{yesterday.strftime('%m')}/{yesterday.strftime('%d')}"
@@ -1110,7 +1121,6 @@ def load_dynamic_jingtao(report_dict):
 
         df_data["std_date"] = df_data[date_col].apply(norm_date)
 
-        # 累計為全專案總累計（不設起始年限制）；本期嚴格比對本週
         df_all = df_data[df_data[unit_col].notna()].copy()
         df_cur = df_data[(df_data["std_date"] >= start_cur) & (df_data["std_date"] <= end_cur)].copy()
 
@@ -1152,9 +1162,9 @@ def load_dynamic_jingtao(report_dict):
 
         return pd.DataFrame(rows)
 
-    except Exception:
-        pass
-    return None
+    except Exception as e:
+        st.error(f"❌ 解析靜桃清冊【{fname}】時發生異常：{e}")
+        return None
 
 # --- 4.6 科技執法成效統計表 (嚴格讀取案件明細之違規地點，無備援) ---
 def load_dynamic_tech(report_dict):
