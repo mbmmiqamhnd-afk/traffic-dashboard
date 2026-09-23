@@ -18,7 +18,7 @@ try:
     from pptx import Presentation
     from pptx.util import Inches, Pt
     from pptx.dml.color import RGBColor
-    from pptx.enum.text import PP_ALIGN
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
     from pptx.enum.shapes import MSO_SHAPE
     from pptx.oxml import parse_xml
     HAS_PPTX = True
@@ -101,7 +101,7 @@ def send_pptx_email_to_self(pptx_bytes: io.BytesIO, file_name: str) -> tuple:
         return False, str(e)
 
 # ==========================================
-# 2. PPTX 原生排版引擎 (PptxReportBuilder)
+# 2. PPTX 原生排版引擎 (表格文字水平與垂直均置中)
 # ==========================================
 class PptxReportBuilder:
     def __init__(self):
@@ -142,14 +142,21 @@ class PptxReportBuilder:
         cell.fill.fore_color.rgb = bg_color if bg_color else self.C_TBL_ROW_BG
         self._set_border(cell, color_hex="CBD5E1")
 
+        # 關鍵設定：垂直置中 (Vertical Alignment)
+        try:
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+        except Exception:
+            pass
+
         cell.margin_top = Inches(0.02)
         cell.margin_bottom = Inches(0.02)
         cell.margin_left = Inches(0.03)
         cell.margin_right = Inches(0.03)
         cell.text_frame.word_wrap = False
 
+        # 關鍵設定：段落文字一律水平置中 (Horizontal Alignment)
         for p in cell.text_frame.paragraphs:
-            p.alignment = align
+            p.alignment = PP_ALIGN.CENTER
             for r in p.runs:
                 r.font.name = "Microsoft JhengHei"
                 r.font.size = Pt(font_size)
@@ -1416,7 +1423,7 @@ if btn_generate:
     if not file_save_name.lower().endswith(".pptx"):
         file_save_name += ".pptx"
 
-    with st.spinner("正在自最新報表動態編譯 PPTX 簡報（全表 16/18pt、期間精確對齊）..."):
+    with st.spinner("正在自最新報表動態編譯 PPTX 簡報（全表文字居中、期間精確對齊）..."):
         try:
             builder = PptxReportBuilder()
 
@@ -1518,7 +1525,7 @@ if btn_generate:
                     footnote=overload_fn
                 )
 
-            # P.7 靜桃計畫（移除製表單位）
+            # P.7 靜桃計畫（移除製表單位，動態補上精確的統計期間）
             if chk_jingtao and df_jingtao_dyn is not None:
                 cur_p = jt_periods.get("cur", "本期")
                 cum_p = jt_periods.get("cum", "專案開辦迄今")
@@ -1530,7 +1537,7 @@ if btn_generate:
                     subtitle=jt_sub
                 )
 
-            # P.8 科技執法（移除製表單位）
+            # P.8 科技執法（移除製表單位，動態補上精確的統計期間）
             if chk_tech and df_tech_dyn is not None:
                 tech_p = tech_periods.get("period", "")
                 tech_sub = f"統計期間：{tech_p}" if tech_p else ""
@@ -1553,7 +1560,7 @@ if btn_generate:
                     st.warning(f"⚠️ 郵件未發送成功（{detail}），可直接點擊下方按鈕下載！")
 
             st.balloons()
-            st.success("🎉 恭喜！PowerPoint 簡報實體檔已成功生成！")
+            st.success("🎉 恭喜！包含表格全面置中之 PowerPoint 簡報實體檔已成功生成！")
 
         except Exception as e:
             st.error(f"❌ 產出 PPTX 簡報時發生錯誤：{str(e)}")
