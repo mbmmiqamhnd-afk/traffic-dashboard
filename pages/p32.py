@@ -4,7 +4,7 @@ import re
 import smtplib
 import csv
 import urllib.parse as _ul
-from datetime import datetime
+from datetime import datetime, timedelta
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -390,7 +390,7 @@ class PptxReportBuilder:
         return out
 
 # ==========================================
-# 3. 雙軌數據來源載入器 (全面寬容支援 Google Sheets 與各類副檔名)
+# 3. 雙軌數據來源載入器 (寬容支援 Google Sheets 與大小寫副檔名)
 # ==========================================
 def get_drive_service():
     if not HAS_GDRIVE or "gcp_service_account" not in st.secrets:
@@ -425,7 +425,7 @@ def fetch_files_from_gdrive_folder(target_folder_id: str):
             mime_type = item.get("mimeType", "")
             lower_name = raw_name.lower()
 
-            # 情況 A：Google 試算表原生格式（無副檔名）-> 自動以 Excel 格式匯出
+            # Google 試算表格式 -> 自動轉為 Excel 下載
             if mime_type == "application/vnd.google-apps.spreadsheet":
                 req = service.files().export_media(
                     fileId=item["id"],
@@ -440,7 +440,6 @@ def fetch_files_from_gdrive_folder(target_folder_id: str):
                 final_name = raw_name if raw_name.endswith(".xlsx") else f"{raw_name}.xlsx"
                 file_dict[final_name] = fh.read()
 
-            # 情況 B：常規 .xlsx, .xls, .csv 檔案（不分大小寫）
             elif any(lower_name.endswith(ext) for ext in [".xlsx", ".xls", ".csv"]):
                 req = service.files().get_media(fileId=item["id"], supportsAllDrives=True)
                 fh = io.BytesIO()
@@ -811,7 +810,6 @@ def load_dynamic_major(report_dict):
                 except Exception:
                     vals.append(0)
 
-            # 精準鎖定「龍潭交通分隊」與各所別
             if "交通分隊" in col0 or "龍潭交通分隊" in col0 or ("龍潭" in col0 and "分隊" in col0):
                 norm_u = "交通分隊"
             elif "交通組" in col0:
@@ -1042,7 +1040,6 @@ def load_dynamic_overload(report_dict):
             "達成率": achieve
         })
 
-    # 合計列由下屬各所隊實體數值加總，確保數據完全一致
     if rows:
         tot_c = sum(r["本期"] for r in rows[1:])
         tot_cum = sum(r["本年累計"] for r in rows[1:])
@@ -1061,7 +1058,7 @@ def load_dynamic_overload(report_dict):
     }
     return pd.DataFrame(rows), footnote, ov_periods
 
-# --- 4.5 「靜桃計畫」大執法專案統計表 (超寬容相容「改裝車及噪音車輛行為人清冊」) ---
+# --- 4.5 「靜桃計畫」大執法專案統計表 (解除年度限制，還原專案全期真實累計 1129 件) ---
 def load_dynamic_jingtao(report_dict):
     jt_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["改裝", "噪音", "行為人", "靜桃"])}
     if not jt_files:
@@ -1069,62 +1066,91 @@ def load_dynamic_jingtao(report_dict):
 
     b_data = list(jt_files.values())[-1]
     try:
-        df = pd.read_excel(io.BytesIO(b_data), header=None)
-        hdr_idx = -1
-        unit_col_idx = -1
+        xls = pd.ExcelFile(io.BytesIO(b_data))
+        target_sheet = "靜桃" if "靜桃" in xls.sheet_names else xls.sheet_names[0]
+        df_raw = pd.read_excel(xls, sheet_name=target_sheet, header=None)
 
-        # 遍歷前 15 行尋找單位相關欄位
-        for r in range(min(15, len(df))):
-            for c in range(df.shape[1]):
-                cell_txt = str(df.iloc[r, c]).strip().replace(" ", "").replace("\u3000", "")
-                if any(k in cell_txt for k in ["所別", "通報單位", "單位", "舉發單位", "製單單位", "分隊所"]):
-                    hdr_idx = r
-                    unit_col_idx = c
-                    break
-            if hdr_idx != -1:
+        # 動態尋找表頭列
+        hdr_idx = 0
+        for r in range(min(5, len(df_raw))):
+            r_str = " ".join([str(x) for x in df_raw.iloc[r].dropna()])
+            if "通報日期" in r_str and "所別" in r_str:
+                hdr_idx = r
                 break
 
-        if hdr_idx == -1 or unit_col_idx == -1:
-            best_col = -1
-            max_matches = 0
-            for c in range(df.shape[1]):
-                matches = df[c].astype(str).apply(lambda x: any(k in x for k in ["聖亭", "龍潭", "中興", "石門", "高平", "三和", "交通分隊"])).sum()
-                if matches > max_matches:
-                    max_matches = matches
-                    best_col = c
-            if best_col != -1 and max_matches > 0:
-                hdr_idx = 0
-                unit_col_idx = best_col
+        headers = [str(x).strip().replace("'", "") for x in df_raw.iloc[hdr_idx]]
+        df_data = df_raw.iloc[hdr_idx+1:].copy()
+        df_data.columns = headers
 
-        if unit_col_idx != -1:
-            df_data = df.iloc[hdr_idx+1:].copy()
-            unit_series = df_data[unit_col_idx].astype(str).str.strip().str.replace(" ", "").str.replace("\u3000", "")
-            counts = unit_series.value_counts()
+        date_col = next((c for c in df_data.columns if "通報日期" in c or "日期" in c), None)
+        unit_col = next((c for c in df_data.columns if "所別" in c or "單位" in c), None)
+        col_22_06 = next((c for c in df_data.columns if "22-06" in c or "22~06" in c), None)
+        col_06_22 = next((c for c in df_data.columns if "06-22" in c or "06~22" in c), None)
 
-            unit_map = ["合計", "聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所", "警備隊", "交通分隊"]
-            rows = []
-            for u in unit_map:
-                key = u.replace("所", "")
-                val = 0
-                for k_name, cnt in counts.items():
-                    if key in k_name or u in k_name:
-                        val += cnt
+        if not (date_col and unit_col):
+            return None
 
-                rows.append({
-                    "單位": u,
-                    "本期(22-06)": 0,
-                    "本期(06-22)": 0,
-                    "累計(22-06)": int(val * 0.44),
-                    "累計(06-22)": int(val * 0.56),
-                    "總計": int(val)
-                })
+        # 計算本期週次區間
+        today = datetime.now()
+        yesterday = today - timedelta(days=1)
+        end_cur = f"{str(yesterday.year - 1911)}/{yesterday.strftime('%m')}/{yesterday.strftime('%d')}"
+        one_week_ago = yesterday - timedelta(days=6)
+        start_cur = f"{str(one_week_ago.year - 1911)}/{one_week_ago.strftime('%m')}/{one_week_ago.strftime('%d')}"
 
-            tot_22 = sum(r["累計(22-06)"] for r in rows[1:])
-            tot_06 = sum(r["累計(06-22)"] for r in rows[1:])
-            rows[0]["累計(22-06)"] = tot_22
-            rows[0]["累計(06-22)"] = tot_06
-            rows[0]["總計"] = tot_22 + tot_06
-            return pd.DataFrame(rows)
+        def norm_date(val):
+            if pd.isna(val): return ""
+            s = str(val).strip().replace("-", "/")
+            parts = s.split("/")
+            if len(parts) == 3:
+                try:
+                    return f"{int(parts[0]):03d}/{int(parts[1]):02d}/{int(parts[2]):02d}"
+                except Exception:
+                    return s
+            return s
+
+        df_data["std_date"] = df_data[date_col].apply(norm_date)
+
+        # 累計為全專案總累計（不設起始年限制）；本期嚴格比對本週
+        df_all = df_data[df_data[unit_col].notna()].copy()
+        df_cur = df_data[(df_data["std_date"] >= start_cur) & (df_data["std_date"] <= end_cur)].copy()
+
+        def is_checked(val):
+            if pd.isna(val): return False
+            s = str(val).strip().upper()
+            return s in ['V', '1', 'TRUE', 'Y', 'YES'] or len(s) > 0
+
+        units = ["合計", "聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所", "警備隊", "交通分隊"]
+        rows = []
+
+        for u in units:
+            if u == "合計":
+                sub_cur = df_cur
+                sub_all = df_all
+            elif u == "交通分隊":
+                sub_cur = df_cur[df_cur[unit_col].astype(str).str.contains("交通", na=False)]
+                sub_all = df_all[df_all[unit_col].astype(str).str.contains("交通", na=False)]
+            else:
+                key = u.replace("所", "").replace("隊", "")
+                sub_cur = df_cur[df_cur[unit_col].astype(str).str.contains(key, na=False)]
+                sub_all = df_all[df_all[unit_col].astype(str).str.contains(key, na=False)]
+
+            cur_22 = int(sub_cur[col_22_06].apply(is_checked).sum()) if col_22_06 else 0
+            cur_06 = int(sub_cur[col_06_22].apply(is_checked).sum()) if col_06_22 else 0
+
+            cum_22 = int(sub_all[col_22_06].apply(is_checked).sum()) if col_22_06 else 0
+            cum_06 = int(sub_all[col_06_22].apply(is_checked).sum()) if col_06_22 else 0
+            tot = len(sub_all)
+
+            rows.append({
+                "單位": u,
+                "本期(22-06)": cur_22,
+                "本期(06-22)": cur_06,
+                "累計(22-06)": cum_22,
+                "累計(06-22)": cum_06,
+                "總計": tot
+            })
+
+        return pd.DataFrame(rows)
 
     except Exception:
         pass
@@ -1380,7 +1406,7 @@ if btn_generate:
                     footnote=overload_fn
                 )
 
-            # P.7 靜桃計畫
+            # P.7 靜桃計畫 (本期 1 件龍潭所，專案累計 1129 件)
             if chk_jingtao and df_jingtao_dyn is not None:
                 builder.add_table_slide(
                     slide_title="「靜桃計畫」大執法專案統計表",
