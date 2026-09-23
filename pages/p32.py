@@ -890,7 +890,7 @@ def load_dynamic_major(report_dict):
     }
     return df_major_dyn, detail_dict, major_periods
 
-# --- 4.4 取締超載違規件數統計表 (精確鎖定「超載」第2欄，徹底根除0值與誤抓問題) ---
+# --- 4.4 取締超載違規件數統計表 (精確鎖定「超載」第2欄) ---
 def load_dynamic_overload(report_dict):
     ov_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["超載違規", "取締裝載砂石"])}
     if not ov_files:
@@ -921,7 +921,6 @@ def load_dynamic_overload(report_dict):
                     period = txt.split("統計期間：")[1].strip()
                     break
 
-            # 關鍵修正：精確定位「超載」欄位（固定為第 2 欄，排除後方第 25 欄肇事統計）
             cnt_col_idx = 2
             for c in range(df_full.shape[1]):
                 col_hdr = str(df_full.iloc[5, c]) + str(df_full.iloc[6, c])
@@ -938,7 +937,6 @@ def load_dynamic_overload(report_dict):
                 row_vals = df_data.iloc[r_idx]
                 row_text = " ".join([str(x).strip() for x in row_vals.dropna() if str(x).strip() != ''])
                 
-                # 排除合計列與大隊部彙總列
                 if any(k in row_text for k in ["總計", "大隊合計", "大隊部"]):
                     continue
 
@@ -952,11 +950,9 @@ def load_dynamic_overload(report_dict):
                 cnt = to_int(row_vals[cnt_col_idx])
 
                 if is_traffic_corps:
-                    # 交通大隊：跨欄檢查整列是否包含「龍潭」與「分隊」
                     if "龍潭" in row_text and ("分隊" in row_text or "隊" in row_text):
                         counts["交通分隊"] = counts.get("交通分隊", 0) + cnt
                 else:
-                    # 龍潭分局
                     col0_str = str(row_vals[0]).strip().replace(" ", "").replace("\u3000", "")
                     if "合計" in col0_str:
                         continue
@@ -977,7 +973,6 @@ def load_dynamic_overload(report_dict):
         except Exception:
             return "", {}
 
-    # 分別獨立解析龍潭分局與交通大隊的三期報表
     p_cur, d_cur_precinct = parse_r17_file(get_exact_file("本期", "分局"), is_traffic_corps=False)
     p_cum, d_cum_precinct = parse_r17_file(get_exact_file("本年累計", "分局") or get_exact_file("年累計", "分局"), is_traffic_corps=False)
     p_ly, d_ly_precinct = parse_r17_file(get_exact_file("去年累計", "分局"), is_traffic_corps=False)
@@ -989,7 +984,6 @@ def load_dynamic_overload(report_dict):
     if not (d_cum_precinct or d_cum_traffic):
         return None, "", {}
 
-    # 交通分隊數據合併：以交通大隊產出的數字為主
     def combine_units(d_p, d_t):
         merged = d_p.copy()
         t_squad_val = d_t.get("交通分隊", 0)
@@ -1027,7 +1021,6 @@ def load_dynamic_overload(report_dict):
             "達成率": achieve
         })
 
-    # 合計列由下屬各所隊實體數值加總，確保數據完全一致
     if rows:
         tot_c = sum(r["本期"] for r in rows[1:])
         tot_cum = sum(r["本年累計"] for r in rows[1:])
@@ -1046,9 +1039,10 @@ def load_dynamic_overload(report_dict):
     }
     return pd.DataFrame(rows), footnote, ov_periods
 
-# --- 4.5 「靜桃計畫」大執法專案統計表 ---
+# --- 4.5 「靜桃計畫」大執法專案統計表 (超寬容相容「改裝車及噪音車輛行為人清冊」) ---
 def load_dynamic_jingtao(report_dict):
-    jt_files = {k: v for k, v in report_dict.items() if "改裝車及噪音車輛" in k or "靜桃" in k}
+    # 支援檔名包含：改裝、噪音、行為人、靜桃
+    jt_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["改裝", "噪音", "行為人", "靜桃"])}
     if not jt_files:
         return None
 
@@ -1056,22 +1050,46 @@ def load_dynamic_jingtao(report_dict):
     try:
         df = pd.read_excel(io.BytesIO(b_data), header=None)
         hdr_idx = -1
-        for r in range(min(10, len(df))):
-            row_vals = [str(x) for x in df.iloc[r].dropna()]
-            if any("所別" in x for x in row_vals):
-                hdr_idx = r
+        unit_col_idx = -1
+
+        # 遍歷前 15 行尋找單位相關欄位
+        for r in range(min(15, len(df))):
+            for c in range(df.shape[1]):
+                cell_txt = str(df.iloc[r, c]).strip().replace(" ", "").replace("\u3000", "")
+                if any(k in cell_txt for k in ["所別", "通報單位", "單位", "舉發單位", "製單單位", "分隊所"]):
+                    hdr_idx = r
+                    unit_col_idx = c
+                    break
+            if hdr_idx != -1:
                 break
-        if hdr_idx != -1:
-            df.columns = [str(x).strip() for x in df.iloc[hdr_idx]]
-            df = df.iloc[hdr_idx+1:].copy()
-            unit_col = [c for c in df.columns if "所別" in c or "單位" in c][0]
-            counts = df[unit_col].value_counts()
+
+        if hdr_idx == -1 or unit_col_idx == -1:
+            # 備用方案：若無明確標題列，直接搜尋內容出現派出所名稱最多的那一直欄
+            best_col = -1
+            max_matches = 0
+            for c in range(df.shape[1]):
+                matches = df[c].astype(str).apply(lambda x: any(k in x for k in ["聖亭", "龍潭", "中興", "石門", "高平", "三和", "交通分隊"])).sum()
+                if matches > max_matches:
+                    max_matches = matches
+                    best_col = c
+            if best_col != -1 and max_matches > 0:
+                hdr_idx = 0
+                unit_col_idx = best_col
+
+        if unit_col_idx != -1:
+            df_data = df.iloc[hdr_idx+1:].copy()
+            unit_series = df_data[unit_col_idx].astype(str).str.strip().str.replace(" ", "").str.replace("\u3000", "")
+            counts = unit_series.value_counts()
 
             unit_map = ["合計", "聖亭所", "龍潭所", "中興所", "石門所", "高平所", "三和所", "警備隊", "交通分隊"]
             rows = []
             for u in unit_map:
                 key = u.replace("所", "")
-                val = counts.get(key, counts.get(u, 0))
+                val = 0
+                for k_name, cnt in counts.items():
+                    if key in k_name or u in k_name:
+                        val += cnt
+
                 rows.append({
                     "單位": u,
                     "本期(22-06)": 0,
@@ -1080,12 +1098,14 @@ def load_dynamic_jingtao(report_dict):
                     "累計(06-22)": int(val * 0.56),
                     "總計": int(val)
                 })
+
             tot_22 = sum(r["累計(22-06)"] for r in rows[1:])
             tot_06 = sum(r["累計(06-22)"] for r in rows[1:])
             rows[0]["累計(22-06)"] = tot_22
             rows[0]["累計(06-22)"] = tot_06
             rows[0]["總計"] = tot_22 + tot_06
             return pd.DataFrame(rows)
+
     except Exception:
         pass
     return None
