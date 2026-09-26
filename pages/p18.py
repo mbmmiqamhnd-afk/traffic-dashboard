@@ -13,7 +13,6 @@ from email.mime.text import MIMEText
 from email import encoders
 from datetime import datetime
 
-# 嘗試引入快捷鍵套件，若環境未安裝則退回使用標準按鈕
 try:
     from streamlit_shortcuts import button as shortcut_button
 except ImportError:
@@ -68,10 +67,11 @@ def sort_coworkers(df):
     df['職別'] = df['職別'].fillna("").astype(str).str.strip()
     df['分配類別'] = df['分配類別'].fillna("").astype(str).str.strip()
     
-    if '排序調整' in df.columns:
-        df['排序調整'] = pd.to_numeric(df['排序調整'], errors='coerce').fillna(999).astype(int)
+    # 確保排序調整欄位存在，若無或有缺漏則重新賦予乾淨的連續編號
+    if '排序調整' not in df.columns or df['排序調整'].isnull().any():
+        df['排序調整'] = range(100, 100 + len(df))
     else:
-        df.insert(0, '排序調整', range(100, 100 + len(df)))
+        df['排序調整'] = pd.to_numeric(df['排序調整'], errors='coerce').fillna(999).astype(int)
     
     cat_order = ["負責管考(72%)", "勤務督導(20%)", "其他配合(8%)", ""]
     df['分配類別'] = pd.Categorical(df['分配類別'], categories=cat_order, ordered=True)
@@ -80,7 +80,6 @@ def sort_coworkers(df):
                   "保安民防組", "行政組", "防治組","保防組", "聖亭派出所", "龍潭派出所", "中興派出所",
                   "石門派出所", "高平派出所", "三和派出所", "龍潭交通分隊", ""]
     
-    # 自動清理多餘的職務前綴，確保僅顯示純區域單位名稱
     def extract_base_unit(u):
         for base in unit_order[:-1]:
             if base in u:
@@ -106,8 +105,12 @@ def sort_coworkers(df):
     
     df['職級權重'] = df['職別'].apply(get_rank_weight)
     
+    # 依照目前的 排序調整 進行穩定排序
     df.sort_values(by=['排序調整', '分配類別', '單位', '職級權重', '姓名'],
                    ascending=[True, True, True, True, True], inplace=True)
+    
+    # 重新整理後，強制把「排序調整」重寫為乾淨無缺漏的連續號碼 (100, 101, 102...)
+    df['排序調整'] = [100 + i for i in range(len(df))]
     
     df.drop(columns=['職級權重'], inplace=True, errors='ignore')
     df.reset_index(drop=True, inplace=True)
@@ -133,12 +136,8 @@ def p18_page():
     st.title("💰 龍潭分局 - 處理道路交通安全人員獎勵金核銷自動化產生器")
     st.markdown("---")
     
-    # --- 使用 Tab 元件，完美將工作階段徹底分流 ---
     tab_pts, tab_pay = st.tabs(["📊 階段一：自動填報對帳（產生點數統計表）", "💰 階段二：月底獎金請款（產生獎金印領清冊）"])
     
-    # ==========================================================================
-    # 📊 階段一：自動填報對帳面板
-    # ==========================================================================
     with tab_pts:
         st.subheader("📂 請上傳對帳所需的三種原始資料")
         st.info("💡 說明：本區塊專用於月初對帳。系統會保留原始底稿的開單數據，自動填入事故與交整點數。")
@@ -388,7 +387,6 @@ def p18_page():
         
         df_curr = st.session_state.current_roster.copy()
         
-        # --- 快捷控制按鈕介面（支援快速鍵 Alt+Up / Alt+Down / Alt+N） ---
         c_sel, c_b1, c_b2, c_b3, c_b4 = st.columns([2, 1, 1, 1, 1])
         with c_sel:
             row_options = [f"第 {i+1} 列：{row.get('單位','')} - {row.get('姓名','')}" for i, row in df_curr.iterrows()]
@@ -401,7 +399,6 @@ def p18_page():
                     t = df_curr.at[selected_row_idx, '排序調整']
                     df_curr.at[selected_row_idx, '排序調整'] = df_curr.at[selected_row_idx - 1, '排序調整']
                     df_curr.at[selected_row_idx - 1, '排序調整'] = t
-                    df_curr.at[selected_row_idx, '排序調整'] -= 2
                     st.session_state.current_roster = sort_coworkers(df_curr)
                     st.rerun()
         with c_b2:
@@ -411,7 +408,6 @@ def p18_page():
                     t = df_curr.at[selected_row_idx, '排序調整']
                     df_curr.at[selected_row_idx, '排序調整'] = df_curr.at[selected_row_idx + 1, '排序調整']
                     df_curr.at[selected_row_idx + 1, '排序調整'] = t
-                    df_curr.at[selected_row_idx, '排序調整'] += 2
                     st.session_state.current_roster = sort_coworkers(df_curr)
                     st.rerun()
         with c_b3:
@@ -430,9 +426,8 @@ def p18_page():
         with c_b4:
             st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
             if st.button("🔄 自動重整序號", use_container_width=True, key="btn_reindex"):
-                df_curr['排序調整'] = [100 + i * 2 for i in range(len(df_curr))]
                 st.session_state.current_roster = sort_coworkers(df_curr)
-                st.success("✅ 序號已重新編號完成！")
+                st.success("✅ 序號已完美重新編號且無缺漏！")
                 st.rerun()
 
         df_display = st.session_state.current_roster.copy()
