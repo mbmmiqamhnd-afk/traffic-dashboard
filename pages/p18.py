@@ -304,7 +304,7 @@ def p18_page():
         else:
             budget_input = st.number_input("💰 輸入【全分局】核撥總預算 (元)", value=50000, step=100, key="pay_binB")
         
-        st.markdown("**共同作業名單配置**")
+        st.markdown("**共同作業名單配置與快捷操作**")
         roster_file = 'coworkers_roster.csv'
         
         if 'current_roster' not in st.session_state:
@@ -381,12 +381,56 @@ def p18_page():
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
-                    {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
+                    {"分配類別": "其他配合(8%)", "姓名": "陳明祥", "單位": "人事室", "職別": "警員"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
                 ]
                 df_init = pd.DataFrame(default_coworkers_data)
                 st.session_state.current_roster = sort_coworkers(df_init)
-            
+        
+        # --- 新增：便捷的行操作按鈕介面 ---
+        df_curr = st.session_state.current_roster.copy()
+        
+        c_sel, c_b1, c_b2, c_b3 = st.columns([2, 1, 1, 1])
+        with c_sel:
+            row_options = [f"第 {i+1} 列：{row.get('單位','')} - {row.get('姓名','')}" for i, row in df_curr.iterrows()]
+            selected_row_idx = st.selectbox("選擇要調整的目標成員：", options=range(len(df_curr)), format_func=lambda x: row_options[x], key="sel_row_idx")
+        
+        with c_b1:
+            st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
+            if st.button("▲ 往前插隊", use_container_width=True):
+                if selected_row_idx > 0:
+                    # 對調排序調整值
+                    t = df_curr.at[selected_row_idx, '排序調整']
+                    df_curr.at[selected_row_idx, '排序調整'] = df_curr.at[selected_row_idx - 1, '排序調整']
+                    df_curr.at[selected_row_idx - 1, '排序調整'] = t
+                    # 微調數值讓目標列前移
+                    df_curr.at[selected_row_idx, '排序調整'] -= 2
+                    st.session_state.current_roster = sort_coworkers(df_curr)
+                    st.rerun()
+        with c_b2:
+            st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
+            if st.button("▼ 往後遞延", use_container_width=True):
+                if selected_row_idx < len(df_curr) - 1:
+                    t = df_curr.at[selected_row_idx, '排序調整']
+                    df_curr.at[selected_row_idx, '排序調整'] = df_curr.at[selected_row_idx + 1, '排序調整']
+                    df_curr.at[selected_row_idx + 1, '排序調整'] = t
+                    df_curr.at[selected_row_idx, '排序調整'] += 2
+                    st.session_state.current_roster = sort_coworkers(df_curr)
+                    st.rerun()
+        with c_b3:
+            st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
+            if st.button("➕ 在下方新增", use_container_width=True):
+                new_row = pd.DataFrame([{
+                    "排序調整": df_curr.at[selected_row_idx, '排序調整'] + 1,
+                    "分配類別": "負責管考(72%)",
+                    "單位": "龍潭分局",
+                    "職別": "警員",
+                    "姓名": "新成員"
+                }])
+                df_curr = pd.concat([df_curr.iloc[:selected_row_idx+1], new_row, df_curr.iloc[selected_row_idx+1:]], ignore_index=True)
+                st.session_state.current_roster = sort_coworkers(df_curr)
+                st.rerun()
+
         df_display = st.session_state.current_roster.copy()
         if '金額' in df_display.columns: df_display = df_display.drop(columns=['金額'])
         col_cfg = {
@@ -479,7 +523,6 @@ def p18_page():
                             st.error("⚠️ 該點數表中未偵測到任何個人的點數紀錄。")
                             return
                         
-                        # --- 修正重點：將欄位名稱統一為「單位」及「姓名」，但保留在單一頁籤輸出 ---
                         df_direct_exec.rename(columns={'單位名稱': '單位', '員警姓名': '姓名'}, inplace=True)
                         
                         df_direct_exec.insert(0, '序號', range(1, len(df_direct_exec) + 1))
@@ -499,7 +542,6 @@ def p18_page():
                         
                         df_direct_exec['蓋章'] = ""
                         
-                        # 加入單一頁籤的總合計列
                         direct_total_row = {c: "" for c in df_direct_exec.columns}
                         direct_total_row['姓名'] = '合計'
                         direct_total_row['實領獎金'] = direct_total_money
@@ -632,7 +674,7 @@ def p18_page():
                                 (6, "分局長：")
                             ]
                             
-                            # 1. 寫入【直接執行人員】單一分頁 (欄位仍顯示各單位名稱)
+                            # 1. 寫入【直接執行人員】單一分頁
                             df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                             ws1 = writer.sheets['直接執行人員']
                             ws1.set_portrait(); ws1.set_paper(9); ws1.fit_to_pages(1, 0)
@@ -640,7 +682,6 @@ def p18_page():
                             stamp_col1 = df_direct_exec.columns.get_loc('蓋章')
                             ws1.set_column(stamp_col1, stamp_col1, 22)
                             
-                            # 套用樣式設定
                             for r in range(len(df_direct_exec) + 1):
                                 ws1.set_row(r, 45 if r > 0 else 25)
                                 for c in range(len(df_direct_exec.columns)):
