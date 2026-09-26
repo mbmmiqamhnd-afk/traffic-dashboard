@@ -13,6 +13,12 @@ from email.mime.text import MIMEText
 from email import encoders
 from datetime import datetime
 
+# 嘗試引入快捷鍵套件，若環境未安裝則退回使用標準按鈕
+try:
+    from streamlit_shortcuts import button as shortcut_button
+except ImportError:
+    shortcut_button = lambda text, shortcut, **kwargs: st.button(text, **kwargs)
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 try:
     from app import show_sidebar
@@ -168,11 +174,7 @@ def p18_page():
                         xls_template = pd.ExcelFile(file_template)
                         template_sheets = xls_template.sheet_names
                         
-                        # ====================================================
-                        # 【階段一：三重保險年月自動偵測】
-                        # ====================================================
                         ext_year, ext_month = None, None
-                        
                         m_file = re.search(r'(\d{3})\s*年\s*(\d{1,2})\s*月', file_template.name)
                         if m_file:
                             ext_year = m_file.group(1)
@@ -254,9 +256,6 @@ def p18_page():
                                 df_final_sheet = pd.concat([df_members, pd.DataFrame([sub_row_data])], ignore_index=True)
                                 df_final_sheet = df_final_sheet.fillna("").replace([np.inf, -np.inf], "")
                                 
-                                # ====================================================
-                                # 移除蓋章欄位
-                                # ====================================================
                                 if '蓋章' in df_final_sheet.columns:
                                     df_final_sheet = df_final_sheet.drop(columns=['蓋章'])
                                 
@@ -381,35 +380,33 @@ def p18_page():
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "主任", "姓名": "葉菀容"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "助理員", "姓名": "王韋翔"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警務佐", "姓名": "李福源"},
-                    {"分配類別": "其他配合(8%)", "姓名": "陳明祥", "單位": "人事室", "職別": "警員"},
+                    {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "陳明祥"},
                     {"分配類別": "其他配合(8%)", "單位": "人事室", "職別": "警員", "姓名": "黃秀吉"},
                 ]
                 df_init = pd.DataFrame(default_coworkers_data)
                 st.session_state.current_roster = sort_coworkers(df_init)
         
-        # --- 新增：便捷的行操作按鈕介面 ---
         df_curr = st.session_state.current_roster.copy()
         
-        c_sel, c_b1, c_b2, c_b3 = st.columns([2, 1, 1, 1])
+        # --- 快捷控制按鈕介面（支援快速鍵 Alt+Up / Alt+Down / Alt+N） ---
+        c_sel, c_b1, c_b2, c_b3, c_b4 = st.columns([2, 1, 1, 1, 1])
         with c_sel:
             row_options = [f"第 {i+1} 列：{row.get('單位','')} - {row.get('姓名','')}" for i, row in df_curr.iterrows()]
             selected_row_idx = st.selectbox("選擇要調整的目標成員：", options=range(len(df_curr)), format_func=lambda x: row_options[x], key="sel_row_idx")
         
         with c_b1:
             st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
-            if st.button("▲ 往前插隊", use_container_width=True):
+            if shortcut_button("▲ 往前", "alt+arrowup", use_container_width=True, key="btn_up"):
                 if selected_row_idx > 0:
-                    # 對調排序調整值
                     t = df_curr.at[selected_row_idx, '排序調整']
                     df_curr.at[selected_row_idx, '排序調整'] = df_curr.at[selected_row_idx - 1, '排序調整']
                     df_curr.at[selected_row_idx - 1, '排序調整'] = t
-                    # 微調數值讓目標列前移
                     df_curr.at[selected_row_idx, '排序調整'] -= 2
                     st.session_state.current_roster = sort_coworkers(df_curr)
                     st.rerun()
         with c_b2:
             st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
-            if st.button("▼ 往後遞延", use_container_width=True):
+            if shortcut_button("▼ 往後", "alt+arrowdown", use_container_width=True, key="btn_down"):
                 if selected_row_idx < len(df_curr) - 1:
                     t = df_curr.at[selected_row_idx, '排序調整']
                     df_curr.at[selected_row_idx, '排序調整'] = df_curr.at[selected_row_idx + 1, '排序調整']
@@ -419,7 +416,7 @@ def p18_page():
                     st.rerun()
         with c_b3:
             st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
-            if st.button("➕ 在下方新增", use_container_width=True):
+            if shortcut_button("➕ 插入", "alt+n", use_container_width=True, key="btn_add"):
                 new_row = pd.DataFrame([{
                     "排序調整": df_curr.at[selected_row_idx, '排序調整'] + 1,
                     "分配類別": "負責管考(72%)",
@@ -429,6 +426,13 @@ def p18_page():
                 }])
                 df_curr = pd.concat([df_curr.iloc[:selected_row_idx+1], new_row, df_curr.iloc[selected_row_idx+1:]], ignore_index=True)
                 st.session_state.current_roster = sort_coworkers(df_curr)
+                st.rerun()
+        with c_b4:
+            st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
+            if st.button("🔄 自動重整序號", use_container_width=True, key="btn_reindex"):
+                df_curr['排序調整'] = [100 + i * 2 for i in range(len(df_curr))]
+                st.session_state.current_roster = sort_coworkers(df_curr)
+                st.success("✅ 序號已重新編號完成！")
                 st.rerun()
 
         df_display = st.session_state.current_roster.copy()
@@ -455,11 +459,7 @@ def p18_page():
                         xls_template = pd.ExcelFile(file_final_pts)
                         template_sheets = xls_template.sheet_names
                         
-                        # ====================================================
-                        # 【階段二：三重保險年月自動偵測】
-                        # ====================================================
                         ext_year, ext_month = None, None
-                        
                         m_file = re.search(r'(\d{3})\s*年\s*(\d{1,2})\s*月', file_final_pts.name)
                         if m_file:
                             ext_year = m_file.group(1)
@@ -547,9 +547,6 @@ def p18_page():
                         direct_total_row['實領獎金'] = direct_total_money
                         df_direct_exec = pd.concat([df_direct_exec, pd.DataFrame([direct_total_row])], ignore_index=True)
                         
-                        # ====================================================
-                        # 開始處理 共同作業及配合人員
-                        # ====================================================
                         df_coworkers_work = st.session_state.current_roster.copy()
                         df_coworkers_work = sort_coworkers(df_coworkers_work)
                         
@@ -674,7 +671,6 @@ def p18_page():
                                 (6, "分局長：")
                             ]
                             
-                            # 1. 寫入【直接執行人員】單一分頁
                             df_direct_exec.to_excel(writer, sheet_name='直接執行人員', index=False)
                             ws1 = writer.sheets['直接執行人員']
                             ws1.set_portrait(); ws1.set_paper(9); ws1.fit_to_pages(1, 0)
@@ -687,7 +683,6 @@ def p18_page():
                                 for c in range(len(df_direct_exec.columns)):
                                     ws1.write(r, c, df_direct_exec.iloc[r-1, c] if r > 0 else df_direct_exec.columns[c], border_format)
                             
-                            # 2. 寫入【共同作業及配合人員】分頁
                             df_coworkers_final_sheet.to_excel(writer, sheet_name='共同作業及配合人員', index=False)
                             ws2 = writer.sheets['共同作業及配合人員']
                             ws2.set_portrait(); ws2.set_paper(9); ws2.fit_to_pages(1, 0)
@@ -719,7 +714,6 @@ def p18_page():
                             for col_idx, title_text in review_line_officers:
                                 ws2.write(review_row2, col_idx, title_text, sign_title_format)
                             
-                            # 3. 寫入【一覽表】
                             df_payroll_summary.to_excel(writer, sheet_name='處理道路交通安全人員獎勵金支領一覽表', index=False)
                         
                         payroll_excel_data = payroll_output.getvalue()
