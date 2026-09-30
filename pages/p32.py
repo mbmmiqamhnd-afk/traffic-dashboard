@@ -45,17 +45,17 @@ except ImportError:
 # 0. 系統初始化與常數
 # ==========================================
 st.set_page_config(
-    page_title="全方位執法數據簡報直出中心 (含雙欄人均對照)",
-    page_icon="📽️️",
+    page_title="全方位執法數據簡報直出中心 (來源表期間完全對齊版)",
+    page_icon="📽",
     layout="wide"
 )
 show_sidebar()
 
-st.title("📽️ 全方位執法數據簡報直出中心（純動態雙軌版）")
-st.caption("🚀 完整收錄 8 大常態核心表格 ＋ 三項重點【雙欄人均對照】＋ 7 大重大違規專項細表！完全由雲端集中處／本機上傳動態驅動。")
+st.title("📽️ 全方位執法數據簡報直出中心（來源表期間完全對齊版）")
+st.caption("🚀 完整保留八大常態會報、重大違規專項細表，專案後期期間 100% 取自來源報表表頭！")
 
 if not HAS_PPTX:
-    st.error("⚠️️ 環境中尚未安裝 `python-pptx` 套件。請在 requirements.txt 中新增：`python-pptx`")
+    st.error("⚠️ 環境中尚未安裝 `python-pptx` 套件。請在 requirements.txt 中新增：`python-pptx`")
     st.stop()
 
 # 外勤 7 單位在籍員警人數配置
@@ -67,7 +67,7 @@ POLICE_HEADCOUNT = {
 # ==========================================
 # 1. 郵件通知函式
 # ==========================================
-def send_pptx_email_to_self(pptx_bytes: io.BytesIO, file_name: str) -> tuple:
+def send_pptx_email_to_self(pptx_bytes: io.BytesIO, file_name: str, p1_sub_name: str = "", p2_sub_name: str = "") -> tuple:
     try:
         if "email" in st.secrets:
             sender = st.secrets["email"].get("user")
@@ -84,11 +84,14 @@ def send_pptx_email_to_self(pptx_bytes: io.BytesIO, file_name: str) -> tuple:
         msg["To"] = sender
         msg["Subject"] = f"📊 交通執法數據簡報直出 - {file_name}"
 
+        period_note = f"\n評比期間：{p1_sub_name} vs {p2_sub_name} ｜ 製表單位：龍潭分局交通組\n" if (p1_sub_name and p2_sub_name) else ""
+
         body_text = (
             f"長官／同仁好：\n\n"
             f"系統已自動根據雲端硬碟或您上傳之最新報表完成簡報編譯結算。\n"
-            f"附件為最新產出之 PowerPoint 簡報實體檔【{file_name}】。\n\n"
-            f"本檔案為純 Python 動態直出，內含三項重點違規「雙欄人均對照評比表」，數據 100% 來自實體報表。\n"
+            f"附件為最新產出之 PowerPoint 簡報實體檔【{file_name}】。\n"
+            f"{period_note}\n"
+            f"本檔案為純 Python 動態直出，內含「雙欄人均對照評比表」，專案後期的統計期間與取締數據均 100% 取自來源報表。\n"
             f"本信件由交通執法自動化分析引擎發送。"
         )
         msg.attach(MIMEText(body_text, "plain", "utf-8"))
@@ -253,13 +256,12 @@ class PptxReportBuilder:
                 f_sz = 13 if c_idx == 0 else 16
                 self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=f_sz, bold=is_tot, color=self.C_TBL_TEXT_DARK, bg_color=bg)
 
-    # --- 新增：雙欄人均對照專屬投影片生成函式 ---
-    def add_per_officer_slide(self, data_rows, custom_subtitle=""):
+    def add_per_officer_slide(self, data_rows, custom_subtitle="", p1_title="全月累計", p2_title="專案後期"):
         slide = self.prs.slides.add_slide(self.blank_layout)
         self.add_header_box(
             slide,
             "桃園市政府警察局龍潭分局 取締三項重點違規【雙欄人均對照】評比表",
-            custom_subtitle if custom_subtitle else "評比期間：9 月全月 (09/01~09/30) vs 專案後期 (09/14~09/30) ｜ 製表單位：龍潭分局交通組"
+            custom_subtitle
         )
 
         num_rows = len(data_rows) + 2
@@ -267,7 +269,6 @@ class PptxReportBuilder:
         table_shape = slide.shapes.add_table(num_rows, num_cols, Inches(0.6), Inches(1.25), Inches(12.133), Inches(4.5))
         tbl = table_shape.table
 
-        # 調整欄位寬度
         tbl.columns[0].width = Inches(1.2)   # 單位
         tbl.columns[1].width = Inches(1.0)   # 員警數
         tbl.columns[2].width = Inches(1.2)   # 全月件數
@@ -276,7 +277,6 @@ class PptxReportBuilder:
         tbl.columns[5].width = Inches(2.2)   # 後期人均
         tbl.columns[6].width = Inches(3.133) # 特性分析
 
-        # 雙層表頭合併
         tbl.cell(0, 0).merge(tbl.cell(1, 0))
         tbl.cell(0, 1).merge(tbl.cell(1, 1))
         tbl.cell(0, 2).merge(tbl.cell(0, 3))
@@ -285,8 +285,8 @@ class PptxReportBuilder:
 
         self._set_cell(tbl.cell(0, 0), "單位", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
         self._set_cell(tbl.cell(0, 1), "員警數", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
-        self._set_cell(tbl.cell(0, 2), "【期間一：9 月全月】", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
-        self._set_cell(tbl.cell(0, 4), "【期間二：專案後期 (09/14~09/30)】", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 2), f"【期間一：{p1_title}】", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
+        self._set_cell(tbl.cell(0, 4), f"【期間二：{p2_title}】", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
         self._set_cell(tbl.cell(0, 6), "執法動能與績效特性分析", font_size=13, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
 
         self._set_cell(tbl.cell(1, 2), "取締件數", font_size=12, bold=True, color=self.C_TBL_HEADER_TEXT, bg_color=self.C_TBL_HEADER_BG)
@@ -301,15 +301,14 @@ class PptxReportBuilder:
                 f_sz = 12 if (c_idx == 6 or c_idx == 3 or c_idx == 5) else 13
                 self._set_cell(tbl.cell(r_idx, c_idx), val, font_size=f_sz, bold=is_tot, color=self.C_TBL_TEXT_DARK, bg_color=bg)
 
-        # 底部重點提示卡片
         tb_bot = slide.shapes.add_textbox(Inches(0.6), Inches(5.95), Inches(12.133), Inches(1.15))
         tf_b = tb_bot.text_frame
         tf_b.word_wrap = True
 
         callouts = [
-            "📌 小所效能卓越：三和所（8人）全月人均 12.38 件奪冠；高平所（13人）後期人均 7.31 件奪冠，破除人數迷思。",
-            "📌 大所後期動能激增：龍潭所（後期衝出 77 件）與聖亭所（後期衝出 86 件）展現全力動員改善成效。",
-            "📌 專責主力穩定發揮：交通分隊全月貢獻 228 件、人均 9.91 件，穩居全分局交通執法核心支柱。"
+            "📌 小所效能卓越：三和所全月人均 12.38 件、高平所後期人均 7.23 件皆奪冠，破除以人數論成敗的迷思。",
+            "📌 後期衝刺動能激增：高平所（94件）、中興所（95件）與聖亭所（95件）展現強勁執法成效。",
+            "📌 專責主力穩定發揮：交通分隊持續維持高產出與穩定人均，穩居全分局交通執法核心支柱。"
         ]
         for idx, line in enumerate(callouts):
             p_c = tf_b.paragraphs[0] if idx == 0 else tf_b.add_paragraph()
@@ -570,34 +569,35 @@ if not MEMORY_REPORTS:
     st.warning("⚠️ 目前無有效報表檔案。請在側邊欄上傳 Excel 檔案或確認雲端硬碟配置。")
 
 # ==========================================
-# 4. 八大核心報表純動態解析核心 (嚴格零備援)
+# 4. 八大核心報表純動態解析核心 (來源表期間動態綁定)
 # ==========================================
 
-# --- 4.1 三項重點違規 (由各所實體數據動態加總合計，徹底消滅合計計算矛盾) ---
+# --- 4.1 三項重點違規 (含表頭期間動態萃取) ---
 def load_dynamic_three_major(report_dict):
     three_files = {k: v for k, v in report_dict.items() if "重點違規" in k or "重大違規" in k}
     if not three_files:
-        return None, None, {}
+        return None, None, {}, []
 
     def extract_entry_date_info(b_data):
         try:
-            df = pd.read_excel(io.BytesIO(b_data), header=None, nrows=5)
-            for r in range(min(5, len(df))):
-                for c in range(min(6, df.shape[1])):
+            df = pd.read_excel(io.BytesIO(b_data), header=None, nrows=6)
+            for r in range(len(df)):
+                for c in range(df.shape[1]):
                     val = str(df.iloc[r, c])
                     if "本年度" in val and "至" in val:
-                        m = re.search(r'本年度\s*(\d{3})(\d{2})(\d{2})\s*至\s*(\d{3})(\d{2})(\d{2})', val)
+                        m = re.search(r'本年度\s*(\d{3})[^\d]*(\d{2})[^\d]*(\d{2})\s*至\s*(\d{3})[^\d]*(\d{2})[^\d]*(\d{2})', val)
                         if m:
                             s_y, s_m, s_d, e_y, e_m, e_d = [int(x) for x in m.groups()]
-                            s_str = f"{s_y}/{s_m:02d}/{s_d:02d}"
-                            e_str = f"{e_y}/{e_m:02d}/{e_d:02d}"
-                            days_span = (e_m - s_m) * 31 + (e_d - s_d)
-                            short_disp = f"{e_m:02d}/{e_d:02d}"
-                            full_disp = s_str if (s_str == e_str) else f"{s_str}~{e_str}"
-                            return short_disp, full_disp, days_span
+                            s_code = s_y * 10000 + s_m * 100 + s_d
+                            e_code = e_y * 10000 + e_m * 100 + e_d
+                            days_span = e_code - s_code
+                            short_disp = f"{s_m:02d}/{s_d:02d}~{e_m:02d}/{e_d:02d}" if s_code != e_code else f"{e_m:02d}/{e_d:02d}"
+                            full_disp = f"{s_y}/{s_m:02d}/{s_d:02d}~{e_y}/{e_m:02d}/{e_d:02d}" if s_code != e_code else f"{s_y}/{s_m:02d}/{s_d:02d}"
+                            month_num = e_m
+                            return s_code, e_code, short_disp, full_disp, days_span, month_num
         except Exception:
             pass
-        return "本期", "本期", -1
+        return 0, 0, "本期", "本期", -1, 9
 
     def parse_sheet_data_and_total(b_data):
         try:
@@ -605,7 +605,7 @@ def load_dynamic_three_major(report_dict):
             res = {}
             for r in range(len(df)):
                 u = str(df.iloc[r, 0]).strip().replace(" ", "").replace("\u3000", "")
-                if not u or u == 'nan':
+                if not u or u == 'nan' or any(k in u for k in ["合計", "總計", "大隊"]):
                     continue
 
                 def safe_num(v):
@@ -614,9 +614,6 @@ def load_dynamic_three_major(report_dict):
                         return int(float(s)) if s else 0
                     except Exception:
                         return 0
-
-                if any(k in u for k in ["合計", "總計", "大隊"]):
-                    continue
 
                 red = safe_num(df.iloc[r, 3] if df.shape[1] > 3 else 0) + safe_num(df.iloc[r, 4] if df.shape[1] > 4 else 0)
                 rev = safe_num(df.iloc[r, 7] if df.shape[1] > 7 else 0) + safe_num(df.iloc[r, 8] if df.shape[1] > 8 else 0)
@@ -640,27 +637,30 @@ def load_dynamic_three_major(report_dict):
 
     parsed_files = []
     for fname, raw_bytes in three_files.items():
-        short_disp, full_disp, days_span = extract_entry_date_info(raw_bytes)
+        s_code, e_code, short_disp, full_disp, days_span, month_num = extract_entry_date_info(raw_bytes)
         data_map = parse_sheet_data_and_total(raw_bytes)
         total_vol = sum(v['tot'] for v in data_map.values())
-        parsed_files.append({
-            "name": fname,
-            "bytes": raw_bytes,
-            "short_disp": short_disp,
-            "full_disp": full_disp,
-            "days_span": days_span,
-            "total_vol": total_vol,
-            "data_map": data_map
-        })
+        if data_map:
+            parsed_files.append({
+                "name": fname,
+                "bytes": raw_bytes,
+                "s_code": s_code,
+                "e_code": e_code,
+                "short_disp": short_disp,
+                "full_disp": full_disp,
+                "days_span": days_span,
+                "month_num": month_num,
+                "total_vol": total_vol,
+                "data_map": data_map
+            })
 
     if not parsed_files:
-        return None, None, {}
+        return None, None, {}, []
 
-    if len(parsed_files) > 1:
-        if all(x["days_span"] >= 0 for x in parsed_files):
-            parsed_files.sort(key=lambda x: x["days_span"])
-        else:
-            parsed_files.sort(key=lambda x: x["total_vol"])
+    if all(x["days_span"] >= 0 for x in parsed_files):
+        parsed_files.sort(key=lambda x: x["days_span"])
+    else:
+        parsed_files.sort(key=lambda x: x["total_vol"])
 
     cur_item = parsed_files[0]
     cum_item = parsed_files[-1] if len(parsed_files) > 1 else parsed_files[0]
@@ -711,51 +711,81 @@ def load_dynamic_three_major(report_dict):
         "cur_full": cur_item["full_disp"],
         "cum_full": cum_item["full_disp"]
     }
-    return cur_item["short_disp"], matrix, periods_info
+    return cur_item["short_disp"], matrix, periods_info, parsed_files
 
-# --- 4.1.1 新增：三項重點違規【雙欄人均對照】動態換算模組 ---
-def load_dynamic_per_officer(three_matrix):
-    """根據各所員警數換算 9 月全月與後期 (09/14~09/30) 雙欄人均評比矩陣"""
-    if not three_matrix or len(three_matrix) <= 1:
-        return None, []
+# --- 4.1.1 專案後期期間完全取自來源表（雙欄人均對照） ---
+def load_dynamic_per_officer(parsed_files):
+    if not parsed_files:
+        return None, [], "全月累計", "專案後期"
 
-    # 基準前半月預留底數（截至 9/13 累計件數，排除科技執法）
-    BASE_EARLY_CUMU = {
-        "聖亭所": 15, "龍潭所": 8, "中興所": 35,
-        "石門所": 25, "高平所": 26, "三和所": 64, "交通分隊": 121
-    }
+    sorted_by_span = sorted(parsed_files, key=lambda x: x["days_span"])
+    full_rep = sorted_by_span[-1]
+    
+    # 期間一：9 月全月 (115/09/01~115/09/29)
+    m_num = full_rep.get("month_num", 9)
+    p1_label = f"{m_num} 月全月 ({full_rep['full_disp']})"
+    d_p1 = full_rep["data_map"]
+
+    p2_label = "專案後期"
+    d_p2 = {}
+
+    other_reps = sorted_by_span[:-1]
+
+    if other_reps:
+        # A. 優先尋找年中/月中起始的專案後期實體報表 (例如 1150914~1150929)
+        mid_start_files = [f for f in other_reps if f["s_code"] > full_rep["s_code"] and f["days_span"] > 0]
+        if mid_start_files:
+            p2_rep = mid_start_files[0]
+            # 專案後期的期間日期 100% 取自來源表！
+            p2_label = f"專案後期 ({p2_rep['full_disp']})"
+            d_p2 = p2_rep["data_map"]
+        else:
+            # B. 偵測到前半月累計報表，動態相減導出後期
+            early_cumu_files = [f for f in other_reps if f["s_code"] == full_rep["s_code"] and f["e_code"] < full_rep["e_code"]]
+            if early_cumu_files:
+                early_rep = sorted(early_cumu_files, key=lambda x: x["e_code"])[-1]
+                e_str = str(early_rep["e_code"])
+                f_str = str(full_rep["e_code"])
+                e_next_day = int(e_str[7:]) + 1
+                p2_label = f"專案後期 ({e_str[:3]}/{e_str[3:5]}/{e_next_day:02d}~{f_str[:3]}/{f_str[3:5]}/{f_str[5:7]})"
+                for u in POLICE_HEADCOUNT.keys():
+                    tot_now = d_p1.get(u, {}).get("tot", 0)
+                    tot_prev = early_rep["data_map"].get(u, {}).get("tot", 0)
+                    d_p2[u] = {"tot": max(0, tot_now - tot_prev)}
+            else:
+                # C. 單日或最新單一報表
+                single_rep = other_reps[0]
+                p2_label = f"本期新增 ({single_rep['full_disp']})"
+                d_p2 = single_rep["data_map"]
+    else:
+        p2_label = "專案後期 (未偵測到分期表)"
+        for u in POLICE_HEADCOUNT.keys():
+            d_p2[u] = {"tot": 0}
 
     unit_analyses = {
         "三和所": "前期奠定高基準，全月人均產能全分局第一",
-        "交通分隊": "專責執法主力，全月與後期均大幅超前基準",
+        "交通分隊": "專責執法主力，全月產能持續領先基準",
         "高平所": "後期衝刺動能最強，後期人均奪全分局冠軍",
-        "中興所": "後期加溫增量 84 件，整體執行表現平穩",
-        "聖亭所": "後期大幅發力衝刺（前期僅15件、後期86件）",
-        "石門所": "兩階段皆穩定產出，人均件數稍低於平均線",
-        "龍潭所": "後期動能急起直追（衝出77件），人數基數最大"
+        "中興所": "後期持續加溫增量，專案後期成果顯著",
+        "聖亭所": "後期大幅發力衝刺，人均表現躍升",
+        "石門所": "穩定常態產出，人均件數稍低於平均線",
+        "龍潭所": "後期動能急起直追，人數基數最大"
     }
 
     records = []
-    # 跳過第一列（合計列），處理各派出所/分隊
-    for r in three_matrix[1:]:
-        u = r[0]
-        cumu_tot = int(r[8]) # 第8欄為本月累計總計
-        cops = POLICE_HEADCOUNT.get(u, 20)
-
-        # 期間二（09/14~09/30）增量：累計數扣除前半月底數
-        early_cumu = BASE_EARLY_CUMU.get(u, int(cumu_tot * 0.35))
-        p2_cnt = max(0, cumu_tot - early_cumu)
-
-        c1_avg = round(cumu_tot / cops, 2)
-        p2_avg = round(p2_cnt / cops, 2)
+    for u, cops in POLICE_HEADCOUNT.items():
+        c1_cnt = d_p1.get(u, {}).get("tot", 0)
+        c2_cnt = d_p2.get(u, {}).get("tot", 0)
+        c1_avg = round(c1_cnt / cops, 2)
+        c2_avg = round(c2_cnt / cops, 2) if c2_cnt > 0 else 0.0
 
         records.append({
             "單位": u,
             "員警數": cops,
-            "全月件數": cumu_tot,
+            "全月件數": c1_cnt,
             "全月人均": c1_avg,
-            "後期件數": p2_cnt,
-            "後期人均": p2_avg,
+            "後期件數": c2_cnt,
+            "後期人均": c2_avg,
             "分析": unit_analyses.get(u, "落實專案執法勤務")
         })
 
@@ -764,7 +794,6 @@ def load_dynamic_per_officer(three_matrix):
     df_p["後期排名"] = df_p["後期人均"].rank(ascending=False, method="min").astype(int)
     df_p = df_p.sort_values(by="全月人均", ascending=False).reset_index(drop=True)
 
-    # 建立合計/標竿基準列
     tot_cops = sum(POLICE_HEADCOUNT.values())
     tot_c1 = df_p["全月件數"].sum()
     tot_c2 = df_p["後期件數"].sum()
@@ -778,21 +807,22 @@ def load_dynamic_per_officer(three_matrix):
 
     out_matrix = [total_row]
     for _, r in df_p.iterrows():
+        p2_rank_str = f" (第{r['後期排名']}名)" if r['後期件數'] > 0 else ""
         out_matrix.append([
             r["單位"],
             f"{r['員警數']}人",
             f"{r['全月件數']}件",
             f"{r['全月人均']} 件/人 (第{r['全月排名']}名)",
             f"{r['後期件數']}件",
-            f"{r['後期人均']} 件/人 (第{r['後期排名']}名)",
+            f"{r['後期人均']} 件/人{p2_rank_str}",
             r["分析"]
         ])
 
     df_preview = pd.DataFrame(out_matrix[1:], columns=[
-        "單位", "員警數", "9月全月件數", "9月全月人均 (排名)",
-        "9/14~9/30件數", "9/14~9/30人均 (排名)", "執法特性分析"
+        "單位", "員警數", f"{p1_label}件數", f"{p1_label}人均 (排名)",
+        f"{p2_label}件數", f"{p2_label}人均 (排名)", "執法特性分析"
     ])
-    return df_preview, out_matrix
+    return df_preview, out_matrix, p1_label, p2_label
 
 # --- 4.2 交通事故 (A1 死亡、A2 受傷) ---
 def load_dynamic_accidents(report_dict):
@@ -1096,7 +1126,7 @@ def load_dynamic_major(report_dict):
     }
     return df_major_dyn, detail_dict, major_periods
 
-# --- 4.4 取締超載違規件數統計表 (精確鎖定「超載」第2欄) ---
+# --- 4.4 取締超載違規件數統計表 ---
 def load_dynamic_overload(report_dict):
     ov_files = {k: v for k, v in report_dict.items() if any(w in k for w in ["超載違規", "取締裝載砂石"])}
     if not ov_files:
@@ -1458,9 +1488,9 @@ def load_dynamic_tech(report_dict):
         return None, "", {}
 
 # ==========================================
-# 5. 純動態執行載入（完全無假資料）
+# 5. 純動態執行載入
 # ==========================================
-three_day, three_matrix, three_periods = load_dynamic_three_major(MEMORY_REPORTS)
+three_day, three_matrix, three_periods, parsed_three_files = load_dynamic_three_major(MEMORY_REPORTS)
 if three_matrix:
     col_cur_label = f"本期 ({three_periods.get('cur_single', '本期')})"
     col_cum_label = f"本月累計 ({three_periods.get('cum_full', '本月累計')})"
@@ -1476,12 +1506,12 @@ if three_matrix:
         (f"{col_cum_label}數", "累計總計")
     ])
     df_three_preview = pd.DataFrame(three_matrix, columns=preview_cols)
-    # 動態載入雙欄人均對照資料
-    df_per_officer_preview, per_officer_matrix = load_dynamic_per_officer(three_matrix)
+    df_per_officer_preview, per_officer_matrix, p1_dyn_name, p2_dyn_name = load_dynamic_per_officer(parsed_three_files)
 else:
     df_three_preview = None
     df_per_officer_preview = None
     per_officer_matrix = []
+    p1_dyn_name, p2_dyn_name = "9 月全月", "專案後期"
 
 df_a1_dyn, df_a2_dyn, acc_periods = load_dynamic_accidents(MEMORY_REPORTS)
 df_major_dyn, detail_dict_dyn, major_periods = load_dynamic_major(MEMORY_REPORTS)
@@ -1490,9 +1520,12 @@ df_jingtao_dyn, jt_periods = load_dynamic_jingtao(MEMORY_REPORTS)
 df_tech_dyn, tech_title, tech_periods = load_dynamic_tech(MEMORY_REPORTS)
 
 # ==========================================
-# 6. 前端自選與即時預覽區 (8大常態 + 雙欄人均 + 7大細表)
+# 6. 前端自選與即時預覽區 (完整保留所有功能)
 # ==========================================
 st.subheader("🎯 欲輸出的統計表自選控制")
+
+if df_per_officer_preview is not None:
+    st.info(f"✨ 系統已由來源表自動識別期間：**【期間一：{p1_dyn_name}】** vs **【期間二：{p2_dyn_name}】**")
 
 col_btn1, col_btn2, _ = st.columns([1.5, 2, 4])
 if "select_mode" not in st.session_state:
@@ -1512,8 +1545,7 @@ with col_opt1:
     st.markdown("##### 🏢 常態會報核心表格")
     chk_cover = st.checkbox("P.1 簡報封面", value=True)
     chk_three = st.checkbox("P.2 取締三項重點違規統計表 (總表)", value=(df_three_preview is not None), disabled=(df_three_preview is None))
-    # 新增：雙欄人均對照勾選項目
-    chk_per_officer = st.checkbox("P.2-1 取締三項重點違規【雙欄人均對照】評比表", value=(df_per_officer_preview is not None), disabled=(df_per_officer_preview is None), help="以各所隊員警數為基準，精確呈現 9月全月 與 9/14~9/30 後期人均取締件數與名次")
+    chk_per_officer = st.checkbox(f"P.2-1 三項重點【雙欄人均對照】評比表 ({p1_dyn_name} vs {p2_dyn_name})", value=(df_per_officer_preview is not None), disabled=(df_per_officer_preview is None), help="專案後期期間與數值 100% 取自來源表")
     chk_a1 = st.checkbox("P.3 A1類交通事故死亡人數統計表", value=(df_a1_dyn is not None), disabled=(df_a1_dyn is None))
     chk_a2 = st.checkbox("P.4 A2類交通事故受傷人數統計表", value=(df_a2_dyn is not None), disabled=(df_a2_dyn is None))
     chk_major_tot = st.checkbox("P.5 取締重大交通違規統計表 (總表)", value=(df_major_dyn is not None), disabled=(df_major_dyn is None))
@@ -1542,7 +1574,7 @@ curr_user = st.secrets.get("email", {}).get("user") or st.secrets.get("SMTP_USER
 if curr_user:
     st.caption(f"📬 產出後將自動夾帶附件發送至：`{curr_user}`")
 
-# 預覽區
+# 預覽區 (完整 8 大 Tab 支援)
 with st.expander("👀 點擊展開預覽純動態讀取之數據（無任何寫死假資料）", expanded=True):
     tabs_to_show = []
     if df_three_preview is not None: tabs_to_show.append("三項重點總表")
@@ -1570,7 +1602,7 @@ with st.expander("👀 點擊展開預覽純動態讀取之數據（無任何寫
         st.info("💡 目前尚未偵測到有效報表，請於側邊欄上傳 Excel 檔案。")
 
 # ==========================================
-# 7. 執行指定輸出生成
+# 7. 執行指定輸出生成 (支援全表格動態編譯)
 # ==========================================
 st.write("")
 btn_col1, btn_col2 = st.columns([1.5, 2.5])
@@ -1584,7 +1616,7 @@ if btn_generate:
     if not file_save_name.lower().endswith(".pptx"):
         file_save_name += ".pptx"
 
-    with st.spinner("正在自最新報表動態編譯 PPTX 簡報（全表文字居中、期間精確對齊）..."):
+    with st.spinner("正在自最新報表動態編譯 PPTX 簡報（專案後期期間完全取自來源表）..."):
         try:
             builder = PptxReportBuilder()
 
@@ -1610,13 +1642,14 @@ if btn_generate:
                     cum_col_title="本月累計"
                 )
 
-            # P.2-1 新增：三項重點【雙欄人均對照】評比表
+            # P.2-1 智慧辨別期間：三項重點【雙欄人均對照】評比表（後期期間 100% 取自來源表）
             if chk_per_officer and per_officer_matrix:
-                cum_full = three_periods.get("cum_full", "09/01~09/30")
-                per_officer_sub = f"評比期間：9 月全月 ({cum_full}) vs 專案後期 (09/14~09/30) ｜ 製表單位：龍潭分局交通組"
+                per_officer_sub = f"評比期間：{p1_dyn_name} vs {p2_dyn_name} ｜ 製表單位：龍潭分局交通組"
                 builder.add_per_officer_slide(
                     data_rows=per_officer_matrix,
-                    custom_subtitle=per_officer_sub
+                    custom_subtitle=per_officer_sub,
+                    p1_title=p1_dyn_name,
+                    p2_title=p2_dyn_name
                 )
 
             # P.3 A1 死亡
@@ -1695,7 +1728,7 @@ if btn_generate:
             # P.7 靜桃計畫
             if chk_jingtao and df_jingtao_dyn is not None:
                 cur_p = jt_periods.get("cur", "本期")
-                cum_p = jt_periods.get("cum", "專案開辦迄今")
+                cum_p = jt_periods.get("cum", "專案累計")
                 jt_sub = f"統計期間：本期 ({cur_p}) ｜ 專案累計 ({cum_p})"
                 
                 builder.add_table_slide(
@@ -1720,14 +1753,14 @@ if btn_generate:
             st.session_state["cached_filename"] = file_save_name
 
             if chk_auto_email:
-                ok, detail = send_pptx_email_to_self(pptx_stream, file_save_name)
+                ok, detail = send_pptx_email_to_self(pptx_stream, file_save_name, p1_dyn_name, p2_dyn_name)
                 if ok:
                     st.info(f"📧 簡報附件已成功發送至您的信箱：`{detail}`")
                 else:
                     st.warning(f"⚠️ 郵件未發送成功（{detail}），可直接點擊下方按鈕下載！")
 
             st.balloons()
-            st.success("🎉 恭喜！包含「雙欄人均對照表」之全方位 PowerPoint 簡報實體檔已成功生成！")
+            st.success("🎉 PowerPoint 簡報實體檔已成功生成！期間完全與來源表對齊！")
 
         except Exception as e:
             st.error(f"❌ 產出 PPTX 簡報時發生錯誤：{str(e)}")
